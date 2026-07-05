@@ -480,11 +480,11 @@ export default function TeacherClassDetailPage() {
         autogradingKey: assignmentForm.autogradingKey || undefined,
       });
 
-      setAssignmentForm({ 
-        title: "", 
-        description: "", 
-        dueDate: "", 
-        templateUrl: "", 
+      setAssignmentForm({
+        title: "",
+        description: "",
+        dueDate: "",
+        templateUrl: "",
         links: [""],
         isAutogradingEnabled: false,
         autogradingKey: "",
@@ -845,15 +845,15 @@ export default function TeacherClassDetailPage() {
     });
   };
 
-   const handleDeleteProject = (projectId) => {
-     if (!window.confirm("Delete this project and all its nodes?")) return;
-     setAdventureContent((current) => ({
-       ...current,
-       projects: (current?.projects || []).filter((p) => p.id !== projectId),
-     }));
-   };
+  const handleDeleteProject = (projectId) => {
+    if (!window.confirm("Delete this project and all its nodes?")) return;
+    setAdventureContent((current) => ({
+      ...current,
+      projects: (current?.projects || []).filter((p) => p.id !== projectId),
+    }));
+  };
 
-   const handleMoveProject = (projectId, delta) => {
+  const handleMoveProject = (projectId, delta) => {
     setAdventureContent((current) => {
       const projects = [...(current?.projects || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
       const index = projects.findIndex((project) => project.id === projectId);
@@ -862,9 +862,9 @@ export default function TeacherClassDetailPage() {
       [projects[index], projects[nextIndex]] = [projects[nextIndex], projects[index]];
       return { ...current, projects: projects.map((project, idx) => ({ ...project, order: idx + 1 })) };
     });
-    };
+  };
 
-    const handleSaveAdventureConfig = async () => {
+  const handleSaveAdventureConfig = async () => {
     setSavingAdventureConfig(true);
     setError("");
     try {
@@ -878,66 +878,66 @@ export default function TeacherClassDetailPage() {
     }
   };
 
-   const handleOpenProjectEditor = (projectId, projectSlug) => {
-     navigate(`/teacher/classes/${classId}/projects/${projectSlug}/edit`);
-   };
+  const handleOpenProjectEditor = (projectId, projectSlug) => {
+    navigate(`/teacher/classes/${classId}/projects/${projectSlug}/edit`);
+  };
 
-   const handleAddProjectFromBank = async (bankProject) => {
-      const targetWorldId = projectBankWorldId || bankProject.worldId;
-      if (!targetWorldId) return;
-      setImportingBankProject(true);
-      try {
-        const response = await importToProjectBank({ project: bankProject });
-        const entry = response.project || response;
-        handleAddProjectFromBankEntry(targetWorldId, entry);
-        setInfo("Project imported from bank.");
-      } catch (err) {
-        handleAddProjectFromBankEntry(targetWorldId, bankProject);
-        setInfo("Project added from bank.");
-      } finally {
-        setImportingBankProject(false);
-        setShowProjectBankModal(false);
-        setProjectBankWorldId(null);
-      }
+  const handleAddProjectFromBank = async (bankProject) => {
+    const targetWorldId = projectBankWorldId || bankProject.worldId;
+    if (!targetWorldId) return;
+    setImportingBankProject(true);
+    try {
+      const response = await importToProjectBank({ project: bankProject });
+      const entry = response.project || response;
+      handleAddProjectFromBankEntry(targetWorldId, entry);
+      setInfo("Project imported from bank.");
+    } catch (err) {
+      handleAddProjectFromBankEntry(targetWorldId, bankProject);
+      setInfo("Project added from bank.");
+    } finally {
+      setImportingBankProject(false);
+      setShowProjectBankModal(false);
+      setProjectBankWorldId(null);
+    }
+  };
+
+  const handleAddProjectFromBankEntry = (worldId, bankProject) => {
+    const project = {
+      id: `project-${Date.now()}`,
+      slug: bankProject.slug || `bank-${Date.now()}`,
+      worldId: worldId,
+      order: (adventureContent?.projects || []).length + 1,
+      enabled: true,
+      title: bankProject.title || "Imported Project",
+      subtitle: bankProject.subtitle || "",
+      description: bankProject.description || "",
+      prerequisite: bankProject.prerequisite || null,
+      xpReward: bankProject.xpReward || 100,
+      rewardComponents: bankProject.rewardComponents || [],
+      theory: bankProject.theory || [],
+      quizQuestions: bankProject.quizQuestions || [],
+      nodes: bankProject.nodes || [
+        { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
+        { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
+        { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
+        { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
+      ],
+      assessment: bankProject.assessment || {},
+      guidedSteps: bankProject.guidedSteps || [],
     };
+    setAdventureContent((current) => {
+      const projects = current?.projects || [];
+      return {
+        ...current,
+        projects: [...projects, project],
+      };
+    });
+  };
 
-   const handleAddProjectFromBankEntry = (worldId, bankProject) => {
-     const project = {
-       id: `project-${Date.now()}`,
-       slug: bankProject.slug || `bank-${Date.now()}`,
-       worldId: worldId,
-       order: (adventureContent?.projects || []).length + 1,
-       enabled: true,
-       title: bankProject.title || "Imported Project",
-       subtitle: bankProject.subtitle || "",
-       description: bankProject.description || "",
-       prerequisite: bankProject.prerequisite || null,
-       xpReward: bankProject.xpReward || 100,
-       rewardComponents: bankProject.rewardComponents || [],
-       theory: bankProject.theory || [],
-       quizQuestions: bankProject.quizQuestions || [],
-       nodes: bankProject.nodes || [
-         { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
-         { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
-         { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
-         { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
-       ],
-       assessment: bankProject.assessment || {},
-       guidedSteps: bankProject.guidedSteps || [],
-     };
-     setAdventureContent((current) => {
-       const projects = current?.projects || [];
-       return {
-         ...current,
-         projects: [...projects, project],
-       };
-     });
-   };
-
-   const handleOpenProjectBank = (worldId) => {
-      setProjectBankWorldId(worldId);
-      setShowProjectBankModal(true);
-    };
+  const handleOpenProjectBank = (worldId) => {
+    setProjectBankWorldId(worldId);
+    setShowProjectBankModal(true);
+  };
 
   if (loading) {
     return (
@@ -962,18 +962,12 @@ export default function TeacherClassDetailPage() {
       <header className="student-db-header">
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
-            <img src="/logo-Photoroom.png" alt="OpenHW Studio" style={{ height: '50px', objectFit: 'contain' }} />
+            <img src="/logo-cropped.png" alt="OpenHW Studio" style={{ height: '65px', width: '130px', objectFit: 'contain' }} />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button onClick={() => navigate('/teacher/dashboard')} className="student-db-header__nav-link">Workbench</button>
-          <button onClick={() => navigate('/simulator')} className="student-db-header__nav-link">Simulation</button>
-          <button onClick={() => navigate('/teacher/project-bank')} className="student-db-header__nav-link">Project Bank</button>
-        </nav>
 
         <div className="student-db-header__right">
-          <button className="student-db-header__icon-btn" title="Settings"><Settings size={16} /></button>
           <button className="student-db-header__icon-btn" title="Notifications"><Bell size={16} /></button>
           <button
             onClick={() => {
@@ -1036,10 +1030,10 @@ export default function TeacherClassDetailPage() {
 
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
-              <a href="https://openhwgroup.org" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
+              <a href="https://openhw-studio.fossee.in/docs/" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
                 <FileText size={16} /> Docs
               </a>
-              <button className="student-db-sidebar__link"><HelpCircle size={16} /> Support</button>
+
               <button onClick={handleLogout} className="student-db-sidebar__link" style={{ color: '#ef4444' }}>Sign Out</button>
             </nav>
           </div>
@@ -1047,71 +1041,71 @@ export default function TeacherClassDetailPage() {
 
         {/* ── Class Content Area ── */}
         <main className="student-db-content" style={{ overflowY: 'auto' }}>
-        <section className="teacher-class-page teacher-class-page--shell">
-          <TeacherClassHeader
-            classroom={classroom}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            classMenuRef={classMenuRef}
-            showClassMenu={showClassMenu}
-            onToggleClassMenu={() =>
-              setShowClassMenu((currentState) => !currentState)
-            }
-            onOpenEditModal={openEditModal}
-            onDeleteClass={handleDeleteClass}
-            deletingClass={deletingClass}
-          />
-
-          <div
-            className={`teacher-class-layout${activeTab === "stream" ? " is-stream" : ""}`}
-          >
-            <TeacherClassMainContent
-              activeTab={activeTab}
-              error={error}
-              noticeInput={noticeInput}
-              onNoticeInputChange={(event) => setNoticeInput(event.target.value)}
-              onPostNotice={handlePostNotice}
-              postingNotice={postingNotice}
-              avatarInitials={avatarInitials}
-              streamItems={streamItems}
-              teacherName={user?.name || "Teacher"}
-              classId={classId}
-              onDeleteNotice={handleDeleteNotice}
-              deletingNoticeId={deletingNoticeId}
-              onAssignmentClick={(id) => {
-                setActiveTab("classwork");
-                handleSelectAssignment(id);
-              }}
-              onPreviewFile={setPreviewFile}
-              assignments={assignments}
-              assignmentMetrics={assignmentMetrics}
-              studentsCount={students.length}
-              activeAssignmentId={activeAssignmentId}
-              onSelectAssignment={handleSelectAssignment}
-              onDeleteAssignment={handleDeleteAssignment}
-              deletingAssignmentId={deletingAssignmentId}
-              submissionsState={submissionsState}
+          <section className="teacher-class-page teacher-class-page--shell">
+            <TeacherClassHeader
               classroom={classroom}
-              user={user}
-              students={students}
-              removingStudentId={removingStudentId}
-              peopleSearch={peopleSearch}
-              onPeopleSearchChange={(event) =>
-                setPeopleSearch(event.target.value)
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              classMenuRef={classMenuRef}
+              showClassMenu={showClassMenu}
+              onToggleClassMenu={() =>
+                setShowClassMenu((currentState) => !currentState)
               }
-              onRemoveStudent={handleRemoveStudent}
-              markStats={markStats}
-              adventureContent={adventureContent}
-              studentAdventureProgress={studentAdventureProgress}
-              onAdventureContentChange={handleAdventureContentChange}
-               onAddWorld={handleAddWorld}
-               onMoveWorld={handleMoveWorld}
-               onDeleteWorld={handleDeleteWorld}
-               onAddProject={handleAddProject}
-               onMoveProject={handleMoveProject}
+              onOpenEditModal={openEditModal}
+              onDeleteClass={handleDeleteClass}
+              deletingClass={deletingClass}
+            />
+
+            <div
+              className={`teacher-class-layout${activeTab === "stream" ? " is-stream" : ""}`}
+            >
+              <TeacherClassMainContent
+                activeTab={activeTab}
+                error={error}
+                noticeInput={noticeInput}
+                onNoticeInputChange={(event) => setNoticeInput(event.target.value)}
+                onPostNotice={handlePostNotice}
+                postingNotice={postingNotice}
+                avatarInitials={avatarInitials}
+                streamItems={streamItems}
+                teacherName={user?.name || "Teacher"}
+                classId={classId}
+                onDeleteNotice={handleDeleteNotice}
+                deletingNoticeId={deletingNoticeId}
+                onAssignmentClick={(id) => {
+                  setActiveTab("classwork");
+                  handleSelectAssignment(id);
+                }}
+                onPreviewFile={setPreviewFile}
+                assignments={assignments}
+                assignmentMetrics={assignmentMetrics}
+                studentsCount={students.length}
+                activeAssignmentId={activeAssignmentId}
+                onSelectAssignment={handleSelectAssignment}
+                onDeleteAssignment={handleDeleteAssignment}
+                deletingAssignmentId={deletingAssignmentId}
+                submissionsState={submissionsState}
+                classroom={classroom}
+                user={user}
+                students={students}
+                removingStudentId={removingStudentId}
+                peopleSearch={peopleSearch}
+                onPeopleSearchChange={(event) =>
+                  setPeopleSearch(event.target.value)
+                }
+                onRemoveStudent={handleRemoveStudent}
+                markStats={markStats}
+                adventureContent={adventureContent}
+                studentAdventureProgress={studentAdventureProgress}
+                onAdventureContentChange={handleAdventureContentChange}
+                onAddWorld={handleAddWorld}
+                onMoveWorld={handleMoveWorld}
+                onDeleteWorld={handleDeleteWorld}
+                onAddProject={handleAddProject}
+                onMoveProject={handleMoveProject}
                 onDeleteProject={handleDeleteProject}
                 onSaveAdventureConfig={handleSaveAdventureConfig}
-               savingAdventureConfig={savingAdventureConfig}
+                savingAdventureConfig={savingAdventureConfig}
                 onOpenClassAdventure={() =>
                   navigate(`/adventure?classId=${encodeURIComponent(classId)}`)
                 }
@@ -1119,36 +1113,36 @@ export default function TeacherClassDetailPage() {
                 onOpenProjectBank={handleOpenProjectBank}
               />
 
-            <TeacherClassSidebar
-              codeMenuRef={codeMenuRef}
-              showCodeMenu={showCodeMenu}
-              onToggleCodeMenu={() =>
-                setShowCodeMenu((currentState) => !currentState)
-              }
-              onCopyClassCode={handleCopyClassCode}
-              onShareClass={handleShareClass}
-              onOpenLiveMeeting={handleOpenLiveMeeting}
-              classroom={classroom}
-              assignments={assignments}
-            />
-          </div>
+              <TeacherClassSidebar
+                codeMenuRef={codeMenuRef}
+                showCodeMenu={showCodeMenu}
+                onToggleCodeMenu={() =>
+                  setShowCodeMenu((currentState) => !currentState)
+                }
+                onCopyClassCode={handleCopyClassCode}
+                onShareClass={handleShareClass}
+                onOpenLiveMeeting={handleOpenLiveMeeting}
+                classroom={classroom}
+                assignments={assignments}
+              />
+            </div>
 
-          <div className="teacher-fab">
-            <button
-              type="button"
-              className="teacher-fab__trigger"
-              aria-label="Open class composer"
-              onClick={() => {
-                setComposerMode(
-                  activeTab === "stream" ? "notice" : "assignment",
-                );
-                setShowComposer(true);
-              }}
-            >
-              <Plus size={20} />
-            </button>
-          </div>
-        </section>
+            <div className="teacher-fab">
+              <button
+                type="button"
+                className="teacher-fab__trigger"
+                aria-label="Open class composer"
+                onClick={() => {
+                  setComposerMode(
+                    activeTab === "stream" ? "notice" : "assignment",
+                  );
+                  setShowComposer(true);
+                }}
+              >
+                <Plus size={20} />
+              </button>
+            </div>
+          </section>
         </main>
       </div>
 

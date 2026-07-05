@@ -526,34 +526,14 @@ export default function StudentClassDetailPage() {
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
             <img
-              src="/logo-Photoroom.png"
+              src="/logo-cropped.png"
               alt="OpenHW Studio"
-              style={{ height: "50px", objectFit: "contain" }}
+              style={{ height: "65px", width: "130px", objectFit: "contain" }}
             />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button
-            onClick={() => navigate("/student/dashboard")}
-            className="student-db-header__nav-link"
-          >
-            Workbench
-          </button>
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__nav-link"
-          >
-            Simulation
-          </button>
-          <button className="student-db-header__nav-link">Telemetry</button>
-          <button className="student-db-header__nav-link">Hardware</button>
-        </nav>
-
         <div className="student-db-header__right" style={{ position: "relative" }}>
-          <button className="student-db-header__icon-btn" title="Settings">
-            <Settings className="w-4 h-4" />
-          </button>
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="student-db-header__icon-btn"
@@ -690,12 +670,7 @@ export default function StudentClassDetailPage() {
             </>
           )}
 
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__deploy-btn"
-          >
-            Deploy
-          </button>
+
           <div
             onClick={() => navigate("/student/profile")}
             className="student-db-header__avatar"
@@ -776,7 +751,7 @@ export default function StudentClassDetailPage() {
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
               <a
-                href="https://openhwgroup.org"
+                href="https://openhw-studio.fossee.in/docs/"
                 target="_blank"
                 rel="noreferrer"
                 className="student-db-sidebar__link"
@@ -784,15 +759,7 @@ export default function StudentClassDetailPage() {
                 <FileText className="w-4 h-4" />
                 Docs
               </a>
-              <button
-                onClick={() =>
-                  alert("Support module loading... Node ping stable.")
-                }
-                className="student-db-sidebar__link"
-              >
-                <HelpCircle className="w-4 h-4" />
-                Support
-              </button>
+
               <button
                 onClick={handleLogout}
                 className="student-db-sidebar__link text-red-600 hover:bg-red-50"
@@ -992,7 +959,9 @@ export default function StudentClassDetailPage() {
                                       <small>Resources</small>
                                     </div>
                                     <div className="teacher-classwork-card__metric">
-                                      <strong>{isClosed ? 'Closed' : 'Open'}</strong>
+                                      <strong style={{ fontSize: '1.1rem', whiteSpace: 'nowrap', lineHeight: '1.6' }}>
+                                        {isClosed ? 'Closed' : 'Open'}
+                                      </strong>
                                       <small>Window</small>
                                     </div>
                                   </div>

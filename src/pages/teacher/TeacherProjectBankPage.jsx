@@ -27,12 +27,12 @@ function getProjectBoardType(project) {
 }
 
 const BOARD_COLORS = {
-  "arduino-uno":   { bg: "rgba(0, 128, 0, 0.1)",   color: "#16a34a" },
-  "arduino-nano":  { bg: "rgba(0, 128, 0, 0.1)",   color: "#16a34a" },
-  "arduino-mega":  { bg: "rgba(37, 99, 235, 0.1)", color: "#2563eb" },
-  "pico":          { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
-  "pico-w":        { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
-  "unknown":       { bg: "rgba(100, 116, 139, 0.1)", color: "#64748b" },
+  "arduino-uno": { bg: "rgba(0, 128, 0, 0.1)", color: "#16a34a" },
+  "arduino-nano": { bg: "rgba(0, 128, 0, 0.1)", color: "#16a34a" },
+  "arduino-mega": { bg: "rgba(37, 99, 235, 0.1)", color: "#2563eb" },
+  "pico": { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
+  "pico-w": { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
+  "unknown": { bg: "rgba(100, 116, 139, 0.1)", color: "#64748b" },
 };
 
 /* ─── Component ───────────────────────────────────────────────── */
@@ -120,24 +120,12 @@ export default function TeacherProjectBankPage() {
       <header className="student-db-header">
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
-            <img src="/logo-Photoroom.png" alt="OpenHW Studio" style={{ height: "50px", objectFit: "contain" }} />
+            <img src="/logo-cropped.png" alt="OpenHW Studio" style={{ height: "65px", width: "130px", objectFit: "contain" }} />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button onClick={() => navigate("/teacher/dashboard")} className="student-db-header__nav-link">
-            Workbench
-          </button>
-          <button onClick={() => navigate("/simulator")} className="student-db-header__nav-link">
-            Simulation
-          </button>
-          <button className="student-db-header__nav-link is-active">
-            Project Bank
-          </button>
-        </nav>
 
         <div className="student-db-header__right">
-          <button className="student-db-header__icon-btn" title="Settings"><Settings size={16} /></button>
           <button className="student-db-header__icon-btn" title="Notifications"><Bell size={16} /></button>
           <button onClick={handleCreateNew} className="student-db-header__deploy-btn">
             + New Project
@@ -201,10 +189,10 @@ export default function TeacherProjectBankPage() {
 
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
-              <a href="https://openhwgroup.org" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
+              <a href="https://openhw-studio.fossee.in/docs/" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
                 <FileText size={16} /> Docs
               </a>
-              <button className="student-db-sidebar__link"><HelpCircle size={16} /> Support</button>
+
               <button
                 onClick={() => { logout(); navigate("/login"); }}
                 className="student-db-sidebar__link"

@@ -50,7 +50,8 @@ import {
   Droplet,
   Bluetooth,
   Tv,
-  Trash2
+  Trash2,
+  Lock
 } from "lucide-react";
 import PROJECT_DATA from "../../services/guidedProjects.json";
 import { listProjects, deleteProject, formatProjectDate } from "../../services/projectStore.js";
@@ -165,7 +166,6 @@ export default function StudentDashboard() {
 
   // Tab State
   const [activeTab, setActiveTab] = useState("classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
-  const [isAdventureExpanded, setIsAdventureExpanded] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Guided Projects inline workspace states
@@ -252,8 +252,10 @@ export default function StudentDashboard() {
     return () => clearTimeout(timeoutId);
   }, [info]);
 
-  // Combined upcoming assignments
-  const upcomingTasks = useMemo(() => {
+  const [assignmentFilter, setAssignmentFilter] = useState("upcoming");
+
+  // Combined upcoming / expired assignments
+  const filteredAssignments = useMemo(() => {
     const apiTasks = classrooms.flatMap((classroom) =>
       (assignmentsByClass[classroom._id] || []).map((assignment) => ({
         id: assignment._id,
@@ -268,31 +270,50 @@ export default function StudentDashboard() {
       }))
     );
 
-    // Adapt API tasks tags based on timeline
-    const formattedApiTasks = apiTasks.map((t) => {
-      const now = new Date();
-      const due = new Date(t.dueDate);
-      const diffTime = due - now;
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const now = new Date();
 
-      if (diffDays <= 1) {
-        t.tag = "DUE TOMORROW";
-        t.tagStyle = "task-tag--tomorrow";
-        t.cardStyle = "task-card--tomorrow";
-      } else if (diffDays <= 3) {
-        t.tag = "DUE FRIDAY";
-        t.tagStyle = "task-tag--friday";
-        t.cardStyle = "task-card--friday";
-      } else {
-        t.tag = "NEXT WEEK";
-        t.tagStyle = "task-tag--nextweek";
-        t.cardStyle = "task-card--nextweek";
-      }
-      return t;
-    });
-
-    return formattedApiTasks;
-  }, [assignmentsByClass, classrooms]);
+    return apiTasks
+      .map((t) => {
+        const due = t.dueDate ? new Date(t.dueDate) : null;
+        if (!due) {
+          t.isExpired = false;
+          t.tag = "NO DUE DATE";
+          t.tagStyle = "task-tag--nextweek";
+          t.cardStyle = "task-card--nextweek";
+        } else {
+          t.isExpired = due < now;
+          if (t.isExpired) {
+            t.tag = "EXPIRED";
+            t.tagStyle = "task-tag--tomorrow";
+            t.cardStyle = "task-card--tomorrow";
+          } else {
+            const diffTime = due - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays <= 1) {
+              t.tag = "DUE TOMORROW";
+              t.tagStyle = "task-tag--tomorrow";
+              t.cardStyle = "task-card--tomorrow";
+            } else if (diffDays <= 3) {
+              t.tag = "DUE SOON";
+              t.tagStyle = "task-tag--friday";
+              t.cardStyle = "task-card--friday";
+            } else {
+              t.tag = "NEXT WEEK";
+              t.tagStyle = "task-tag--nextweek";
+              t.cardStyle = "task-card--nextweek";
+            }
+          }
+        }
+        return t;
+      })
+      .filter((t) => {
+        if (assignmentFilter === "expired") {
+          return t.isExpired;
+        } else {
+          return !t.isExpired;
+        }
+      });
+  }, [assignmentsByClass, classrooms, assignmentFilter]);
 
   // Combined notifications list
   const notifications = useMemo(() => {
@@ -390,31 +411,17 @@ export default function StudentDashboard() {
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
             <img
-              src="/logo-Photoroom.png"
+              src="/logo-cropped.png"
               alt="OpenHW Studio"
-              style={{ height: "50px", objectFit: "contain" }}
+              style={{ height: "65px", width: "130px", objectFit: "contain" }}
             />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button className="student-db-header__nav-link is-active">
-            Workbench
-          </button>
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__nav-link"
-          >
-            Simulation
-          </button>
-          <button className="student-db-header__nav-link">Telemetry</button>
-          <button className="student-db-header__nav-link">Hardware</button>
-        </nav>
+
 
         <div className="student-db-header__right" style={{ position: "relative" }}>
-          <button className="student-db-header__icon-btn" title="Settings">
-            <Settings className="w-4 h-4" />
-          </button>
+
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="student-db-header__icon-btn"
@@ -480,7 +487,7 @@ export default function StudentDashboard() {
                   <span style={{ fontWeight: 800, fontSize: "14px", color: "#0f172a" }}>Notifications</span>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>{notifications.length} new</span>
                 </div>
-                
+
                 <div style={{ overflowY: "auto", flex: 1 }}>
                   {notifications.length === 0 ? (
                     <div style={{ padding: "32px 16px", textAlign: "center", color: "#64748b" }}>
@@ -519,7 +526,7 @@ export default function StudentDashboard() {
                         }}>
                           {n.type === "announcement" ? <Megaphone className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
                         </div>
-                        
+
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
                           <span style={{ fontSize: "10px", fontWeight: 800, color: "#64748b", letterSpacing: "0.02em" }}>
                             {n.classroomName.toUpperCase()} · {n.type.toUpperCase()}
@@ -551,12 +558,7 @@ export default function StudentDashboard() {
             </>
           )}
 
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__deploy-btn"
-          >
-            Deploy
-          </button>
+
           <div
             onClick={() => navigate("/student/profile")}
             className="student-db-header__avatar"
@@ -612,9 +614,8 @@ export default function StudentDashboard() {
                 onClick={() => {
                   setActiveTab("classroom");
                 }}
-                className={`student-db-sidebar__link ${
-                  activeTab === "classroom" ? "is-active" : ""
-                }`}
+                className={`student-db-sidebar__link ${activeTab === "classroom" ? "is-active" : ""
+                  }`}
               >
                 <GraduationCap className="w-4 h-4" />
                 Classroom
@@ -624,9 +625,8 @@ export default function StudentDashboard() {
                 onClick={() => {
                   setActiveTab("guided-projects");
                 }}
-                className={`student-db-sidebar__link ${
-                  activeTab === "guided-projects" ? "is-active" : ""
-                }`}
+                className={`student-db-sidebar__link ${activeTab === "guided-projects" ? "is-active" : ""
+                  }`}
               >
                 <Folder className="w-4 h-4" />
                 Guided Project
@@ -636,9 +636,8 @@ export default function StudentDashboard() {
                 onClick={() => {
                   setActiveTab("modules");
                 }}
-                className={`student-db-sidebar__link ${
-                  activeTab === "modules" ? "is-active" : ""
-                }`}
+                className={`student-db-sidebar__link ${activeTab === "modules" ? "is-active" : ""
+                  }`}
               >
                 <Layers className="w-4 h-4" />
                 Modules
@@ -646,66 +645,13 @@ export default function StudentDashboard() {
 
               <div className="student-db-sidebar__accordion" style={{ width: '100%' }}>
                 <button
-                  onClick={() => {
-                    setIsAdventureExpanded(!isAdventureExpanded);
-                    setActiveTab("adventure-map");
-                  }}
-                  className={`student-db-sidebar__link ${
-                    activeTab === "adventure-map" ? "is-active" : ""
-                  }`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}
+                  onClick={() => setActiveTab("adventure-map")}
+                  className={`student-db-sidebar__link ${activeTab === "adventure-map" ? "is-active" : ""
+                    }`}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Activity className="w-4 h-4" />
-                    <span>Adventure map</span>
-                  </div>
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isAdventureExpanded ? 'rotate-180' : ''}`} style={{ transition: 'transform 0.2s' }} />
+                  <Activity className="w-4 h-4" />
+                  Adventure map
                 </button>
-                
-                {isAdventureExpanded && (
-                  <div className="student-db-sidebar__submenu" style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                    <Link
-                      to="/adventure?journey=arduino"
-                      className="student-db-sidebar__submenu-link"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 12px',
-                        borderRadius: 8,
-                        fontSize: 13,
-                        color: 'var(--text-color, #475569)',
-                        textDecoration: 'none',
-                        transition: 'all 0.15s',
-                        fontWeight: 600
-                      }}
-                      onMouseEnter={(e) => e.target.style.background = 'rgba(0,0,0,0.04)'}
-                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                    >
-                      🔵 Arduino Uno
-                    </Link>
-                    <Link
-                      to="/adventure?journey=esp32"
-                      className="student-db-sidebar__submenu-link"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 12px',
-                        borderRadius: 8,
-                        fontSize: 13,
-                        color: 'var(--text-color, #475569)',
-                        textDecoration: 'none',
-                        transition: 'all 0.15s',
-                        fontWeight: 600
-                      }}
-                      onMouseEnter={(e) => e.target.style.background = 'rgba(0,0,0,0.04)'}
-                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                    >
-                      📡 ESP32
-                    </Link>
-                  </div>
-                )}
               </div>
             </nav>
           </div>
@@ -713,7 +659,7 @@ export default function StudentDashboard() {
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
               <a
-                href="https://openhwgroup.org"
+                href="https://openhw-studio.fossee.in/docs/"
                 target="_blank"
                 rel="noreferrer"
                 className="student-db-sidebar__link"
@@ -721,18 +667,10 @@ export default function StudentDashboard() {
                 <FileText className="w-4 h-4" />
                 Docs
               </a>
-              <button
-                onClick={() =>
-                  setInfo("Support module loading... Node ping stable.")
-                }
-                className="student-db-sidebar__link"
-              >
-                <HelpCircle className="w-4 h-4" />
-                Support
-              </button>
+
               <button
                 onClick={handleLogout}
-                className="student-db-sidebar__link text-red-600 hover:bg-red-50"
+                className="student-db-sidebar__link"
               >
                 Sign Out
               </button>
@@ -743,31 +681,65 @@ export default function StudentDashboard() {
         {/* Content Column Switch */}
         {activeTab === "classroom" && (
           <>
-            {/* Middle Column: Upcoming Tasks */}
+            {/* Middle Column: Assignments */}
             <div className="student-db-upcoming">
-              <div className="student-db-upcoming__header">
-                <span className="student-db-upcoming__title">
-                  Upcoming Tasks
+              <div className="student-db-upcoming__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <span className="student-db-upcoming__title" style={{ fontSize: '12px' }}>
+                  Assignments
                 </span>
-                <button
-                  className="student-db-upcoming__filter-btn"
-                  title="Filter Tasks"
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                </button>
+
+                {/* Sleek Pill Tab Switcher */}
+                <div style={{ display: 'flex', background: 'var(--bg3)', borderRadius: '10px', padding: '2px', gap: '2px' }}>
+                  <button
+                    onClick={() => setAssignmentFilter('upcoming')}
+                    style={{
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '4px 10px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      background: assignmentFilter === 'upcoming' ? 'var(--accent)' : 'transparent',
+                      color: assignmentFilter === 'upcoming' ? '#ffffff' : 'var(--text2)',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    Upcoming
+                  </button>
+                  <button
+                    onClick={() => setAssignmentFilter('expired')}
+                    style={{
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '4px 10px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      background: assignmentFilter === 'expired' ? 'var(--accent)' : 'transparent',
+                      color: assignmentFilter === 'expired' ? '#ffffff' : 'var(--text2)',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    Expired
+                  </button>
+                </div>
               </div>
 
               <div className="student-db-upcoming__list">
-                {upcomingTasks.length === 0 ? (
+                {filteredAssignments.length === 0 ? (
                   <div className="upcoming-empty-state">
                     <ClipboardList className="upcoming-empty-state__icon w-8 h-8" />
-                    <h4 className="upcoming-empty-state__title">No Upcoming Tasks</h4>
+                    <h4 className="upcoming-empty-state__title">
+                      {assignmentFilter === 'upcoming' ? 'No Upcoming Assignments' : 'No Expired Assignments'}
+                    </h4>
                     <p className="upcoming-empty-state__desc">
-                      All caught up! Real assignments will appear here once assigned by your instructor.
+                      {assignmentFilter === 'upcoming'
+                        ? 'All caught up! Real assignments will appear here once assigned by your instructor.'
+                        : 'No expired assignments found.'}
                     </p>
                   </div>
                 ) : (
-                  upcomingTasks.map((task) => (
+                  filteredAssignments.map((task) => (
                     <div
                       key={task.id}
                       className={`task-card ${task.cardStyle}`}
@@ -892,7 +864,7 @@ export default function StudentDashboard() {
                     if (levelKey === "BEGINNER") btnClass += " guided-difficulty-btn--beginner";
                     if (levelKey === "INTERMEDIATE") btnClass += " guided-difficulty-btn--intermediate";
                     if (levelKey === "ADVANCED") btnClass += " guided-difficulty-btn--advanced";
-                    
+
                     return (
                       <button
                         key={levelKey}
@@ -1002,7 +974,7 @@ export default function StudentDashboard() {
                                       <p className="guided-project-card__desc">
                                         {project.description}
                                       </p>
-                                      
+
                                       {/* Tags */}
                                       <div className="guided-project-card__tags">
                                         {project.board && (
@@ -1107,7 +1079,7 @@ export default function StudentDashboard() {
                       const projBoard = getBoardLabel(proj.board);
                       const partsCount = proj.components?.length || 0;
                       const dateStr = proj.savedAt ? formatProjectDate(proj.savedAt) : "N/A";
-                      
+
                       return (
                         <div key={proj.id} className="user-project-card">
                           {/* Thumbnail or Placeholder */}
@@ -1133,7 +1105,7 @@ export default function StudentDashboard() {
                             <h4 className="user-project-card__title" title={proj.name || "Untitled"}>
                               {proj.name || "Untitled"}
                             </h4>
-                            
+
                             <div className="user-project-card__meta">
                               <span className="user-project-card__board">{projBoard}</span>
                               <span className="user-project-card__count">{partsCount} parts</span>
@@ -1168,7 +1140,7 @@ export default function StudentDashboard() {
                               >
                                 <Trash2 size={16} />
                               </button>
-                              
+
                               <button
                                 type="button"
                                 className="user-project-card__btn-open"
@@ -1191,260 +1163,272 @@ export default function StudentDashboard() {
         {/* Tab: Adventure map Placeholder Panel */}
         {activeTab === "adventure-map" && (
           <main className="student-db-content">
-            <section className="student-db-rosters">
-              <header className="student-db-rosters__header">
-                <div className="student-db-rosters__title-area">
-                  <h2>Adventure Map Progress</h2>
-                  <p>Track your gamified learning journey and statistics.</p>
-                </div>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <button
-                    onClick={() => navigate("/adventure?journey=arduino")}
-                    className="student-db-rosters__join-btn"
-                    style={{
-                      borderColor: "#00979d",
-                      color: "#00979d",
-                      backgroundColor: "rgba(0, 151, 157, 0.05)",
-                      fontWeight: 800
-                    }}
-                  >
-                    🔵 Arduino Uno Map
-                  </button>
-                  <button
-                    onClick={() => navigate("/adventure?journey=esp32")}
-                    className="student-db-rosters__join-btn"
-                    style={{
-                      borderColor: "#e74c3c",
-                      color: "#e74c3c",
-                      backgroundColor: "rgba(231, 76, 60, 0.05)",
-                      fontWeight: 800
-                    }}
-                  >
-                    📡 ESP32 Map
-                  </button>
+            <style>{`
+              .campaign-card {
+                background-color: var(--bg2);
+                border: 1px solid var(--border);
+                border-radius: 24px;
+                padding: 24px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                position: relative;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.02);
+                transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+              }
+              .campaign-card:hover {
+                transform: translateY(-5px);
+                box-shadow: var(--shadow);
+                border-color: var(--border2);
+              }
+              .card-btn-blue {
+                width: 100%;
+                padding: 12px;
+                background-color: #2563eb;
+                color: #ffffff;
+                border: none;
+                border-radius: 12px;
+                font-weight: 800;
+                font-size: 11px;
+                cursor: pointer;
+                letter-spacing: 0.04em;
+                transition: all 0.2s;
+              }
+              .card-btn-blue:hover {
+                background-color: #1d4ed8;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(37,99,235,0.2);
+              }
+              .card-btn-light-blue {
+                width: 100%;
+                padding: 12px;
+                background-color: rgba(37, 99, 235, 0.08);
+                color: #2563eb;
+                border: none;
+                border-radius: 12px;
+                font-weight: 800;
+                font-size: 11px;
+                cursor: pointer;
+                letter-spacing: 0.04em;
+                transition: all 0.2s;
+              }
+              .card-btn-light-blue:hover {
+                background-color: rgba(37, 99, 235, 0.15);
+                transform: translateY(-1px);
+              }
+              .card-btn-outline {
+                width: 100%;
+                padding: 12px;
+                background-color: transparent;
+                color: var(--text);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                font-weight: 800;
+                font-size: 11px;
+                cursor: pointer;
+                letter-spacing: 0.04em;
+                transition: all 0.2s;
+              }
+              .card-btn-outline:hover {
+                background-color: var(--bg3);
+                border-color: var(--border2);
+                transform: translateY(-1px);
+              }
+              .locked-overlay {
+                position: absolute;
+                inset: 0;
+                background-color: var(--bg);
+                opacity: 0.75;
+                backdrop-filter: blur(3px);
+                -webkit-backdrop-filter: blur(3px);
+                z-index: 5;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+              .locked-badge {
+                background-color: var(--text);
+                color: var(--bg);
+                padding: 8px 16px;
+                border-radius: 12px;
+                font-size: 10px;
+                font-weight: 800;
+                display: flex;
+                align-items: center;
+                box-shadow: var(--shadow);
+              }
+            `}</style>
+
+            <section className="student-db-rosters" style={{ width: '100%' }}>
+              <header className="student-db-rosters__header" style={{ justifyContent: 'center', textAlign: 'center', display: 'block', width: '100%', borderBottom: 'none', marginBottom: '20px' }}>
+                <div className="student-db-rosters__title-area" style={{ margin: '0 auto' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '900', letterSpacing: '0.12em', color: 'var(--text)', textTransform: 'uppercase', marginBottom: '6px' }}>Hardware Ecosystem</h2>
+                  <p style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>Select Hardware Campaign</p>
                 </div>
               </header>
 
-              {/* Progress Panel */}
-              <div
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "16px",
-                  padding: "24px 32px",
-                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.02)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "20px"
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "24px",
-                    flexWrap: "wrap",
-                    justifyContent: "space-between"
-                  }}
-                >
-                  <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "32px",
-                          fontWeight: 900,
-                          color: "#fbbf24",
-                          fontFamily: "monospace"
-                        }}
-                      >
-                        {xp}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#64748b",
-                          fontWeight: 800,
-                          letterSpacing: ".05em"
-                        }}
-                      >
-                        ACCUMULATED XP
-                      </span>
-                    </div>
-
-                    <div style={{ width: 1, height: "48px", background: "#e2e8f0" }} />
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "32px",
-                          fontWeight: 900,
-                          color: "#10b981",
-                          fontFamily: "monospace"
-                        }}
-                      >
-                        {completedCount}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#64748b",
-                          fontWeight: 800,
-                          letterSpacing: ".05em"
-                        }}
-                      >
-                        COMPLETED MAP NODES
-                      </span>
-                    </div>
-
-                    <div style={{ width: 1, height: "48px", background: "#e2e8f0" }} />
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "32px",
-                          fontWeight: 900,
-                          color: "#475569",
-                          fontFamily: "monospace"
-                        }}
-                      >
-                        {totalProjects - completedCount}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#64748b",
-                          fontWeight: 800,
-                          letterSpacing: ".05em"
-                        }}
-                      >
-                        REMAINING TASKS
-                      </span>
-                    </div>
-
-                    <div style={{ width: 1, height: "48px", background: "#e2e8f0" }} />
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "32px",
-                          fontWeight: 900,
-                          color: currentLevelData?.color || "#10b981",
-                          fontFamily: "monospace"
-                        }}
-                      >
-                        {currentLevelData?.icon || "⭐"} {currentLevel}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#64748b",
-                          fontWeight: 800,
-                          letterSpacing: ".05em"
-                        }}
-                      >
-                        WORKSTATION LEVEL
-                      </span>
-                    </div>
+              {/* Campaign selector grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(285px, 1fr))',
+                gap: '24px',
+                maxWidth: '900px',
+                margin: '0 auto',
+                width: '100%',
+                padding: '10px 0'
+              }}>
+                {/* CARD 1: Arduino Uno */}
+                <div className="campaign-card">
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: '800',
+                      color: '#10b981',
+                      backgroundColor: 'rgba(16,185,129,0.08)',
+                      border: '1px solid rgba(16,185,129,0.2)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                    }}>[ CAMPAIGN: ACTIVE ]</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: AVR-01</span>
                   </div>
-
-                  <div
-                    style={{
-                      width: "180px",
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "center",
-                      gap: "8px"
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "8px",
-                        borderRadius: "99px",
-                        background: "#f1f5f9",
-                        overflow: "hidden"
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          borderRadius: "99px",
-                          width: `${
-                            Math.round((completedCount / totalProjects) * 100) || 0
-                          }%`,
-                          background: "linear-gradient(90deg, #10b981, #3b82f6)",
-                          transition: "width .6s ease"
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#475569",
-                        textAlign: "center",
-                        fontWeight: 800
-                      }}
-                    >
-                      {Math.round((completedCount / totalProjects) * 100) || 0}%
-                      Map Cleared
-                    </div>
+                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                    <Cpu size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
                   </div>
-                </div>
-
-                <div
-                  style={{
-                    borderTop: "1px dashed #e2e8f0",
-                    paddingTop: "20px",
-                    marginTop: "10px",
-                    display: "flex",
-                    gap: "12px"
-                  }}
-                >
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Arduino Uno</h3>
+                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>8-BIT AVR RISC</p>
                   <button
-                    onClick={() => navigate("/adventure")}
-                    className="student-db-sidebar__sim-btn"
-                    style={{
-                      backgroundColor: "#10b981",
-                      padding: "10px 20px"
-                    }}
+                    className="card-btn-blue"
+                    onClick={() => navigate("/adventure?journey=arduino")}
                   >
-                    🚀 Enter Learning Map
-                  </button>
-                  <button
-                    onClick={() => navigate("/components")}
-                    className="student-db-rosters__join-btn"
-                    style={{ margin: 0 }}
-                  >
-                    🧰 View My Unlocked Components
+                    Enter World
                   </button>
                 </div>
+
+                {/* CARD 2: Raspberry Pi Pico */}
+                <div className="campaign-card">
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: '800',
+                      color: '#2563eb',
+                      backgroundColor: 'rgba(37,99,235,0.08)',
+                      border: '1px solid rgba(37,99,235,0.2)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                    }}>[ CAMPAIGN: UNLOCKED ]</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: ARM-M0</span>
+                  </div>
+                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                    <Layers size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
+                  </div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Raspberry Pi Pico</h3>
+                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>DUAL-CORE ARM CORTEX-M0+</p>
+                  <button
+                    className="card-btn-light-blue"
+                    onClick={() => setInfo("Raspberry Pi Pico campaign is coming soon!")}
+                  >
+                    Enter World
+                  </button>
+                </div>
+
+                {/* CARD 3: ESP32 */}
+                <div className="campaign-card">
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: '800',
+                      color: '#f59e0b',
+                      backgroundColor: 'rgba(245,158,11,0.08)',
+                      border: '1px solid rgba(245,158,11,0.2)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                    }}>[ SYNC REQUIRED ]</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: XT-D32</span>
+                  </div>
+                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                    <Wifi size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
+                  </div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>ESP32</h3>
+                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT XTENSA DUAL-CORE</p>
+                  <button
+                    className="card-btn-outline"
+                    onClick={() => navigate("/adventure?journey=esp32")}
+                  >
+                    Enter World
+                  </button>
+                </div>
+
+                {/* CARD 4: STM32 */}
+                <div className="campaign-card" style={{ overflow: 'hidden' }}>
+                  {/* Lock Overlay */}
+                  <div className="locked-overlay">
+                    <div className="locked-badge">
+                      <Lock size={12} style={{ marginRight: 6 }} />
+                      EXPERT TIER LOCKED
+                    </div>
+                  </div>
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: '800',
+                      color: 'var(--text3)',
+                      backgroundColor: 'var(--bg3)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                    }}>[ EXPERT TIER LOCKED ]</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: ARM-M4</span>
+                  </div>
+                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                    <Cpu size={56} style={{ color: 'var(--text3)', opacity: 0.4 }} />
+                  </div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text3)', margin: '0 0 4px 0' }}>STM32</h3>
+                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text3)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT ARM CORTEX-M4</p>
+                  <button
+                    className="card-btn-outline"
+                    style={{ color: 'var(--text3)', borderColor: 'var(--border)', cursor: 'not-allowed' }}
+                    disabled
+                  >
+                    LOCKED
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Info Footer */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '24px',
+                marginTop: '30px',
+                paddingTop: '20px',
+                borderTop: '1px dashed var(--border)',
+              }}>
+                <span style={{
+                  fontSize: '9px',
+                  fontWeight: '800',
+                  color: 'var(--text2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  letterSpacing: '0.05em',
+                  fontFamily: 'monospace',
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3b82f6' }} />
+                  LATENCY: 14MS
+                </span>
+                <span style={{
+                  fontSize: '9px',
+                  fontWeight: '800',
+                  color: 'var(--text2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  letterSpacing: '0.05em',
+                  fontFamily: 'monospace',
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  SIM-CODE: STABLE
+                </span>
               </div>
             </section>
           </main>

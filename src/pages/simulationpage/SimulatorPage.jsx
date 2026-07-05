@@ -13304,6 +13304,7 @@ loadDemoProject();
           handleGamificationSubmit={handleGamificationSubmit}
           lockToast={lockToast}
           wireStart={wireStart}
+          userRole={user?.role}
         />
         </>)}
 
@@ -13898,7 +13899,7 @@ loadDemoProject();
             assessmentMode={assessmentMode}
           />
 
-          {gamificationMode && gamPanelOpen && gamProject && (
+          {gamificationMode && gamPanelOpen && gamProject && user?.role !== 'user' && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}

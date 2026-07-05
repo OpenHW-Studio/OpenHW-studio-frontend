@@ -129,9 +129,9 @@ export default function LandingPage() {
           🚀 Open Source Hardware Simulation Platform
         </div>
         <h1 className="hero-title">
-          Build. Simulate.
+          Code. Simulate.
           <br />
-          <span className="gradient-text">Learn Electronics.</span>
+          <span className="gradient-text">Learn. Deploy.</span>
         </h1>
         <p className="hero-subtitle">
           A browser-based embedded systems simulator with gamified learning,

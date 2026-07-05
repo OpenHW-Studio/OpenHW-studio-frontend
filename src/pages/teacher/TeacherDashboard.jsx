@@ -300,27 +300,17 @@ export default function TeacherDashboard() {
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
             <img
-              src="/logo-Photoroom.png"
+              src="/logo-cropped.png"
               alt="OpenHW Studio"
-              style={{ height: '50px', objectFit: 'contain' }}
+              style={{ height: '65px', width: '130px', objectFit: 'contain' }}
             />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button className="student-db-header__nav-link is-active">Workbench</button>
-          <button onClick={() => navigate('/simulator')} className="student-db-header__nav-link">
-            Simulation
-          </button>
-          <button onClick={() => navigate('/teacher/project-bank')} className="student-db-header__nav-link">
-            Project Bank
-          </button>
-        </nav>
+
 
         <div className="student-db-header__right">
-          <button className="student-db-header__icon-btn" title="Settings">
-            <Settings size={16} />
-          </button>
+
           <button className="student-db-header__icon-btn" title="Notifications">
             <Bell size={16} />
           </button>
@@ -402,7 +392,7 @@ export default function TeacherDashboard() {
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
               <a
-                href="https://openhwgroup.org"
+                href="https://openhw-studio.fossee.in/docs/"
                 target="_blank"
                 rel="noreferrer"
                 className="student-db-sidebar__link"
@@ -410,10 +400,7 @@ export default function TeacherDashboard() {
                 <FileText size={16} />
                 Docs
               </a>
-              <button className="student-db-sidebar__link">
-                <HelpCircle size={16} />
-                Support
-              </button>
+
               <button
                 onClick={handleLogout}
                 className="student-db-sidebar__link"
