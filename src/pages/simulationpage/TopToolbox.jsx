@@ -826,41 +826,7 @@ function TopToolboxInternal(props) {
           </Btn>
         )}
 
-        {/* Code / Blocks toggle */}
-        <div
-          onClick={() => setUseBlocklyCode(!useBlocklyCode)}
-          title={useBlocklyCode ? 'Currently running Blocks — click to switch to Code' : 'Currently running Code — click to switch to Blocks'}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0,
-            borderRadius: 8,
-            border: '1px solid var(--border)',
-            overflow: 'hidden',
-            cursor: 'pointer',
-            flexShrink: 0,
-            fontSize: 12,
-            fontWeight: 700,
-            userSelect: 'none',
-          }}
-        >
-          <div style={{
-            padding: '5px 11px',
-            background: !useBlocklyCode ? 'var(--accent)' : 'transparent',
-            color: !useBlocklyCode ? '#000' : 'var(--text3)',
-            transition: 'all 0.15s',
-          }}>
-            &lt;/&gt; Code
-          </div>
-          <div style={{
-            padding: '5px 11px',
-            background: useBlocklyCode ? 'var(--accent)' : 'transparent',
-            color: useBlocklyCode ? '#000' : 'var(--text3)',
-            transition: 'all 0.15s',
-          }}>
-            ⬡ Blocks
-          </div>
-        </div>
+
 
 
         {assessmentMode && user?.role !== 'user' && (

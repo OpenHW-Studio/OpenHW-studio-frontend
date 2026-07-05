@@ -1,4 +1,3 @@
-
 import { PROJECT_DATA, getOpenhwType } from './ProjectData';
 
 export const PROJECTS = [
@@ -2262,3 +2261,4 @@ export function getProjectRewardComponents(projectSlug) {
 export function getLockedProjects(completedProjects = []) {
   return PROJECTS.filter(p => getProjectStatus(p.slug, completedProjects) === 'locked');
 }
+
