@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu } from "lucide-react";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu, FileText, LogOut } from "lucide-react";
+import { useAuth } from '../context/AuthContext';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from "./simulationpage/components/SerialMonitor";
 
 const SLUG_MAP = {
@@ -53,6 +54,12 @@ export default function ProjectGuidePage() {
   const { projectName = "" } = useParams();
   const [searchParams] = useSearchParams();
   const classId = searchParams.get('classId');
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   useEffect(() => {
     if (projectName) {
@@ -250,6 +257,45 @@ export default function ProjectGuidePage() {
                 {project.title}
               </div>
             </div>
+            <a
+              href="https://openhw-studio.fossee.in/docs/"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: '#94a3b8',
+                padding: '6px 12px', borderRadius: 8,
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                textDecoration: 'none',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+            >
+              <FileText size={12} strokeWidth={2.5} />
+              <span>Docs</span>
+            </a>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'rgba(239,68,68,0.15)',
+                border: '1px solid rgba(239,68,68,0.25)',
+                color: '#f87171',
+                padding: '6px 12px', borderRadius: 8,
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; }}
+            >
+              <LogOut size={12} strokeWidth={2.5} />
+              <span>Sign Out</span>
+            </button>
+
             <button
               onClick={() => {
                 setSerialOpen(v => {

@@ -116,7 +116,7 @@ export default function StudentProfilePage() {
     const randomStyleIdx = Math.floor(Math.random() * STYLE_PRESETS.length)
     const randSeed = "rand-" + Math.random().toString(36).substring(2, 9)
     const newStyle = STYLE_PRESETS[randomStyleIdx].id
-    
+
     setStyleIndex(randomStyleIdx)
     setAvatarStyle(newStyle)
     setAvatarSeed(randSeed)
@@ -235,7 +235,7 @@ export default function StudentProfilePage() {
     setForm(buildFormState(user))
     setError('')
     setIsEditOpen(true)
-    
+
     const parsed = parseAvatarUrl(user?.image)
     if (parsed) {
       setAvatarStyle(parsed.style)
@@ -296,34 +296,17 @@ export default function StudentProfilePage() {
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
             <img
-              src="/logo-Photoroom.png"
+              src="/logo-cropped.png"
               alt="OpenHW Studio"
-              style={{ height: "50px", objectFit: "contain" }}
+              style={{ height: "65px", width: "130px", objectFit: "contain" }}
             />
           </Link>
         </div>
 
-        <nav className="student-db-header__nav">
-          <button
-            onClick={() => navigate("/student/dashboard")}
-            className="student-db-header__nav-link"
-          >
-            Workbench
-          </button>
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__nav-link"
-          >
-            Simulation
-          </button>
-          <button className="student-db-header__nav-link">Telemetry</button>
-          <button className="student-db-header__nav-link">Hardware</button>
-        </nav>
+
 
         <div className="student-db-header__right" style={{ position: "relative" }}>
-          <button className="student-db-header__icon-btn" title="Settings">
-            <Settings className="w-4 h-4" />
-          </button>
+
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="student-db-header__icon-btn"
@@ -389,7 +372,7 @@ export default function StudentProfilePage() {
                   <span style={{ fontWeight: 800, fontSize: "14px", color: "#0f172a" }}>Notifications</span>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>{allNotifications.length} new</span>
                 </div>
-                
+
                 <div style={{ overflowY: "auto", flex: 1 }}>
                   {allNotifications.length === 0 ? (
                     <div style={{ padding: "32px 16px", textAlign: "center", color: "#64748b" }}>
@@ -428,7 +411,7 @@ export default function StudentProfilePage() {
                         }}>
                           {n.type === "announcement" ? <Megaphone className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
                         </div>
-                        
+
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
                           <span style={{ fontSize: "10px", fontWeight: 800, color: "#64748b", letterSpacing: "0.02em" }}>
                             {n.classroomName.toUpperCase()} · {n.type.toUpperCase()}
@@ -460,12 +443,7 @@ export default function StudentProfilePage() {
             </>
           )}
 
-          <button
-            onClick={() => navigate("/simulator")}
-            className="student-db-header__deploy-btn"
-          >
-            Deploy
-          </button>
+
           <div
             onClick={() => navigate("/student/profile")}
             className="student-db-header__avatar is-active"
@@ -530,7 +508,7 @@ export default function StudentProfilePage() {
           <div className="student-db-sidebar__bottom">
             <nav className="student-db-sidebar__nav">
               <a
-                href="https://openhwgroup.org"
+                href="https://openhw-studio.fossee.in/docs/"
                 target="_blank"
                 rel="noreferrer"
                 className="student-db-sidebar__link"
@@ -538,15 +516,7 @@ export default function StudentProfilePage() {
                 <FileText className="w-4 h-4" />
                 Docs
               </a>
-              <button
-                onClick={() =>
-                  alert("Support module loading... Node ping stable.")
-                }
-                className="student-db-sidebar__link"
-              >
-                <HelpCircle className="w-4 h-4" />
-                Support
-              </button>
+
               <button
                 onClick={handleLogout}
                 className="student-db-sidebar__link text-red-600 hover:bg-red-50"
@@ -755,7 +725,7 @@ export default function StudentProfilePage() {
                         <span>ONLINE</span>
                       </span>
                     </div>
-                    
+
                     <div className="hardware-card__preview-area">
                       <img
                         src={`https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${avatarSeed}`}
@@ -766,7 +736,7 @@ export default function StudentProfilePage() {
                         <Cpu className="w-4 h-4 text-orange-600 animate-pulse" />
                       </div>
                     </div>
-                    
+
                     <div className="hardware-card__footer">
                       <span>ID: READY</span>
                       <span>V.1.0.4</span>
@@ -782,7 +752,7 @@ export default function StudentProfilePage() {
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    
+
                     <div className="hardware-tabs-slider">
                       <button
                         type="button"

@@ -220,6 +220,10 @@ export default function UserLoginPage() {
                 [ GO TO CLASSROOM LOGIN ]
               </button>
             </div>
+
+            <p className="hardware-panel__footer" style={{ marginTop: "20px" }}>
+              Don't have a user account? <Link to="/signup">Create one</Link>
+            </p>
           </div>
         </section>
       </div>

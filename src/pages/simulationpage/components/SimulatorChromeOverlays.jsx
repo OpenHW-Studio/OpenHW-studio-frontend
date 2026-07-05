@@ -19,6 +19,7 @@ function SimulatorChromeOverlaysBase({
   handleGamificationSubmit,
   lockToast,
   wireStart,
+  userRole,
 }) {
   return (
     <>
@@ -87,7 +88,7 @@ function SimulatorChromeOverlaysBase({
         </div>
       )}
 
-      {gamificationMode && gamProject && (
+      {gamificationMode && gamProject && userRole !== 'user' && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
           background: 'var(--bg2)', borderBottom: `1px solid var(--border)`,
