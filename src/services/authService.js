@@ -5,6 +5,23 @@
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 
+// ─── User Profile Normalisation ────────────────────────────────────────────
+
+/**
+ * Standardises field aliases on a raw user object in-place.
+ * The backend may return `school` instead of `college`, or
+ * `classStandard` instead of `semester`. This ensures the rest
+ * of the app always reads the same field names.
+ * @param {object|null} user
+ * @returns {object|null}
+ */
+export const normalizeUser = (user) => {
+  if (!user) return user;
+  user.college = user.school || user.college;
+  user.semester = user.classStandard || user.semester;
+  return user;
+};
+
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
 
 export const saveToken = (token) => localStorage.setItem('openhw_token', token);
@@ -14,11 +31,14 @@ export const getToken = () => {
 };
 export const removeToken = () => localStorage.removeItem('openhw_token');
 
-export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user));
+export const saveUser = (user) => {
+  localStorage.setItem('openhw_user', JSON.stringify(normalizeUser(user)));
+};
 export const getUser = () => {
   try {
-    const user = localStorage.getItem('openhw_user');
-    return user ? JSON.parse(user) : null;
+    const userStr = localStorage.getItem('openhw_user');
+    if (!userStr) return null;
+    return normalizeUser(JSON.parse(userStr));
   } catch (e) {
     return null;
   }
@@ -176,6 +196,8 @@ export const fetchProfile = async () => {
 
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
+  
+  if (data.user) normalizeUser(data.user);
   
   return data;
 };
