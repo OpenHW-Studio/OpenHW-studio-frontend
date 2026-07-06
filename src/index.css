@@ -11783,8 +11783,8 @@ body {
 /* ─── HARDWARE TERMINAL AUTH REDESIGN ─── */
 .auth-hardware-screen {
   width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-y: auto;
   display: flex;
   background-color: #0d1527;
   padding: 0;
@@ -11794,9 +11794,9 @@ body {
 
 .auth-hardware-frame {
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
   background-color: #e9eff4;
-  overflow: hidden;
+  overflow: visible;
   display: grid;
   grid-template-columns: 1fr minmax(450px, 640px);
   box-shadow: none;
@@ -11825,14 +11825,23 @@ body {
   border-right: 2px solid #1e293b;
   padding: 40px;
   width: 100%;
-  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 30px;
-  position: relative;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge */
+}
+
+.auth-hardware-showcase::-webkit-scrollbar {
+  display: none;                /* Chrome/Safari */
 }
 
 /* Live Profile Preview Card */
@@ -12038,18 +12047,14 @@ body {
   background-color: #e9eff4;
   padding: 60px 40px;
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   position: relative;
-  overflow-y: auto;
-  scrollbar-width: none;
-  /* Firefox */
-  -ms-overflow-style: none;
-  /* IE/Edge */
+  overflow-y: visible;
 }
 
 .auth-hardware-panel::-webkit-scrollbar {
@@ -12754,6 +12759,7 @@ body {
   display: flex;
   min-height: calc(100vh - 70px);
   overflow: visible;
+  margin-left: 240px; /* offset for fixed sidebar */
 }
 
 .student-db-sidebar {
@@ -13040,7 +13046,6 @@ body {
 /* Right Main Area: Active Rosters Blueprint Grid */
 .student-db-content {
   flex: 1;
-  margin-left: 240px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
