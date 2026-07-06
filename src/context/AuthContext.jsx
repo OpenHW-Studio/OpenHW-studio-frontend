@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import {
   getUser, getToken, saveUser, saveToken, logout as logoutService,
   getAdminUser, getAdminToken, saveAdminUser, saveAdminToken, removeAdminToken, removeAdminUser,
-  fetchProfile
+  fetchProfile, normalizeUser
 } from '../services/authService.js'
 
 const AuthContext = createContext(null)
@@ -45,20 +45,17 @@ export function AuthProvider({ children }) {
    * @param {object} userProfile - { id, name, email, role, points, coins, level }
    */
   const login = (jwtToken, userProfile, isAdminPortal = false) => {
-    if (userProfile) {
-      userProfile.college = userProfile.school || userProfile.college;
-      userProfile.semester = userProfile.classStandard || userProfile.semester;
-    }
+    const profile = normalizeUser(userProfile);
     if (isAdminPortal) {
       saveAdminToken(jwtToken)
-      saveAdminUser(userProfile)
+      saveAdminUser(profile)
       setAdminToken(jwtToken)
-      setAdminUser(userProfile)
+      setAdminUser(profile)
     } else {
       saveToken(jwtToken)
-      saveUser(userProfile)
+      saveUser(profile)
       setToken(jwtToken)
-      setUser(userProfile)
+      setUser(profile)
     }
   }
 
@@ -69,12 +66,9 @@ export function AuthProvider({ children }) {
   }
 
   const updateUserSession = (userProfile) => {
-    if (userProfile) {
-      userProfile.college = userProfile.school || userProfile.college;
-      userProfile.semester = userProfile.classStandard || userProfile.semester;
-    }
-    saveUser(userProfile)
-    setUser(userProfile)
+    const profile = normalizeUser(userProfile);
+    saveUser(profile)
+    setUser(profile)
   }
 
   const adminLogout = () => {
