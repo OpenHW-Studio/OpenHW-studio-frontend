@@ -11331,7 +11331,7 @@ loadDemoProject();
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:transparent;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
         );
         idoc.close();
 
@@ -11556,7 +11556,7 @@ loadDemoProject();
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: null,
+          backgroundColor: "#ffffff",
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11614,6 +11614,8 @@ loadDemoProject();
       out.height = CH;
       const ctx = out.getContext("2d");
 
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
       // Branding logo (bottom-right)
@@ -13309,7 +13311,6 @@ loadDemoProject();
           handleGamificationSubmit={handleGamificationSubmit}
           lockToast={lockToast}
           wireStart={wireStart}
-          userRole={user?.role}
         />
         </>)}
 
@@ -13904,7 +13905,7 @@ loadDemoProject();
             assessmentMode={assessmentMode}
           />
 
-          {gamificationMode && gamPanelOpen && gamProject && user?.role !== 'user' && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}

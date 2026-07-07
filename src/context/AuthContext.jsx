@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import {
   getUser, getToken, saveUser, saveToken, logout as logoutService,
   getAdminUser, getAdminToken, saveAdminUser, saveAdminToken, removeAdminToken, removeAdminUser,
-  fetchProfile, normalizeUser
+  fetchProfile
 } from '../services/authService.js'
 
 const AuthContext = createContext(null)
@@ -45,17 +45,16 @@ export function AuthProvider({ children }) {
    * @param {object} userProfile - { id, name, email, role, points, coins, level }
    */
   const login = (jwtToken, userProfile, isAdminPortal = false) => {
-    const profile = normalizeUser(userProfile);
     if (isAdminPortal) {
       saveAdminToken(jwtToken)
-      saveAdminUser(profile)
+      saveAdminUser(userProfile)
       setAdminToken(jwtToken)
-      setAdminUser(profile)
+      setAdminUser(userProfile)
     } else {
       saveToken(jwtToken)
-      saveUser(profile)
+      saveUser(userProfile)
       setToken(jwtToken)
-      setUser(profile)
+      setUser(userProfile)
     }
   }
 
@@ -66,9 +65,8 @@ export function AuthProvider({ children }) {
   }
 
   const updateUserSession = (userProfile) => {
-    const profile = normalizeUser(userProfile);
-    saveUser(profile)
-    setUser(profile)
+    saveUser(userProfile)
+    setUser(userProfile)
   }
 
   const adminLogout = () => {

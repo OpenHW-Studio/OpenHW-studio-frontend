@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
           <Link to="/signin" className="auth-panel__back">Back to Sign In</Link>
           
           <div className="auth-panel__brand">
-            <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
+            <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
           </div>
 
           <header className="auth-panel__header">

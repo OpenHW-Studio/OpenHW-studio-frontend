@@ -829,7 +829,7 @@ function TopToolboxInternal(props) {
 
 
 
-        {assessmentMode && user?.role !== 'user' && (
+        {assessmentMode && (
           <Btn
             color="var(--accent)"
             disabled={isSubmittingAssessment || !assessmentProjectName}
