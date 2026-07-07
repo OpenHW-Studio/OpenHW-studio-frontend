@@ -1,19 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import {
-  Plus, Settings, Bell, GraduationCap, Layers, FileText, HelpCircle,
-  FolderKanban, ArrowLeft, Search, Trash2, ExternalLink, Cpu,
-  BookOpen, Share2, Filter,
-} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
-import {
-  getMyProjectBank,
-  getSharedProjectBank,
-  deleteProjectBankEntry,
-} from "../../services/projectBankService";
+import ClassroomSidebar from "../../components/common/ClassroomSidebar.jsx";
+import { getMyProjectBank, getSharedProjectBank, deleteProjectBankEntry } from "../../services/projectBankService";
+import { sidebarLinks as teacherSidebarLinks } from "../../components/teacher/class-detail/helpers.js";
 import { getDifficultyDisplay } from "../../services/gamification/ProjectsConfig.js";
 
-/* ─── Helpers ─────────────────────────────────────────────────── */
 function getProjectBoardType(project) {
   const components = project.components || [];
   const boardTypes = ["arduino-uno", "arduino-nano", "arduino-mega", "pico", "pico-w"];
@@ -26,20 +18,9 @@ function getProjectBoardType(project) {
   return "unknown";
 }
 
-const BOARD_COLORS = {
-  "arduino-uno": { bg: "rgba(0, 128, 0, 0.1)", color: "#16a34a" },
-  "arduino-nano": { bg: "rgba(0, 128, 0, 0.1)", color: "#16a34a" },
-  "arduino-mega": { bg: "rgba(37, 99, 235, 0.1)", color: "#2563eb" },
-  "pico": { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
-  "pico-w": { bg: "rgba(124, 58, 237, 0.1)", color: "#7c3aed" },
-  "unknown": { bg: "rgba(100, 116, 139, 0.1)", color: "#64748b" },
-};
-
-/* ─── Component ───────────────────────────────────────────────── */
 export default function TeacherProjectBankPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-
   const [view, setView] = useState("my");
   const [myProjects, setMyProjects] = useState([]);
   const [sharedProjects, setSharedProjects] = useState([]);
@@ -47,8 +28,6 @@ export default function TeacherProjectBankPage() {
   const [error, setError] = useState("");
   const [boardFilter, setBoardFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-
-  const initials = user?.name ? user.name.slice(0, 2).toUpperCase() : "TC";
 
   const load = async () => {
     setLoading(true);
@@ -68,7 +47,9 @@ export default function TeacherProjectBankPage() {
     }
   };
 
-  useEffect(() => { load(); }, [view]);
+  useEffect(() => {
+    load();
+  }, [view]);
 
   const current = view === "my" ? myProjects : sharedProjects;
 
@@ -83,11 +64,15 @@ export default function TeacherProjectBankPage() {
 
   const filtered = useMemo(() => {
     let list = current;
-    if (boardFilter !== "all") list = list.filter((p) => getProjectBoardType(p) === boardFilter);
+    if (boardFilter !== "all") {
+      list = list.filter((p) => getProjectBoardType(p) === boardFilter);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
-        (p) => (p.title || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q)
+        (p) =>
+          (p.title || "").toLowerCase().includes(q) ||
+          (p.description || "").toLowerCase().includes(q)
       );
     }
     return list;
@@ -112,301 +97,274 @@ export default function TeacherProjectBankPage() {
     navigate(`/teacher/project-bank/new?visibility=${encodeURIComponent(visibility)}`);
   };
 
-  /* ── Render ── */
   return (
-    <div className="student-db-layout">
-
-      {/* ── Top Header ── */}
-      <header className="student-db-header">
-        <div className="student-db-header__left">
-          <Link to="/" className="student-db-header__brand">
-            <img src="/logo-cropped.png" alt="OpenHW Studio" style={{ height: "65px", width: "130px", objectFit: "contain" }} />
-          </Link>
-        </div>
-
-
-        <div className="student-db-header__right">
-          <button className="student-db-header__icon-btn" title="Notifications"><Bell size={16} /></button>
-          <button onClick={handleCreateNew} className="student-db-header__deploy-btn">
-            + New Project
-          </button>
+    <div className="teacher-dashboard-page">
+      <ClassroomSidebar
+        links={teacherSidebarLinks.map((item) => ({
+          ...item,
+          isActive: item.key === "classes",
+          onClick: () => {
+            if (item.route) navigate(item.route);
+          },
+        }))}
+        user={user}
+        onLogout={() => {
+          logout();
+          navigate("/login");
+        }}
+        onProfileClick={() => navigate("/teacher/profile")}
+      />
+      <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
+        <section className="teacher-class-page teacher-class-page--shell">
           <div
-            onClick={() => navigate("/teacher/profile")}
-            className="student-db-header__avatar"
-            title="Teacher Profile"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 18,
+              flexWrap: "wrap",
+              gap: 12,
+            }}
           >
-            {user?.image ? <img src={user.image} alt={user?.name} /> : <span>{initials}</span>}
-          </div>
-        </div>
-      </header>
-
-      {/* ── Main Body ── */}
-      <div className="student-db-main-container">
-
-        {/* ── Left Sidebar ── */}
-        <aside className="student-db-sidebar">
-          <div className="student-db-sidebar__top">
-            <div className="student-db-profile-card">
-              <div className="student-db-profile-card__monogram">{initials}</div>
-              <div className="student-db-profile-card__info">
-                <span className="student-db-profile-card__title">{user?.name || "Teacher"}</span>
-                <span className="student-db-profile-card__sub">TEACHER · Authenticated</span>
-              </div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text)" }}>Project Bank</h1>
+              <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text2)" }}>
+                Browse, manage, and share project templates.
+              </p>
             </div>
-
-            <button
-              onClick={handleCreateNew}
-              className="student-db-sidebar__sim-btn"
-            >
-              <Plus size={16} />
-              New Project
-            </button>
-
-            <nav className="student-db-sidebar__nav">
+            <div style={{ display: "flex", gap: 8 }}>
               <button
-                onClick={() => navigate("/teacher/dashboard")}
-                className="student-db-sidebar__link"
+                type="button"
+                onClick={handleCreateNew}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: 13,
+                  transition: "all 0.15s ease",
+                }}
               >
-                <ArrowLeft size={16} /> Back to Dashboard
+                + New Project
               </button>
-              <button
-                onClick={() => setView("my")}
-                className={`student-db-sidebar__link ${view === "my" ? "is-active" : ""}`}
-              >
-                <FolderKanban size={16} /> My Projects
-              </button>
-              <button
-                onClick={() => setView("shared")}
-                className={`student-db-sidebar__link ${view === "shared" ? "is-active" : ""}`}
-              >
-                <Share2 size={16} /> Shared Projects
-              </button>
-              <button onClick={() => navigate("/simulator")} className="student-db-sidebar__link">
-                <Layers size={16} /> Simulator
-              </button>
-            </nav>
-          </div>
-
-          <div className="student-db-sidebar__bottom">
-            <nav className="student-db-sidebar__nav">
-              <a href="https://openhw-studio.fossee.in/docs/" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
-                <FileText size={16} /> Docs
-              </a>
-
-              <button
-                onClick={() => { logout(); navigate("/login"); }}
-                className="student-db-sidebar__link"
-                style={{ color: "#ef4444" }}
-              >
-                Sign Out
-              </button>
-            </nav>
-          </div>
-        </aside>
-
-        {/* ── Main Content ── */}
-        <main className="student-db-content">
-          <section className="student-db-rosters">
-
-            {/* Header */}
-            <header className="student-db-rosters__header">
-              <div className="student-db-rosters__title-area">
-                <h2>{view === "my" ? "My Project Bank" : "Shared Projects"}</h2>
-                <p>
-                  {view === "my"
-                    ? "Your personal collection of saved project templates."
-                    : "Publicly shared project templates from the community."}
-                </p>
-              </div>
-              <button onClick={handleCreateNew} className="student-db-rosters__join-btn">
-                <Plus size={14} />
-                NEW PROJECT
-              </button>
-            </header>
-
-            {/* Error */}
-            {error && (
-              <div style={{
-                color: "#ef4444", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                borderRadius: "10px", padding: "12px 16px", fontSize: "13px",
-              }}>
-                {error}
-              </div>
-            )}
-
-            {/* Filters row */}
-            <div className="project-bank-filters">
-              <div className="project-bank-filters__search">
-                <Search size={14} className="project-bank-filters__search-icon" />
-                <input
-                  type="text"
-                  placeholder="Search projects..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="project-bank-filters__input"
-                />
-              </div>
-
-              <div className="project-bank-filters__board">
-                <Filter size={14} style={{ color: "#64748b", flexShrink: 0 }} />
-                <select
-                  value={boardFilter}
-                  onChange={(e) => setBoardFilter(e.target.value)}
-                  className="project-bank-filters__select"
+              {["my", "shared"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setView(t)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: view === t ? "var(--accent)" : "transparent",
+                    color: view === t ? "#fff" : "var(--text2)",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    transition: "all 0.15s ease",
+                  }}
                 >
-                  <option value="all">All Boards</option>
-                  {boards.map((b) => (
-                    <option key={b} value={b}>{b.toUpperCase()}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* View toggle */}
-              <div className="project-bank-filters__toggle">
-                {["my", "shared"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setView(t)}
-                    className={`project-bank-tab-btn ${view === t ? "is-active" : ""}`}
-                  >
-                    {t === "my" ? "My Projects" : "Shared"}
-                  </button>
-                ))}
-              </div>
+                  {t === "my" ? "My Projects" : "Shared Projects"}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Content */}
-            {loading ? (
-              <div className="project-bank-loading">
-                <div className="project-bank-loading__spinner" />
-                <span>LOADING PROJECT REGISTRY...</span>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="user-project-empty-state">
-                <div className="user-project-empty-state__icon-wrap">
-                  <FolderKanban size={32} />
-                </div>
-                <h4 className="user-project-empty-state__title">No Projects Found</h4>
-                <p className="user-project-empty-state__desc">
-                  {view === "my"
-                    ? "Create your first project template to get started."
-                    : "No shared projects match your search."}
-                </p>
-                {view === "my" && (
-                  <button onClick={handleCreateNew} className="student-db-sidebar__sim-btn" style={{ display: "inline-flex", margin: "0 auto" }}>
-                    + Create New Project
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="project-bank-grid">
-                {filtered.map((project) => {
-                  const board = getProjectBoardType(project);
-                  const boardStyle = BOARD_COLORS[board] || BOARD_COLORS["unknown"];
-                  return (
+          {error && (
+            <div
+              style={{
+                color: "#f87171",
+                padding: "10px 14px",
+                background: "rgba(239,68,68,.12)",
+                borderRadius: 10,
+                marginBottom: 14,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <select
+              value={boardFilter}
+              onChange={(e) => setBoardFilter(e.target.value)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg2)",
+                color: "var(--text)",
+                fontSize: 13,
+              }}
+            >
+              <option value="all">All Boards</option>
+              {boards.map((b) => (
+                <option key={b} value={b}>
+                  {b.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: 180,
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg2)",
+                color: "var(--text)",
+                fontSize: 13,
+              }}
+            />
+          </div>
+
+          {loading ? (
+            <p style={{ color: "var(--text2)" }}>Loading...</p>
+          ) : filtered.length === 0 ? (
+            <p style={{ color: "var(--text2)" }}>No projects found.</p>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              }}
+            >
+              {filtered.map((project) => {
+                const board = getProjectBoardType(project);
+                return (
+                  <div
+                    key={project._id || project.slug}
+                    draggable="true"
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/json", JSON.stringify(project));
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    style={{
+                      border: "1px solid var(--border)",
+                      borderRadius: 14,
+                      padding: 18,
+                      background: "var(--card)",
+                      cursor: "grab",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                  >
                     <div
-                      key={project._id || project.slug}
-                      draggable="true"
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("application/json", JSON.stringify(project));
-                        e.dataTransfer.effectAllowed = "copy";
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 8,
+                        marginBottom: 8,
                       }}
-                      className="project-bank-card"
                     >
-                      {/* Card header stripe */}
-                      <div className="project-bank-card__stripe" />
-
-                      {/* Title + board badge */}
-                      <div className="project-bank-card__head">
-                        <div className="project-bank-card__icon-wrap">
-                          <Cpu size={18} />
-                        </div>
+                      <strong style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+                        {project.title || project.slug}
+                      </strong>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                         <span
-                          className="project-bank-card__board-badge"
-                          style={{ background: boardStyle.bg, color: boardStyle.color }}
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: "rgba(56,189,248,0.15)",
+                            color: "var(--accent)",
+                            whiteSpace: "nowrap",
+                          }}
                         >
-                          {board === "unknown" ? "BOARD" : board.toUpperCase()}
+                          {board}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: `${getDifficultyDisplay(project.difficulty).bg}`,
+                            color: getDifficultyDisplay(project.difficulty).color,
+                            border: `1px solid ${getDifficultyDisplay(project.difficulty).color}40`,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {getDifficultyDisplay(project.difficulty).label}
                         </span>
                       </div>
-
-                      <div className="project-bank-card__body">
-                        <h4 className="project-bank-card__title">
-                          {project.title || project.slug}
-                        </h4>
-                        <p className="project-bank-card__desc">
-                          {project.description || "No description provided."}
-                        </p>
-
-                        {/* Meta tags */}
-                        <div className="project-bank-card__tags">
-                          {project.nodes?.length > 0 && (
-                            <span className="project-bank-card__tag">
-                              <BookOpen size={11} /> {project.nodes.length} Nodes
-                            </span>
-                          )}
-                          {project.xpReward && (
-                            <span className="project-bank-card__tag project-bank-card__tag--xp">
-                              {project.xpReward} XP
-                            </span>
-                          )}
-                          {project.difficulty && (
-                            <span
-                              className="project-bank-card__tag"
-                              style={{
-                                background: getDifficultyDisplay(project.difficulty).bg,
-                                color: getDifficultyDisplay(project.difficulty).color,
-                                border: `1px solid ${getDifficultyDisplay(project.difficulty).color}40`,
-                              }}
-                            >
-                              {getDifficultyDisplay(project.difficulty).label}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="project-bank-card__footer">
+                    </div>
+                    <p
+                      style={{
+                        fontSize: 13,
+                        color: "var(--text2)",
+                        margin: "0 0 12px",
+                        lineHeight: 1.5,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {project.description || "No description"}
+                    </p>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditor(project)}
+                        style={{
+                          padding: "7px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          background: "transparent",
+                          color: "var(--text)",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        Open
+                      </button>
+                      {view === "my" && (
                         <button
                           type="button"
-                          onClick={() => handleOpenEditor(project)}
-                          className="project-bank-card__btn-open"
+                          onClick={() => handleDelete(project)}
+                          style={{
+                            padding: "7px 12px",
+                            borderRadius: 8,
+                            border: "1px solid rgba(239,68,68,0.3)",
+                            background: "rgba(239,68,68,0.08)",
+                            color: "#f87171",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            fontSize: 12,
+                          }}
                         >
-                          <ExternalLink size={13} />
-                          Open Editor
+                          Delete
                         </button>
-                        {view === "my" && (
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(project)}
-                            className="project-bank-card__btn-delete"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  );
-                })}
-
-                {/* Create new dotted card */}
-                {view === "my" && (
-                  <div onClick={handleCreateNew} className="project-bank-card project-bank-card--new">
-                    <div className="roster-card--join__circle">
-                      <Plus size={22} />
-                    </div>
-                    <h4 className="roster-card--join__title">New Project Template</h4>
-                    <p className="roster-card--join__desc">
-                      Create a reusable project template for your adventure map.
-                    </p>
                   </div>
-                )}
-              </div>
-            )}
-          </section>
-        </main>
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

@@ -16,7 +16,6 @@ import { GamificationToasts } from "./services/gamification/Gamificationpanel.js
 // Pages
 import LandingPage from "./pages/LandingPage.jsx";
 import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
-import UserSignupPage from "./pages/auth/UserSignupPage.jsx";
 import RoleSelectPage from "./pages/RoleSelectPage.jsx";
 import ProjectTheoryPage from "./pages/ProjectTheoryPage.jsx";
 import ProjectQuizPage from "./pages/ProjectQuizPage.jsx";
@@ -31,7 +30,6 @@ import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
 import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
 import UserDashboard from "./pages/user/UserDashboard.jsx";
-import UserProfilePage from "./pages/user/UserProfilePage.jsx";
 import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
 import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
@@ -166,74 +164,6 @@ const MaintenanceGuard = ({ children }) => {
   return children;
 };
 
-function ThemeToggleButton() {
-  const location = useLocation();
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'dark');
-  const [isMobile, setIsMobile] = React.useState(() => window.innerWidth <= 768);
-
-  React.useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  React.useEffect(() => {
-    const observer = new MutationObserver(() => {
-      const nt = document.documentElement.getAttribute('data-theme') || 'dark';
-      if (nt !== theme) {
-        setTheme(nt);
-      }
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, [theme]);
-
-  // Hide on simulator or demo/guided pages to prevent overlay with simulation controls
-  const isSimulator = location.pathname.includes('/simulator') ||
-                      location.pathname.includes('/demo') ||
-                      location.pathname.includes('/guided');
-  if (isSimulator) return null;
-
-  return (
-    <button
-      onClick={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
-      style={{
-        position: 'fixed',
-        bottom: isMobile ? '84px' : '24px',
-        right: '24px',
-        zIndex: 9999,
-        width: '46px',
-        height: '46px',
-        borderRadius: '50%',
-        border: 'none',
-        background: theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        color: theme === 'dark' ? '#fbbf24' : '#4f46e5',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.05)',
-      }}
-      title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-    >
-      {theme === 'dark' ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/></svg>
-      ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-      )}
-    </button>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -243,7 +173,6 @@ export default function App() {
             <MaintenanceGuard>
               {/* Global toast notifications (level-up, badge earned, XP) */}
               <GamificationToasts />
-              <ThemeToggleButton />
 
               <React.Suspense
                 fallback={
@@ -269,7 +198,10 @@ export default function App() {
                   path="/signin"
                   element={<Navigate to="/classroom/signin" replace />}
                 />
-                <Route path="/signup" element={<UserSignupPage />} />
+                <Route
+                  path="/signup"
+                  element={<Navigate to="/classroom/signup" replace />}
+                />
                 <Route path="/classroom/signin" element={<SigninPage />} />
                 <Route path="/classroom/signup" element={<SignupPage />} />
                 <Route
@@ -386,10 +318,7 @@ export default function App() {
                 <Route
                   path="/:projectName/demo"
                   element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
-                    />
+                    <SimulatorPage gamificationMode />
                   }
                 />
 
@@ -430,14 +359,6 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRole="user">
                       <UserDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/user/profile"
-                  element={
-                    <ProtectedRoute allowedRole="user">
-                      <UserProfilePage />
                     </ProtectedRoute>
                   }
                 />

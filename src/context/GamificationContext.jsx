@@ -32,7 +32,6 @@ const DEFAULT_STATE = {
   totalWiresDrawn: 0,
   totalSimulationsRun: 0,
   coins: 0,
-  gems: 0,
 };
 
 const GamificationContext = createContext(null);
@@ -48,7 +47,6 @@ const DEFAULT_CONTEXT = {
   totalWiresDrawn: 0,
   totalSimulationsRun: 0,
   coins: 0,
-  gems: 0,
   unlockedComponentTypes: [],
   currentLevelData: null,
   nextLevel: null,
@@ -170,8 +168,6 @@ export function GamificationProvider({ children }) {
               const backendState = apiData.state;
               if (backendState.xp > parsed.xp) parsed.xp = backendState.xp;
               if (backendState.currentLevel > parsed.currentLevel) parsed.currentLevel = backendState.currentLevel;
-              if (backendState.coins > parsed.coins) parsed.coins = backendState.coins;
-              if (backendState.gems > parsed.gems) parsed.gems = backendState.gems;
               
               if (backendState.completedProjects && backendState.completedProjects.length > 0) {
                 const mergedProjects = new Set([...parsed.completedProjects, ...backendState.completedProjects]);
@@ -220,20 +216,6 @@ export function GamificationProvider({ children }) {
     
     loadGamificationData();
   }, [storageKey, user]);
-
-  const saveImmediately = useCallback(async (currentState, currentUser) => {
-    try {
-      const u = currentUser || user;
-      if (u?.email && (u._id || u.id)) {
-        await saveUserGamificationState(u._id || u.id, currentState);
-        localStorage.setItem(storageKey, JSON.stringify(currentState));
-      } else {
-        localStorage.setItem(storageKey, JSON.stringify(currentState));
-      }
-    } catch (e) {
-      console.warn('Failed to save gamification data immediately:', e);
-    }
-  }, [user, storageKey]);
 
   // Save to MongoDB on state changes (debounced)
   useEffect(() => {
@@ -284,11 +266,6 @@ export function GamificationProvider({ children }) {
 const awardXP = useCallback((amount, reason = '') => {
      setState(prev => {
        const newXP = prev.xp + amount;
-       const coinGain = Math.round(amount * 0.2); // 20% of XP as coins
-       const gemGain = Math.round(amount * 0.05);  // 5% of XP as gems
-       const newCoins = (prev.coins || 0) + coinGain;
-       const newGems = (prev.gems || 0) + gemGain;
-
        let newLevel = prev.currentLevel;
        for (const lvl of LEVELS) {
          if (newXP >= lvl.xpRequired && lvl.id > newLevel) newLevel = lvl.id;
@@ -319,11 +296,9 @@ const awardXP = useCallback((amount, reason = '') => {
          }, 0);
        }
 
-       const nextState = { ...prev, xp: newXP, currentLevel: newLevel, coins: newCoins, gems: newGems };
-       setTimeout(() => saveImmediately(nextState, user), 0);
-       return nextState;
+       return { ...prev, xp: newXP, currentLevel: newLevel };
      });
-   }, [pushNotification, saveImmediately, user]);
+   }, [pushNotification]);
 
   // ── Unlock Component Types ─────────────────────────────────────────────────────
   const unlockComponentTypes = useCallback(async (typesToUnlock) => {
@@ -365,41 +340,38 @@ const awardXP = useCallback((amount, reason = '') => {
     });
   }, [user]);
 
-  const completeProject = useCallback((projectSlug, customXpReward = null, customBadge = null) => {
+  const completeProject = useCallback((projectSlug) => {
     setState(prev => {
       const alreadyDone = prev.completedProjects?.includes(projectSlug);
-      const project = PROJECTS.find(p => p.slug === projectSlug);
 
       if (alreadyDone) {
         // Re-submission: award 25% bonus XP
-        const baseReward = customXpReward ?? project?.xpReward ?? 100;
-        const bonus = Math.round(baseReward * 0.25);
+        const project = PROJECTS.find(p => p.slug === projectSlug);
+        const bonus = Math.round((project?.xpReward || 100) * 0.25);
         setTimeout(() => awardXP(bonus, 'Re-submission bonus'), 0);
         return prev;
       }
 
-      const xpGain = customXpReward ?? project?.xpReward ?? 100;
-      const badgeToAward = customBadge ?? project?.badge;
-      const coinGain = Math.round(xpGain * 0.5); // 50% of XP as coins
-      const gemGain = 5; // 5 gems per project completion
+      const project = PROJECTS.find(p => p.slug === projectSlug);
+      if (!project) return prev;
+
+      const xpGain = project.xpReward || 100;
       const newXP = prev.xp + xpGain;
-      const newCoins = (prev.coins || 0) + coinGain;
-      const newGems = (prev.gems || 0) + gemGain;
       const newBadges = [...prev.earnedBadges];
       const newCompletedProjects = [...(prev.completedProjects || []), projectSlug];
 
       // Award project badge
-      if (badgeToAward?.id && !newBadges.includes(badgeToAward.id)) {
-        newBadges.push(badgeToAward.id);
+      if (project.badge?.id && !newBadges.includes(project.badge.id)) {
+        newBadges.push(project.badge.id);
         setTimeout(() => {
           pushNotification({
             type: 'badge',
             title: 'Badge Earned! 🏅',
-            subtitle: badgeToAward.name,
-            description: badgeToAward.description,
-            icon: badgeToAward.icon,
-            rarity: badgeToAward.rarity,
-            color: project?.color || '#22c55e',
+            subtitle: project.badge.name,
+            description: project.badge.description,
+            icon: project.badge.icon,
+            rarity: project.badge.rarity,
+            color: project.color || '#22c55e',
             duration: 5500,
           });
         }, 300);
@@ -429,30 +401,25 @@ const awardXP = useCallback((amount, reason = '') => {
         pushNotification({
           type: 'xp',
           title: `+${xpGain} XP`,
-          subtitle: `${project?.title || projectSlug} completed! ✅`,
-          icon: project?.icon || '⚡',
+          subtitle: `${project.title} completed! ✅`,
+          icon: project.icon || '⚡',
           color: '#fbbf24',
           duration: 3000,
         });
       }, 0);
 
-      const nextState = {
+      return {
         ...prev,
         xp: newXP,
         currentLevel: newLevel,
         earnedBadges: newBadges,
         completedProjects: newCompletedProjects,
-        coins: newCoins,
-        gems: newGems,
-        completedLevels: prev.completedLevels.includes(project?.levelRequired)
+        completedLevels: prev.completedLevels.includes(project.levelRequired)
           ? prev.completedLevels
-          : [...prev.completedLevels, ...(project?.levelRequired ? [project.levelRequired] : [])],
+          : [...prev.completedLevels, ...(project.levelRequired ? [project.levelRequired] : [])],
       };
-      
-      setTimeout(() => saveImmediately(nextState, user), 0);
-      return nextState;
     });
-  }, [pushNotification, awardXP, saveImmediately, user]);
+  }, [pushNotification, awardXP]);
 
 const trackComponentPlaced = useCallback(() => {
      setState(prev => {
@@ -530,7 +497,6 @@ const trackComponentPlaced = useCallback(() => {
       totalWiresDrawn: state.totalWiresDrawn,
       totalSimulationsRun: state.totalSimulationsRun,
       coins: state.coins,
-      gems: state.gems,
       unlockedComponentTypes: state.unlockedComponentTypes,
       // Derived
       currentLevelData,

@@ -1,20 +1,21 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { loginUser } from "../../services/authService.js";
-import { Mail, Lock, Eye, EyeOff, Cpu, Users } from "lucide-react";
-import AuthLeftShowcase from "./AuthLeftShowcase.jsx";
+import { googleLogin, loginUser } from "../../services/authService.js";
+
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
 
 export default function SigninPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, role } = useAuth();
   const [selectedRole, setSelectedRole] = useState(
-    searchParams.get("role") || "student"
+    searchParams.get("role") || null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -46,10 +47,12 @@ export default function SigninPage() {
     try {
       const data = await loginUser({ ...formData, role: selectedRole });
       login(data.token, data.user);
-      
-      if (selectedRole === "teacher") navigate("/teacher/dashboard");
-      else if (selectedRole === "student") navigate("/student/dashboard");
-      else navigate("/user/dashboard");
+      const handleRedirect = () => {
+        if (selectedRole === "teacher") navigate("/teacher/dashboard");
+        else if (selectedRole === "student") navigate("/student/dashboard");
+        else navigate("/user/dashboard");
+      };
+      handleRedirect();
     } catch (err) {
       setError(err.message || "Invalid email or password.");
     } finally {
@@ -64,177 +67,141 @@ export default function SigninPage() {
     }
     localStorage.setItem("lastUsedLogin", "google");
     localStorage.setItem("authRedirectPath", `/${selectedRole}/dashboard`);
-    const baseUrl =
-      import.meta.env.VITE_API_BASE_URL ||
-      (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
-    window.location.href =
-      baseUrl.replace("/api", "") +
-      "/auth/google/signup?role=" +
-      selectedRole +
-      "&origin=" +
-      encodeURIComponent(window.location.origin);
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+    window.location.href = baseUrl.replace('/api', '') + '/auth/google/signup?role=' + selectedRole + '&origin=' + encodeURIComponent(window.location.origin);
   };
 
   return (
-    <div className="auth-hardware-screen">
-      <div className="auth-hardware-frame">
-        {/* Left Panel: CPU and Diagnostics Telemetry */}
-        <AuthLeftShowcase />
+    <div className="auth-screen auth-screen--signin">
+      <div className="auth-shell auth-shell--wide">
+        <section className="auth-showcase">
+          <div className="auth-showcase__badge">Teacher and student access</div>
+          <h1 className="auth-showcase__title">
+            Sign in to continue building, teaching, and reviewing.
+          </h1>
+          <p className="auth-showcase__copy">
+            Access classrooms, assignments, simulation projects, and progress
+            history from a single workspace.
+          </p>
 
-        {/* Right Panel: Sign-in Form */}
-        <section className="auth-hardware-panel">
-          <div className="hardware-panel-container">
-            <div className="hardware-switch-wrapper">
+          <div className="auth-showcase__highlights">
+            <div className="auth-showcase__card">
+              <strong>Classroom ready</strong>
+              <span>
+                Organize classes, deadlines, and simulator sessions in one
+                place.
+              </span>
+            </div>
+            <div className="auth-showcase__card">
+              <strong>Role aware</strong>
+              <span>
+                Switch between teacher and student entry without losing context.
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="auth-panel">
+          <Link to="/login" className="auth-panel__back">
+            Back to User Login
+          </Link>
+
+          <div className="auth-panel__brand">
+            <img
+              src="/logo-Photoroom.png"
+              alt="OpenHW-Studio"
+              className="brand-logo brand-logo--auth"
+            />
+          </div>
+
+          <header className="auth-panel__header">
+            <h2>Classroom Sign In</h2>
+            <p>Select your role and continue with email or Google.</p>
+          </header>
+
+          <form className="auth-form" onSubmit={handleEmailLogin}>
+            <div className="auth-role-picker">
               <button
                 type="button"
-                onClick={() =>
-                  navigate(`/classroom/signup?role=${selectedRole}`)
-                }
-                className="hardware-switch-btn"
+                className={`auth-role-picker__option${selectedRole === "teacher" ? " is-active" : ""}`}
+                onClick={() => setSelectedRole("teacher")}
               >
-                <span>
-                  [PORTAL_SWITCH] → SWITCH TO{" "}
-                  {selectedRole === "teacher" ? "INSTRUCTOR" : "STUDENT"} SIGN UP
-                </span>
+                <strong>Teacher</strong>
+                <span>Manage classes and reviews</span>
               </button>
-            </div>
-
-            <header className="hardware-panel__header">
-              <h2>CLASSROOM SIGN IN</h2>
-              <p>
-                Authenticate your credential tokens to access the OpenHW Studio
-                workspace.
-              </p>
-            </header>
-
-            <form className="hardware-form" onSubmit={handleEmailLogin}>
-              {/* Monospaced Role Picker */}
-              <div className="hardware-field">
-                <span className="hardware-label">
-                  [ACCESS_ROLE // SELECT_NODE_TYPE]
-                </span>
-                <div className="hardware-role-picker">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRole("student")}
-                    className={`hardware-role-btn ${
-                      selectedRole === "student" ? "is-active" : ""
-                    }`}
-                  >
-                    <Users className="w-4 h-4" />
-                    Student
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRole("teacher")}
-                    className={`hardware-role-btn ${
-                      selectedRole === "teacher" ? "is-active" : ""
-                    }`}
-                  >
-                    <Cpu className="w-4 h-4" />
-                    Instructor
-                  </button>
-                </div>
-              </div>
-
-              <label className="hardware-field">
-                <span className="hardware-label">[NET_NODE // EMAIL_ADDRESS]</span>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="e.g. jane.doe@university.edu"
-                  className="hardware-input hardware-input--email"
-                />
-              </label>
-
-              <label className="hardware-field">
-                <span className="hardware-label">[CRYPT_KEY // PASSWORD]</span>
-                <div className="hardware-input-wrapper">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="••••••••••••"
-                    className="hardware-input hardware-input--password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="hardware-input-toggle"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-                <div style={{ textAlign: "right", marginTop: "4px" }}>
-                  <Link
-                    to="/forgot-password"
-                    style={{
-                      fontSize: "11px",
-                      fontFamily: "monospace",
-                      color: "#2563eb",
-                      textDecoration: "none"
-                    }}
-                  >
-                    [ FORGOT CRYPT_KEY? ]
-                  </Link>
-                </div>
-              </label>
-
-              {error && <div className="auth-form__error">{error}</div>}
-
               <button
-                type="submit"
-                disabled={loading || !selectedRole}
-                className="hardware-submit-btn"
+                type="button"
+                className={`auth-role-picker__option${selectedRole === "student" ? " is-active" : ""}`}
+                onClick={() => setSelectedRole("student")}
               >
-                {loading
-                  ? "Authenticating..."
-                  : `AUTHENTICATE ${
-                      selectedRole === "teacher" ? "INSTRUCTOR" : "STUDENT"
-                    } NODE ⚡`}
+                <strong>Student</strong>
+                <span>Join classes and submit work</span>
               </button>
-            </form>
-
-            <div
-              className="auth-divider"
-              style={{
-                color: "#64748b",
-                borderColor: "#e2e8f0",
-                fontFamily: "monospace",
-                fontSize: "11px",
-                margin: "16px 0"
-              }}
-            >
-              <span>or continue with</span>
             </div>
+
+            <label className="auth-field">
+              <span>Email</span>
+              <input
+                type="email"
+                name="email"
+                placeholder="Enter your email"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+              />
+            </label>
+
+            <label className="auth-field">
+              <span>Password</span>
+              <input
+                type="password"
+                name="password"
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={handleInputChange}
+                required
+              />
+              <div style={{ textAlign: "right", marginTop: "0.25rem" }}>
+                <Link
+                  to="/forgot-password"
+                  style={{ fontSize: "0.875rem", color: "#3b82f6" }}
+                >
+                  Forgot Password?
+                </Link>
+              </div>
+            </label>
+
+            {error && <div className="auth-form__error">{error}</div>}
 
             <button
-              type="button"
-              onClick={handleGoogleRedirect}
-              className={`hardware-alt-btn ${!selectedRole ? "is-disabled" : ""}`}
-              disabled={!selectedRole || loading}
+              type="submit"
+              className="auth-form__submit"
+              disabled={loading}
             >
-              Google Authentication
+              {loading ? "Signing in..." : "Sign In"}
             </button>
+          </form>
 
-            <p className="hardware-panel__footer">
-              Don't have a classroom account?{" "}
-              <Link to="/classroom/signup">Create one</Link>
-            </p>
-
-            <p className="hardware-panel__footer" style={{ marginTop: "6px" }}>
-              Want to login with a user account? <Link to="/login">User Login</Link>
-            </p>
+          <div className="auth-divider">
+            <span>or continue with</span>
           </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleRedirect}
+            className={`auth-alt-button${selectedRole ? "" : " is-disabled"}`}
+            disabled={!selectedRole || loading}
+          >
+            Google
+          </button>
+
+          <p className="auth-panel__footer">
+            Don't have a classroom account?{" "}
+            <Link to="/classroom/signup">Create one</Link>
+          </p>
+          <p className="auth-panel__footer">
+            Want to login with user account? <Link to="/login">User login</Link>
+          </p>
         </section>
       </div>
     </div>
