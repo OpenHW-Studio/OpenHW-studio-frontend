@@ -6,10 +6,6 @@ import GUIDED_JSON from "../services/guidedProjects.json";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
 
-const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  "https://raw.githubusercontent.com/OpenHW-Studio/openhw-studio-examples/main";
-
 // JSON slug → URL slug for projects where they differ
 const JSON_SLUG_TO_URL = {
   "rgb-led-blink": "rgb-led",
@@ -34,7 +30,6 @@ export default function LandingPage() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "dark",
   );
-  const [imageErrors, setImageErrors] = useState({});
 
   const allCards = useMemo(() => {
     const cards = [];
@@ -129,9 +124,9 @@ export default function LandingPage() {
           🚀 Open Source Hardware Simulation Platform
         </div>
         <h1 className="hero-title">
-          Code. Simulate.
+          Build. Simulate.
           <br />
-          <span className="gradient-text">Learn. Deploy.</span>
+          <span className="gradient-text">Learn Electronics.</span>
         </h1>
         <p className="hero-subtitle">
           A browser-based embedded systems simulator with gamified learning,
@@ -229,86 +224,54 @@ export default function LandingPage() {
           scrollbarColor: "var(--border, rgba(255,255,255,0.1)) transparent",
         }}>
           <div className="features-grid">
-            {allCards.map((p) => {
-              const hasImageError = !!imageErrors[p.slug];
-              const imageUrl = p.slug === "buzzer"
-                ? `${EXAMPLES_BASE_URL}/Turn_on_Buzzer/Turn_on_Buzzer.png`
-                : `${EXAMPLES_BASE_URL}/${p.slug}/circuit.png`;
-
-              return (
-                <div
-                  className="feature-card"
-                  key={p.slug}
-                  onClick={() => handleNavigate(`/${p.slug}/guide`)}
-                  style={{ cursor: "pointer", textAlign: "center" }}
+            {allCards.map((p) => (
+            <div
+              className="feature-card"
+              key={p.slug}
+              onClick={() => handleNavigate(`/${p.slug}/guide`)}
+              style={{ cursor: "pointer", textAlign: "center" }}
+            >
+              <div style={{ fontSize: 40, marginBottom: 10, lineHeight: 1 }}>
+                {PROJECT_ICONS[p.slug] || "🔌"}
+              </div>
+              <h3 style={{ marginBottom: 4, fontSize: 15 }}>{p.title}</h3>
+              <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.6 }}>
+                {p.board}
+              </p>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: 5,
+                    background:
+                      p.difficulty === "Beginner"
+                        ? "rgba(34,197,94,.15)"
+                        : p.difficulty === "Advanced"
+                        ? "rgba(239,68,68,.15)"
+                        : "rgba(251,191,36,.15)",
+                    color: 
+                      p.difficulty === "Beginner" 
+                        ? "#22c55e" 
+                        : p.difficulty === "Advanced" 
+                        ? "#ef4444" 
+                        : "#fbbf24",
+                    border: `1px solid ${
+                      p.difficulty === "Beginner" 
+                        ? "rgba(34,197,94,.3)" 
+                        : p.difficulty === "Advanced"
+                        ? "rgba(239,68,68,.3)"
+                        : "rgba(251,191,36,.3)"
+                    }`,
+                  }}
                 >
-                  <div style={{
-                    width: "100%",
-                    height: "120px",
-                    overflow: "hidden",
-                    borderRadius: "8px",
-                    marginBottom: "12px",
-                    background: "rgba(255,255,255,0.03)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "1px solid var(--border)"
-                  }}>
-                    {!hasImageError ? (
-                      <img
-                        src={imageUrl}
-                        alt={p.title}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                        onError={() => {
-                          setImageErrors(prev => ({
-                            ...prev,
-                            [p.slug]: true
-                          }));
-                        }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 40 }}>{PROJECT_ICONS[p.slug] || "🔌"}</span>
-                    )}
-                  </div>
-                  <h3 style={{ marginBottom: 4, fontSize: 15 }}>{p.title}</h3>
-                  <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.6 }}>
-                    {p.board}
-                  </p>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        padding: "3px 8px",
-                        borderRadius: 5,
-                        background:
-                          p.difficulty === "Beginner"
-                            ? "rgba(34,197,94,.15)"
-                            : p.difficulty === "Advanced"
-                            ? "rgba(239,68,68,.15)"
-                            : "rgba(251,191,36,.15)",
-                        color: 
-                          p.difficulty === "Beginner" 
-                            ? "#22c55e" 
-                            : p.difficulty === "Advanced" 
-                            ? "#ef4444" 
-                            : "#fbbf24",
-                        border: `1px solid ${
-                          p.difficulty === "Beginner" 
-                            ? "rgba(34,197,94,.3)" 
-                            : p.difficulty === "Advanced"
-                            ? "rgba(239,68,68,.3)"
-                            : "rgba(251,191,36,.3)"
-                        }`,
-                      }}
-                    >
-                      {p.difficulty}
-                    </span>
+                  {p.difficulty}
+                </span>
 
-                  </div>
-                </div>
-              );
-            })}
+              </div>
+            </div>
+          ))}
           </div>
         </div>
       </section>
