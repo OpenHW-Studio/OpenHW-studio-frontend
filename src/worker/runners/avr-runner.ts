@@ -901,11 +901,34 @@ export class AVRRunner {
                     }
                 }
 
-                // When propagating from a board power rail, do NOT propagate back into board digital/analog pins.
-                // They should be driven by external components, not locked by the power rail.
+                // When propagating from a board power rail, do NOT propagate back into board digital/analog pins
+                // if they are actively driven as OUTPUTs. If they are in INPUT or INPUT_PULLUP mode (e.g. connected
+                // to a switch or pushbutton to GND), allow the power rail voltage to drive the pin state!
                 const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
                 if (isPowerRailSrc && compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
-                    return;
+                    let port: AVRIOPort | null = null;
+                    let bit = 0;
+                    if (compPin.startsWith('A')) {
+                        port = this.portC;
+                        const parsed = parseInt(compPin.slice(1), 10);
+                        if (!isNaN(parsed)) bit = parsed;
+                    } else {
+                        const num = parseInt(compPin, 10);
+                        if (!isNaN(num)) {
+                            if (num >= 8 && num <= 13) {
+                                port = this.portB;
+                                bit = num - 8;
+                            } else if (num >= 0 && num <= 7) {
+                                port = this.portD;
+                                bit = num;
+                            }
+                        }
+                    }
+                    const state = port ? port.pinState(bit) : null;
+                    const isOutput = state === PinState.High || state === PinState.Low;
+                    if (isOutput) {
+                        return;
+                    }
                 }
 
                 // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
@@ -1030,11 +1053,12 @@ export class AVRRunner {
                 const num = parseInt(p, 10);
                 if (isNaN(num)) return false;
                 let port: AVRIOPort | null = null;
-                if (num >= 8 && num <= 13) port = this.portB;
-                else if (num >= 0 && num <= 7) port = this.portD;
+                let bit = num;
+                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
+                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
                 else return false;
                 if (!port) return false;
-                const pinState = port.pinState(num);
+                const pinState = port.pinState(bit);
                 return pinState !== PinState.High && pinState !== PinState.Low;
             });
             const outputPins = allBoardPins.filter(p => {
@@ -1043,21 +1067,47 @@ export class AVRRunner {
                 const num = parseInt(p, 10);
                 if (isNaN(num)) return false;
                 let port: AVRIOPort | null = null;
-                if (num >= 8 && num <= 13) port = this.portB;
-                else if (num >= 0 && num <= 7) port = this.portD;
+                let bit = num;
+                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
+                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
                 else return false;
                 if (!port) return false;
-                const pinState = port.pinState(num);
+                const pinState = port.pinState(bit);
                 return pinState === PinState.High || pinState === PinState.Low;
             });
             const analogPins = allBoardPins.filter(p => p.startsWith('A'));
-            // INPUT pins: only update pinStates — do NOT propagate outward, because an
-            // external component owns the line (e.g. HC-SR04 drives ECHO, DHT22 drives DATA).
-            // Propagating a default-HIGH here would overwrite the component's output.
+            // INPUT pins: Separate INPUT_PULLUP from floating INPUT.
+            // INPUT_PULLUP pins MUST propagate their pull-up voltage outward so that
+            // connected components (pushbuttons, switches) can form a proper voltage divider.
+            // Without this, a button connected between an INPUT_PULLUP pin and GND would
+            // never pull the pin LOW because the pull-up voltage never reaches the button.
+            // Floating INPUT pins should NOT propagate, as external components own the line.
             inputPins.forEach(pin => {
                 const { isDriven, isHigh } = getAvrPinModeState(pin);
                 if (isDriven) {
                     this.pinStates[pin] = isHigh;
+
+                    // Determine if this pin is specifically INPUT_PULLUP
+                    let port: AVRIOPort | null = null;
+                    let bit = 0;
+                    const num = parseInt(pin, 10);
+                    if (!isNaN(num)) {
+                        if (num >= 8 && num <= 13) {
+                            port = this.portB;
+                            bit = num - 8;
+                        } else if (num >= 0 && num <= 7) {
+                            port = this.portD;
+                            bit = num;
+                        }
+                    }
+                    const isPullUp = port ? port.pinState(bit) === PinState.InputPullUp : false;
+
+                    // INPUT_PULLUP pins propagate their weak pull-up voltage outward.
+                    // This allows pushbuttons to pull the pin LOW when pressed (overriding
+                    // the weak pull-up with a direct GND connection through the switch).
+                    if (isPullUp) {
+                        updateOopPin(pin, true);
+                    }
                 }
             });
             analogPins.forEach(pin => {
