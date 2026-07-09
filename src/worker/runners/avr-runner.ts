@@ -349,6 +349,33 @@ export class AVRRunner {
                 (inst as any)._simCpu = this.cpu;
                 (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
             }
+            if (this.cpu) {
+                (this.cpu as any)._avrRunner = this;
+            }
+            // Inject _setAvrPinDirect for components (like DHT22) that need
+            // to directly drive an AVR input pin during bit-banged protocols.
+            if (!(inst as any)._setAvrPinDirect) {
+                (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
+                    let cleanPin = boardPin.replace(/^D/i, '');
+                    this.pinStates[cleanPin] = isHigh;
+                    this.pinStates[`D${cleanPin}`] = isHigh;
+                    const num = parseInt(cleanPin, 10);
+                    if (!isNaN(num)) {
+                        if (num >= 8 && num <= 13) {
+                            this.portB?.setPin(num - 8, isHigh);
+                        } else if (num >= 0 && num <= 7) {
+                            this.portD?.setPin(num, isHigh);
+                        }
+                    } else if (cleanPin.startsWith('A')) {
+                        const bit = parseInt(cleanPin.slice(1), 10);
+                        if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
+                    }
+                };
+            }
+            // Expose runner ref so DHT22 can resolve board pin from netlist
+            if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
+                (inst as any)._simCpu._avrRunner = this;
+            }
         });
 
         this.running = true;
@@ -364,10 +391,10 @@ export class AVRRunner {
 
     setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
         for (const inst of this.instances.values()) {
-            inst.telemetryEnabled = !!enabled;
-            inst.telemetryMode = mode || 'detail';
-            inst.telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
-            inst.deepSiliconEnabled = !!deepSilicon;
+            (inst as any).telemetryEnabled = !!enabled;
+            (inst as any).telemetryMode = mode || 'detail';
+            (inst as any).telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
+            (inst as any).deepSiliconEnabled = !!deepSilicon;
         }
     }
 
@@ -892,9 +919,10 @@ export class AVRRunner {
                 if (visitedNodes.has(node)) return;
 
                 const [compId, compPin] = node.split(':');
+                const isMainBoard = compId === this.boardId || compId === 'arduino' || compId === 'uno' || compId === 'board';
 
                 // Do not allow passive back-propagation to overwrite constant board power reference pins (GND, 5V, 3V3, VIN)
-                if (compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                if (isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
                     const upper = compPin.toUpperCase();
                     if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper) || upper === '5V' || upper === '3V3' || upper === 'VIN') {
                         return;
@@ -905,7 +933,7 @@ export class AVRRunner {
                 // if they are actively driven as OUTPUTs. If they are in INPUT or INPUT_PULLUP mode (e.g. connected
                 // to a switch or pushbutton to GND), allow the power rail voltage to drive the pin state!
                 const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
-                if (isPowerRailSrc && compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                if (isPowerRailSrc && isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
                     let port: AVRIOPort | null = null;
                     let bit = 0;
                     if (compPin.startsWith('A')) {
@@ -964,7 +992,10 @@ export class AVRRunner {
                     }
                 }
 
-                const inst = this.instances.get(compId);
+                let inst = this.instances.get(compId);
+                if (!inst && isMainBoard) {
+                    inst = this.instances.get(this.boardId);
+                }
                 if (inst) {
                     if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
                     inst.setPinVoltage(compPin, v);
@@ -975,7 +1006,7 @@ export class AVRRunner {
                     this.tickI2S(inst, compId, compPin, v > 1.8);
 
                     // Propagate external voltage back to simulated AVR CPU ports
-                    if (compId === this.boardId) {
+                    if (isMainBoard) {
                         const isHigh = v > 1.8;
                         this.pinStates[compPin] = isHigh;
                         if (compPin.startsWith('A')) {
@@ -1136,11 +1167,9 @@ export class AVRRunner {
                         updateOopPin('ECHO', echoV, compId);
                     }
                 } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
-                    const sdaV = (inst as any).sdaOutputVoltage !== undefined
-                        ? (inst as any).sdaOutputVoltage
-                        : inst.pins['SDA']?.voltage ?? 5.0;
-                    if (inst.pins['SDA']) {
-                        updateOopPin('SDA', sdaV, compId);
+                    const dataV = inst.pins['DATA']?.voltage ?? 5.0;
+                    if (inst.pins['DATA']) {
+                        updateOopPin('DATA', dataV, compId);
                     }
                 } else if (inst.type.includes('a4988')) {
                     ['1A', '1B', '2A', '2B'].forEach(pin => {
@@ -1202,22 +1231,6 @@ export class AVRRunner {
                         if (inst.pins[pin]) {
                             const dhtVoltage = inst.pins[pin].voltage;
                             updateOopPin(pin, dhtVoltage, compId);
-                            for (const wire of this.currentWires) {
-                                const normFrom = wire.from;
-                                const normTo = wire.to;
-                                const dhtNode = `${compId}:${pin}`;
-                                let boardPin: string | null = null;
-                                if (normFrom === dhtNode && normTo.startsWith(`${this.boardId}:`)) {
-                                    boardPin = normTo.split(':')[1];
-                                } else if (normTo === dhtNode && normFrom.startsWith(`${this.boardId}:`)) {
-                                    boardPin = normFrom.split(':')[1];
-                                }
-                                if (boardPin) {
-                                    const isHigh = dhtVoltage > 1.8;
-                                    this.pinStates[boardPin] = isHigh;
-                                    setAvrPin(boardPin, isHigh);
-                                }
-                            }
                         }
                     });
                 } else if (inst.type.includes('gas-sensor') || inst.type.includes('mq')) {
@@ -1231,6 +1244,7 @@ export class AVRRunner {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
                 } else if (inst.type.includes('ldr')) {
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
                     ['DO', 'AO'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
@@ -1307,12 +1321,12 @@ export class AVRRunner {
                     if (!pin) return;
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
                     const state = port.pinState(i);
-                    const isOutput = state === PinState.Low || state === PinState.High;
-                    if (!isOutput) {
+                    const isOutputOrPullUp = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp;
+                    if (!isOutputOrPullUp) {
                         return;
                     }
 
-                    const isHigh = (value & (1 << i)) !== 0;
+                    const isHigh = state === PinState.InputPullUp || state === PinState.High || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1412,11 +1426,13 @@ export class AVRRunner {
                     let otherCompId = '';
                     let otherCompPin = '';
 
-                    if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                    const isMainBoardFrom = fromComp === this.boardId || fromComp === 'arduino' || fromComp === 'uno' || fromComp === 'board';
+                    const isMainBoardTo = toComp === this.boardId || toComp === 'arduino' || toComp === 'uno' || toComp === 'board';
+                    if (isMainBoardFrom && (fromPin === arduinoPin || fromPin === `A${i}`)) {
                         isConnectedToPin = true;
                         otherCompId = toComp;
                         otherCompPin = toPin;
-                    } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                    } else if (isMainBoardTo && (toPin === arduinoPin || toPin === `A${i}`)) {
                         isConnectedToPin = true;
                         otherCompId = fromComp;
                         otherCompPin = fromPin;
@@ -1473,6 +1489,30 @@ export class AVRRunner {
                     if (!(inst as any)._simCpu) {
                         (inst as any)._simCpu = this.cpu;
                         (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+                    }
+                    if (this.cpu) {
+                        (this.cpu as any)._avrRunner = this;
+                    }
+                    if (!(inst as any)._setAvrPinDirect) {
+                        (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
+                            let cleanPin = boardPin.replace(/^D/i, '');
+                            this.pinStates[cleanPin] = isHigh;
+                            this.pinStates[`D${cleanPin}`] = isHigh;
+                            const num = parseInt(cleanPin, 10);
+                            if (!isNaN(num)) {
+                                if (num >= 8 && num <= 13) {
+                                    this.portB?.setPin(num - 8, isHigh);
+                                } else if (num >= 0 && num <= 7) {
+                                    this.portD?.setPin(num, isHigh);
+                                }
+                            } else if (cleanPin.startsWith('A')) {
+                                const bit = parseInt(cleanPin.slice(1), 10);
+                                if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
+                            }
+                        };
+                    }
+                    if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
+                        (inst as any)._simCpu._avrRunner = this;
                     }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
                     if (inst.stateChanged) {
