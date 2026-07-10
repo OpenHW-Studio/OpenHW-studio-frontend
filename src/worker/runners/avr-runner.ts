@@ -1137,7 +1137,20 @@ export class AVRRunner {
                     // This allows pushbuttons to pull the pin LOW when pressed (overriding
                     // the weak pull-up with a direct GND connection through the switch).
                     if (isPullUp) {
-                        updateOopPin(pin, true);
+                        // Check if any connected component on this net is actively driving LOW
+                        let isDrivenLow = false;
+                        this.instances.forEach((inst, cId) => {
+                            if (cId === this.boardId) return;
+                            if ((inst as any)._drivingBus && (inst as any)._lastDrivenVoltage !== undefined && (inst as any)._lastDrivenVoltage < 1.8) {
+                                const boardPin = (inst as any).getBoardPin ? (inst as any).getBoardPin() : null;
+                                if (boardPin === pin) {
+                                    isDrivenLow = true;
+                                }
+                            }
+                        });
+                        if (!isDrivenLow) {
+                            updateOopPin(pin, true);
+                        }
                     }
                 }
             });
@@ -1167,7 +1180,9 @@ export class AVRRunner {
                         updateOopPin('ECHO', echoV, compId);
                     }
                 } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
-                    const dataV = inst.pins['DATA']?.voltage ?? 5.0;
+                    const dataV = (inst as any)._drivingBus && (inst as any)._lastDrivenVoltage !== undefined
+                        ? (inst as any)._lastDrivenVoltage
+                        : inst.pins['DATA']?.voltage ?? 5.0;
                     if (inst.pins['DATA']) {
                         updateOopPin('DATA', dataV, compId);
                     }
