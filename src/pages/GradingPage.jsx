@@ -8,13 +8,14 @@ const GradingPage = () => {
   const [isGrading, setIsGrading] = useState(false);
   const [report, setReport] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [generatedKey, setGeneratedKey] = useState(null);
   const [options, setOptions] = useState({
     exact_match: true,
     check_breadboard: true,
     check_overlap: true,
     ignore_pin_changes: true,
   });
-  const [activeTab, setActiveTab] = useState("summary");
+  const [activeTab, setActiveTab] = useState("report");
   const [expandedTemporalIds, setExpandedTemporalIds] = useState({});
   const [simulationSpeed, setSimulationSpeed] = useState("1");
 
@@ -699,8 +700,15 @@ const GradingPage = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `reference_key_${new Date().getTime()}.bin`;
+        const bName = e.data.boardName || "board";
+        const cName = e.data.componentName || "circuit";
+        a.download = `${bName}_${cName}.bin`;
+        
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
+        
+        setGeneratedKey({ url, name: a.download });
         setIsGrading(false);
       } else if (e.data.type === "LOG") {
         const liveSpeed = Number(simulationSpeed || 1);
@@ -866,6 +874,7 @@ const GradingPage = () => {
         {
           type: "GRADE",
           teacher: teacherData,
+          teacherIsBin: teacherFile?.name?.toLowerCase().endsWith('.bin') && teacherData instanceof ArrayBuffer,
           student: studentBuf,
           options,
           simulationSpeed: Number(simulationSpeed) || 1,
@@ -882,7 +891,8 @@ const GradingPage = () => {
   };
 
   return (
-    <div className="grading-page">
+    <div className="min-h-screen w-full bg-[#020617] absolute top-0 left-0 z-50 overflow-y-auto">
+      <div className="grading-page">
       <header>
         <h1>Intelligent Grading Eye</h1>
         <p>Pure WASM Circuit Analysis & Comparison</p>
@@ -891,11 +901,11 @@ const GradingPage = () => {
       <div className="grading-grid">
         <div className="upload-section">
           <div className={`drop-zone ${teacherFile ? "has-file" : ""}`}>
-            <h3>Teacher Reference PNG</h3>
+            <h3>Teacher Reference PNG/BIN</h3>
             <input
               type="file"
               onChange={(e) => handleFileUpload(e, "teacher")}
-              accept="image/png"
+              accept="image/png,.bin"
             />
             <div className="file-info">
               {teacherFile ? teacherFile.name : "Click to upload gold standard"}
@@ -1002,6 +1012,16 @@ const GradingPage = () => {
               >
                 {isGrading ? "Capturing..." : "Generate Reference Key"}
               </button>
+              {generatedKey && (
+                <a 
+                  href={generatedKey.url} 
+                  download={generatedKey.name} 
+                  className="grade-btn" 
+                  style={{ marginLeft: '10px', background: '#10b981', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                >
+                  Download {generatedKey.name}
+                </a>
+              )}
             </div>
           </div>
 
@@ -1498,6 +1518,7 @@ const GradingPage = () => {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 };

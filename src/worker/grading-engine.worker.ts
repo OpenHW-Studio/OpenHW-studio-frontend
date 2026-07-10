@@ -200,7 +200,7 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                              sourceCode.includes('void loop') ||
                              sourceCode.includes('int main');
         
-        if (isSourceCode && !firmwareHex) {
+        if (isSourceCode) {
             postMessage({ type: 'LOG', msg: `[v2.8] ${label}: Source code detected (${sourceCode.length} chars). Compiling for ${boardCompId}...` });
             // Log the full code for inspection
             postMessage({ type: 'LOG', msg: `--- BEGIN SOURCE ---\n${sourceCode}\n--- END SOURCE ---` });
@@ -230,28 +230,57 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
             meta.components || [],
             meta.connections || [],
             (state: any) => {
-                const nowMs = runner?.getSimulatedTimeMs?.() ?? 0;
+                const nowMs = state.simTimeMs ?? runner?.getSimulatedTimeMs?.() ?? 0;
+                
+                // 1. Process Pins (Identical to SimulatorPage)
                 if (state.type === 'state' && state.pins) {
                     for (const pinId in state.pins) {
                         const newState = !!state.pins[pinId];
                         const prevState = lastPinStates[pinId];
-                        // First observation is treated as baseline, not an edge event.
                         if (prevState === undefined) {
                             lastPinStates[pinId] = newState;
                             continue;
                         }
                         if (newState !== prevState) {
                             pushTelemetryEvent({
-                                PinChange: { pin: pinId, state: newState, time_ms: nowMs }
-                            }, nowMs);
+                                PinChange: { pin: pinId, state: newState, time_ms: Math.floor(nowMs) }
+                            }, Math.floor(nowMs));
                             lastPinStates[pinId] = newState;
                         }
                     }
-                } else if (state.type === 'serial') {
+                }
+
+                // 2. Process Serial
+                if (state.type === 'serial') {
                     pushTelemetryEvent({
-                        SerialOutput: { data: state.data, time_ms: nowMs }
-                    }, nowMs);
+                        SerialOutput: { data: state.data, time_ms: Math.floor(nowMs) }
+                    }, Math.floor(nowMs));
                     telemetry.serial += state.data;
+                }
+
+                // 3. Process Component States (Identical to SimulatorPage)
+                if (state.components && Array.isArray(state.components)) {
+                    for (const comp of state.components) {
+                        const cid = comp.id;
+                        const metrics = comp.metrics || {};
+                        const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
+                        const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
+                        const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
+                        
+                        for (const key in emitSource) {
+                            const val = emitSource[key];
+                            const stateKey = `${cid}:${key}`;
+                            const serialized = typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
+                            const lastSerialized = lastComponentMetrics[stateKey];
+                            
+                            if (lastSerialized === undefined || lastSerialized !== serialized) {
+                                pushTelemetryEvent({
+                                    ComponentState: { id: cid, key: key, value: val, time_ms: Math.floor(nowMs) }
+                                }, Math.floor(nowMs));
+                                lastComponentMetrics[stateKey] = serialized;
+                            }
+                        }
+                    }
                 }
             },
             { speed: normalizedSpeed }
@@ -276,12 +305,8 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                 const cid = comp.id;
                 const compType = comp.type || 'unknown';
                 
-                // CRITICAL FIX: Normalize telemetry across snapshot shapes.
-                // Some components expose data under metrics.custom, while others surface it as customTelemetry.
-                const metrics = comp.metrics || {};
-                const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
                 const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
-                const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
+                const emitSource = stateLike;
                 
                 // For each available field, check if it changed and emit event
                 for (const key in emitSource) {
@@ -305,6 +330,8 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                 // Also capture other metrics that might be useful (not just custom)
                 // Examples: pin toggles, io throughput, power profile
                 if (!requireDelta) {
+                    const metrics = comp.metrics || {};
+                    const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
                     // For baseline (deep mode), capture initial state of all metrics for reference
                     const metricsSnapshot = {
                         updateFreq: metrics.updateFreq,
@@ -330,172 +357,141 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
         };
 
         // Capture baseline component states once so teacher/student runs start from a stable anchor.
-        // Use the CURRENT sim-time right before baseline snapshot to ensure time reference alignment.
+        // Pause the runner first so zero CPU cycles execute between getRichTelemetrySnapshot()
+        // and getSimulatedTimeMs(). This eliminates the "data shift" caused by async startup jitter.
+        if (typeof runner.pause === 'function') runner.pause();
         const baselineSnapshot = runner.getRichTelemetrySnapshot({ mode: 'deep' });
         simStartMs = runner.getSimulatedTimeMs(); // Re-sample after snapshot to get accurate epoch
         emitComponentStateEvents(baselineSnapshot, Math.floor(simStartMs), false);
+        if (typeof runner.resume === 'function') runner.resume();
         
         console.log(`[TRACE] ${label}: Simulation loop entered.`);
 
-        // Choose capture strategy: sim-time-driven (preferred) or wall-clock (fallback)
-        if (effectiveUseSimTimeCapture) {
-            // Sim-time-driven capture: wait for runner simulated-time to reach each sample point.
-            // Benefits: at higher simulation speeds this finishes proportionally faster (8x -> ~1s),
-            // and it captures the same simulation-time window deterministically.
-            const targetSimDurationMs = Math.min(durationMs, effectiveCutoffMs);
-            const simStartMsLoop = runner.getSimulatedTimeMs();
-            const simEndMs = simStartMsLoop + targetSimDurationMs;
+        // Start the virtual 60Hz state emission timer to match SimulatorPage's visual flushes
+        const flushInterval = setInterval(() => {
+            if (runner && typeof runner.forceEmitState === 'function') {
+                runner.forceEmitState();
+            }
+        }, 16.6);
 
-            // Choose a sim-time sampling step small enough to catch pin toggles.
-            const pollIntervalSimMs = 2; // 2ms simulated-time step (tunable)
+        try {
+            // Choose capture strategy: sim-time-driven (preferred) or wall-clock (fallback)
+            if (effectiveUseSimTimeCapture) {
+                // Sim-time-driven capture: wait for runner simulated-time to reach each sample point.
+                // Benefits: at higher simulation speeds this finishes proportionally faster (8x -> ~1s),
+                // and it captures the same simulation-time window deterministically.
+                const targetSimDurationMs = Math.min(durationMs, effectiveCutoffMs);
+                const simStartMsLoop = runner.getSimulatedTimeMs();
+                const simEndMs = simStartMsLoop + targetSimDurationMs;
 
-            async function waitUntilSim(targetSimMs: number) {
-                // Wait until runner.getSimulatedTimeMs() >= targetSimMs
-                // Use short yields to avoid blocking the event loop.
-                while (runner.getSimulatedTimeMs() < targetSimMs) {
+                // Choose a sim-time sampling step small enough to catch pin toggles.
+                const pollIntervalSimMs = 16.6; // 16.6ms simulated-time step (~60fps) to match visual trace
+
+                async function waitUntilSim(targetSimMs: number) {
+                    // Wait until runner.getSimulatedTimeMs() >= targetSimMs
+                    // Use short yields to avoid blocking the event loop.
+                    while (runner.getSimulatedTimeMs() < targetSimMs) {
+                        if (Date.now() - startTime > wallTimeoutMs) {
+                            throw new Error(`Simulation wait timeout after ${wallTimeoutMs}ms at ${normalizedSpeed}x`);
+                        }
+                        // yield, allow other tasks; at high speed this loop exits quickly
+                        await new Promise((r) => setTimeout(r, 0));
+                    }
+                }
+
+                // Simply wait for the simulation to reach the target duration.
+                // All telemetry is now captured flawlessly via the onStateUpdate callback, matching SimulatorPage exactly.
+                let lastLogMs = simStartMsLoop;
+                let lastForceEmitMs = simStartMsLoop;
+                
+                while (runner.getSimulatedTimeMs() < simEndMs) {
+                    const currentSimMs = runner.getSimulatedTimeMs();
+                    
+                    if (currentSimMs - lastLogMs > 1000) {
+                        postMessage({ type: 'LOG', msg: `[TRACE] ${label}: Simulating... ${Math.floor(currentSimMs)}ms @ ${normalizedSpeed}x` });
+                        lastLogMs = currentSimMs;
+                    }
+
+                    await waitUntilSim(Math.min(currentSimMs + 10, simEndMs));
+                }
+            } else {
+                const wallClockStart = Date.now();
+                const wallClockDurationMs = 8000;  // All speeds: 8 seconds wall-clock time
+                
+                while (Date.now() - wallClockStart < wallClockDurationMs) {
+                    // Ultra-aggressive polling at 8x: capture more events per cycle
+                    const pollIntervalMs = normalizedSpeed >= 4
+                        ? Math.max(2, Math.round(25 / normalizedSpeed))  // 8x -> 3.125ms
+                        : Math.max(10, Math.round(50 / normalizedSpeed));
+                    
+                    // Sleep with max aggression: divide by 2.5x speed factor
+                    const sleepWallMs = Math.max(0.5, Math.round(pollIntervalMs / (normalizedSpeed * 2.5)));
+                    await new Promise(resolve => setTimeout(resolve, sleepWallMs));
+
+                    const nowMs = runner.getSimulatedTimeMs();
+                    // Deterministic rounding: align to poll interval boundaries for consistency
+                    const alignedNowMs = Math.floor(nowMs / Math.max(1, Math.round(pollIntervalMs))) * Math.max(1, Math.round(pollIntervalMs));
+                    if (alignedNowMs - lastPollSimMs < pollIntervalMs) { continue; }
+                    lastPollSimMs = alignedNowMs;
+
+                    if (nowMs - lastTraceTime > 1000) {
+                        console.log(`[TRACE] ${label}: Progress -> ${Math.round(nowMs)}ms / ${durationMs}ms`);
+                        postMessage({ type: 'LOG', msg: `[TRACE] ${label}: Simulating... ${Math.round(nowMs)}ms @ ${normalizedSpeed}x` });
+                        lastTraceTime = nowMs;
+                    }
+                    
+                    const snapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
+                    // If delta snapshots omit metrics (delta:false), merge metrics from a deep snapshot once
+                    if (snapshot && Array.isArray(snapshot.components)) {
+                        const missingMetrics = snapshot.components.some((c: any) => {
+                            const customKeys = Object.keys(c?.metrics?.custom || {});
+                            return !c.metrics || customKeys.length === 0;
+                        });
+                        if (missingMetrics) {
+                            if (!deepSnapshotCache) deepSnapshotCache = runner.getRichTelemetrySnapshot({ mode: 'deep' });
+                            if (deepSnapshotCache && Array.isArray(deepSnapshotCache.components)) {
+                                const deepMap = new Map(deepSnapshotCache.components.map((c: any) => [c.id, c]));
+                                for (const comp of snapshot.components) {
+                                    const deepComp = deepMap.get(comp.id);
+                                    if (!deepComp || !deepComp.metrics) continue;
+                                    const currentKeys = Object.keys(comp?.metrics?.custom || {});
+                                    if (!comp.metrics || currentKeys.length === 0) {
+                                        comp.metrics = deepComp.metrics;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // DEBUG: Log snapshot structure to diagnose empty telemetry
+                    if (snapshot && !snapshot._debugLogged) {
+                        const compCount = snapshot.components?.length || 0;
+                        if (compCount > 0) {
+                            const sampleComps = snapshot.components.slice(0, 3).map(c => ({
+                                id: c.id,
+                                type: c.type,
+                                customMetricKeys: Object.keys(c.metrics?.custom || {}),
+                                stateKeys: Object.keys(c.state || {})
+                            }));
+                            console.log(`[SNAPSHOT DEBUG] Components: ${compCount}, Sample: ${JSON.stringify(sampleComps)}`);
+                        } else {
+                            console.warn(`[SNAPSHOT DEBUG] Empty snapshot.components (is null/undefined: ${!snapshot.components})`);
+                        }
+                        snapshot._debugLogged = true;
+                    }
+                    
+                    emitComponentStateEvents(snapshot, alignedNowMs, true);
+
+                    // Fixed timeout: independent of speed for consistent report times
                     if (Date.now() - startTime > wallTimeoutMs) {
-                        throw new Error(`Simulation wait timeout after ${wallTimeoutMs}ms at ${normalizedSpeed}x`);
+                        console.warn(`[v2.4] ${label} simulation timed out after ${Date.now() - startTime}ms!`);
+                        break;
                     }
-                    // yield, allow other tasks; at high speed this loop exits quickly
-                    await new Promise((r) => setTimeout(r, 0));
                 }
             }
-
-            for (let t = simStartMsLoop; t < simEndMs; t += pollIntervalSimMs) {
-                const target = t + pollIntervalSimMs;
-                await waitUntilSim(target);
-                // Use actual sim-time from runner, not quantized/aligned version
-                // This ensures absolute timestamp consistency with baseline snapshot
-                const nowMs = runner.getSimulatedTimeMs();
-                if (nowMs - lastPollSimMs < pollIntervalSimMs) continue;
-                lastPollSimMs = nowMs;
-
-                if (nowMs - lastTraceTime > 1000) {
-                    postMessage({ type: 'LOG', msg: `[TRACE] ${label}: Simulating... ${Math.round(nowMs)}ms @ ${normalizedSpeed}x` });
-                    lastTraceTime = nowMs;
-                }
-
-                const snapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
-                // If delta snapshots omit metrics (delta:false), merge metrics from a deep snapshot once
-                if (snapshot && Array.isArray(snapshot.components)) {
-                    const missingMetrics = snapshot.components.some((c: any) => {
-                        const customKeys = Object.keys(c?.metrics?.custom || {});
-                        return !c.metrics || customKeys.length === 0;
-                    });
-                    if (missingMetrics) {
-                        if (!deepSnapshotCache) deepSnapshotCache = runner.getRichTelemetrySnapshot({ mode: 'deep' });
-                        if (deepSnapshotCache && Array.isArray(deepSnapshotCache.components)) {
-                            const deepMap = new Map(deepSnapshotCache.components.map((c: any) => [c.id, c]));
-                            for (const comp of snapshot.components) {
-                                const deepComp = deepMap.get(comp.id);
-                                if (!deepComp || !deepComp.metrics) continue;
-                                const currentKeys = Object.keys(comp?.metrics?.custom || {});
-                                if (!comp.metrics || currentKeys.length === 0) {
-                                    comp.metrics = deepComp.metrics;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // DEBUG: Log snapshot structure to diagnose empty telemetry
-                if (snapshot && !snapshot._debugLogged) {
-                    const compCount = snapshot.components?.length || 0;
-                    if (compCount > 0) {
-                        const sampleComps = snapshot.components.slice(0, 3).map(c => ({
-                            id: c.id,
-                            type: c.type,
-                            customMetricKeys: Object.keys(c.metrics?.custom || {}),
-                            stateKeys: Object.keys(c.state || {})
-                        }));
-                        console.log(`[SNAPSHOT DEBUG] SIM-TIME: Components: ${compCount}, Sample: ${JSON.stringify(sampleComps)}`);
-                    } else {
-                        console.warn(`[SNAPSHOT DEBUG] SIM-TIME: Empty snapshot.components (is null/undefined: ${!snapshot.components})`);
-                    }
-                    snapshot._debugLogged = true;
-                }
-                
-                emitComponentStateEvents(snapshot, nowMs, true);
-            }
-
-            // Final flush at sim-end boundary to avoid dropping last transition near cutoff.
-            await waitUntilSim(simEndMs);
-            const finalSnapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
-            const finalNowMs = runner.getSimulatedTimeMs();
-            emitComponentStateEvents(finalSnapshot, finalNowMs, true);
-        } else {
-            const wallClockStart = Date.now();
-            const wallClockDurationMs = 8000;  // All speeds: 8 seconds wall-clock time
-            
-            while (Date.now() - wallClockStart < wallClockDurationMs) {
-                // Ultra-aggressive polling at 8x: capture more events per cycle
-                const pollIntervalMs = normalizedSpeed >= 4
-                    ? Math.max(2, Math.round(25 / normalizedSpeed))  // 8x → 3.125ms
-                    : Math.max(10, Math.round(50 / normalizedSpeed));
-                
-                // Sleep with max aggression: divide by 2.5x speed factor
-                const sleepWallMs = Math.max(0.5, Math.round(pollIntervalMs / (normalizedSpeed * 2.5)));
-                await new Promise(resolve => setTimeout(resolve, sleepWallMs));
-
-                const nowMs = runner.getSimulatedTimeMs();
-                // Deterministic rounding: align to poll interval boundaries for consistency
-                const alignedNowMs = Math.floor(nowMs / Math.max(1, Math.round(pollIntervalMs))) * Math.max(1, Math.round(pollIntervalMs));
-                if (alignedNowMs - lastPollSimMs < pollIntervalMs) { continue; }
-                lastPollSimMs = alignedNowMs;
-
-                if (nowMs - lastTraceTime > 1000) {
-                    console.log(`[TRACE] ${label}: Progress -> ${Math.round(nowMs)}ms / ${durationMs}ms`);
-                    postMessage({ type: 'LOG', msg: `[TRACE] ${label}: Simulating... ${Math.round(nowMs)}ms @ ${normalizedSpeed}x` });
-                    lastTraceTime = nowMs;
-                }
-                
-                const snapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
-                // If delta snapshots omit metrics (delta:false), merge metrics from a deep snapshot once
-                if (snapshot && Array.isArray(snapshot.components)) {
-                    const missingMetrics = snapshot.components.some((c: any) => {
-                        const customKeys = Object.keys(c?.metrics?.custom || {});
-                        return !c.metrics || customKeys.length === 0;
-                    });
-                    if (missingMetrics) {
-                        if (!deepSnapshotCache) deepSnapshotCache = runner.getRichTelemetrySnapshot({ mode: 'deep' });
-                        if (deepSnapshotCache && Array.isArray(deepSnapshotCache.components)) {
-                            const deepMap = new Map(deepSnapshotCache.components.map((c: any) => [c.id, c]));
-                            for (const comp of snapshot.components) {
-                                const deepComp = deepMap.get(comp.id);
-                                if (!deepComp || !deepComp.metrics) continue;
-                                const currentKeys = Object.keys(comp?.metrics?.custom || {});
-                                if (!comp.metrics || currentKeys.length === 0) {
-                                    comp.metrics = deepComp.metrics;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // DEBUG: Log snapshot structure to diagnose empty telemetry
-                if (snapshot && !snapshot._debugLogged) {
-                    const compCount = snapshot.components?.length || 0;
-                    if (compCount > 0) {
-                        const sampleComps = snapshot.components.slice(0, 3).map(c => ({
-                            id: c.id,
-                            type: c.type,
-                            customMetricKeys: Object.keys(c.metrics?.custom || {}),
-                            stateKeys: Object.keys(c.state || {})
-                        }));
-                        console.log(`[SNAPSHOT DEBUG] Components: ${compCount}, Sample: ${JSON.stringify(sampleComps)}`);
-                    } else {
-                        console.warn(`[SNAPSHOT DEBUG] Empty snapshot.components (is null/undefined: ${!snapshot.components})`);
-                    }
-                    snapshot._debugLogged = true;
-                }
-                
-                emitComponentStateEvents(snapshot, alignedNowMs, true);
-
-                // Fixed timeout: independent of speed for consistent report times
-                if (Date.now() - startTime > wallTimeoutMs) {
-                    console.warn(`[v2.4] ${label} simulation timed out after ${Date.now() - startTime}ms!`);
-                    break;
-                }
+        } finally {
+            if (flushInterval) {
+                clearInterval(flushInterval);
             }
         }
         
@@ -556,6 +552,26 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
     }
 }
 
+function cleanProjectMeta(meta: any): any {
+    if (!meta || typeof meta !== 'object') return {};
+    const cleaned: any = {};
+    const standardKeys = [
+        'schemaVersion',
+        'board',
+        'components',
+        'connections',
+        'code',
+        'blocklyXml',
+        'projectFiles'
+    ];
+    for (const key of standardKeys) {
+        if (meta[key] !== undefined) {
+            cleaned[key] = meta[key];
+        }
+    }
+    return cleaned;
+}
+
 function detectSourceCode(code: string): boolean {
     if (!code || code.length < 20) return false;
     const hasArduinoMarkers = /\b(void\s+setup|void\s+loop|pinMode|digitalWrite|Serial\.begin|delay)\s*\(/.test(code);
@@ -590,8 +606,8 @@ onmessage = async (e: MessageEvent<any>) => {
                 teacherMeta = JSON.parse(projectJson);
             } else {
                 const buf = teacherData.projectBuf || teacher;
-                projectJson = extractProjectMetaFromPng(new Uint8Array(buf as any));
-                teacherMeta = JSON.parse(projectJson);
+                teacherMeta = extractProjectMetaFromPng(new Uint8Array(buf as any));
+                projectJson = JSON.stringify(teacherMeta);
             }
 
             // Teacher Validation Gate (Locally in Worker)
@@ -607,13 +623,71 @@ onmessage = async (e: MessageEvent<any>) => {
 
             postMessage({ type: 'LOG', msg: `[TRACE] Teacher key capture speed: ${runSpeed}x` });
             const telemetry = await captureBehavior(teacherMeta, 8000, "Teacher Reference", runSpeed, true);
+            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+            const peripheralComp = (teacherMeta.components || []).find((c: any) => c.id !== boardComp?.id);
+            const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
+            const componentName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
+
             const key = wasmExports.generate_binary_key(
-                projectJson, 
+                JSON.stringify(cleanProjectMeta(teacherMeta)), 
                 JSON.stringify(telemetry),
                 teacherHealth,
-                JSON.stringify(validator.errors.map((e: any) => e.message))
+                JSON.stringify(errors.map((e: any) => e.message))
             );
-            postMessage({ type: 'KEY_GENERATED', key });
+            postMessage({ type: 'KEY_GENERATED', key, boardName, componentName });
+
+        } else if (type === 'GENERATE_KEY_FROM_TELEMETRY') {
+            const { projectJson, telemetry: rawFrames } = e.data;
+            postMessage({ type: 'LOG', msg: "Generating Reference Key from provided visually-verified telemetry..." });
+            
+            const teacherMeta = JSON.parse(projectJson);
+            
+            // Teacher Validation Gate (Locally in Worker)
+            postMessage({ type: 'LOG', msg: "Auditing Teacher Reference Circuit..." });
+            const { errors, healthScore: teacherHealth } = emulatorExports.runUnifiedValidation(teacherMeta, { 
+                profile: 'balanced',
+                registry: emulatorExports
+            });
+
+            if (teacherHealth < 100) {
+                postMessage({ type: 'LOG', msg: `[Warning] Teacher's reference circuit has spatial/electrical errors! Health: ${teacherHealth}%`, logType: 'warning' });
+            }
+
+            // Transform raw visual-trace frames into the WASM event schema
+            // The WASM generate_binary_key expects:
+            //   { events: Array<PinChange|ComponentState|SerialOutput>, serial, duration_ms, ... }
+            // Since we upgraded the SimulatorPage to capture cycle-accurate telemetry using
+            // onPinChange and onStateChange hooks, the `rawFrames` array is already perfectly formatted!
+            const events: any[] = Array.isArray(rawFrames) ? rawFrames : (rawFrames?.events || []);
+
+            postMessage({ type: 'LOG', msg: `[CycleAccurateTrace] Forwarding ${events.length} perfect telemetry events to WASM bundler.` });
+
+            const telemetry = {
+                events,
+                serial: rawFrames?.serial || "",
+                duration_ms: rawFrames?.duration_ms || 7900,
+                error: rawFrames?.error || null,
+                crashed: rawFrames?.crashed || false,
+                rich_metrics: rawFrames?.rich_metrics || null,
+                simulation_speed: rawFrames?.simulation_speed || 1,
+                telemetry_cutoff_ms: rawFrames?.telemetry_cutoff_ms || 7900,
+                real_capture_ms: rawFrames?.real_capture_ms || 0,
+                coverage_issues: rawFrames?.coverage_issues || [],
+                ignored_events: rawFrames?.ignored_events || []
+            };
+
+            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+            const peripheralComp = (teacherMeta.components || []).find((c: any) => c.id !== boardComp?.id);
+            const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
+            const componentName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
+
+            const key = wasmExports.generate_binary_key(
+                JSON.stringify(cleanProjectMeta(teacherMeta)), 
+                JSON.stringify(telemetry),
+                teacherHealth,
+                JSON.stringify(errors.map((e: any) => e.message))
+            );
+            postMessage({ type: 'KEY_GENERATED', key, boardName, componentName });
 
         } else if (type === 'GRADE' && student) {
             postMessage({ type: 'LOG', msg: "Starting Intelligent Grading Process..." });
@@ -629,9 +703,14 @@ onmessage = async (e: MessageEvent<any>) => {
                 registry: emulatorExports
             });
             
-            // 3. Behavioral Analysis (Teacher - IF PNG)
+            // 3. Behavioral Analysis (Teacher - IF PNG or pre-built .bin key)
             let teacherBinaryKey: Uint8Array;
-            if (teacher instanceof ArrayBuffer) {
+            const { teacherIsBin } = e.data;
+            if (teacherIsBin && teacher instanceof ArrayBuffer) {
+                // .bin reference key supplied directly â€” use it as-is
+                postMessage({ type: 'LOG', msg: "Teacher reference is a pre-built .bin key. Skipping simulation baseline capture." });
+                teacherBinaryKey = new Uint8Array(teacher);
+            } else if (teacher instanceof ArrayBuffer) {
                 postMessage({ type: 'LOG', msg: "Teacher reference is a PNG. Generating behavioral baseline first..." });
                 const teacherMeta = extractProjectMetaFromPng(new Uint8Array(teacher));
                 

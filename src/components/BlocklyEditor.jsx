@@ -2931,6 +2931,25 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     })
   }, [isDark, boardKind, xml, resetBlocklyHistory, captureWorkspaceXml, scheduleHistoryPush, syncGeneratedCode])
 
+  // "?"? Watch for external XML changes (e.g. project import) "?"?
+  useEffect(() => {
+    const isReady = loadStatus === 'ready';
+    if (!isReady || !workspaceRef.current || !window.Blockly) return;
+    const currentXml = captureWorkspaceXml();
+    // Only load if the prop differs from what is currently in the workspace
+    if (xml && xml !== currentXml) {
+      try {
+        const B = window.Blockly;
+        const dom = parseBlocklyXml(B, xml);
+        loadBlocklyXmlIntoWorkspace(B, dom, workspaceRef.current);
+        resetBlocklyHistory(xml);
+        syncGeneratedCode({ notifyParent: false });
+      } catch (err) {
+        console.error('Failed to load external XML:', err);
+      }
+    }
+  }, [xml, loadStatus, captureWorkspaceXml, resetBlocklyHistory, syncGeneratedCode]);
+
   // ── Resize Blockly when container changes ──────────────────────────────────
   useEffect(() => {
     if (!wsContainerRef.current) return
@@ -3461,6 +3480,16 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             </svg>
           </button>
         </div>
+
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="image/png"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) handleImportPng(e.target.files[0])
+          }}
+        />
       </div>
 
       {/* ── Body ── */}

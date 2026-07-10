@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { setupConsoleCapture, waitForPageStability } from '../src/test-utils/page-tester.js';
+import { setupConsoleCapture, waitForPageStability } from '../../src/test-utils/page-tester.js';
 
 // Load route configuration
 const routeConfigPath = path.resolve('./scripts/page-routes.json');
@@ -19,6 +19,9 @@ const allRoutes = [
 ];
 
 test.describe('Console Error Detection Suite', () => {
+  test.describe.configure({ mode: 'serial' }); // Prevent Vite overload
+  test.setTimeout(120000); // Allow enough time for complex rendering
+
   allRoutes.forEach((route) => {
     test(`should check console for errors on ${route.name}`, async ({ page }) => {
       const consoleMessages = [];
