@@ -1246,6 +1246,7 @@ export class AVRRunner {
                         if (inst.pins[pin]) {
                             const dhtVoltage = inst.pins[pin].voltage;
                             updateOopPin(pin, dhtVoltage, compId);
+
                         }
                     });
                 } else if (inst.type.includes('gas-sensor') || inst.type.includes('mq')) {
