@@ -1941,9 +1941,8 @@ function generateSketch(gen, ws) {
       } else if (FUNCTION_BLOCK_TYPES.has(b.type)) {
         extras.push(code)
       } else {
-        // Any block that is not a root container (setup/loop/function) is an orphaned block on the canvas.
-        // We skip generating code for orphaned blocks so floating blocks do not execute!
-        console.log('[generateSketch] Skipping orphaned block:', b.type)
+        // All other statement blocks (loops, conditionals, actions) go inside loop()
+        loop_ += code
       }
     } catch (err) {
       // Don't let one block break generation for others
@@ -2680,19 +2679,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     if (!visible || loadStatus !== 'ready') return
 
     const onKey = (e) => {
-      const target = e.target || document.activeElement
-      if (target) {
-        const tag = target.tagName?.toUpperCase()
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
-        if (target.isContentEditable) return
-        if (target.closest && target.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return
-      }
-      if (document.activeElement) {
-        const activeTag = document.activeElement.tagName?.toUpperCase()
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return
-        if (document.activeElement.isContentEditable) return
-        if (document.activeElement.closest && document.activeElement.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return
-      }
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
 
@@ -2784,10 +2771,6 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     })
     workspaceRef.current = ws
     setLoadStatus('ready')
-
-    if (B && typeof B.Events?.disableOrphans === 'function') {
-      ws.addChangeListener(B.Events.disableOrphans)
-    }
 
     if (xml) {
       try {
@@ -2930,6 +2913,25 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       syncGeneratedCode({ notifyParent: true, emitXml: true })
     })
   }, [isDark, boardKind, xml, resetBlocklyHistory, captureWorkspaceXml, scheduleHistoryPush, syncGeneratedCode])
+
+  // "?"? Watch for external XML changes (e.g. project import) "?"?
+  useEffect(() => {
+    const isReady = loadStatus === 'ready';
+    if (!isReady || !workspaceRef.current || !window.Blockly) return;
+    const currentXml = captureWorkspaceXml();
+    // Only load if the prop differs from what is currently in the workspace
+    if (xml && xml !== currentXml) {
+      try {
+        const B = window.Blockly;
+        const dom = parseBlocklyXml(B, xml);
+        loadBlocklyXmlIntoWorkspace(B, dom, workspaceRef.current);
+        resetBlocklyHistory(xml);
+        syncGeneratedCode({ notifyParent: false });
+      } catch (err) {
+        console.error('Failed to load external XML:', err);
+      }
+    }
+  }, [xml, loadStatus, captureWorkspaceXml, resetBlocklyHistory, syncGeneratedCode]);
 
   // ── Resize Blockly when container changes ──────────────────────────────────
   useEffect(() => {
@@ -3461,6 +3463,75 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             </svg>
           </button>
         </div>
+
+        <button
+          style={{
+            ...BTN,
+            borderColor: useBlocklyCode ? 'var(--green)' : tok.border,
+            color: useBlocklyCode ? 'var(--green)' : tok.textMuted,
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontWeight: isMobile ? 800 : 700,
+            marginLeft: isMobile ? 4 : 8,
+            padding: isMobile ? '4px 8px' : '3px 10px',
+            fontSize: isMobile ? 10 : 11
+          }}
+          onClick={onToggleUseBlocklyCode}
+          title={useBlocklyCode ? "System is using Blocks" : "System is using Code"}
+        >
+          <div style={{ width: isMobile ? 6 : 8, height: isMobile ? 6 : 8, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor' }} />
+          Use Blocks
+        </button>
+
+        <button
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', marginLeft: 'auto', flexShrink: 0 }}
+          onClick={() => importFileRef.current?.click()}
+        >Import</button>
+
+        <button
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', flexShrink: 0 }}
+          onClick={handleExportPng}
+        >Export</button>
+
+        <div style={{ width: 1, height: 16, background: tok.border, margin: '0 2px' }} />
+
+        <button
+          style={{
+            ...BTN,
+            borderColor: showCode ? 'var(--accent)' : tok.border,
+            color: showCode ? 'var(--accent)' : tok.textMuted,
+            background: showCode ? 'rgba(0,255,255,0.05)' : 'transparent',
+            fontSize: isMobile ? 10 : 11,
+            padding: isMobile ? '4px 8px' : '3px 10px',
+            marginRight: isMobile ? 2 : 0,
+            flexShrink: 0,
+          }}
+          onClick={() => setShowCode(v => !v)}
+        >Preview</button>
+
+        <button
+          style={{
+            ...BTN,
+            background: 'var(--accent)',
+            borderColor: 'var(--accent)',
+            color: '#000',
+            fontWeight: 800,
+            fontSize: isMobile ? 11 : 11,
+            padding: isMobile ? '5px 12px' : '3px 10px',
+            boxShadow: isMobile ? '0 2px 8px rgba(0,255,255,0.2)' : 'none',
+            flexShrink: 0,
+          }}
+          onClick={handleExport} disabled={loadStatus !== 'ready'}
+        >Use Code</button>
+
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="image/png"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) handleImportPng(e.target.files[0])
+          }}
+        />
       </div>
 
       {/* ── Body ── */}

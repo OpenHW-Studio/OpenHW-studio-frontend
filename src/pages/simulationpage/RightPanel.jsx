@@ -1501,7 +1501,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
                   <BlocklyEditor
                     onExportCode={(generated) => { if (!editingDisabled) { setCode(generated); setCodeTab('code'); } }}
-                    onChange={(generated) => { if (!editingDisabled) { setBlocklyGeneratedCode(generated); if (setCode) setCode(generated); } }}
+                    onChange={(generated) => { if (!editingDisabled) setBlocklyGeneratedCode(generated); }}
                     xml={blocklyXml}
                     onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
                     useBlocklyCode={useBlocklyCode}

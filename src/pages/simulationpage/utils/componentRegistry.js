@@ -123,9 +123,11 @@ export const LOCAL_CATALOG = buildCatalog(COMPONENT_REGISTRY, GROUP_MAPPING);
 export function sortCatalog(catalog) {
   const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
   catalog.sort((a, b) => {
-    const idxA = GROUP_ORDER.indexOf(a.group);
-    const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
+    const groupA = a.group || 'Misc';
+    const groupB = b.group || 'Misc';
+    const idxA = GROUP_ORDER.indexOf(groupA);
+    const idxB = GROUP_ORDER.indexOf(groupB);
+    if (idxA === -1 && idxB === -1) return groupA.localeCompare(groupB);
     if (idxA === -1) return 1;
     if (idxB === -1) return -1;
     return idxA - idxB;

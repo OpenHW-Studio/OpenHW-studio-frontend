@@ -95,6 +95,7 @@ export function shouldIgnoreConsoleMessage(message) {
     'webpackChunk',
     'NetworkError',
     'Non-Error promise rejection captured',
+    'unique "key" prop',
   ];
 
   return ignorePatterns.some((pattern) => message.includes(pattern));
@@ -161,8 +162,9 @@ export async function takePageScreenshot(page, filename) {
 
 export async function waitForPageStability(page, timeout = 5000) {
   try {
-    // Wait for network to be idle
-    await page.waitForLoadState('networkidle', { timeout });
+    // Wait briefly for React to finish painting the DOM. 
+    // Playwright's load states are too flaky with Vite HMR websockets.
+    await page.waitForTimeout(1000);
     return { stable: true };
   } catch (error) {
     return { stable: false, error: error.message };

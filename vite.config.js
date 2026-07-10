@@ -84,11 +84,19 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'jsdom',
+      include: ['tests/unit/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
       deps: {
         inline: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
       }
     },
     server: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
+      watch: {
+        ignored: ['**/test-results/**', '**/playwright-report/**', '**/tests/fixtures/binary-cache/**']
+      },
       fs: {
         allow: [
           path.resolve(__dirname, '..'),

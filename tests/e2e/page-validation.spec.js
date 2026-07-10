@@ -11,7 +11,7 @@ import {
   createPageTestReport,
   generateHTMLReport,
   parseRouteFromJson,
-} from '../src/test-utils/page-tester.js';
+} from '../../src/test-utils/page-tester.js';
 
 // Load route configuration
 const routeConfigPath = path.resolve('./scripts/page-routes.json');
@@ -32,6 +32,8 @@ const publicRoutes = routeConfig.public
   .map(parseRouteFromJson);
 
 test.describe('Page Validation Suite', () => {
+  test.describe.configure({ mode: 'serial' }); // Prevent Vite from being overwhelmed by 12 parallel compiles
+  test.setTimeout(120000); // Allow enough time for complex rendering
   publicRoutes.forEach((route) => {
     test(`should validate ${route.name} at ${route.path}`, async ({ page }) => {
       const results = [];
@@ -53,12 +55,26 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Navigate to page
-        test.step(`Navigate to ${route.path}`, async () => {
-          await page.goto(route.path, { waitUntil: 'domcontentloaded', timeout: testConfig.timeout });
+        await test.step(`Navigate to ${route.path}`, async () => {
+          let retries = 3;
+          while (retries > 0) {
+            try {
+              await page.goto(route.path, { waitUntil: 'domcontentloaded', timeout: testConfig.timeout });
+              break; // Success
+            } catch (err) {
+              if (err.message.includes('ERR_ABORTED') && retries > 1) {
+                console.log(`Navigation to ${route.path} aborted. Retrying... (${retries - 1} left)`);
+                retries--;
+                await page.waitForTimeout(2000); // Give the Vite server a moment to recover
+              } else {
+                throw err;
+              }
+            }
+          }
         });
 
         // Wait for page stability
-        test.step('Wait for page to stabilize', async () => {
+        await test.step('Wait for page to stabilize', async () => {
           const stability = await waitForPageStability(page, 5000);
           results.push({
             test: 'Page Stability',
@@ -69,7 +85,7 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Validate title
-        test.step('Validate page title', async () => {
+        await test.step('Validate page title', async () => {
           const titleResult = await validatePageTitle(page);
           results.push({
             test: 'Page Title',
@@ -80,7 +96,7 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Validate page content
-        test.step('Validate page content', async () => {
+        await test.step('Validate page content', async () => {
           const contentResult = await validatePageContent(page, testConfig.minDomElements);
           results.push({
             test: 'Page Content',
@@ -91,7 +107,7 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Check console errors
-        test.step('Check console for errors', async () => {
+        await test.step('Check console for errors', async () => {
           const errorReport = logger.getErrorReport();
           const hasErrors = errorReport.hasErrors;
 
@@ -104,7 +120,7 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Check network errors
-        test.step('Check for network failures', async () => {
+        await test.step('Check for network failures', async () => {
           const errorReport = logger.getErrorReport();
           const hasNetworkErrors = errorReport.hasNetworkErrors;
 
@@ -117,7 +133,7 @@ test.describe('Page Validation Suite', () => {
         });
 
         // Check page performance
-        test.step('Check page performance', async () => {
+        await test.step('Check page performance', async () => {
           const perfResult = await checkPagePerformance(page);
           results.push({
             test: 'Page Performance',
@@ -131,7 +147,7 @@ test.describe('Page Validation Suite', () => {
 
         // Take screenshot on success
         if (results.every((r) => r.passed)) {
-          test.step('Take screenshot', async () => {
+          await test.step('Take screenshot', async () => {
             const screenshotResult = await takePageScreenshot(
               page,
               `${route.name.replace(/\s+/g, '-').toLowerCase()}-success`
@@ -151,7 +167,7 @@ test.describe('Page Validation Suite', () => {
 
         // Take screenshot on failure
         if (testConfig.screenshotOnFailure) {
-          test.step('Take screenshot on failure', async () => {
+          await test.step('Take screenshot on failure', async () => {
             const screenshotResult = await takePageScreenshot(
               page,
               `${route.name.replace(/\s+/g, '-').toLowerCase()}-failure`

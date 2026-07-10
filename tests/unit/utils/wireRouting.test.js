@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateWireBundleOffsets } from './wireRouting.js';
+import { calculateWireBundleOffsets } from '../../../src/utils/wireRouting.js';
 
 describe('wireRouting - collinear point simplification', () => {
   it('should simplify collinear points and not contain notches/hooks in shifted routes', () => {

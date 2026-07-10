@@ -145,6 +145,8 @@ export class AVRRunner {
                 const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
+                inst.sab = this.options?.sab;
+                inst.sabOffset = this.options?.sabOffsets ? this.options.sabOffsets[cDef.id] : undefined;
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
                 inst.onTelemetryFinding = (finding: any) => {
                     this.onStateUpdate({
@@ -886,9 +888,6 @@ export class AVRRunner {
 
             const visitNode = (rawNode: string, v: number) => {
                 const node = normalizePin(rawNode);
-                if (arduinoPinStr === '5' || rawNode.includes('btn7') || rawNode.includes('uno1:5')) {
-                    console.log(`[Worker visitNode] Pin 5 path, rawNode: ${rawNode}, node: ${node}, voltage: ${v}V`);
-                }
                 if (visitedNodes.has(node)) return;
 
                 const [compId, compPin] = node.split(':');
@@ -901,34 +900,17 @@ export class AVRRunner {
                     }
                 }
 
-                // When propagating from a board power rail, do NOT propagate back into board digital/analog pins
-                // if they are actively driven as OUTPUTs. If they are in INPUT or INPUT_PULLUP mode (e.g. connected
-                // to a switch or pushbutton to GND), allow the power rail voltage to drive the pin state!
+                // When propagating from a board power rail, do NOT propagate back into board power reference pins.
+                // However, board GPIO pins CAN be driven by GND/5V when routed through passive components
+                // (e.g., a button pressed between pin 2 and GND must pull pin 2 LOW).
                 const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
                 if (isPowerRailSrc && compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
-                    let port: AVRIOPort | null = null;
-                    let bit = 0;
-                    if (compPin.startsWith('A')) {
-                        port = this.portC;
-                        const parsed = parseInt(compPin.slice(1), 10);
-                        if (!isNaN(parsed)) bit = parsed;
-                    } else {
-                        const num = parseInt(compPin, 10);
-                        if (!isNaN(num)) {
-                            if (num >= 8 && num <= 13) {
-                                port = this.portB;
-                                bit = num - 8;
-                            } else if (num >= 0 && num <= 7) {
-                                port = this.portD;
-                                bit = num;
-                            }
-                        }
-                    }
-                    const state = port ? port.pinState(bit) : null;
-                    const isOutput = state === PinState.High || state === PinState.Low;
-                    if (isOutput) {
-                        return;
-                    }
+                    // Only block board power reference pins from being overwritten — allow GPIO pins to be pulled
+                    const upperPin = compPin.toUpperCase();
+                    const isBoardPowerPin = upperPin === 'GND' || /^GND[._:]?\d+$/.test(upperPin) ||
+                        upperPin === '5V' || upperPin === '3V3' || upperPin === 'VIN' || upperPin === 'AREF';
+                    if (isBoardPowerPin) return;
+                    // GPIO pins fall through and get their voltage set below
                 }
 
                 // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
@@ -1028,9 +1010,6 @@ export class AVRRunner {
                 }
                 if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
                 const state = port.pinState(bit);
-                if (pinStr === '5') {
-                    console.log(`[Worker getAvrPinModeState] Pin 5, port: ${port ? 'portD' : 'null'}, bit: ${bit}, avrState: ${state}, PinState.InputPullUp: ${PinState.InputPullUp}`);
-                }
                 if (state === PinState.High || state === PinState.InputPullUp) {
                     return { isDriven: true, isHigh: true };
                 }
@@ -1053,12 +1032,11 @@ export class AVRRunner {
                 const num = parseInt(p, 10);
                 if (isNaN(num)) return false;
                 let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
+                if (num >= 8 && num <= 13) port = this.portB;
+                else if (num >= 0 && num <= 7) port = this.portD;
                 else return false;
                 if (!port) return false;
-                const pinState = port.pinState(bit);
+                const pinState = port.pinState(num);
                 return pinState !== PinState.High && pinState !== PinState.Low;
             });
             const outputPins = allBoardPins.filter(p => {
@@ -1067,46 +1045,32 @@ export class AVRRunner {
                 const num = parseInt(p, 10);
                 if (isNaN(num)) return false;
                 let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
+                if (num >= 8 && num <= 13) port = this.portB;
+                else if (num >= 0 && num <= 7) port = this.portD;
                 else return false;
                 if (!port) return false;
-                const pinState = port.pinState(bit);
+                const pinState = port.pinState(num);
                 return pinState === PinState.High || pinState === PinState.Low;
             });
             const analogPins = allBoardPins.filter(p => p.startsWith('A'));
-            // INPUT pins: Separate INPUT_PULLUP from floating INPUT.
-            // INPUT_PULLUP pins MUST propagate their pull-up voltage outward so that
-            // connected components (pushbuttons, switches) can form a proper voltage divider.
-            // Without this, a button connected between an INPUT_PULLUP pin and GND would
-            // never pull the pin LOW because the pull-up voltage never reaches the button.
-            // Floating INPUT pins should NOT propagate, as external components own the line.
+            // INPUT pins: only update pinStates — do NOT propagate outward, because an
+            // external component owns the line (e.g. HC-SR04 drives ECHO, DHT22 drives DATA).
+            // Propagating a default-HIGH here would overwrite the component's output.
+            // EXCEPTION: INPUT_PULLUP pins MUST propagate their 5V weak pull-up voltage outward,
+            // otherwise a button wired to GND will never see 5V and will always read as LOW (pressed).
             inputPins.forEach(pin => {
                 const { isDriven, isHigh } = getAvrPinModeState(pin);
                 if (isDriven) {
                     this.pinStates[pin] = isHigh;
-
-                    // Determine if this pin is specifically INPUT_PULLUP
+                    // Check if this pin is specifically in INPUT_PULLUP mode
+                    const num = parseInt(pin, 10);
                     let port: AVRIOPort | null = null;
                     let bit = 0;
-                    const num = parseInt(pin, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            port = this.portB;
-                            bit = num - 8;
-                        } else if (num >= 0 && num <= 7) {
-                            port = this.portD;
-                            bit = num;
-                        }
-                    }
-                    const isPullUp = port ? port.pinState(bit) === PinState.InputPullUp : false;
-
-                    // INPUT_PULLUP pins propagate their weak pull-up voltage outward.
-                    // This allows pushbuttons to pull the pin LOW when pressed (overriding
-                    // the weak pull-up with a direct GND connection through the switch).
-                    if (isPullUp) {
-                        updateOopPin(pin, true);
+                    if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
+                    else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
+                    if (port && port.pinState(bit) === PinState.InputPullUp) {
+                        // Propagate the weak pull-up 5V so connected components (e.g. push button to GND) see it
+                        updateOopPin(pin, 5.0);
                     }
                 }
             });
@@ -1497,7 +1461,6 @@ export class AVRRunner {
                 }
                 if (this.cpu) {
                     const pind = this.cpu.data[0x29];
-                    console.log(`[PhysicsSolve] PIND2=${(pind>>2)&1} PIND3=${(pind>>3)&1} PIND4=${(pind>>4)&1} PIND5=${(pind>>5)&1} DDRD=${this.cpu.data[0x2A]} PORTD=${this.cpu.data[0x2B]}`);
                 }
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
@@ -1529,7 +1492,9 @@ export class AVRRunner {
             this.lastRunLoopMs = performance.now() - loopStart;
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            // this.emitStateIfDue(now); // Disabled. Handled by FLUSH_VISUALS from UI thread.
+            // Re-enabled: Relying exclusively on FLUSH_VISUALS causes severe time drift (>500ms) 
+            // when the main UI thread lags. This ensures perfect temporal telemetry for grading.
+            // this.emitStateIfDue(now); // Disabled to prevent LED flickering; relying purely on FLUSH_VISUALS again since the freeze bug is fixed.
         }
 
         this._dbgFrameCount++;
@@ -1721,6 +1686,21 @@ export class AVRRunner {
         }
         this.running = false;
         clearInterval(this.statusInterval);
+    }
+
+    /** Temporarily freeze the CPU run-loop without tearing down any state. */
+    pause() {
+        this.running = false;
+    }
+
+    /** Resume the CPU run-loop after a pause(). Resets the wall-clock reference
+     *  so that no catch-up cycles are generated for the frozen duration. */
+    resume() {
+        if (this.running) return;
+        this.running = true;
+        this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
+        this.runLoop();
     }
 
     reset() {
