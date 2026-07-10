@@ -862,6 +862,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     toggleCodeFileDisabled,
     deleteCodeFile,
   } = useEditorStore();
+  const projectFilesRef = useRef(projectFiles);
+  useEffect(() => {
+    projectFilesRef.current = projectFiles;
+  }, [projectFiles]);
   const suppressCodeSyncRef = useRef(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [panelWidth, setPanelWidth] = useState(580);
@@ -7021,7 +7025,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     if (!autoCodingEnabled || isRunning || liveEditingDisabled) return;
 
     const hasAutocodeSnippet = (compId) =>
-      projectFiles.some((file) =>
+      projectFilesRef.current.some((file) =>
         String(file.content || "").includes(`autocoding for ${compId} start`),
       );
 
@@ -7060,7 +7064,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [autoCodingEnabled, components, wires, projectFiles, isRunning, liveEditingDisabled]);
+  }, [autoCodingEnabled, components, wires, isRunning, liveEditingDisabled]);
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;
@@ -8495,13 +8499,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       components: normalizedComponents,
       wires: normalizedWires,
       activeCodeFileId: activeCodeFileId || "",
-      code: useBlocklyCode ? blocklyGeneratedCode || "" : code || "",
+      code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
     });
   }, [
     components,
     wires,
     activeCodeFileId,
     useBlocklyCode,
+    codeTab,
     blocklyGeneratedCode,
     code,
   ]);
@@ -8537,7 +8542,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         const projectData = {
           components: targetComponents,
           connections: targetWires,
-          code: useBlocklyCode ? blocklyGeneratedCode : code || "",
+          code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
           activeCodeFileId,
         };
 

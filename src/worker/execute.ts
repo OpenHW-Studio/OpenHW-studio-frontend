@@ -9,13 +9,8 @@ export async function createRunnerForBoard(
     options: AVRRunnerOptions & { pyScript?: string; esp32SimulationMode?: string } = {}
 ): Promise<BoardRunner> {
     if (/(esp32)/i.test(String(boardType || ''))) {
-        if (options.esp32SimulationMode === 'frontend') {
-            const { ESP32Runner } = await import('./runners/esp32-runner.ts');
-            return new ESP32Runner(hexData, componentsDef, wiresDef, onStateUpdate, options);
-        } else {
-            const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');
-            return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
-        }
+        const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');
+        return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
     }
     if (/(stm32)/i.test(String(boardType || ''))) {
         const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');

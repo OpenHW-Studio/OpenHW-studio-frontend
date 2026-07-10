@@ -1186,7 +1186,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
             } else if (/(esp32)/i.test(type)) {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
-                import('./runners/esp32-runner.ts').catch(() => {});
             } else if (/pico|rp2040/i.test(type)) {
                 import('./runners/rp2040-runner.ts').catch(() => {});
             } else {
