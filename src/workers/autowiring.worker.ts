@@ -172,6 +172,51 @@ function resolveAttributePlaceholders(snippet: any, manifest: any): any {
   return snippet;
 }
 
+/**
+ * Post-process the autowiring plan to remove unwanted external I2C pull-up resistors
+ * when components (like SSD1306 OLED breakout boards) have built-in pull-ups.
+ */
+function stripUnwantedI2cPullups(plan: any, newComp: any, manifest: any): void {
+  if (!plan || typeof plan === 'string') return;
+  const compType = (newComp?.type || manifest?.type || '').toLowerCase();
+  const isOled = compType.includes('ssd1306-oled') || compType.includes('oled');
+  const externalPullupsDeclaredFalse = manifest?.autowiring?.externalPullups === false || manifest?.autowiring?.pullups === false;
+
+  if (isOled || externalPullupsDeclaredFalse) {
+    if (Array.isArray(plan.added_components)) {
+      const removedResistorIds = new Set<string>();
+      plan.added_components = plan.added_components.filter((c: any) => {
+        const idLower = String(c?.id || '').toLowerCase();
+        const typeLower = String(c?.type || '').toLowerCase();
+        const isPullupResistor = idLower.startsWith('pu_sda_') || idLower.startsWith('pu_scl_') ||
+          (typeLower.includes('resistor') && (idLower.includes('pu_') || idLower.includes('sda') || idLower.includes('scl')));
+        if (isPullupResistor) {
+          removedResistorIds.add(c.id);
+          return false;
+        }
+        return true;
+      });
+
+      if (removedResistorIds.size > 0 && Array.isArray(plan.added_wires)) {
+        plan.added_wires = plan.added_wires.filter((w: any) => {
+          const fromComp = String(w?.from || '').split(':')[0];
+          const toComp = String(w?.to || '').split(':')[0];
+          return !removedResistorIds.has(fromComp) && !removedResistorIds.has(toComp);
+        });
+      }
+    }
+
+    if (Array.isArray(plan.reasoning)) {
+      plan.reasoning = plan.reasoning.map((r: string) => {
+        if (typeof r === 'string' && r.includes('pull-up resistors')) {
+          return 'I2C: Using module built-in pull-up resistors (no external resistors needed for OLED).';
+        }
+        return r;
+      });
+    }
+  }
+}
+
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
@@ -216,6 +261,9 @@ self.onmessage = async (e) => {
         if (typeof plan === 'string') {
           throw new Error(plan);
         }
+
+        // Post-process: strip unwanted I2C pullup resistors for OLED or components with internal pullups
+        stripUnwantedI2cPullups(plan, newComp, manifest);
 
         // Forward library dependencies from manifest
         if (manifest?.autocoding?.libraries) {

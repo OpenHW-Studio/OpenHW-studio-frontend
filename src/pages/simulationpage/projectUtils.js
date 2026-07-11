@@ -28,12 +28,38 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
   if (!plan) return { components: currentComponents, wires: currentWires };
 
   // Normalize plan properties (WASM uses snake_case, JS uses camelCase)
-  const addedComponents = plan.addedComponents || plan.added_components || [];
-  const addedWires = plan.addedWires || plan.added_wires || [];
+  let addedComponents = plan.addedComponents || plan.added_components || [];
+  let addedWires = plan.addedWires || plan.added_wires || [];
   const removedComponents = plan.removedComponents || plan.removed_components || [];
   const removedWires = plan.removedWires || plan.removed_wires || [];
   const transformations = plan.transformations || [];
   const defaultOwnerId = plan.main_component?.id || plan.ownerId || null;
+
+  // Secondary Safety Net: Strip external I2C pullup resistors when main/target component is OLED display
+  const mainCompType = String(plan.main_component?.type || '').toLowerCase();
+  const isOledPlan = mainCompType.includes('ssd1306-oled') || mainCompType.includes('oled') ||
+    addedComponents.some(c => String(c?.type || '').toLowerCase().includes('ssd1306-oled'));
+  if (isOledPlan) {
+    const strippedResistorIds = new Set();
+    addedComponents = addedComponents.filter(c => {
+      const idLower = String(c?.id || '').toLowerCase();
+      const typeLower = String(c?.type || '').toLowerCase();
+      const isPullup = idLower.startsWith('pu_sda_') || idLower.startsWith('pu_scl_') ||
+        (typeLower.includes('resistor') && (idLower.includes('pu_') || idLower.includes('sda') || idLower.includes('scl')));
+      if (isPullup) {
+        strippedResistorIds.add(c.id);
+        return false;
+      }
+      return true;
+    });
+    if (strippedResistorIds.size > 0) {
+      addedWires = addedWires.filter(w => {
+        const fromComp = String(w?.from || '').split(':')[0];
+        const toComp = String(w?.to || '').split(':')[0];
+        return !strippedResistorIds.has(fromComp) && !strippedResistorIds.has(toComp);
+      });
+    }
+  }
 
   // Deep clone to prevent mutations
   const nextComponents = JSON.parse(JSON.stringify(currentComponents));
