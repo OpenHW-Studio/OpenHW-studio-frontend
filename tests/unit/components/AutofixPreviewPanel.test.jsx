@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import AutofixPreviewPanel from './AutofixPreviewPanel.jsx';
+import AutofixPreviewPanel from '../../../src/components/AutofixPreviewPanel.jsx';
 
 describe('AutofixPreviewPanel', () => {
   it('shows the repair preview and calls the apply handler when clicked', async () => {

@@ -455,6 +455,7 @@ export type AVRRunnerOptions = {
     rp2040LogicalFlashBytes?: number | string;
     rp2040FlashPartitions?: RP2040FlashPartitionInput[];
     solverMode?: 'logic';
+    sab?: SharedArrayBuffer;
 };
 
 export type BoardRunner = {
@@ -463,6 +464,8 @@ export type BoardRunner = {
     instances: Map<string, BaseComponent>;
     stop: () => void;
     reset?: () => void;
+    pause?: () => void;
+    resume?: () => void;
     serialRx: (data: string) => void;
     serialRxByte: (value: number) => void;
     serialRxByteFromSource?: (value: number, source?: string) => void;

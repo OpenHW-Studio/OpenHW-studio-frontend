@@ -12,7 +12,7 @@ export function useSimulatorShortcuts({
   applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
   isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
   setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
-  setProjectFiles, activeCodeFileId, code, setCode
+  setProjectFiles, activeCodeFileId, code, setCode, handleExportPng, handleImportPng
 }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -151,6 +151,16 @@ export function useSimulatorShortcuts({
         }
       }
 
+      // PNG Import/Export Shortcuts
+      if (e.altKey && e.code === 'KeyP') {
+        e.preventDefault();
+        if (handleExportPng) handleExportPng();
+      }
+      if (e.altKey && e.code === 'KeyI') {
+        e.preventDefault();
+        if (handleImportPng) handleImportPng();
+      }
+
       // Projects
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -245,6 +255,6 @@ export function useSimulatorShortcuts({
     applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
     isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
     setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
-    setProjectFiles, activeCodeFileId, code, setCode
+    setProjectFiles, activeCodeFileId, code, setCode, handleExportPng, handleImportPng
   ]);
 }

@@ -1,0 +1,37 @@
+// autocoding for servo_1 start
+#include <Servo.h>
+Servo myServo_1;
+// autocoding for servo_1 end
+
+void setup() {
+  // autocoding for servo_1 start
+  myServo_1.attach(6);
+  myServo_1.write(0);
+  delay(500);
+  Serial.begin(9600);
+  Serial.println("Servo Motor Ready");
+  // autocoding for servo_1 end
+
+  // put your setup code here, to run once:
+
+}
+
+void loop() {
+  // autocoding for servo_1 start
+  for (int pos_1 = 0; pos_1 <= 180; pos_1++) {
+    myServo_1.write(pos_1);
+    Serial.print("Servo position: ");
+    Serial.println(pos_1);
+    delay(10);
+  }
+  for (int pos_1 = 180; pos_1 >= 0; pos_1--) {
+    myServo_1.write(pos_1);
+    Serial.print("Servo position: ");
+    Serial.println(pos_1);
+    delay(10);
+  }
+  // autocoding for servo_1 end
+
+  // put your main code here, to run repeatedly:
+
+}

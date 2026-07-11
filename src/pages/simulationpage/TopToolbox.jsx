@@ -827,8 +827,6 @@ function TopToolboxInternal(props) {
         )}
 
 
-
-
         {assessmentMode && (
           <Btn
             color="var(--accent)"
@@ -1566,153 +1564,39 @@ function TopToolboxInternal(props) {
         onClose={() => setShowSchematic(false)}
         width={420}
       >
-        {schematicLoading ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "40px 0",
-              color: "rgba(255,255,255,0.5)",
-              fontSize: "13px",
-            }}
+        <div
+          style={{
+            textAlign: "center",
+            padding: "40px 20px",
+            color: "rgba(255,255,255,0.7)",
+            fontSize: "16px",
+            fontWeight: "500",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ color: "var(--accent)" }}
           >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              style={{
-                animation: "toolbar-spin 0.9s linear infinite",
-                marginBottom: "12px",
-              }}
-            >
-              <path d="M21 12a9 9 0 1 1-4.5-7.8" />
-            </svg>
-            <div style={{ fontWeight: "600", color: "#fff" }}>
-              Generating Schematic...
-            </div>
-            <div style={{ fontSize: "11px", marginTop: "4px" }}>
-              Capturing current circuit layout
-            </div>
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div>Coming Soon...</div>
+          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
+            We are working hard to bring you the best schematic generation experience.
           </div>
-        ) : schematicDataUrl ? (
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-          >
-            <div
-              style={{
-                background: "#000",
-                borderRadius: "12px",
-                overflow: "hidden",
-                border: "1px solid rgba(255,255,255,0.1)",
-                boxShadow: "inset 0 2px 10px rgba(0,0,0,0.5)",
-              }}
-            >
-              <img
-                src={schematicDataUrl}
-                alt="Schematic"
-                style={{ width: "100%", display: "block" }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                onClick={downloadSchematicPng}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: "10px",
-                  background: "rgba(255,255,255,0.05)",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                </svg>
-                PNG
-              </button>
-              <button
-                onClick={downloadSchematicPdf}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: "10px",
-                  background: "var(--accent)",
-                  color: "#fff",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                </svg>
-                PDF
-              </button>
-              <button
-                onClick={generateSchematic}
-                style={{
-                  padding: "10px",
-                  borderRadius: "10px",
-                  background: "rgba(255,255,255,0.05)",
-                  color: "rgba(255,255,255,0.6)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  cursor: "pointer",
-                }}
-                title="Recapture"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "20px",
-              color: "rgba(255,255,255,0.5)",
-            }}
-          >
-            Failed to capture schematic. Please try again.
-          </div>
-        )}
+        </div>
       </FloatingPanel>
 
       <FloatingPanel

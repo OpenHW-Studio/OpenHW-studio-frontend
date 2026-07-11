@@ -13,7 +13,7 @@ const RightPanelEditor = memo(({
   editingDisabled,
   isDragging // Passed to potentially suppress updates during drag if needed
 }) => {
-  const { code, setCode } = useEditorStore();
+  const { code, setCode, setFileContent } = useEditorStore();
   const [localCode, setLocalCode] = useState(code);
   const isInternalUpdate = useRef(false);
   const editorRef = useRef(null);
@@ -32,10 +32,14 @@ const RightPanelEditor = memo(({
   useEffect(() => {
     if (localCode === code) return;
     const timeout = setTimeout(() => {
-      setCode(localCode);
+      if (activeCodeFileId) {
+        setFileContent(activeCodeFileId, localCode);
+      } else {
+        setCode(localCode);
+      }
     }, 400);
     return () => clearTimeout(timeout);
-  }, [localCode, setCode, code]);
+  }, [localCode, setFileContent, setCode, code, activeCodeFileId]);
 
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -67,7 +71,15 @@ const RightPanelEditor = memo(({
   const compareFile = projectFiles.find(f => f.id === compareWithId);
 
   return (
-    <div ref={containerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
+    <div 
+      ref={containerRef} 
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', minHeight: 0 }}
+      onKeyDown={(e) => {
+        // Stop key events (like Backspace/Delete) from bubbling to Wokwi Simulator global listeners
+        e.stopPropagation();
+        e.nativeEvent.stopPropagation();
+      }}
+    >
       {compareWithId ? (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '4px 12px', background: 'var(--accent)', color: '#000', fontSize: 10, fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -90,7 +102,7 @@ const RightPanelEditor = memo(({
           value={localCode}
           onMount={handleEditorMount}
           onChange={v => {
-            if (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') return;
+            if (activeCodeFileId === 'project/diagram.json') return;
             if (editingDisabled) return;
             isInternalUpdate.current = true;
             setLocalCode(v || '');

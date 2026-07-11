@@ -9,16 +9,17 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "test:page-validation": "playwright test e2e/page-validation.spec.js",
-    "test:console-errors": "playwright test e2e/console-error-check.spec.js",
+    "test:page-validation": "playwright test tests/e2e/page-validation.spec.js",
+    "test:console-errors": "playwright test tests/e2e/console-error-check.spec.js",
     "test:pages": "npm run test:page-validation && npm run test:console-errors",
-    "test:protocol": "npx vite-node src/worker/protocol-compliance.test.mjs",
+    "test:protocol": "vitest run tests/unit/worker/protocol-compliance.test.mjs",
     "test:rp2040-smoke": "npx vite-node src/worker/rp2040-smoke-matrix.ts",
     "test:rp2040-smoke:watchdog": "node scripts/rp2040-smoke-watchdog.mjs",
     "test:cli-hw-matrix": "npx vite-node src/worker/cli-hardware-compat-matrix.ts",
     "test:cli-hw-matrix:watchdog": "node scripts/cli-hw-matrix-watchdog.mjs",
     "test:cli-hw-matrix:guard": "node scripts/cli-hw-matrix-guard.mjs",
-    "report:telemetry-coverage": "node scripts/cli-hw-telemetry-coverage.mjs"
+    "report:telemetry-coverage": "node scripts/cli-hw-telemetry-coverage.mjs",
+    "test:diagnostics": "vitest run tests/unit/grading-diagnostics.test.ts"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
