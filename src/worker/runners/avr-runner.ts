@@ -344,6 +344,11 @@ export class AVRRunner {
 
         // Initialize _simCpu / _simUpdatePhysics on all component instances BEFORE the first
         // CPU chunk runs, so that components (e.g. HC-SR04) can use addClockEvent immediately.
+        if (this.cpu && typeof (this.cpu as any).addClockEvent !== 'function') {
+            (this.cpu as any).addClockEvent = (cb: () => void, delayCycles: number) => {
+                this.clockEvents.push({ targetCycle: this.cpu!.cycles + delayCycles, callback: cb });
+            };
+        }
         this.instances.forEach(inst => {
             if (!(inst as any)._simCpu) {
                 (inst as any)._simCpu = this.cpu;
@@ -1249,6 +1254,14 @@ export class AVRRunner {
 
                         }
                     });
+                } else if (inst.type.includes('ds18b20') || inst.type.includes('onewire')) {
+                    // 1-Wire devices (DS18B20 etc.) drive DQ line for presence pulse and data bits.
+                    // Propagate DQ voltage back to the AVR so the Arduino firmware can read pin state.
+                    ['DQ', 'dq', 'DATA', 'data'].forEach(pin => {
+                        if (inst.pins[pin]) {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
                 } else if (inst.type.includes('gas-sensor') || inst.type.includes('mq')) {
                     ['DO', 'AO'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
@@ -1336,13 +1349,15 @@ export class AVRRunner {
                 pinNames.forEach((pin, i) => {
                     if (!pin) return;
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
+                    // Allow OUTPUT, InputPullUp, and Input (high-impedance release for open-drain buses like 1-Wire/I2C)
                     const state = port.pinState(i);
-                    const isOutputOrPullUp = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp;
-                    if (!isOutputOrPullUp) {
+                    const isOutputOrPullUpOrInput = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp || state === PinState.Input;
+                    if (!isOutputOrPullUpOrInput) {
                         return;
                     }
 
-                    const isHigh = state === PinState.InputPullUp || state === PinState.High || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
+                    // For open-drain buses (like 1-Wire / I2C), switching to high-impedance Input releases the wire HIGH.
+                    const isHigh = state === PinState.InputPullUp || state === PinState.High || state === PinState.Input || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1413,6 +1428,7 @@ export class AVRRunner {
     }
 
     private _dbgFrameCount = 0;
+    private clockEvents: Array<{ targetCycle: number; callback: () => void }> = [];
 
     private pollADCChannels = () => {
         if (!this.adc || !this.cpu) return;
@@ -1496,6 +1512,15 @@ export class AVRRunner {
                 while (this.cpu.cycles < nextChunkTarget && this.running) {
                     avrInstruction(this.cpu);
                     this.cpu.tick();
+                    if (this.clockEvents.length > 0) {
+                        for (let i = this.clockEvents.length - 1; i >= 0; i--) {
+                            if (this.cpu.cycles >= this.clockEvents[i].targetCycle) {
+                                const cb = this.clockEvents[i].callback;
+                                this.clockEvents.splice(i, 1);
+                                cb();
+                            }
+                        }
+                    }
                 }
 
                 // Component updates for smooth animation
@@ -1505,6 +1530,11 @@ export class AVRRunner {
                     if (!(inst as any)._simCpu) {
                         (inst as any)._simCpu = this.cpu;
                         (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+                        if (this.cpu && typeof (this.cpu as any).addClockEvent !== 'function') {
+                            (this.cpu as any).addClockEvent = (cb: () => void, delayCycles: number) => {
+                                this.clockEvents.push({ targetCycle: this.cpu!.cycles + delayCycles, callback: cb });
+                            };
+                        }
                     }
                     if (this.cpu) {
                         (this.cpu as any)._avrRunner = this;
@@ -1781,6 +1811,7 @@ export class AVRRunner {
 
     reset() {
         if (this.cpu) this.cpu.reset();
+        this.clockEvents = [];
         this.softSerialNextInjectCycle = 0;
         this.softSerialDecodeState = {
             receiving: false,
@@ -2075,6 +2106,7 @@ export class AVRRunner {
     private netHasResistor = new Set<number>();
 
     private buildNetlist() {
+        this.protocolEndpointsCache.clear();
         const adj = new Map<string, string[]>();
 
         const addEdge = (a: string, b: string) => {
