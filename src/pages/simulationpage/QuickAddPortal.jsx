@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
+import { isComponentHidden, getComponentWarning } from './utils/componentVisibilityConfig';
 
 /**
  * QuickAddPortal — the double-click-on-canvas component search popup.
@@ -77,6 +78,7 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
   if (q) {
     outer: for (const group of catalog) {
       for (const item of group.items) {
+        if (isComponentHidden(item.type)) continue;
         const searchLabel = (item.label || item.name || '').toLowerCase();
         const searchType = (item.type || '').toLowerCase();
         if (searchLabel.includes(q) || searchType.includes(q)) {
@@ -168,6 +170,7 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
       {/* Results */}
       {results.map((item, i) => {
         const locked = isPaletteItemLocked?.(item.type) ?? false;
+        const warning = getComponentWarning(item.type);
         return (
           <div
             key={`${item.type}-${i}`}
@@ -175,9 +178,10 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
             data-quickadd="true"
             onMouseEnter={() => setSelIdx(i)}
             onMouseDown={e => { e.preventDefault(); addItem(item); }}
+            title={warning ? `⚠️ ${warning}` : undefined}
             style={{
-              background: i === clampedIdx ? (locked ? 'rgba(239,68,68,0.15)' : 'var(--accent)') : 'transparent',
-              color:      i === clampedIdx ? (locked ? '#ef4444' : '#fff') : (locked ? 'var(--text3)' : 'var(--text)'),
+              background: i === clampedIdx ? (locked ? 'rgba(239,68,68,0.15)' : (warning ? '#f59e0b22' : 'var(--accent)')) : 'transparent',
+              color:      i === clampedIdx ? (locked ? '#ef4444' : (warning ? '#f59e0b' : '#fff')) : (locked ? 'var(--text3)' : (warning ? '#f59e0b' : 'var(--text)')),
               borderRadius: 8,
               margin: '2px 5px',
               width: 'calc(100% - 10px)',
@@ -185,7 +189,19 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
               opacity: locked ? 0.65 : 1,
             }}
           >
-            <span style={{ fontWeight: i === clampedIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
+            <span style={{ fontWeight: i === clampedIdx ? 700 : 500, flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {item.label}
+              {warning && <span style={{ fontSize: 10, opacity: 0.8 }}>(Not Working)</span>}
+            </span>
+            {warning && (
+              <span style={{ marginRight: 4, display: 'inline-flex', alignItems: 'center' }} title={warning}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.25)" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </span>
+            )}
             {locked && <span style={{ fontSize: 11 }}>🔒</span>}
             {!locked && i === clampedIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
           </div>

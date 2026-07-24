@@ -40,6 +40,7 @@ import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
+import { isComponentHidden, getComponentWarning } from "./utils/componentVisibilityConfig";
 import {
   calculateProjectPlanApplication,
   getRotatedPoint,
@@ -5099,6 +5100,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     async (item, x, y) => {
       if (liveEditingDisabled) return;
       saveHistory();
+
+      const warningMsg = getComponentWarning(item.type);
+      if (warningMsg) {
+        console.warn(`[Component Warning] ${item.label || item.type}: ${warningMsg}`);
+      }
 
       const usedIds = new Set(components.map((c) => String(c.id || "")));
       const id = allocateComponentId(item.type, usedIds);
