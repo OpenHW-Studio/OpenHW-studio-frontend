@@ -507,7 +507,7 @@ function syncNextIds(_comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/examples' : '/examples');
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api/examples' : '/api/examples');
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')).replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
