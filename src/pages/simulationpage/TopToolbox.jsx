@@ -551,7 +551,7 @@ function TopToolboxInternal(props) {
     { label: "Documentation", onClick: () => window.open(DOCS_URL, "_blank") },
     {
       label: "Keyboard Shortcuts",
-      shortcut: "H",
+      shortcut: "Alt+H",
       onClick: () => setShowShortcuts(true),
     },
     {

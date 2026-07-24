@@ -16,42 +16,212 @@ export function useSimulatorShortcuts({
 }) {
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'F1') {
+      if (!e || !e.key) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      // Check if user is actively typing inside an input element, textarea, or Monaco code editor
+      const isTyping = (() => {
+        const t = e.target;
+        if (!t) return false;
+        const tag = t.tagName?.toUpperCase();
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return true;
+        if (t.isContentEditable) return true;
+        if (typeof t.closest === 'function' && t.closest('.monaco-editor, .monaco-diff-editor, .injectionDiv, .blocklyWorkspace, [role="textbox"], [contenteditable="true"]')) {
+          return true;
+        }
+        return false;
+      })();
+
+      // === 1. GLOBAL SHORTCUTS (Work everywhere, even if focused in text inputs) ===
+
+      // Escape key (Closes Modals -> Sidebars -> Wires -> Selection -> Simulation)
+      if (e.key === 'Escape') { 
+        if (typeof setShowShortcuts === 'function') setShowShortcuts(false);
+        if (typeof setShowProjectsSidebar === 'function' && showProjectsSidebar) {
+          setShowProjectsSidebar(false);
+          return;
+        }
+        if (wireStart) {
+          setWireStart(null);
+          setWireClickPos(null);
+          return;
+        }
+        if (selected) {
+          setSelected(null);
+          return;
+        }
+        if (isRunning) {
+          handleStop();
+          return;
+        }
+        setWireClickPos(null);
+        return;
+      }
+
+      // Help Menu (F1 or Alt+H)
+      if (e.key === 'F1' || (e.altKey && e.code === 'KeyH')) {
         e.preventDefault();
-        setShowF1Menu(prev => !prev);
+        setShowShortcuts(prev => !prev);
         return;
       }
       
-      // Shortcuts that work even if input is focused
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      // Save Project (Ctrl+S / Cmd+S)
+      if (mod && key === 's' && !e.altKey) {
         e.preventDefault();
         handleSave();
         return;
       }
 
-      const target = e.target || document.activeElement;
-      if (target) {
-        const tag = target.tagName?.toUpperCase();
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
-        if (target.isContentEditable) return;
-        if (target.closest && target.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return;
-      }
-      if (document.activeElement) {
-        const activeTag = document.activeElement.tagName?.toUpperCase();
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return;
-        if (document.activeElement.isContentEditable) return;
-        if (document.activeElement.closest && document.activeElement.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return;
+      // New Project (Ctrl+Alt+N / Cmd+Alt+N)
+      if (mod && e.altKey && key === 'n') {
+        e.preventDefault();
+        handleNewProject();
+        return;
       }
 
-      // When Blocks tab is active and panel is open, ALL shortcuts (Delete, Backspace, Undo, Redo) belong to Blockly!
+      // Open / Toggle Projects Sidebar (Ctrl+O / Cmd+O)
+      if (mod && key === 'o') {
+        e.preventDefault();
+        setShowProjectsSidebar(prev => !prev);
+        if (!showProjectsSidebar) setProjectsSidebarTab('projects');
+        return;
+      }
+
+      // Toggle Console (Ctrl+B / Cmd+B)
+      if (mod && key === 'b') {
+        e.preventDefault();
+        setIsConsoleOpen(prev => !prev);
+        return;
+      }
+
+      // Toggle Right Panel (Alt+V)
+      if (e.altKey && e.code === 'KeyV') {
+        e.preventDefault();
+        setIsPanelOpen(prev => !prev);
+        return;
+      }
+
+      // Open Code Panel (Alt+C)
+      if (e.altKey && e.code === 'KeyC') {
+        e.preventDefault();
+        if (isPanelOpen && codeTab === 'code') {
+          setIsPanelOpen(false);
+        } else {
+          setIsPanelOpen(true);
+          setCodeTab('code');
+        }
+        return;
+      }
+
+      // Open Serial Panel (Alt+S)
+      if (e.altKey && e.code === 'KeyS') {
+        e.preventDefault();
+        if (isPanelOpen && codeTab === 'serial') {
+          setIsPanelOpen(false);
+        } else {
+          setIsPanelOpen(true);
+          setCodeTab('serial');
+        }
+        return;
+      }
+
+      // Code Explorer Toggle (Alt+E)
+      if (e.altKey && e.code === 'KeyE') {
+        e.preventDefault();
+        if (isPanelOpen && codeTab === 'code') {
+          setShowCodeExplorer(v => !v);
+        } else {
+          setIsPanelOpen(true);
+          setCodeTab('code');
+          setShowCodeExplorer(true);
+        }
+        return;
+      }
+
+      // Grid Toggle (Ctrl+G / Cmd+G)
+      if (mod && key === 'g') {
+        e.preventDefault();
+        setShowGrid(prev => !prev);
+        return;
+      }
+
+      // Lock Canvas Toggle (Ctrl+L / Cmd+L)
+      if (mod && key === 'l') {
+        e.preventDefault();
+        setIsCanvasLocked(prev => !prev);
+        return;
+      }
+
+      // Fit to View (Alt+F)
+      if (e.altKey && e.code === 'KeyF') {
+        e.preventDefault();
+        fitToView('fit');
+        return;
+      }
+
+      // Toggle Wires Always on Top (Alt+T)
+      if (e.altKey && e.code === 'KeyT') {
+        e.preventDefault();
+        setWiresAlwaysOnTop(v => !v);
+        return;
+      }
+
+      // Run / Stop Simulation (F5 or Ctrl+Enter / Cmd+Enter)
+      if (e.key === 'F5' || (mod && e.key === 'Enter')) {
+        e.preventDefault();
+        if (!isRunning) handleRun();
+        else handleStop();
+        return;
+      }
+
+      // Zoom Controls (Alt + '+' or '-' or '0')
+      if (e.altKey && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
+        e.preventDefault();
+        applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))));
+        return;
+      }
+      if (e.altKey && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) {
+        e.preventDefault();
+        applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))));
+        return;
+      }
+      if (e.altKey && (e.key === '0' || e.code === 'Numpad0')) {
+        e.preventDefault();
+        setCanvasZoom(1);
+        setCanvasOffset({ x: 0, y: 0 });
+        canvasZoomRef.current = 1;
+        canvasOffsetRef.current = { x: 0, y: 0 };
+        if (innerCanvasRef.current) {
+          innerCanvasRef.current.style.transform = `translate(0px, 0px) scale(1)`;
+        }
+        return;
+      }
+
+      // PNG Import (Alt+I) / Export (Alt+P)
+      if (e.altKey && e.code === 'KeyP') {
+        e.preventDefault();
+        if (handleExportPng) handleExportPng();
+        return;
+      }
+      if (e.altKey && e.code === 'KeyI') {
+        e.preventDefault();
+        if (handleImportPng) handleImportPng();
+        return;
+      }
+
+      // === 2. CANVAS SHORTCUTS (Ignored when typing in text input or code editor) ===
+      if (isTyping) {
+        return;
+      }
+
+      // When Blocks tab is active and panel is open, ALL canvas shortcuts belong to Blockly!
       if (isPanelOpen && codeTab === 'block') {
         return;
       }
 
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-
-      // Undo/Redo (circuit canvas only)
+      // Undo (Ctrl+Z) / Redo (Ctrl+Y or Ctrl+Shift+Z)
       if (mod && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -63,26 +233,19 @@ export function useSimulatorShortcuts({
         return;
       }
 
-      // Simulation Control
-      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+      // Rotate Component ('R' or 'Alt+R' or 'Alt+Shift+R')
+      if ((key === 'r' || (e.altKey && e.code === 'KeyR')) && selected && !isRunning && !liveEditingDisabled && !readOnly) {
         e.preventDefault();
-        if (!isRunning) handleRun();
-        else handleStop();
+        rotateComponent(selected);
         return;
       }
 
-      if (e.key === 'Escape') { 
-        if (wireStart) setWireStart(null);
-        else if (selected) setSelected(null);
-        else if (isRunning) handleStop();
-        setWireClickPos(null); 
-      }
-
-      // Edit
+      // Delete Component or Wire (Delete / Backspace)
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled && !readOnly) {
+        e.preventDefault();
         saveHistory();
         if (selected.match(/^w\d+$/)) {
-          setWires(prev => prev.filter(w => w.id !== selected))
+          setWires(prev => prev.filter(w => w.id !== selected));
         } else {
           // Shared Ownership Cleanup: Only delete if no other owners exist
           const id = selected;
@@ -118,120 +281,11 @@ export function useSimulatorShortcuts({
 
           setSelected(null);
         }
+        return;
       }
 
-      if (e.altKey && e.shiftKey && e.code === 'KeyR' && selected && !isRunning && !liveEditingDisabled && !readOnly) {
-        e.preventDefault();
-        if (components.find(c => c.id === selected)) {
-          rotateComponent(selected);
-        }
-      }
-
-      if (e.altKey && e.code === 'KeyH') {
-        setShowShortcuts(prev => !prev);
-      }
-
-      if (e.altKey && e.code === 'KeyV') {
-        setIsPanelOpen(prev => !prev);
-      }
-
-      if (e.altKey && (e.key === '+' || e.key === '=')) {
-        applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))));
-      }
-      if (e.altKey && (e.key === '-' || e.key === '_')) {
-        applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))));
-      }
-      if (e.altKey && e.key === '0') {
-        setCanvasZoom(1);
-        setCanvasOffset({ x: 0, y: 0 });
-        canvasZoomRef.current = 1;
-        canvasOffsetRef.current = { x: 0, y: 0 };
-        if (innerCanvasRef.current) {
-          innerCanvasRef.current.style.transform = `translate(0px, 0px) scale(1)`;
-        }
-      }
-
-      // PNG Import/Export Shortcuts
-      if (e.altKey && e.code === 'KeyP') {
-        e.preventDefault();
-        if (handleExportPng) handleExportPng();
-      }
-      if (e.altKey && e.code === 'KeyI') {
-        e.preventDefault();
-        if (handleImportPng) handleImportPng();
-      }
-
-      // Projects
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        setShowProjectsSidebar(prev => !prev);
-        if (!showProjectsSidebar) setProjectsSidebarTab('projects');
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        handleNewProject();
-      }
-
-      // Panels & UI
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        setIsConsoleOpen(prev => !prev);
-      }
-
-      if (e.altKey && e.code === 'KeyC') {
-        e.preventDefault();
-        if (isPanelOpen && codeTab === 'code') {
-          setIsPanelOpen(false);
-        } else {
-          setIsPanelOpen(true);
-          setCodeTab('code');
-        }
-      }
-
-      if (e.altKey && e.code === 'KeyS') {
-        e.preventDefault();
-        if (isPanelOpen && codeTab === 'serial') {
-          setIsPanelOpen(false);
-        } else {
-          setIsPanelOpen(true);
-          setCodeTab('serial');
-        }
-      }
-
-      if (e.altKey && e.code === 'KeyE') {
-        e.preventDefault();
-        if (isPanelOpen && codeTab === 'code') {
-          setShowCodeExplorer(v => !v);
-        } else {
-          setIsPanelOpen(true);
-          setCodeTab('code');
-          setShowCodeExplorer(true);
-        }
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
-        e.preventDefault();
-        setShowGrid(prev => !prev);
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
-        e.preventDefault();
-        setIsCanvasLocked(prev => !prev);
-      }
-
-      // Canvas Actions
-      if (e.altKey && e.code === 'KeyF') {
-        e.preventDefault();
-        fitToView('fit');
-      }
-
-      if (e.altKey && e.code === 'KeyT') {
-        e.preventDefault();
-        setWiresAlwaysOnTop(v => !v);
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+      // Clear Canvas (Ctrl+Shift+Delete / Cmd+Shift+Delete / Backspace)
+      if (mod && e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         if (!isRunning && !readOnly) {
           if (window.confirm('Clear all components and wires from the canvas?')) {
@@ -243,6 +297,7 @@ export function useSimulatorShortcuts({
             setSelected(null);
           }
         }
+        return;
       }
     };
 
@@ -258,3 +313,6 @@ export function useSimulatorShortcuts({
     setProjectFiles, activeCodeFileId, code, setCode, handleExportPng, handleImportPng
   ]);
 }
+
+
+
