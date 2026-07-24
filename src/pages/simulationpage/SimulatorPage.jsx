@@ -208,7 +208,7 @@ import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/api/examples" : "/api/examples");
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
