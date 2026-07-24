@@ -36,8 +36,9 @@ export function useSimulatorShortcuts({
 
       // === 1. GLOBAL SHORTCUTS (Work everywhere, even if focused in text inputs) ===
 
-      // Escape key (Closes Modals -> Sidebars -> Wires -> Selection -> Simulation)
+      // Escape key (Closes F1 Menu -> Modals -> Sidebars -> Wires -> Selection -> Simulation)
       if (e.key === 'Escape') { 
+        if (typeof setShowF1Menu === 'function') setShowF1Menu(false);
         if (typeof setShowShortcuts === 'function') setShowShortcuts(false);
         if (typeof setShowProjectsSidebar === 'function' && showProjectsSidebar) {
           setShowProjectsSidebar(false);
@@ -60,10 +61,21 @@ export function useSimulatorShortcuts({
         return;
       }
 
-      // Help Menu (F1 or Alt+H)
-      if (e.key === 'F1' || (e.altKey && e.code === 'KeyH')) {
+      // F1 Command Menu Overlay
+      if (e.key === 'F1') {
         e.preventDefault();
-        setShowShortcuts(prev => !prev);
+        if (typeof setShowF1Menu === 'function') {
+          setShowF1Menu(prev => !prev);
+        }
+        return;
+      }
+
+      // Help Shortcuts Modal (Alt+H)
+      if (e.altKey && e.code === 'KeyH') {
+        e.preventDefault();
+        if (typeof setShowShortcuts === 'function') {
+          setShowShortcuts(prev => !prev);
+        }
         return;
       }
       

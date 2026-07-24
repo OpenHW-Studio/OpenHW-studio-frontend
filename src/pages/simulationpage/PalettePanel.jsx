@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
+import { isComponentHidden, getComponentWarning } from './utils/componentVisibilityConfig';
 
 const PalettePanel = memo(({
   isPaletteHovered,
@@ -72,11 +73,16 @@ const PalettePanel = memo(({
       return <div style={{ padding: '6px 2px', fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>Right-click a component to favourite</div>;
     }
     const favItems = [];
-    CATALOG.forEach(g => g.items.forEach(item => { if (favoriteComponents.has(item.type)) favItems.push({ ...item, group: g.group }); }));
+    CATALOG.forEach(g => g.items.forEach(item => {
+      if (favoriteComponents.has(item.type) && !isComponentHidden(item.type)) {
+        favItems.push({ ...item, group: g.group });
+      }
+    }));
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '2px 0' }}>
         {favItems.map(item => {
           const gColor = GROUP_COLORS[item.group] || 'var(--accent)';
+          const warning = getComponentWarning(item.type);
           return (
             <div
               key={`fav-${item.type}`}
@@ -84,10 +90,20 @@ const PalettePanel = memo(({
               onDragStart={e => onPaletteDragStart(e, item)}
               onClick={() => { addComponentAtCenter(item); }}
               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
+              title={warning ? `${item.label}\n⚠️ ${warning}` : item.label}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box', position: 'relative' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = `${gColor}44`; e.currentTarget.style.background = 'var(--bg)'; }}
             >
+              {warning && (
+                <div style={{ position: 'absolute', bottom: 3, right: 3, zIndex: 10, display: 'flex', alignItems: 'center' }} title={warning}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.25)" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </div>
+              )}
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2 }}>{item.label}</span>
             </div>
           );
@@ -102,6 +118,7 @@ const PalettePanel = memo(({
       if (!isGroupMatch) return null;
 
       const filteredItems = group.items.filter(item => {
+        if (isComponentHidden(item.type)) return false;
         const label = (item.label || item.name || '').toLowerCase();
         const type = (item.type || '').toLowerCase();
         const search = (paletteSearch || '').toLowerCase();
@@ -130,6 +147,7 @@ const PalettePanel = memo(({
                 const scale = Math.max(0.22, Math.min(1.6, rawScale));
                 const hasUI = !!COMPONENT_REGISTRY[item.type]?.UI;
                 const locked = isPaletteItemLocked(item.type);
+                const warning = getComponentWarning(item.type);
                 return (
                   <div
                     key={item.type}
@@ -141,15 +159,25 @@ const PalettePanel = memo(({
                       addComponentAtCenter(item);
                     }}
                     onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                    title={item.label}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
-                    onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
-                    onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
+                    title={warning ? `${item.label}\n⚠️ ${warning}` : item.label}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: warning ? '1px solid #f59e0b88' : '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
+                    onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = warning ? '#f59e0b' : groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
+                    onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = warning ? '#f59e0b88' : 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
                   >
                     {/* Overlay for locked state */}
                     {locked && (
                       <div style={{ position: 'absolute', top: 5, right: 6, zIndex: 10, fontSize: 13, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 6, padding: '2px 4px', color: '#ef4444' }}>
                         🔒
+                      </div>
+                    )}
+                    {/* Overlay for warning state — placed in bottom-right corner */}
+                    {warning && !locked && (
+                      <div style={{ position: 'absolute', bottom: 5, right: 5, zIndex: 10, display: 'flex', alignItems: 'center', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 5, padding: '2px' }} title={warning}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.25)" />
+                          <line x1="12" y1="9" x2="12" y2="13" />
+                          <line x1="12" y1="17" x2="12.01" y2="17" />
+                        </svg>
                       </div>
                     )}
                     {/* Component SVG — absolutely centred in upper area, no inner box */}
@@ -172,6 +200,7 @@ const PalettePanel = memo(({
             /* LIST VIEW */
             filteredItems.map(item => {
               const locked = isPaletteItemLocked(item.type);
+              const warning = getComponentWarning(item.type);
               return (
                 <div
                   key={item.type}
@@ -182,7 +211,7 @@ const PalettePanel = memo(({
                     addComponentAtCenter(item);
                   }}
                   onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                  style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
+                  style={{ padding: '7px 10px', borderRadius: 7, border: warning ? '1px solid #f59e0b88' : '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${warning ? '#f59e0b' : groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
                   onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
                   onMouseLeave={e => { if (!locked) e.currentTarget.style.background = 'var(--card)'; }}
                 >
@@ -191,9 +220,21 @@ const PalettePanel = memo(({
                       🔒
                     </div>
                   )}
-                  <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>{item.label}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>
-                    {COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
+                  {warning && !locked && (
+                    <div style={{ position: 'absolute', bottom: 7, right: 8, zIndex: 10, display: 'flex', alignItems: 'center', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 5, padding: '2px' }} title={warning}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.25)" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                      </svg>
+                    </div>
+                  )}
+                  <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {item.label}
+                    {warning && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 500 }}>(Not Working)</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: warning ? '#f59e0b99' : 'var(--text3)', lineHeight: 1.4 }}>
+                    {warning || COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
                   </div>
                 </div>
               )

@@ -2,6 +2,7 @@ import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect,
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
 import { NetworkComponentOverlay } from './NetworkComponentOverlay';
+import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -554,6 +555,40 @@ function CanvasSceneLayerBase({
                     />
                   )}
                 </div>
+
+                {/* Canvas Warning Badge — rendered at bottom-right corner of component */}
+                {(() => {
+                  const warning = getComponentWarning(comp.type);
+                  if (!warning) return null;
+                  return (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 4,
+                        bottom: 4,
+                        zIndex: 25,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(13, 21, 37, 0.85)',
+                        border: '1px solid rgba(245, 158, 11, 0.6)',
+                        borderRadius: 6,
+                        padding: '3px 4px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                        pointerEvents: 'auto',
+                        cursor: 'help',
+                      }}
+                      title={`⚠️ ${warning}`}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.3)" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                      </svg>
+                    </div>
+                  );
+                })()}
 
                 {pins.map(pin => {
                   const pinStrRef = `${comp.id}:${pin.id}`;
