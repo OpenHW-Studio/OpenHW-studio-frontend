@@ -1870,6 +1870,10 @@ function buildGenerator(B) {
 
 // ─── Sketch assembler ─────────────────────────────────────────────────────────
 function generateSketch(gen, ws) {
+  if (!ws || (ws.getAllBlocks && ws.getAllBlocks(false).length === 0)) {
+    return ''
+  }
+
   if (typeof gen.init === 'function') {
     gen.init(ws)
   }
@@ -2519,7 +2523,7 @@ const SIDEBAR_WIDTH_MOBILE = 260;
 const BLOCKLY_HISTORY_LIMIT = 64
 const EMPTY_WORKSPACE_XML = '<xml xmlns="https://developers.google.com/blockly/xml"></xml>'
 
-export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false }) {
+function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false, isManualChangeDetected = false }) {
   const [showSidebar, setShowSidebar] = useState(true);
   const sidebarWidth = isMobile ? SIDEBAR_WIDTH_MOBILE : SIDEBAR_WIDTH_DESKTOP;
   const wsContainerRef = useRef(null)
@@ -2589,7 +2593,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     try {
       const code = generateSketch(gen, ws)
       setGeneratedCode(code)
-      if (notifyParent && onChange) onChange(code)
+      if (code && notifyParent && onChange) onChange(code)
       if (notifyParent && emitXml && onXmlChange) {
         const dom = workspaceToBlocklyDom(B, ws)
         onXmlChange(serializeBlocklyXml(B, dom))
@@ -2863,7 +2867,12 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             for (const option of options) {
               const val = option[1]
               if (!allUsedPins.has(val)) {
-                conflictingField.setValue(val)
+                B2.Events.disable()
+                try {
+                  conflictingField.setValue(val)
+                } finally {
+                  B2.Events.enable()
+                }
                 break
               }
             }
@@ -2871,61 +2880,66 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         }
       }
 
-      // Run validation for changes
+      // Run validation for changes without emitting extra events that cause loops/jitter
       if (!e.isUiEvent || e.type === B2.Events.CLICK) {
-        const blocks = ws.getAllBlocks(false)
-        const pinUsage = new Map()
+        B2.Events.disable()
+        try {
+          const blocks = ws.getAllBlocks(false)
+          const pinUsage = new Map()
 
-        blocks.forEach(block => {
-          const pinFields = []
-          block.inputList.forEach(input => {
-            input.fieldRow.forEach(field => {
-              if (field instanceof B2.FieldDropdown && 
-                 (field.name.includes('PIN') || field.name === 'ECHO' || field.name === 'TRIG')) {
-                pinFields.push(field)
-              }
-            })
-          })
-          pinFields.forEach(field => {
-            const pinVal = field.getValue()
-            // Also capture the STATE field value (HIGH/LOW/ON/OFF) if present on this block
-            let stateVal = null
+          blocks.forEach(block => {
+            const pinFields = []
             block.inputList.forEach(input => {
-              input.fieldRow.forEach(f => {
-                if (f instanceof B2.FieldDropdown && f.name === 'STATE') {
-                  stateVal = f.getValue()
+              input.fieldRow.forEach(field => {
+                if (field instanceof B2.FieldDropdown && 
+                   (field.name.includes('PIN') || field.name === 'ECHO' || field.name === 'TRIG')) {
+                  pinFields.push(field)
                 }
               })
             })
-            // Build a composite key: only blocks with the same pin AND same state conflict
-            const usageKey = stateVal ? `${pinVal}::${stateVal}` : pinVal
-            if (!pinUsage.has(usageKey)) pinUsage.set(usageKey, [])
-            pinUsage.get(usageKey).push({ block, field })
-          })
-        })
-
-        // Clear conflicts for ALL blocks first
-        blocks.forEach(block => {
-          if (block.data && block.data.startsWith('origHue:')) {
-            const hue = parseInt(block.data.split(':')[1], 10)
-            if (!isNaN(hue)) block.setColour(hue)
-            block.data = null
-            block.setWarningText(null, 'pin_conflict')
-          }
-        })
-
-        // Identify and mark conflicts
-        pinUsage.forEach((usages, usageKey) => {
-          if (usages.length > 1) {
-            usages.forEach(({ block }) => {
-              if (!block.data || !block.data.startsWith('origHue:')) {
-                block.data = 'origHue:' + block.getHue()
-              }
-              block.setColour('#A0A0A0')
-              block.setWarningText('Pin conflict detected! Click the block to auto-assign a free pin.', 'pin_conflict')
+            pinFields.forEach(field => {
+              const pinVal = field.getValue()
+              // Also capture the STATE field value (HIGH/LOW/ON/OFF) if present on this block
+              let stateVal = null
+              block.inputList.forEach(input => {
+                input.fieldRow.forEach(f => {
+                  if (f instanceof B2.FieldDropdown && f.name === 'STATE') {
+                    stateVal = f.getValue()
+                  }
+                })
+              })
+              // Build a composite key: only blocks with the same pin AND same state conflict
+              const usageKey = stateVal ? `${pinVal}::${stateVal}` : pinVal
+              if (!pinUsage.has(usageKey)) pinUsage.set(usageKey, [])
+              pinUsage.get(usageKey).push({ block, field })
             })
-          }
-        })
+          })
+
+          // Clear conflicts for ALL blocks first
+          blocks.forEach(block => {
+            if (block.data && block.data.startsWith('origHue:')) {
+              const hue = parseInt(block.data.split(':')[1], 10)
+              if (!isNaN(hue)) block.setColour(hue)
+              block.data = null
+              block.setWarningText(null, 'pin_conflict')
+            }
+          })
+
+          // Identify and mark conflicts
+          pinUsage.forEach((usages, usageKey) => {
+            if (usages.length > 1) {
+              usages.forEach(({ block }) => {
+                if (!block.data || !block.data.startsWith('origHue:')) {
+                  block.data = 'origHue:' + block.getHue()
+                }
+                block.setColour('#A0A0A0')
+                block.setWarningText('Pin conflict detected! Click the block to auto-assign a free pin.', 'pin_conflict')
+              })
+            }
+          })
+        } finally {
+          B2.Events.enable()
+        }
       }
       // --- END PIN VALIDATION LOGIC ---
 
@@ -3526,6 +3540,31 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           </button>
         </div>
 
+        {isManualChangeDetected && (
+          <div style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: '#ef4444',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 6,
+            padding: '3px 8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            marginLeft: 'auto',
+            marginRight: 6,
+            whiteSpace: 'nowrap'
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span>Manual Change Detected</span>
+          </div>
+        )}
+
         <input
           ref={importFileRef}
           type="file"
@@ -3911,6 +3950,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     </div>
   )
 }
+
+const BlocklyEditorMemoized = React.memo(BlocklyEditor);
+export default BlocklyEditorMemoized;
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 const BTN = {

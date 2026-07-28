@@ -8067,6 +8067,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setProjectFiles(normalizedFiles);
     setOpenCodeTabs(normalizedTabs);
     setActiveCodeFileId(activeId);
+    if (activeId) openCodeFile(activeId);
     syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
     setCurrentProjectId(proj.id);
     currentProjectIdRef.current = proj.id;
@@ -8241,6 +8242,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       setProjectFiles(normalizedFiles);
       setOpenCodeTabs(normalizedTabs);
       setActiveCodeFileId(activeId);
+      if (activeId) openCodeFile(activeId);
       syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
       setCurrentProjectName(json.name || "Untitled");
       setHistory({ past: [], future: [] });
