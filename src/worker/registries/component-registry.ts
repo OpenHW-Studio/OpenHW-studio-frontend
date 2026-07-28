@@ -409,8 +409,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
 
     // Custom sensors
-    'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
-    'openhw-dht22':          [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
+    'DHT-22':                [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }],
+    'openhw-dht22':          [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }],
     'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'openhw-mq2-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
