@@ -4548,6 +4548,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     currentCodeRef.current = code;
   }, [code]);
 
+  const previousActiveCodeFileIdRef = useRef(activeCodeFileId);
+
   useEffect(() => {
     if (!activeCodeFile) {
       suppressCodeSyncRef.current = true;
@@ -4555,12 +4557,17 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       return;
     }
     if (activeCodeFile.content === currentCodeRef.current) return;
+    if (activeCodeFile.id === "project/diagram.json") return; // Safety measure
 
     suppressCodeSyncRef.current = true;
     setCode(activeCodeFile.content || "");
-  }, [activeCodeFile?.id, activeCodeFile?.content]);
+  }, [activeCodeFile?.id]);
 
   useEffect(() => {
+    if (previousActiveCodeFileIdRef.current !== activeCodeFileId) {
+      previousActiveCodeFileIdRef.current = activeCodeFileId;
+      return;
+    }
     if (!activeCodeFileId) return;
     if (suppressCodeSyncRef.current) {
       suppressCodeSyncRef.current = false;

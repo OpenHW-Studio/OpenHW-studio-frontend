@@ -13,29 +13,37 @@ const RightPanelEditor = memo(({
   editingDisabled,
   isDragging // Passed to potentially suppress updates during drag if needed
 }) => {
-  const { code, setCode } = useEditorStore();
-  const [localCode, setLocalCode] = useState(code);
+  const { code, setCode, setFileContent } = useEditorStore();
+  const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
+  const activeFileContent = activeFile ? (activeFile.content || '') : (code || '');
+
+  const [localCode, setLocalCode] = useState(activeFileContent);
   const isInternalUpdate = useRef(false);
   const editorRef = useRef(null);
   const containerRef = useRef(null);
+  const currentFileIdRef = useRef(activeCodeFileId);
 
-  // Sync localCode with store code when it changes from outside
+  // Sync localCode with store/projectFiles code when file or content changes externally
   useEffect(() => {
-    if (isInternalUpdate.current) {
-      isInternalUpdate.current = false;
-      return;
-    }
-    setLocalCode(code);
-  }, [code]);
+    currentFileIdRef.current = activeCodeFileId;
+    isInternalUpdate.current = false;
+    setLocalCode(activeFileContent);
+  }, [activeCodeFileId, activeFileContent]);
 
-  // Debounced update to central store
+  // Debounced update to central store ONLY for internal user typing
   useEffect(() => {
-    if (localCode === code) return;
+    if (!isInternalUpdate.current) return;
+    if (currentFileIdRef.current !== activeCodeFileId) return;
+
     const timeout = setTimeout(() => {
-      setCode(localCode);
-    }, 400);
+      if (activeCodeFileId) {
+        setFileContent(activeCodeFileId, localCode);
+      } else {
+        setCode(localCode);
+      }
+    }, 300);
     return () => clearTimeout(timeout);
-  }, [localCode, setCode, code]);
+  }, [localCode, activeCodeFileId, setFileContent, setCode]);
 
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -63,7 +71,6 @@ const RightPanelEditor = memo(({
     return () => observer.disconnect();
   }, []);
 
-  const activeFile = projectFiles.find(f => f.id === activeCodeFileId);
   const compareFile = projectFiles.find(f => f.id === compareWithId);
 
   return (
