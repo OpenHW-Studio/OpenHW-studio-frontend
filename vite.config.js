@@ -47,7 +47,8 @@ export default defineConfig(({ mode }) => {
       } : {},
     },
     optimizeDeps: {
-      include: ['@openhw/emulator'],
+      include: useAlias ? [] : ['@openhw/emulator'],
+      exclude: useAlias ? ['@openhw/emulator'] : [],
       esbuildOptions: {
          plugins: [
            {
