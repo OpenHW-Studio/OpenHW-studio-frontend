@@ -120,9 +120,30 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     }
   });
 
+  const [inoManualEditEnabled, setInoManualEditEnabled] = React.useState(false);
+
+  const isActiveFileLibraryTxt = React.useMemo(() => {
+    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
+    return activeFile ? activeFile.name === 'library.txt' : false;
+  }, [activeCodeFileId, projectFiles]);
+
+  const isActiveFileIno = React.useMemo(() => {
+    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
+    return activeFile ? String(activeFile.name || '').toLowerCase().endsWith('.ino') : false;
+  }, [activeCodeFileId, projectFiles]);
+
+  const hasBlocksInCanvas = React.useMemo(() => {
+    return Boolean(blocklyXml && blocklyXml.includes('<block'));
+  }, [blocklyXml]);
+
+  const isManualChangeDetected = React.useMemo(() => {
+    if (!isActiveFileIno || !blocklyGeneratedCode || typeof code !== 'string') return false;
+    return inoManualEditEnabled && code.trim() !== blocklyGeneratedCode.trim();
+  }, [isActiveFileIno, blocklyGeneratedCode, code, inoManualEditEnabled]);
+
   // Stable options — never depends on drag state so editor never remounts during drag
   const editorOptions = React.useMemo(() => ({
-    readOnly: editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json',
+    readOnly: editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json' || (isActiveFileIno && hasBlocksInCanvas && !inoManualEditEnabled),
     fontSize: 12,
     fontFamily: "'JetBrains Mono', monospace",
     minimap: { enabled: false },
@@ -145,7 +166,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       verticalHasArrows: false,
       horizontalHasArrows: false,
     }
-  }), [editingDisabled, activeCodeFileId]);
+  }), [editingDisabled, activeCodeFileId, isActiveFileIno, hasBlocksInCanvas, inoManualEditEnabled]);
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
 
@@ -159,16 +180,6 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       window.removeEventListener('close-library-panel', handleCloseLib);
     };
   }, []);
-
-  const isActiveFileLibraryTxt = React.useMemo(() => {
-    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
-    return activeFile ? activeFile.name === 'library.txt' : false;
-  }, [activeCodeFileId, projectFiles]);
-
-  const isActiveFileIno = React.useMemo(() => {
-    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
-    return activeFile ? String(activeFile.name || '').toLowerCase().endsWith('.ino') : false;
-  }, [activeCodeFileId, projectFiles]);
 
   const addedLibraries = React.useMemo(() => {
     if (!isActiveFileLibraryTxt || typeof code !== 'string') return [];
@@ -851,6 +862,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFileMenu(null);
+                                if (setCodeTab) setCodeTab('code');
                                 onOpenCodeFile(file.id);
                                 if (setSelected) setSelected(null);
                               }}
@@ -935,6 +947,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setFileMenu(null);
+                                    if (setCodeTab) setCodeTab('code');
                                     onOpenCodeFile(file.id);
                                     if (setSelected) setSelected(null);
                                   }}
@@ -1008,22 +1021,32 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           </div>
                         )}
 
-                        {/* Edit Off Button at bottom of Explorer for .ino files */}
-                        {isActiveFileIno && (
+                        {/* Edit Enable / Disable Button at bottom of Explorer for .ino files */}
+                        {isActiveFileIno && hasBlocksInCanvas && (
                           <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.05)' }}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFileMenu(null);
+                                if (!inoManualEditEnabled) {
+                                  const confirmEnable = window.confirm(
+                                    "⚠️ Warning: Enabling manual text editing allows you to type directly in the code editor. However, any future block changes will replace your manual edits! Do you want to enable manual editing?"
+                                  );
+                                  if (confirmEnable) {
+                                    setInoManualEditEnabled(true);
+                                  }
+                                } else {
+                                  setInoManualEditEnabled(false);
+                                }
                               }}
                               className="group"
                               style={{
                                 width: '100%',
                                 padding: '8px 12px',
                                 borderRadius: '8px',
-                                background: 'transparent',
-                                border: '1px solid var(--border)',
-                                color: 'var(--text2)',
+                                background: inoManualEditEnabled ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0, 212, 255, 0.08)',
+                                border: `1px solid ${inoManualEditEnabled ? 'rgba(239, 68, 68, 0.3)' : 'var(--accent)'}`,
+                                color: inoManualEditEnabled ? 'var(--red)' : 'var(--accent)',
                                 fontSize: 12,
                                 fontWeight: 600,
                                 cursor: 'pointer',
@@ -1033,11 +1056,23 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                               }}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                              </svg>
-                              <span>Edit Off</span>
+                              {inoManualEditEnabled ? (
+                                <>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                  </svg>
+                                  <span>Disable Manual Edit</span>
+                                </>
+                              ) : (
+                                <>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                  </svg>
+                                  <span>Edit Enable</span>
+                                </>
+                              )}
                             </button>
                           </div>
                         )}
@@ -1540,7 +1575,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
                   <BlocklyEditor
                     onExportCode={(generated) => { if (!editingDisabled) { setCode(generated); setCodeTab('code'); } }}
-                    onChange={(generated) => { if (!editingDisabled) { setBlocklyGeneratedCode(generated); if (setCode) setCode(generated); } }}
+                    onChange={(generated) => { if (!editingDisabled) { setBlocklyGeneratedCode(generated); if (setCode) setCode(generated); setInoManualEditEnabled(false); } }}
                     xml={blocklyXml}
                     onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
                     useBlocklyCode={useBlocklyCode}
@@ -1548,6 +1583,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                     visible={codeTab === 'block'}
                     boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
                     isMobile={false}
+                    isManualChangeDetected={isManualChangeDetected}
                   />
                 </React.Suspense>
               )}

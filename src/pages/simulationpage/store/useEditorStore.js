@@ -21,9 +21,17 @@ export const useEditorStore = create((set, get) => ({
   setShowCodeExplorer: (show) => set((state) => ({ 
     showCodeExplorer: typeof show === 'function' ? show(state.showCodeExplorer) : show 
   })),
-  setCode: (code) => set((state) => ({ 
-    code: typeof code === 'function' ? code(state.code) : code 
-  })),
+  setCode: (code) => set((state) => {
+    const nextCode = typeof code === 'function' ? code(state.code) : code;
+    const activeId = state.activeCodeFileId;
+    const nextFiles = activeId 
+      ? state.projectFiles.map(f => f.id === activeId ? { ...f, content: nextCode } : f)
+      : state.projectFiles;
+    return {
+      code: nextCode,
+      projectFiles: nextFiles
+    };
+  }),
 
   setFileContent: (fileId, content) => {
     set((state) => ({
@@ -36,13 +44,32 @@ export const useEditorStore = create((set, get) => ({
   },
 
   openCodeFile: (fileId) => {
-    const { projectFiles, openCodeTabs } = get();
-    const file = projectFiles.find((f) => f.id === fileId);
-    
-    set({
-      openCodeTabs: openCodeTabs.includes(fileId) ? openCodeTabs : [...openCodeTabs, fileId],
-      activeCodeFileId: fileId,
-      code: file ? (file.content || '') : '',
+    if (!fileId) {
+      set({ activeCodeFileId: null });
+      return;
+    }
+    set((state) => {
+      // Flush current code state into active file before switching
+      let files = state.projectFiles;
+      if (state.activeCodeFileId) {
+        files = files.map((f) =>
+          f.id === state.activeCodeFileId ? { ...f, content: state.code } : f
+        );
+      }
+      
+      const target = files.find((f) => f.id === fileId || f.path === fileId);
+      if (!target) return state;
+
+      const nextTabs = state.openCodeTabs.includes(target.id)
+        ? state.openCodeTabs
+        : [...state.openCodeTabs, target.id];
+
+      return {
+        projectFiles: files,
+        openCodeTabs: nextTabs,
+        activeCodeFileId: target.id,
+        code: target.content || '',
+      };
     });
   },
 
