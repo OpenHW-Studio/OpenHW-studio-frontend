@@ -49,15 +49,7 @@ export const useEditorStore = create((set, get) => ({
       return;
     }
     set((state) => {
-      // Flush current code state into active file before switching
-      let files = state.projectFiles;
-      if (state.activeCodeFileId) {
-        files = files.map((f) =>
-          f.id === state.activeCodeFileId ? { ...f, content: state.code } : f
-        );
-      }
-      
-      const target = files.find((f) => f.id === fileId || f.path === fileId);
+      const target = state.projectFiles.find((f) => f.id === fileId || f.path === fileId);
       if (!target) return state;
 
       const nextTabs = state.openCodeTabs.includes(target.id)
@@ -65,7 +57,6 @@ export const useEditorStore = create((set, get) => ({
         : [...state.openCodeTabs, target.id];
 
       return {
-        projectFiles: files,
         openCodeTabs: nextTabs,
         activeCodeFileId: target.id,
         code: target.content || '',
