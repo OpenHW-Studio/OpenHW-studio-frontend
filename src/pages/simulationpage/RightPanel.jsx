@@ -165,6 +165,11 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     return activeFile ? activeFile.name === 'library.txt' : false;
   }, [activeCodeFileId, projectFiles]);
 
+  const isActiveFileIno = React.useMemo(() => {
+    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
+    return activeFile ? String(activeFile.name || '').toLowerCase().endsWith('.ino') : false;
+  }, [activeCodeFileId, projectFiles]);
+
   const addedLibraries = React.useMemo(() => {
     if (!isActiveFileLibraryTxt || typeof code !== 'string') return [];
     return code
@@ -999,6 +1004,40 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                                 <path d="M8 10h8" />
                               </svg>
                               <span>Libraries</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Edit Off Button at bottom of Explorer for .ino files */}
+                        {isActiveFileIno && (
+                          <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.05)' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFileMenu(null);
+                              }}
+                              className="group"
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                background: 'transparent',
+                                border: '1px solid var(--border)',
+                                color: 'var(--text2)',
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                              <span>Edit Off</span>
                             </button>
                           </div>
                         )}
