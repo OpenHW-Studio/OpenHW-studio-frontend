@@ -2534,6 +2534,14 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const historyFutureRef = useRef([])
   const applyingHistoryRef = useRef(false)
   const pushHistoryTimerRef = useRef(null)
+  // Tracks whether the external XML effect has run at least once after mount.
+  // On the very first run (component mount / page refresh), init() has already
+  // loaded the XML — we must NOT regenerate code to avoid overwriting the
+  // user's manually written text-editor code.
+  const isFirstXmlLoadRef = useRef(true)
+  // Stable ref to always hold the latest syncGeneratedCode without making it
+  // a useEffect dependency (which would re-fire the effect on every parent render).
+  const syncGeneratedCodeRef = useRef(null)
 
   const [loadStatus, setLoadStatus] = useState('loading')
   const [errMsg, setErrMsg] = useState('')
@@ -2592,6 +2600,8 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       return ''
     }
   }, [onChange, onXmlChange])
+  // Keep the ref in sync every render (synchronous, no effect needed).
+  syncGeneratedCodeRef.current = syncGeneratedCode
 
   const scheduleHistoryPush = useCallback(() => {
     if (applyingHistoryRef.current) return
@@ -2790,28 +2800,24 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     }
 
     if (xml) {
+      // Disable events while loading initial XML so that Blockly does NOT fire
+      // BLOCK_CREATE events for each block. Without this, the change listener
+      // would treat them as user-made changes and generate code on every mount.
+      B.Events.disable()
       try {
         const dom = parseBlocklyXml(B, xml)
         loadBlocklyXmlIntoWorkspace(B, dom, ws)
       } catch (err) {
         console.error('Failed to load initial XML:', err)
+      } finally {
+        B.Events.enable()
       }
     }
     resetBlocklyHistory(captureWorkspaceXml())
-    syncGeneratedCode({ notifyParent: false })
-
-    // Generate initial code so the preview pane shows correct code on load
-    try {
-      const initialCode = generateSketch(genRef.current, ws)
-      setGeneratedCode(initialCode)
-      if (onChange) {
-        setTimeout(() => {
-          onChange(initialCode)
-        }, 0)
-      }
-    } catch (err) {
-      console.warn('Failed to generate initial sketch:', err)
-    }
+    // NOTE: Do NOT generate code on initial load/mount.
+    // Code generation is intentionally deferred until the user actually
+    // changes a block. This prevents spurious re-generation on refresh
+    // or when the right panel is closed and reopened.
 
     const skipHistoryTypes = new Set([
       B.Events.CLICK,
@@ -2926,29 +2932,68 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       if ([B2.Events.VAR_CREATE, B2.Events.VAR_DELETE, B2.Events.VAR_RENAME].includes(e.type))
         setVariables([...ws.getAllVariables()])
       if (!skipHistoryTypes.has(e.type)) scheduleHistoryPush()
+      // Only generate code for real structural block changes.
+      // Explicitly skip all UI events (clicks, viewport, toolbox, bubbles, etc.)
+      // and only allow events that represent actual block mutations.
       if (e.isUiEvent) return
+      const STRUCTURAL_EVENTS = new Set([
+        B2.Events.BLOCK_CREATE,
+        B2.Events.BLOCK_DELETE,
+        B2.Events.BLOCK_MOVE,
+        B2.Events.BLOCK_CHANGE,
+        B2.Events.VAR_CREATE,
+        B2.Events.VAR_DELETE,
+        B2.Events.VAR_RENAME,
+      ])
+      if (!STRUCTURAL_EVENTS.has(e.type)) return
       syncGeneratedCode({ notifyParent: true, emitXml: true })
     })
   }, [isDark, boardKind, xml, resetBlocklyHistory, captureWorkspaceXml, scheduleHistoryPush, syncGeneratedCode])
 
-  // "?"? Watch for external XML changes (e.g. project import) "?"?
+  // Watch for external XML changes (e.g. project import or async project load)
   useEffect(() => {
     const isReady = loadStatus === 'ready';
     if (!isReady || !workspaceRef.current || !window.Blockly) return;
+
     const currentXml = captureWorkspaceXml();
-    // Only load if the prop differs from what is currently in the workspace
+    // Only load if the XML prop actually differs from what is in the workspace.
+    // This handles two cases:
+    //   a) init() ran with empty xml (CDN loaded after project data) → workspace
+    //      is empty but xml prop now has saved blocks → load them.
+    //   b) init() already loaded the xml → currentXml matches xml → skip (no-op).
     if (xml && xml !== currentXml) {
+      const B = window.Blockly;
+      // Disable events so Blockly doesn't fire BLOCK_CREATE events into the
+      // change listener for every block loaded from XML. We call
+      // syncGeneratedCode explicitly below only when needed.
+      B.Events.disable();
       try {
-        const B = window.Blockly;
         const dom = parseBlocklyXml(B, xml);
         loadBlocklyXmlIntoWorkspace(B, dom, workspaceRef.current);
         resetBlocklyHistory(xml);
-        syncGeneratedCode({ notifyParent: false });
       } catch (err) {
         console.error('Failed to load external XML:', err);
+      } finally {
+        B.Events.enable();
+      }
+
+      const topBlocks = workspaceRef.current.getTopBlocks(false);
+      if (topBlocks.length > 0) {
+        // Only push generated code to the parent on SUBSEQUENT loads
+        // (genuine project imports). On the first load (mount/refresh) we show
+        // the blocks but leave the text editor code untouched.
+        if (!isFirstXmlLoadRef.current) {
+          syncGeneratedCodeRef.current?.({ notifyParent: true, emitXml: false });
+        }
+      } else {
+        setVariables([...workspaceRef.current.getAllVariables()]);
       }
     }
-  }, [xml, loadStatus, captureWorkspaceXml, resetBlocklyHistory, syncGeneratedCode]);
+
+    // Mark first load as done so future xml changes generate code normally.
+    isFirstXmlLoadRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xml, loadStatus, captureWorkspaceXml, resetBlocklyHistory]);
 
   // ── Resize Blockly when container changes ──────────────────────────────────
   useEffect(() => {
