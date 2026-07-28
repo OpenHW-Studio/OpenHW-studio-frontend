@@ -4598,6 +4598,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     currentCodeRef.current = code;
   }, [code]);
 
+  const previousActiveCodeFileIdRef = useRef(activeCodeFileId);
+
   useEffect(() => {
     if (!activeCodeFile) {
       suppressCodeSyncRef.current = true;
@@ -4605,13 +4607,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       return;
     }
     if (activeCodeFile.id === "project/diagram.json") return; // Safety measure
-    if (activeCodeFile.content === currentCodeRef.current) return;
 
     suppressCodeSyncRef.current = true;
     setCode(activeCodeFile.content || "");
-  }, [activeCodeFile?.id, activeCodeFile?.content]);
+  }, [activeCodeFile?.id]);
 
   useEffect(() => {
+    if (previousActiveCodeFileIdRef.current !== activeCodeFileId) {
+      previousActiveCodeFileIdRef.current = activeCodeFileId;
+      return;
+    }
     if (!activeCodeFileId) return;
     if (suppressCodeSyncRef.current) {
       suppressCodeSyncRef.current = false;
@@ -8067,6 +8072,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setProjectFiles(normalizedFiles);
     setOpenCodeTabs(normalizedTabs);
     setActiveCodeFileId(activeId);
+    if (activeId) openCodeFile(activeId);
     syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
     setCurrentProjectId(proj.id);
     currentProjectIdRef.current = proj.id;
@@ -8241,6 +8247,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       setProjectFiles(normalizedFiles);
       setOpenCodeTabs(normalizedTabs);
       setActiveCodeFileId(activeId);
+      if (activeId) openCodeFile(activeId);
       syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
       setCurrentProjectName(json.name || "Untitled");
       setHistory({ past: [], future: [] });
