@@ -3538,7 +3538,9 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             </svg>
           </button>
         </div>
-        {isManualChangeDetected && (
+        {/* 
+          Manual Change Detected warning - Hidden per user request
+          {isManualChangeDetected && (
           <div style={{
             fontSize: 10,
             fontWeight: 700,
@@ -3562,6 +3564,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             <span>Manual Change Detected</span>
           </div>
         )}
+        */}
 
         <input
           ref={importFileRef}
