@@ -143,12 +143,15 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
   }, [isActiveFileIno, blocklyGeneratedCode, code, inoManualEditEnabled]);
 
   // Stable options — never depends on drag state so editor never remounts during drag
-  const editorOptions = React.useMemo(() => ({
-    readOnly: editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json' || (isActiveFileIno && hasBlocksInCanvas && !inoManualEditEnabled),
-    fontSize: 12,
-    fontFamily: "'JetBrains Mono', monospace",
-    minimap: { enabled: false },
-    automaticLayout: true,
+  const editorOptions = React.useMemo(() => {
+    const isReadOnly = Boolean(editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json' || (isActiveFileIno && hasBlocksInCanvas && !inoManualEditEnabled));
+    return {
+      readOnly: isReadOnly,
+      domReadOnly: isReadOnly,
+      fontSize: 12,
+      fontFamily: "'JetBrains Mono', monospace",
+      minimap: { enabled: false },
+      automaticLayout: true,
     scrollBeyondLastLine: false,
     lineNumbers: 'on',
     padding: { top: 14, bottom: 14 },
@@ -167,7 +170,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       verticalHasArrows: false,
       horizontalHasArrows: false,
     }
-  }), [editingDisabled, activeCodeFileId, isActiveFileIno, hasBlocksInCanvas, inoManualEditEnabled]);
+  };
+}, [editingDisabled, activeCodeFileId, isActiveFileIno, hasBlocksInCanvas, inoManualEditEnabled]);
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
 
