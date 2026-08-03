@@ -180,7 +180,7 @@ const S = {
 }
 
 export default function ComponentsPage() {
-  const navigate = useNavigate('/adventure')
+  const navigate = useNavigate()
   const { unlockedComponentTypes, completedProjects, currentLevel, xp } = useGamification()
   const [expandedCard, setExpandedCard] = useState(null)
 
@@ -362,8 +362,16 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
   return (
     <div style={cardStyle} onClick={onToggle}>
       <div style={S.cardTop}>
-        <div style={{ ...S.iconCircle, background: cat.bg }}>
-          {comp.icon || '🔌'}
+        <div style={{ 
+          ...S.iconCircle, 
+          background: cat.bg,
+          ...(comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png')) ? { width: 80, height: 80, borderRadius: 16 } : {})
+        }}>
+          {comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png')) ? (
+            <img src={comp.icon} alt={comp.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }} />
+          ) : (
+            comp.icon || '🔌'
+          )}
         </div>
         <div style={S.cardInfo}>
           <div style={S.cardName}>{comp.name}</div>

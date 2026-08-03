@@ -68,9 +68,9 @@ function getSerializedShadowSheet(sheet) {
 }
 
 import * as EmulatorComponents from "@openhw/emulator";
-const { 
-  FullCircuitValidator, 
-  analyzeCodeHardwareSync, 
+const {
+  FullCircuitValidator,
+  analyzeCodeHardwareSync,
   runUnifiedValidation,
   applyCircuitFix: sharedApplyCircuitFix,
   initializeCircuitFixEngine,
@@ -1170,13 +1170,13 @@ function arduinoBlinkToMicroPython(sourceCode, boardId) {
   } else {
     // Try to find any pin used with pinMode or digitalWrite
     const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
-                         src.match(/digitalWrite\s*\(\s*(\d+)/);
+      src.match(/digitalWrite\s*\(\s*(\d+)/);
     pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
   }
 
   // Extract delay values (ms) from delay() calls (skip delayMicroseconds)
   const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
-  const delayOn  = delayMatches[0] ?? 1000;
+  const delayOn = delayMatches[0] ?? 1000;
   const delayOff = delayMatches[1] ?? delayOn;
 
   // Numeric pin → bare int; quoted string stays as is
@@ -1534,7 +1534,7 @@ const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
 const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onTouchStart, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
   const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-  
+
   const getBounds = () => {
     const reg = COMPONENT_REGISTRY[comp.type];
     if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
@@ -1584,7 +1584,7 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
           }} />
         )}
         {hasError && (
-          <div 
+          <div
             className="safety-pulse"
             style={{
               position: 'absolute',
@@ -1601,15 +1601,15 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
               padding: '4px'
             }}
           >
-             <div style={{
-               background: '#ef4444',
-               borderRadius: '50%',
-               width: '18px', height: '18px',
-               display: 'flex', alignItems: 'center', justifyContent: 'center',
-               color: 'white', fontSize: '12px', fontWeight: 'bold',
-               boxShadow: '0 0 8px rgba(239,68,68,0.8)',
-               transform: 'translate(4px, -4px)'
-             }}>!</div>
+            <div style={{
+              background: '#ef4444',
+              borderRadius: '50%',
+              width: '18px', height: '18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'white', fontSize: '12px', fontWeight: 'bold',
+              boxShadow: '0 0 8px rgba(239,68,68,0.8)',
+              transform: 'translate(4px, -4px)'
+            }}>!</div>
           </div>
         )}
       </div>
@@ -1644,107 +1644,107 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [gamTab, setGamTab] = useState('components')
 
   const WOKWI_TO_COMP_ID = useMemo(() => ({
-    'wokwi-led':                    'led',
-    'openhw-led':                   'led',
-    'wokwi-resistor':               'resistor',
-    'openhw-resistor':              'resistor',
-    'wokwi-pushbutton':             'button',
-    'openhw-pushbutton':            'button',
-    'wokwi-potentiometer':          'potentiometer',
-    'openhw-potentiometer':         'potentiometer',
-    'wokwi-buzzer':                 'buzzer',
-    'openhw-buzzer':                'buzzer',
-    'wokwi-rgb-led':                'rgb-led',
-    'openhw-rgb-led':               'rgb-led',
+    'wokwi-led': 'led',
+    'openhw-led': 'led',
+    'wokwi-resistor': 'resistor',
+    'openhw-resistor': 'resistor',
+    'wokwi-pushbutton': 'button',
+    'openhw-pushbutton': 'button',
+    'wokwi-potentiometer': 'potentiometer',
+    'openhw-potentiometer': 'potentiometer',
+    'wokwi-buzzer': 'buzzer',
+    'openhw-buzzer': 'buzzer',
+    'wokwi-rgb-led': 'rgb-led',
+    'openhw-rgb-led': 'rgb-led',
     'wokwi-ntc-temperature-sensor': 'dht11',
     'openhw-ntc-temperature-sensor': 'dht11',
-    'wokwi-hc-sr04':                'ultrasonic',
-    'openhw-hc-sr04':               'ultrasonic',
-    'wokwi-servo':                  'servo',
-    'openhw-servo':                 'servo',
-    'wokwi-lcd1602':                'lcd',
-    'wokwi-lcd1602-i2c':            'lcd',
-    'openhw-lcd1602-i2c':           'lcd',
-    'wokwi-lcd2004-i2c':            'lcd',
-    'openhw-lcd2004-i2c':           'lcd',
-    'wokwi-analog-joystick':        'analog-joystick',
-    'openhw-analog-joystick':       'analog-joystick',
-    'wokwi-membrane-keypad':        'keypad',
-    'openhw-membrane-keypad':       'keypad',
-    'wokwi-rotary-encoder':         'rotary-encoder',
-    'openhw-rotary-encoder':        'rotary-encoder',
-    'wokwi-nokia-5110':             'nokia-5110',
-    'openhw-nokia-5110':            'nokia-5110',
-    'wokwi-soil-moisture-sensor':   'soil-moisture-sensor',
-    'openhw-soil-moisture-sensor':  'soil-moisture-sensor',
-    'wokwi-logic-analyzer':         'logic-analyzer',
-    'openhw-logic-analyzer':        'logic-analyzer',
-    'wokwi-sd-card':                'sd-card',
-    'openhw-sd-card':               'sd-card',
-    'wokwi-ldr-module':             'ldr-module',
-    'openhw-ldr-module':            'ldr-module',
-    'wokwi-tm1637-7segment':        'tm1637-7segment',
-    'openhw-tm1637-7segment':       'tm1637-7segment',
-    'wokwi-cd74hc4067':             'cd74hc4067',
-    'openhw-cd74hc4067':            'cd74hc4067',
-    'wokwi-7segment':               '7segment',
-    'openhw-7segment':              '7segment',
-    'wokwi-a4988':                  'a4988',
-    'openhw-a4988':                 'a4988',
-    'wokwi-bmp180':                 'bmp180',
-    'openhw-bmp180':                'bmp180',
-    'wokwi-bmp180-breakout':        'bmp180',
-    'openhw-bmp180-breakout':       'bmp180',
-    'wokwi-ds1307-rtc':             'rtc',
-    'openhw-ds1307-rtc':            'rtc',
-    'wokwi-ili9341':                'ili9341',
-    'openhw-ili9341':               'ili9341',
-    'wokwi-l293d':                  'l293d',
-    'openhw-l293d':                 'l293d',
-    'wokwi-max7219':                'max7219',
-    'openhw-max7219':               'max7219',
-    'wokwi-mpu6050':                'mpu6050',
-    'openhw-mpu6050':               'mpu6050',
-    'wokwi-nlsf595':                'nlsf595',
-    'openhw-nlsf595':               'nlsf595',
-    'wokwi-pca9685':                'pca9685',
-    'openhw-pca9685':               'pca9685',
-    'wokwi-pca9865':                'pca9865',
-    'openhw-pca9865':               'pca9865',
-    'wokwi-relay-module':           'relay',
-    'openhw-relay-module':          'relay',
-    'wokwi-ssd1306-oled':          'oled',
-    'openhw-ssd1306-oled':         'oled',
-    'wokwi-stepper-motor':         'stepper',
-    'openhw-stepper-motor':        'stepper',
-    'wokwi-arduino-uno':           'uno',
-    'openhw-arduino-uno':          'uno',
-    'wokwi-arduino-mega':          'mega',
-    'openhw-arduino-mega':         'mega',
-    'wokwi-arduino-nano':          'nano',
-    'openhw-arduino-nano':         'nano',
-    'wokwi-attiny85':              'attiny85',
-    'openhw-attiny85':             'attiny85',
-    'wokwi-raspberry-pi-pico':     'pico',
-    'openhw-pico':                 'pico',
-    'wokwi-raspberry-pi-pico-w':   'pico-w',
-    'openhw-pico-w':               'pico-w',
-    'wokwi-power-supply':          'power-supply',
-    'openhw-power-supply':         'power-supply',
-    'wokwi-battery':               'battery',
-    'openhw-battery':              'battery',
-    'wokwi-charger':               'charger',
-    'openhw-charger':              'charger',
-    'wokwi-breadboard':            'breadboard',
-    'openhw-breadboard':           'breadboard',
-    'wokwi-breadboard-half':       'breadboard',
-    'openhw-breadboard-half':      'breadboard',
-    'wokwi-breadboard-mini':       'breadboard',
-    'openhw-breadboard-mini':      'breadboard',
-    'wokwi-neopixel-matrix':       'neopixel',
-    'openhw-neopixel-matrix':      'neopixel',
-    'wokwi-neopixel-ring':         'neopixel',
-    'openhw-neopixel-ring':        'neopixel',
+    'wokwi-hc-sr04': 'ultrasonic',
+    'openhw-hc-sr04': 'ultrasonic',
+    'wokwi-servo': 'servo',
+    'openhw-servo': 'servo',
+    'wokwi-lcd1602': 'lcd',
+    'wokwi-lcd1602-i2c': 'lcd',
+    'openhw-lcd1602-i2c': 'lcd',
+    'wokwi-lcd2004-i2c': 'lcd',
+    'openhw-lcd2004-i2c': 'lcd',
+    'wokwi-analog-joystick': 'analog-joystick',
+    'openhw-analog-joystick': 'analog-joystick',
+    'wokwi-membrane-keypad': 'keypad',
+    'openhw-membrane-keypad': 'keypad',
+    'wokwi-rotary-encoder': 'rotary-encoder',
+    'openhw-rotary-encoder': 'rotary-encoder',
+    'wokwi-nokia-5110': 'nokia-5110',
+    'openhw-nokia-5110': 'nokia-5110',
+    'wokwi-soil-moisture-sensor': 'soil-moisture-sensor',
+    'openhw-soil-moisture-sensor': 'soil-moisture-sensor',
+    'wokwi-logic-analyzer': 'logic-analyzer',
+    'openhw-logic-analyzer': 'logic-analyzer',
+    'wokwi-sd-card': 'sd-card',
+    'openhw-sd-card': 'sd-card',
+    'wokwi-ldr-module': 'ldr-module',
+    'openhw-ldr-module': 'ldr-module',
+    'wokwi-tm1637-7segment': 'tm1637-7segment',
+    'openhw-tm1637-7segment': 'tm1637-7segment',
+    'wokwi-cd74hc4067': 'cd74hc4067',
+    'openhw-cd74hc4067': 'cd74hc4067',
+    'wokwi-7segment': '7segment',
+    'openhw-7segment': '7segment',
+    'wokwi-a4988': 'a4988',
+    'openhw-a4988': 'a4988',
+    'wokwi-bmp180': 'bmp180',
+    'openhw-bmp180': 'bmp180',
+    'wokwi-bmp180-breakout': 'bmp180',
+    'openhw-bmp180-breakout': 'bmp180',
+    'wokwi-ds1307-rtc': 'rtc',
+    'openhw-ds1307-rtc': 'rtc',
+    'wokwi-ili9341': 'ili9341',
+    'openhw-ili9341': 'ili9341',
+    'wokwi-l293d': 'l293d',
+    'openhw-l293d': 'l293d',
+    'wokwi-max7219': 'max7219',
+    'openhw-max7219': 'max7219',
+    'wokwi-mpu6050': 'mpu6050',
+    'openhw-mpu6050': 'mpu6050',
+    'wokwi-nlsf595': 'nlsf595',
+    'openhw-nlsf595': 'nlsf595',
+    'wokwi-pca9685': 'pca9685',
+    'openhw-pca9685': 'pca9685',
+    'wokwi-pca9865': 'pca9865',
+    'openhw-pca9865': 'pca9865',
+    'wokwi-relay-module': 'relay',
+    'openhw-relay-module': 'relay',
+    'wokwi-ssd1306-oled': 'oled',
+    'openhw-ssd1306-oled': 'oled',
+    'wokwi-stepper-motor': 'stepper',
+    'openhw-stepper-motor': 'stepper',
+    'wokwi-arduino-uno': 'uno',
+    'openhw-arduino-uno': 'uno',
+    'wokwi-arduino-mega': 'mega',
+    'openhw-arduino-mega': 'mega',
+    'wokwi-arduino-nano': 'nano',
+    'openhw-arduino-nano': 'nano',
+    'wokwi-attiny85': 'attiny85',
+    'openhw-attiny85': 'attiny85',
+    'wokwi-raspberry-pi-pico': 'pico',
+    'openhw-pico': 'pico',
+    'wokwi-raspberry-pi-pico-w': 'pico-w',
+    'openhw-pico-w': 'pico-w',
+    'wokwi-power-supply': 'power-supply',
+    'openhw-power-supply': 'power-supply',
+    'wokwi-battery': 'battery',
+    'openhw-battery': 'battery',
+    'wokwi-charger': 'charger',
+    'openhw-charger': 'charger',
+    'wokwi-breadboard': 'breadboard',
+    'openhw-breadboard': 'breadboard',
+    'wokwi-breadboard-half': 'breadboard',
+    'openhw-breadboard-half': 'breadboard',
+    'wokwi-breadboard-mini': 'breadboard',
+    'openhw-breadboard-mini': 'breadboard',
+    'wokwi-neopixel-matrix': 'neopixel',
+    'openhw-neopixel-matrix': 'neopixel',
+    'wokwi-neopixel-ring': 'neopixel',
+    'openhw-neopixel-ring': 'neopixel',
     'wokwi-arduino-sensor-shield': 'shield',
     'openhw-arduino-sensor-shield': 'shield',
   }), [])
@@ -1923,7 +1923,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
-  
+
   // Inject safety pulse animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -2969,31 +2969,31 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     return () => { cancelled = true; };
   }, [assignmentMode, classId, assignmentId, user?.role]);
 
-// ── Auto-load circuit from URL (?circuit=JSON_ENCODED) ──────────────────────
-useEffect(() => {
-  const urlCircuit = assessmentParams.get('circuit');
-  if (!urlCircuit) return;
+  // ── Auto-load circuit from URL (?circuit=JSON_ENCODED) ──────────────────────
+  useEffect(() => {
+    const urlCircuit = assessmentParams.get('circuit');
+    if (!urlCircuit) return;
 
-  try {
-    const payload = JSON.parse(decodeURIComponent(urlCircuit));
-    if (!payload || typeof payload !== 'object') return;
+    try {
+      const payload = JSON.parse(decodeURIComponent(urlCircuit));
+      if (!payload || typeof payload !== 'object') return;
 
-    const normalized = normalizeImportedCircuitData(payload.components || [], payload.connections || []);
-    setBoard(payload.board || 'arduino_uno');
-    setComponents(normalized.components);
-    setWires(normalized.wires);
-    setCode(payload.code || '');
-    syncNextIds(normalized.components, normalized.wires);
-    
-    // Clear project state so we don't accidentally overwrite the user's project
-    setCurrentProjectName('Sample Circuit');
-    setCurrentProjectId(null);
-    currentProjectIdRef.current = null;
-    setHistory({ past: [], future: [] });
-  } catch (e) {
-    console.error('[URL Circuit] Failed to parse circuit from URL:', e);
-  }
-}, [assessmentParams]);
+      const normalized = normalizeImportedCircuitData(payload.components || [], payload.connections || []);
+      setBoard(payload.board || 'arduino_uno');
+      setComponents(normalized.components);
+      setWires(normalized.wires);
+      setCode(payload.code || '');
+      syncNextIds(normalized.components, normalized.wires);
+
+      // Clear project state so we don't accidentally overwrite the user's project
+      setCurrentProjectName('Sample Circuit');
+      setCurrentProjectId(null);
+      currentProjectIdRef.current = null;
+      setHistory({ past: [], future: [] });
+    } catch (e) {
+      console.error('[URL Circuit] Failed to parse circuit from URL:', e);
+    }
+  }, [assessmentParams]);
 
   const handleAssignmentSubmissionFilesChange = async (event) => {
     if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
@@ -3296,57 +3296,57 @@ useEffect(() => {
 
       // Use async IIFE so await getBabel() is valid inside useEffect
       (async () => {
-      const Babel = await getBabel();
-      const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
-      const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
-      assertSafeDynamicModule(transpileUI, 'ui.tsx');
-      assertSafeDynamicModule(transpileLogic, 'logic.ts');
+        const Babel = await getBabel();
+        const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
+        const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+        assertSafeDynamicModule(transpileUI, 'ui.tsx');
+        assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpileUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        if (mod.endsWith('manifest.json')) return manifest;
-        return null;
-      }, React);
+        const exportsUI = {};
+        const evalUI = new Function('exports', 'require', 'React', transpileUI);
+        evalUI(exportsUI, (mod) => {
+          if (mod === 'react') return React;
+          if (mod.endsWith('manifest.json')) return manifest;
+          return null;
+        }, React);
 
-      const uiComponent = resolveUiExport(exportsUI);
-      if (!uiComponent) {
-        console.warn('[SimulatorPage] Preview: UI component could not be evaluated.');
-        return;
-      }
+        const uiComponent = resolveUiExport(exportsUI);
+        if (!uiComponent) {
+          console.warn('[SimulatorPage] Preview: UI component could not be evaluated.');
+          return;
+        }
 
-      // Inject into catalog & registry
-      const newCatItem = { ...manifest };
-      delete newCatItem.pins;
-      delete newCatItem.group;
+        // Inject into catalog & registry
+        const newCatItem = { ...manifest };
+        delete newCatItem.pins;
+        delete newCatItem.group;
 
-      const groupName = normalizeGroupName(manifest.group);
-      let group = LOCAL_CATALOG.find(g => g.group === groupName);
-      if (!group) {
-        group = { group: groupName, items: [] };
-        LOCAL_CATALOG.push(group);
-      }
-      group.items = group.items.filter(i => i.type !== compType);
-      group.items.push(newCatItem);
-      sortCatalog(LOCAL_CATALOG);
+        const groupName = normalizeGroupName(manifest.group);
+        let group = LOCAL_CATALOG.find(g => g.group === groupName);
+        if (!group) {
+          group = { group: groupName, items: [] };
+          LOCAL_CATALOG.push(group);
+        }
+        group.items = group.items.filter(i => i.type !== compType);
+        group.items.push(newCatItem);
+        sortCatalog(LOCAL_CATALOG);
 
-      COMPONENT_REGISTRY[compType] = {
-        manifest,
-        UI: uiComponent,
-        BOUNDS: exportsUI.BOUNDS,
-        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
-        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
-        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-        logicCode: transpileLogic,
-        uiRaw,
-        logicRaw,
-      };
-      if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
+        COMPONENT_REGISTRY[compType] = {
+          manifest,
+          UI: uiComponent,
+          BOUNDS: exportsUI.BOUNDS,
+          ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
+          contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+          contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+          logicCode: transpileLogic,
+          uiRaw,
+          logicRaw,
+        };
+        if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
-      setCustomCatalogCounter(c => c + 1);
-      setPreviewBanner({ id: comp.id, label: manifest.label || comp.id });
-      console.log(`[SimulatorPage] Admin preview: injected "${manifest.label}" (${compType}) into local registry.`);
+        setCustomCatalogCounter(c => c + 1);
+        setPreviewBanner({ id: comp.id, label: manifest.label || comp.id });
+        console.log(`[SimulatorPage] Admin preview: injected "${manifest.label}" (${compType}) into local registry.`);
       })().catch(e => console.error('[SimulatorPage] Failed to inject admin preview component:', e.message));
     } catch (e) {
       console.error('[SimulatorPage] Failed to inject admin preview component:', e.message);
@@ -4302,7 +4302,7 @@ useEffect(() => {
     const exitY = pinPos.y + exitDy;
     try {
       console.debug('[mobile:getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir: exitSide, laneOffset, exitX, exitY });
-    } catch (e) {}
+    } catch (e) { }
     return { x: exitX, y: exitY, dir: exitSide };
   }, [componentsMap, PIN_DEFS, getPinPos])
 
@@ -4326,15 +4326,15 @@ useEffect(() => {
   // ── Palette long-press ──────────────────────────────────────────────────────
   const handlePalettePressStart = (item, e, groupName) => {
     if (paletteLongPressTimer.current) clearTimeout(paletteLongPressTimer.current);
-    
+
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
     paletteLongPressTimer.current = setTimeout(() => {
-      setPaletteContextMenu({ 
-        x: clientX, 
-        y: clientY, 
-        item: { ...item, group: groupName } 
+      setPaletteContextMenu({
+        x: clientX,
+        y: clientY,
+        item: { ...item, group: groupName }
       });
       paletteLongPressTimer.current = null;
     }, 500);
@@ -4387,7 +4387,7 @@ useEffect(() => {
   const addComponentInternal = useCallback((item, x, y) => {
     if (liveEditingDisabled) return;
     saveHistory();
-    
+
     const usedIds = new Set(components.map(c => String(c.id || '')));
     const id = allocateComponentId(item.type, usedIds);
     const newCompBase = {
@@ -4416,8 +4416,8 @@ useEffect(() => {
 
       // result.components might already contain the new component (placed on breadboard)
       // or we might need to add it if handleAutoSetup just returned a modified version of it.
-      const finalComps = result.components.some(c => c.id === id) 
-        ? result.components 
+      const finalComps = result.components.some(c => c.id === id)
+        ? result.components
         : [...result.components, result.component];
 
       setComponents(finalComps);
@@ -4485,18 +4485,18 @@ useEffect(() => {
 
   const onTouchStart = useCallback((e) => {
     if (isCanvasLockedRef.current) return;
-    
+
     if (e.touches.length === 2) {
       // Pinch to zoom
       const t1 = e.touches[0], t2 = e.touches[1];
       const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       initialTouchDistanceRef.current = dist;
       initialCanvasZoomRef.current = canvasZoomRef.current;
-      
+
       const rect = canvasRef.current.getBoundingClientRect();
       const mx = (t1.clientX + t2.clientX) / 2 - rect.left;
       const my = (t1.clientY + t2.clientY) / 2 - rect.top;
-      
+
       initialTouchCenterCanvasRef.current = {
         x: (mx - canvasOffsetRef.current.x) / canvasZoomRef.current,
         y: (my - canvasOffsetRef.current.y) / canvasZoomRef.current
@@ -4507,10 +4507,10 @@ useEffect(() => {
   const onTouchMove = useCallback((e) => {
     if (isCanvasLockedRef.current || e.touches.length !== 2 || !initialTouchDistanceRef.current) return;
     if (e.cancelable) e.preventDefault();
-    
+
     const t1 = e.touches[0], t2 = e.touches[1];
     const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-    
+
     const scale = dist / initialTouchDistanceRef.current;
     const newZoom = Math.min(3, Math.max(0.25, initialCanvasZoomRef.current * scale));
 
@@ -4587,27 +4587,27 @@ useEffect(() => {
     const comp = components.find(c => c.id === id);
     if (!comp) return;
 
-    const dragData = { 
-      id, 
-      sx: event.clientX, 
-      sy: event.clientY, 
-      cx: comp.x, 
-      cy: comp.y, 
-      moved: false, 
-      originalComps: JSON.parse(JSON.stringify(components)) 
+    const dragData = {
+      id,
+      sx: event.clientX,
+      sy: event.clientY,
+      cx: comp.x,
+      cy: comp.y,
+      moved: false,
+      originalComps: JSON.parse(JSON.stringify(components))
     };
 
     // Performance: If breadboard, pre-calculate children once here
     if (comp.type.startsWith('wokwi-breadboard')) {
       const childComps = components.filter(c => {
         if (c.id === id) return false;
-        return wires.some(w => 
-          w.isSocket && 
+        return wires.some(w =>
+          w.isSocket &&
           (w.from.startsWith(c.id + ':') || w.to.startsWith(c.id + ':')) &&
           (w.from.startsWith(id + ':') || w.to.startsWith(id + ':'))
         );
       });
-      
+
       if (childComps.length > 0) {
         dragData.childIds = childComps.map(c => c.id);
         dragData.childrenStart = {};
@@ -4658,7 +4658,7 @@ useEffect(() => {
             // Breadboard movement propagation
             const dx = nx - cx;
             const dy = ny - cy;
-            
+
             if (movingComp.current.childIds) {
               compUpdate.childUpdates = movingComp.current.childIds.map(childId => ({
                 id: childId,
@@ -4667,16 +4667,16 @@ useEffect(() => {
               }));
             }
           } else {
-          const pins = LOCAL_PIN_DEFS[comp.type] || [];
-          const anchorPin = (comp.attrs?.breadboard?.anchorPin && pins.find(p => p.id === comp.attrs.breadboard.anchorPin)) || pins[0];
-          
-          if (anchorPin) {
-            const rotation = comp.rotation || 0;
-            const centerX = nx + (comp.w || 0) / 2;
-            const centerY = ny + (comp.h || 0) / 2;
-            const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, centerX, centerY);
-            
-            const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
+            const pins = LOCAL_PIN_DEFS[comp.type] || [];
+            const anchorPin = (comp.attrs?.breadboard?.anchorPin && pins.find(p => p.id === comp.attrs.breadboard.anchorPin)) || pins[0];
+
+            if (anchorPin) {
+              const rotation = comp.rotation || 0;
+              const centerX = nx + (comp.w || 0) / 2;
+              const centerY = ny + (comp.h || 0) / 2;
+              const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, centerX, centerY);
+
+              const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
               if (hole) {
                 nx += (hole.x - anchorWorld.x);
                 ny += (hole.y - anchorWorld.y);
@@ -4695,10 +4695,10 @@ useEffect(() => {
                 });
                 compUpdate.snappingHoles = currentSnaps;
               }
+            }
           }
         }
       }
-    }
 
       const sd = segDragRef.current;
       if (sd && canvasRef.current) {
@@ -4780,10 +4780,10 @@ useEffect(() => {
         rafMoveRef.current = requestAnimationFrame(() => {
           rafMoveRef.current = null;
           const { compUpdate, wireUpdate, mousePosUpdate } = pendingMoveRef.current || {};
-          
+
           if (compUpdate) {
             const { id, newX, newY, snappingHoles: holes, childUpdates } = compUpdate;
-            
+
             // 1. Direct DOM Update for Components (Master Wrapper)
             const updateMasterPos = (cid, x, y) => {
               const master = document.getElementById(`comp-master-${cid}`);
@@ -4809,7 +4809,7 @@ useEffect(() => {
             affectedWires.forEach(w => {
               const fromParts = w.from.split(':');
               const toParts = w.to.split(':');
-              
+
               const getLivePos = (cid, pid) => {
                 const c = componentsRef.current.find(comp => comp.id === cid);
                 if (!c) return null;
@@ -4835,7 +4835,7 @@ useEffect(() => {
                 const pathHit = document.getElementById(`wire-path-hit-${w.id}`);
                 const circFrom = document.getElementById(`wire-circ-from-${w.id}`);
                 const circTo = document.getElementById(`wire-circ-to-${w.id}`);
-                
+
                 if (pathUi) pathUi.setAttribute('d', pathStr);
                 if (pathHit) pathHit.setAttribute('d', pathStr);
                 if (circFrom) { circFrom.setAttribute('cx', p1.x); circFrom.setAttribute('cy', p1.y); }
@@ -4940,7 +4940,7 @@ useEffect(() => {
         if (finalComp && !isBreadboardType(finalComp.type)) {
           const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
           const worldPins = getComponentWorldPins(finalComp, pins);
-          
+
           const snapMatches = worldPins.map(wp => {
             const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
             const dist = hole ? Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) : Infinity;
@@ -5073,19 +5073,19 @@ useEffect(() => {
         return
       }
       saveHistory();
-        const color1 = wireColor(wireStart.pinLabel);
-        const color2 = wireColor(pinLabel);
-        const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
-        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
+      const color1 = wireColor(wireStart.pinLabel);
+      const color2 = wireColor(pinLabel);
+      const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
+      let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+      if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
-        const newWire = {
-          id: `w${nextWireId++}`,
-          from: `${wireStart.compId}:${wireStart.pinId}`,
-          to: `${compId}:${pinId}`,
-          fromLabel: wireStart.pinLabel,
-          toLabel: pinLabel,
-          color: finalColor,
+      const newWire = {
+        id: `w${nextWireId++}`,
+        from: `${wireStart.compId}:${wireStart.pinId}`,
+        to: `${compId}:${pinId}`,
+        fromLabel: wireStart.pinLabel,
+        toLabel: pinLabel,
+        color: finalColor,
         waypoints: wireStart.waypoints || [],
         isBelow: false // Add z-index configuration
       }
@@ -5173,13 +5173,13 @@ useEffect(() => {
   const rotateComponent = (id) => {
     if (isRunning || liveEditingDisabled) return;
     saveHistory();
-    
+
     setComponents(prev => {
       const comp = prev.find(c => c.id === id);
       if (!comp) return prev;
-      
+
       const newRotation = ((comp.rotation || 0) + 90) % 360;
-      
+
       // If breadboard, rotate children
       if (comp.type.startsWith('wokwi-breadboard')) {
         const childIds = new Set(wiresRef.current
@@ -5190,17 +5190,17 @@ useEffect(() => {
             return fromId === id ? toId : fromId;
           })
         );
-        
+
         const bbCenterX = comp.x + comp.w / 2;
         const bbCenterY = comp.y + comp.h / 2;
-        
+
         return prev.map(c => {
           if (c.id === id) return { ...c, rotation: newRotation };
           if (childIds.has(c.id)) {
             const childCenterX = c.x + c.w / 2;
             const childCenterY = c.y + c.h / 2;
             const rotated = getRotatedPoint(childCenterX, childCenterY, 90, bbCenterX, bbCenterY);
-            
+
             return {
               ...c,
               x: rotated.x - c.w / 2,
@@ -5211,7 +5211,7 @@ useEffect(() => {
           return c;
         });
       }
-      
+
       return prev.map(c => c.id === id ? { ...c, rotation: newRotation } : c);
     });
   };
@@ -5490,9 +5490,9 @@ useEffect(() => {
         ? `#include "${safeBase}.h"\n\n// ${safeBase} implementation\n`
         : safeExt === '.ino'
           ? `void setup() {\n}\n\nvoid loop() {\n}\n`
-            : safeExt === '.py'
-              ? `from machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`
-          : '';
+          : safeExt === '.py'
+            ? `from machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`
+            : '';
 
     const nextFile = {
       id: candidatePath,
@@ -5587,7 +5587,7 @@ useEffect(() => {
         setProjectFiles(prev => [...prev, nextFile]);
         setOpenCodeTabs(prev => prev.includes(candidatePath) ? prev : [...prev, candidatePath]);
         setActiveCodeFileId(candidatePath);
-        
+
         appendConsoleEntry('info', `File uploaded: ${candidate}`, 'code');
       };
       if (readAsBinary) reader.readAsArrayBuffer(file);
@@ -5891,7 +5891,7 @@ useEffect(() => {
         },
       };
     }));
-    
+
     const label = boardComponentMap.get(boardId)?.id || boardId;
     appendConsoleEntry('info', `Board ${label} set to use ${useUploaded ? 'uploaded firmware override' : 'code editor source'}.`, 'simulator');
   }, [saveHistory, setComponents, appendConsoleEntry, boardComponentMap]);
@@ -5916,7 +5916,7 @@ useEffect(() => {
     try {
       const parsed = await parseFirmwareUploadFile(file);
       const boardKind = normalizeBoardKind(targetBoardComp.type);
-      
+
       // Format validation
       if (boardKind !== 'rp2040' && parsed.ext === '.uf2') {
         throw new Error(`Board ${targetBoardId} (${boardKind}) does not support .uf2 files. Please use a .hex file.`);
@@ -6645,7 +6645,7 @@ useEffect(() => {
           await new Promise(resolve => setTimeout(resolve, 500));
           const statusRes = await getEsp32CompileStatus(jobId);
           if (!statusRes) continue;
-          
+
           if (statusRes.status === 'success') {
             if (!statusRes.binary_content) {
               throw new Error('Compilation succeeded but no binary content was returned.');
@@ -6655,7 +6655,7 @@ useEffect(() => {
           } else if (statusRes.status === 'failed') {
             throw new Error(statusRes.error || 'ESP32 compilation failed.');
           }
-          
+
           pollCount++;
           if (pollCount > 180) {
             throw new Error('ESP32 compilation timed out after 90 seconds.');
@@ -6771,7 +6771,7 @@ useEffect(() => {
       }
 
       runStartGuardRef.current = true;
-      
+
       // 1. Unified Validation Gate (BLOCKING)
       appendConsoleEntry('info', '🔍 Validating circuit health...', 'simulator');
       if (!runCircuitValidation()) {
@@ -7041,25 +7041,25 @@ useEffect(() => {
                 const startRes = await startEsp32Compile({
                   code: compileSource
                 });
-                
+
                 if (!startRes || (!startRes.jobId && !startRes.buildId)) {
                   throw new Error('Failed to start ESP32 compilation.');
                 }
-                
+
                 if (startRes.cache === 'hit') {
                   logSerial(`Using server-cached compilation for ${boardComp.id}...`);
                 }
-                
+
                 const jobId = startRes.jobId || startRes.buildId;
                 let pollCount = 0;
                 let lastPrintedProgressLen = 0;
-                
+
                 while (true) {
                   await new Promise(resolve => setTimeout(resolve, 500));
                   const statusRes = await getEsp32CompileStatus(jobId);
-                  
+
                   if (!statusRes) continue;
-                  
+
                   const progressLines = statusRes.progress || [];
                   if (progressLines.length > lastPrintedProgressLen) {
                     for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
@@ -7067,7 +7067,7 @@ useEffect(() => {
                     }
                     lastPrintedProgressLen = progressLines.length;
                   }
-                  
+
                   if (statusRes.status === 'success') {
                     if (!statusRes.binary_content) {
                       throw new Error('Compilation succeeded but no binary content was returned.');
@@ -7082,7 +7082,7 @@ useEffect(() => {
                     const errMsg = statusRes.error || 'ESP32 compilation failed.';
                     throw new Error(errMsg);
                   }
-                  
+
                   pollCount++;
                   if (pollCount > 120) {
                     throw new Error('ESP32 compilation timed out after 60 seconds.');
@@ -7130,7 +7130,7 @@ useEffect(() => {
         const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
         const cacheStr = [finalCode, engine].join('\n/*__SPLIT__*/\n');
         appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
-        
+
         const cached = await getCachedHex(cacheStr, board);
         if (cached) {
           logSerial('Using locally cached compilation (offline cache)...');
@@ -8150,8 +8150,8 @@ useEffect(() => {
       // 4. Append metadata bytes after PNG IEND → still renders fine in all image viewers
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
       const safeName = (currentProjectName && currentProjectName !== "Untitled")
-  ? currentProjectName.replace(/[^a-z0-9_\-]/gi, "_")
-  : `circuit_${board}`;
+        ? currentProjectName.replace(/[^a-z0-9_\-]/gi, "_")
+        : `circuit_${board}`;
       const filename = `${safeName}_${dateStr}.png`;
 
       out.toBlob(async (blob) => {
@@ -8438,7 +8438,7 @@ useEffect(() => {
           }
         };
       };
-      
+
       // Create openhw aliases for all wokwi symbols
       Object.keys(SYMS).forEach(k => {
         if (k.startsWith('wokwi-')) {
@@ -9023,13 +9023,13 @@ useEffect(() => {
               notes: value,
             }))
           }
-          onLinkChange={() => {}}
-          onAddLink={() => {}}
-          onRemoveLink={() => {}}
+          onLinkChange={() => { }}
+          onAddLink={() => { }}
+          onRemoveLink={() => { }}
           onFilesChange={handleAssignmentSubmissionFilesChange}
           onRemoveFile={handleRemoveAssignmentSubmissionFile}
           onSubmit={handleSubmitClassAssignment}
-          onPreviewFile={() => {}}
+          onPreviewFile={() => { }}
           isClosed={isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
         />
       )}
@@ -9149,267 +9149,267 @@ useEffect(() => {
         </div>
       )}
 
-      <div 
-        style={{ 
-          position: 'absolute', 
+      <div
+        style={{
+          position: 'absolute',
           top: 56, // Exact Top bar height (h-14)
           bottom: 72, // Exact Bottom nav height
-          left: 0, 
+          left: 0,
           right: 0,
           display: 'flex',
           overflow: 'hidden'
-        }} 
+        }}
         onClick={() => setProjContextMenu(null)}
       >
         {activeMobileTab === 'canvas' && (
           <div className="flex flex-1 overflow-hidden relative">
 
 
-        {/* PALETTE — Toggle to expand */}
-        <aside
-          className="bg-[var(--bg2)] flex flex-col shrink-0"
-          style={{
-            width: isPaletteOpen ? 340 : 0,
-            transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            position: 'absolute',
-            top: 0, bottom: 0, left: 0,
-            zIndex: 100,
-            pointerEvents: liveEditingDisabled ? 'none' : 'auto',
-            opacity: liveEditingDisabled ? 0.65 : 1,
-            overflow: 'visible',
-            borderRight: isPaletteOpen ? '1px solid var(--border)' : 'none'
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          {/* Toggle Button in Middle */}
-          <button
-            onClick={() => setIsPaletteOpen(!isPaletteOpen)}
-            className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-14 bg-[var(--bg2)] border border-[var(--border)] border-l-0 rounded-r-xl shadow-xl z-[110] text-[var(--text2)] hover:text-[var(--accent)] transition-all cursor-pointer"
-            style={{ 
-              left: isPaletteOpen ? 340 : 0,
-              transition: 'left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          >
-            {isPaletteOpen ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            )}
-          </button>
+            {/* PALETTE — Toggle to expand */}
+            <aside
+              className="bg-[var(--bg2)] flex flex-col shrink-0"
+              style={{
+                width: isPaletteOpen ? 340 : 0,
+                transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                position: 'absolute',
+                top: 0, bottom: 0, left: 0,
+                zIndex: 100,
+                pointerEvents: liveEditingDisabled ? 'none' : 'auto',
+                opacity: liveEditingDisabled ? 0.65 : 1,
+                overflow: 'visible',
+                borderRight: isPaletteOpen ? '1px solid var(--border)' : 'none'
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              {/* Toggle Button in Middle */}
+              <button
+                onClick={() => setIsPaletteOpen(!isPaletteOpen)}
+                className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-14 bg-[var(--bg2)] border border-[var(--border)] border-l-0 rounded-r-xl shadow-xl z-[110] text-[var(--text2)] hover:text-[var(--accent)] transition-all cursor-pointer"
+                style={{
+                  left: isPaletteOpen ? 340 : 0,
+                  transition: 'left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                {isPaletteOpen ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                )}
+              </button>
 
-          {/* Full palette content */}
-          <div style={{
-            width: 340, opacity: isPaletteOpen ? 1 : 0, transition: 'opacity 0.2s',
-            pointerEvents: isPaletteOpen ? 'auto' : 'none',
-            display: 'flex', flexDirection: 'column', height: '100%',
-            overflow: 'hidden'
-          }}>
-            {/* Sticky top section */}
-            <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
-              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
+              {/* Full palette content */}
+              <div style={{
+                width: 340, opacity: isPaletteOpen ? 1 : 0, transition: 'opacity 0.2s',
+                pointerEvents: isPaletteOpen ? 'auto' : 'none',
+                display: 'flex', flexDirection: 'column', height: '100%',
+                overflow: 'hidden'
+              }}>
+                {/* Sticky top section */}
+                <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
+                  <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
 
-              {/* Search + Filter + View Toggle */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                  <input
-                    className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] pl-9 pr-3 rounded-lg text-xs w-full outline-none font-inherit box-border transition-all focus:border-[var(--accent)]"
-                    style={{ flex: 1, height: 28, marginBottom: 0 }}
-                    placeholder="Search..."
-                    value={paletteSearch}
-                    onChange={(e) => setPaletteSearch(e.target.value)}
-                  />
-                  {paletteSearch && (
-                    <button onClick={() => setPaletteSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.5, display: 'flex' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                    </button>
-                  )}
-                </div>
+                  {/* Search + Filter + View Toggle */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                      <input
+                        className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] pl-9 pr-3 rounded-lg text-xs w-full outline-none font-inherit box-border transition-all focus:border-[var(--accent)]"
+                        style={{ flex: 1, height: 28, marginBottom: 0 }}
+                        placeholder="Search..."
+                        value={paletteSearch}
+                        onChange={(e) => setPaletteSearch(e.target.value)}
+                      />
+                      {paletteSearch && (
+                        <button onClick={() => setPaletteSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.5, display: 'flex' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                        </button>
+                      )}
+                    </div>
 
-                <div className="filter-dropdown-container" style={{ position: 'relative' }}>
-                  <button
-                    onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-                    style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: activeGroupFilter !== 'All' ? 'var(--accent)' : 'var(--card)', color: activeGroupFilter !== 'All' ? '#fff' : 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                    title="Filter by group"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
-                  </button>
+                    <div className="filter-dropdown-container" style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                        style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: activeGroupFilter !== 'All' ? 'var(--accent)' : 'var(--card)', color: activeGroupFilter !== 'All' ? '#fff' : 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        title="Filter by group"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
+                      </button>
 
-                  {showFilterDropdown && (
-                    <div 
-                      className="canvas-menu"
-                      onMouseLeave={() => setShowFilterDropdown(false)}
-                      style={{ 
-                        position: 'absolute', 
-                        top: '100%', 
-                        right: 0, 
-                        marginTop: 6, 
-                        zIndex: 100, 
-                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.98)' : 'rgba(13, 21, 37, 0.98)',
-                        backdropFilter: 'blur(16px) saturate(1.4)',
-                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                        borderRadius: 12, 
-                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                        padding: '5px', 
-                        minWidth: 160,
-                        animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                        transformOrigin: 'top right',
-                        fontFamily: "'Space Grotesk', sans-serif",
-                        willChange: 'transform, opacity, backdrop-filter',
-                        backfaceVisibility: 'hidden',
-                        WebkitBackfaceVisibility: 'hidden',
-                      }}
-                    >
-                      <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-3 py-1.5 border-b border-[var(--border)] mb-1">Groups</div>
-                      {['All', ...CATALOG.map(g => g.group)].map(group => (
-                        <button
-                          key={group}
-                          className="canvas-menu-item"
-                          onClick={() => { setActiveGroupFilter(group); setShowFilterDropdown(false); }}
-                          style={{ 
-                            background: activeGroupFilter === group ? 'var(--accent)' : 'transparent', 
-                            color: activeGroupFilter === group ? '#fff' : 'var(--text)',
+                      {showFilterDropdown && (
+                        <div
+                          className="canvas-menu"
+                          onMouseLeave={() => setShowFilterDropdown(false)}
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            marginTop: 6,
+                            zIndex: 100,
+                            background: theme === 'light' ? 'rgba(255, 255, 255, 0.98)' : 'rgba(13, 21, 37, 0.98)',
+                            backdropFilter: 'blur(16px) saturate(1.4)',
+                            WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                            border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                            borderRadius: 12,
+                            boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                            padding: '5px',
+                            minWidth: 160,
+                            animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                            transformOrigin: 'top right',
+                            fontFamily: "'Space Grotesk', sans-serif",
+                            willChange: 'transform, opacity, backdrop-filter',
+                            backfaceVisibility: 'hidden',
+                            WebkitBackfaceVisibility: 'hidden',
                           }}
                         >
-                          {group === 'All' ? 'All Groups' : group}
-                        </button>
-                      ))}
+                          <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-3 py-1.5 border-b border-[var(--border)] mb-1">Groups</div>
+                          {['All', ...CATALOG.map(g => g.group)].map(group => (
+                            <button
+                              key={group}
+                              className="canvas-menu-item"
+                              onClick={() => { setActiveGroupFilter(group); setShowFilterDropdown(false); }}
+                              style={{
+                                background: activeGroupFilter === group ? 'var(--accent)' : 'transparent',
+                                color: activeGroupFilter === group ? '#fff' : 'var(--text)',
+                              }}
+                            >
+                              {group === 'All' ? 'All Groups' : group}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <button
-                  onClick={() => setPaletteViewMode(m => m === 'list' ? 'grid' : 'list')}
-                  style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}
-                  title={paletteViewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
-                >
-                  {paletteViewMode === 'list' ? (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" /></svg>
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor" /></svg>
-                  )}
-                </button>
-              </div>
+                    <button
+                      onClick={() => setPaletteViewMode(m => m === 'list' ? 'grid' : 'list')}
+                      style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}
+                      title={paletteViewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
+                    >
+                      {paletteViewMode === 'list' ? (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" /></svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor" /></svg>
+                      )}
+                    </button>
+                  </div>
 
-              {/* Upload ZIP + Create Component */}
-              <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                <input type="file" ref={componentZipInputRef} onChange={handleUploadZip} accept=".zip" style={{ display: 'none' }} />
-                <button
-                  onClick={() => componentZipInputRef.current.click()}
-                  style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
-                  Upload ZIP
-                </button>
-                <button
-                  onClick={openComponentEditor}
-                  style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 600 }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                  Create
-                </button>
-              </div>
+                  {/* Upload ZIP + Create Component */}
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                    <input type="file" ref={componentZipInputRef} onChange={handleUploadZip} accept=".zip" style={{ display: 'none' }} />
+                    <button
+                      onClick={() => componentZipInputRef.current.click()}
+                      style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+                      Upload ZIP
+                    </button>
+                    <button
+                      onClick={openComponentEditor}
+                      style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 600 }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                      Create
+                    </button>
+                  </div>
 
-              {/* Favourites section */}
-              <div style={{ marginBottom: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', overflow: 'hidden' }}>
-                <button
-                  onClick={() => setShowFavorites(f => !f)}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--bg3)', border: 'none', borderBottom: showFavorites ? '1px solid var(--border)' : 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l1.5 3H11l-2.5 1.8.9 3L6 7.2 3.6 9.8l.9-3L2 5h3.5z" fill="#f59e0b" stroke="#f59e0b" strokeWidth="0.5" /></svg>
-                    Favourites {favoriteComponents.size > 0 ? `(${favoriteComponents.size})` : ''}
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center' }}>
-                    {showFavorites
-                      ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                    }
-                  </span>
-                </button>
-                {showFavorites && (
-                  <div style={{ padding: '6px 8px 8px' }}>
-                    {favoriteComponents.size === 0 ? (
-                      <div style={{ padding: '6px 2px', fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>Right-click a component to favourite</div>
-                    ) : (
-                      (() => {
-                        const favItems = [];
-                        CATALOG.forEach(g => g.items.forEach(item => { if (favoriteComponents.has(item.type)) favItems.push({ ...item, group: g.group }); }));
-                        return (
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '2px 0' }}>
-                            {favItems.map(item => {
-                              const gColor = GROUP_COLORS[item.group] || 'var(--accent)';
-                              return (
-                                <div
-                                  key={`fav-${item.type}`}
-                                  draggable={false}
-                                  onTouchStart={e => handlePalettePressStart(item, e, item.group)}
-                                  onTouchEnd={handlePalettePressEnd}
-                                  onTouchMove={handlePalettePressEnd}
-                                  onMouseDown={e => handlePalettePressStart(item, e, item.group)}
-                                  onMouseUp={handlePalettePressEnd}
-                                  onMouseLeave={e => {
-                                    handlePalettePressEnd(e);
-                                    e.currentTarget.style.borderColor = `${gColor}44`;
-                                    e.currentTarget.style.background = 'var(--bg)';
-                                  }}
-                                  onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem(item); }}
-                                  onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
-                                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
-                                  onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
-                                >
-                                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2 }}>{item.label}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()
+                  {/* Favourites section */}
+                  <div style={{ marginBottom: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', overflow: 'hidden' }}>
+                    <button
+                      onClick={() => setShowFavorites(f => !f)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--bg3)', border: 'none', borderBottom: showFavorites ? '1px solid var(--border)' : 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l1.5 3H11l-2.5 1.8.9 3L6 7.2 3.6 9.8l.9-3L2 5h3.5z" fill="#f59e0b" stroke="#f59e0b" strokeWidth="0.5" /></svg>
+                        Favourites {favoriteComponents.size > 0 ? `(${favoriteComponents.size})` : ''}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center' }}>
+                        {showFavorites
+                          ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        }
+                      </span>
+                    </button>
+                    {showFavorites && (
+                      <div style={{ padding: '6px 8px 8px' }}>
+                        {favoriteComponents.size === 0 ? (
+                          <div style={{ padding: '6px 2px', fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>Right-click a component to favourite</div>
+                        ) : (
+                          (() => {
+                            const favItems = [];
+                            CATALOG.forEach(g => g.items.forEach(item => { if (favoriteComponents.has(item.type)) favItems.push({ ...item, group: g.group }); }));
+                            return (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '2px 0' }}>
+                                {favItems.map(item => {
+                                  const gColor = GROUP_COLORS[item.group] || 'var(--accent)';
+                                  return (
+                                    <div
+                                      key={`fav-${item.type}`}
+                                      draggable={false}
+                                      onTouchStart={e => handlePalettePressStart(item, e, item.group)}
+                                      onTouchEnd={handlePalettePressEnd}
+                                      onTouchMove={handlePalettePressEnd}
+                                      onMouseDown={e => handlePalettePressStart(item, e, item.group)}
+                                      onMouseUp={handlePalettePressEnd}
+                                      onMouseLeave={e => {
+                                        handlePalettePressEnd(e);
+                                        e.currentTarget.style.borderColor = `${gColor}44`;
+                                        e.currentTarget.style.background = 'var(--bg)';
+                                      }}
+                                      onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem(item); }}
+                                      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
+                                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
+                                      onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
+                                    >
+                                      <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2 }}>{item.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* Scrollable component list */}
-            <div className="palette-scroll" style={{
-              flex: 1, overflowY: 'auto',
-              display: paletteViewMode === 'grid' ? 'block' : 'flex',
-              flexDirection: 'column', gap: paletteViewMode === 'list' ? 2 : 0,
-              padding: '4px 8px 8px',
-            }}>
-              {CATALOG.map((group, index) => {
-                const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
-                if (!isGroupMatch) return null;
+                {/* Scrollable component list */}
+                <div className="palette-scroll" style={{
+                  flex: 1, overflowY: 'auto',
+                  display: paletteViewMode === 'grid' ? 'block' : 'flex',
+                  flexDirection: 'column', gap: paletteViewMode === 'list' ? 2 : 0,
+                  padding: '4px 8px 8px',
+                }}>
+                  {CATALOG.map((group, index) => {
+                    const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
+                    if (!isGroupMatch) return null;
 
-                const filteredItems = group.items.filter(item => {
-                  const label = (item.label || item.name || '').toLowerCase();
-                  const type = (item.type || '').toLowerCase();
-                  const search = (paletteSearch || '').toLowerCase();
-                  return label.includes(search) || type.includes(search);
-                });
-                if (filteredItems.length === 0) return null;
-                const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
-                return (
-                  <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
-                    <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
-                      </span>
-                      {group.group}
-                    </div>
+                    const filteredItems = group.items.filter(item => {
+                      const label = (item.label || item.name || '').toLowerCase();
+                      const type = (item.type || '').toLowerCase();
+                      const search = (paletteSearch || '').toLowerCase();
+                      return label.includes(search) || type.includes(search);
+                    });
+                    if (filteredItems.length === 0) return null;
+                    const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
+                    return (
+                      <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
+                        <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                            {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
+                          </span>
+                          {group.group}
+                        </div>
 
-                    {paletteViewMode === 'grid' ? (
-                      /* GRID VIEW */
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: '4px 0' }}>
-                        {filteredItems.map(item => {
-                          const compW = item.w || 60;
-                          const compH = item.h || 60;
-                          /* 84×66 target visible area with breathing room */
-                          const previewW = 84, previewH = 66;
-                          const rawScale = Math.min(previewW / compW, previewH / compH);
-                          const scale = Math.max(0.22, Math.min(1.6, rawScale));
-                          const hasUI = !!COMPONENT_REGISTRY[item.type]?.UI;
-                          const locked = isPaletteItemLocked(item.type);
-                          return (
+                        {paletteViewMode === 'grid' ? (
+                          /* GRID VIEW */
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: '4px 0' }}>
+                            {filteredItems.map(item => {
+                              const compW = item.w || 60;
+                              const compH = item.h || 60;
+                              /* 84×66 target visible area with breathing room */
+                              const previewW = 84, previewH = 66;
+                              const rawScale = Math.min(previewW / compW, previewH / compH);
+                              const scale = Math.max(0.22, Math.min(1.6, rawScale));
+                              const hasUI = !!COMPONENT_REGISTRY[item.type]?.UI;
+                              const locked = isPaletteItemLocked(item.type);
+                              return (
                                 <div
                                   key={item.type}
                                   draggable={false}
@@ -9429,1833 +9429,1841 @@ useEffect(() => {
                                     if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
                                     addComponentAtCenter(item);
                                   }}
-                              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                              title={item.label}
-                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
-                              onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
-                            >
-                              {/* Overlay for locked state */}
-                              {locked && (
-                                <div style={{ position: 'absolute', top: 5, right: 6, zIndex: 10, fontSize: 13, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 6, padding: '2px 4px', color: '#ef4444' }}>
-                                  🔒
+                                  onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
+                                  title={item.label}
+                                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
+                                  onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
+                                >
+                                  {/* Overlay for locked state */}
+                                  {locked && (
+                                    <div style={{ position: 'absolute', top: 5, right: 6, zIndex: 10, fontSize: 13, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 6, padding: '2px 4px', color: '#ef4444' }}>
+                                      🔒
+                                    </div>
+                                  )}
+                                  {/* Component SVG — absolutely centred in upper area, no inner box */}
+                                  {hasUI ? (
+                                    <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
+                                      {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false })}
+                                    </div>
+                                  ) : (
+                                    <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+                                    </div>
+                                  )}
+                                  {/* Label — pinned to bottom, single line */}
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2, position: 'relative', zIndex: 1 }}>{item.label}</span>
                                 </div>
-                              )}
-                              {/* Component SVG — absolutely centred in upper area, no inner box */}
-                              {hasUI ? (
-                                <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
-                                  {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false })}
-                                </div>
-                              ) : (
-                                <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-                                </div>
-                              )}
-                              {/* Label — pinned to bottom, single line */}
-                              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2, position: 'relative', zIndex: 1 }}>{item.label}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      /* LIST VIEW */
-                      filteredItems.map(item => {
-                        const locked = isPaletteItemLocked(item.type);
-                        return (
-                          <div
-                            key={item.type}
-                            draggable={false}
-                            onTouchStart={e => !locked && handlePalettePressStart(item, e, group.group)}
-                            onTouchEnd={handlePalettePressEnd}
-                            onTouchMove={handlePalettePressEnd}
-                            onMouseDown={e => !locked && handlePalettePressStart(item, e, group.group)}
-                            onMouseUp={handlePalettePressEnd}
-                            onMouseLeave={e => {
-                              handlePalettePressEnd(e);
-                              if (!locked) e.currentTarget.style.background = 'var(--card)';
-                            }}
-                            onClick={() => {
-                              if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                              addComponentAtCenter(item);
-                            }}
-                            onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                            style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
-                            onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
-                          >
-                            {locked && (
-                              <div style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)', fontSize: 13, color: '#ef4444' }}>
-                                🔒
-                              </div>
-                            )}
-                            <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>{item.label}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>
-                              {COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
-                            </div>
+                              );
+                            })}
                           </div>
-                        )
-                      })
-                    )}
-                  </div>
-                );
-              })}
-              <div key="palette-tip" className="mt-auto px-2 py-2.5 text-[11px] text-[var(--text3)] leading-relaxed">
-                Click or drag → drop to place · Del removes selected
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Palette right-click context menu */}
-        {paletteContextMenu && (() => {
-          const menuH = 175;
-          const adjustedY = paletteContextMenu.y + menuH > window.innerHeight
-            ? paletteContextMenu.y - menuH
-            : paletteContextMenu.y;
-          return (
-            <div
-              className="canvas-menu"
-              onMouseDown={e => e.stopPropagation()}
-              onMouseLeave={() => { setPaletteContextMenu(null); setIsPaletteHovered(false); }}
-              style={{ 
-                position: 'fixed', 
-                left: paletteContextMenu.x, 
-                top: adjustedY, 
-                zIndex: 10000, 
-                background: theme === 'light' ? 'rgba(255, 255, 255, 0.98)' : 'rgba(13, 21, 37, 0.98)',
-                backdropFilter: 'blur(16px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                borderRadius: 12, 
-                boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                minWidth: 200, 
-                padding: '5px',
-                animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                transformOrigin: 'top left',
-                fontFamily: "'Space Grotesk', sans-serif",
-                willChange: 'transform, opacity, backdrop-filter',
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden',
-              }}
-            >
-              <div style={{ padding: '7px 12px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{paletteContextMenu.item.label}</div>
-              {[
-                {
-                  icon: favoriteComponents.has(paletteContextMenu.item.type) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>,
-                  label: favoriteComponents.has(paletteContextMenu.item.type) ? 'Remove from Favourites' : 'Add to Favourites',
-                  color: '#f59e0b',
-                  action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false); }
-                },
-                {
-                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>,
-                  label: 'Component Documentation',
-                  color: 'var(--text)',
-                  action: () => {
-                    const doc = COMPONENT_REGISTRY[paletteContextMenu.item.type]?.doc;
-                    if (doc) {
-                      const b = new Blob([doc], { type: 'text/html' });
-                      window.open(URL.createObjectURL(b), '_blank');
-                    } else {
-                      window.open(`https://wokwi.com/docs/parts/${paletteContextMenu.item.type}`, '_blank');
-                    }
-                    setPaletteContextMenu(null); setIsPaletteHovered(false);
-                  }
-                },
-                {
-                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
-                  label: 'Edit a Copy',
-                  color: 'var(--text)',
-                  action: () => {
-                    const item = paletteContextMenu.item;
-                    const registryInfo = COMPONENT_REGISTRY[item.type];
-                    const editCopyData = {
-                      manifest: registryInfo?.manifest || item,
-                      logic: buildLogicSourceFromRegistry(registryInfo, item.type),
-                      ui: buildUiSourceFromRegistry(registryInfo, item.type),
-                      validation: buildValidationSourceFromRegistry(registryInfo),
-                      index: buildIndexSourceFromRegistry(registryInfo, item.type),
-                      docs: registryInfo?.docRaw || registryInfo?.doc || '',
-                    };
-
-                    const writeResult = writeEditCopyPayload(editCopyData);
-                    if (!writeResult.ok) {
-                      alert(`Unable to prepare Edit a Copy payload. ${writeResult.error?.message || 'Please clear browser storage and retry.'}`);
-                      setPaletteContextMenu(null);
-                      setIsPaletteHovered(false);
-                      return;
-                    }
-
-                    openComponentEditor();
-                    setPaletteContextMenu(null);
-                    setIsPaletteHovered(false);
-                  }
-                },
-              ].map(({ icon, label, color, action }) => (
-                <button
-                  key={label}
-                  className="canvas-menu-item"
-                  onClick={action}
-                  style={{ color }}
-                >
-                  {icon}
-                  {label}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
-
-        {/* Create Component Modal (placeholder) */}
-        {showCreateComponentModal && (
-          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
-            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
-              <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
-                To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
-              </p>
-              <button
-                onClick={() => setShowCreateComponentModal(false)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                Got it
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* CANVAS + SVG WIRE LAYER */}
-        <main
-          className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
-            cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
-            backgroundImage: showGrid
-              ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
-              : 'none',
-            touchAction: 'none', // Block browser pinch-to-zoom
-            pointerEvents: 'auto',
-            opacity: 1,
-          }}
-          ref={canvasRef}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-          onDrop={onCanvasDrop}
-          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-          onMouseDown={e => {
-            if (isCanvasLocked || wireStart || movingComp.current) return;
-            if (e.button !== 0 && e.button !== 1) return;
-            e.preventDefault();
-            didPanRef.current = false;
-            isPanningRef.current = true;
-            panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffsetRef.current.x, oy: canvasOffsetRef.current.y };
-          }}
-          onClick={(e) => {
-            if (didPanRef.current) return;
-            if (wireStart) {
-              const r = canvasRef.current.getBoundingClientRect();
-              const newPt = { x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom };
-              setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
-            } else {
-              setSelected(null)
-              setWireClickPos(null)
-            }
-          }}
-          onDoubleClick={e => {
-            if (wireStart || isRunning) return;
-            // Don't open search if clicking on an input, button, select, textarea, or inside a context menu
-            const tag = e.target.tagName.toLowerCase();
-            if (tag === 'input' || tag === 'textarea' || tag === 'button' || tag === 'select') return;
-            if (e.target.closest('[data-contextmenu]')) return;
-            const rect = canvasRef.current.getBoundingClientRect();
-            const canvasX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-            const canvasY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-            setQuickAdd({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
-            setQuickAddSearch('');
-            setQuickAddIdx(0);
-          }}
-        >
-          {/* Zoom Wrapper — scales all circuit content */}
-          {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
-               React state (canvasOffset) is only committed once on mouseup. */}
-          <div ref={innerCanvasRef} style={{
-            position: 'absolute', top: 0, left: 0,
-            width: '10000px', height: '8000px',
-            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
-          }}>
-            {/* BOTTOM SVG layer for wires (Below Components) */}
-            <svg
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
-            >
-              {wires.filter(w => w.isBelow === true).map(w => {
-                const fromParts = w.from.split(':')
-                const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
-                
-                return (
-                  <CanvasWire
-                    key={w.id}
-                    wire={w}
-                    p1={p1} p2={p2} e1={e1} e2={e2}
-                    isSelected={selected === w.id}
-                    wirepointsEnabled={wirepointsEnabled}
-                    theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
-                    onSelect={(e) => {
-                      e.stopPropagation();
-                      setSelected(w.id);
-                      setHideWireMenu(false);
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                    }}
-                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                      setHideWireMenu(true);
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
-                      setHideWireMenu(true);
-                      if (ev.cancelable) ev.preventDefault();
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const t = ev.touches[0];
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                  />
-                );
-              })}
-            </svg>
-
-            {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-            <svg
-              ref={svgRef}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
-            >
-              {/* Placed wires (Top layer) */}
-              {wires.filter(w => w.isBelow !== true).map(w => {
-                const fromParts = w.from.split(':')
-                const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
-                
-                return (
-                  <CanvasWire
-                    key={w.id}
-                    wire={w}
-                    p1={p1} p2={p2} e1={e1} e2={e2}
-                    isSelected={selected === w.id}
-                    wirepointsEnabled={wirepointsEnabled}
-                    theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
-                    onSelect={(e) => {
-                      e.stopPropagation();
-                      setSelected(w.id);
-                      setHideWireMenu(false);
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                    }}
-                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                      setHideWireMenu(true);
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
-                      setHideWireMenu(true);
-                      if (ev.cancelable) ev.preventDefault();
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const t = ev.touches[0];
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                  />
-                );
-              })}
-
-              {/* Preview wire while drawing */}
-              {wireStart && (
-                <path
-                  d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-                  stroke="var(--orange)"
-                  strokeWidth={2}
-                  strokeDasharray="6 4"
-                  fill="none"
-                  strokeLinecap="round"
-                  opacity={0.8}
-                />
-              )}
-            </svg>
-
-            {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
-            {(() => {
-              const comp = components.find(c => c.id === selected);
-              if (!comp) return null;
-              const reg = COMPONENT_REGISTRY[comp.type];
-              if (!reg?.ContextMenu) return null;
-              const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
-              if (isRunning && !showDuringRun) return null;
-              if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
-              return (
-                <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
-                  position: 'absolute',
-                  left: comp.x + comp.w / 2,
-                  top: comp.y - 14,
-                  transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
-                  transformOrigin: 'bottom center',
-                  background: 'var(--bg2)', border: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px', borderRadius: '10px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                  pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
-                }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
-                  onDoubleClick={e => e.stopPropagation()}
-                >
-                  {React.createElement(reg.ContextMenu, {
-                    attrs: getComponentStateAttrs(comp),
-                    onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
-                  })}
-                  <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                  <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                </div>
-              );
-            })()}
-
-            {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
-            {(() => {
-              const w = wires.find(w => w.id === selected);
-              if (!w || isRunning || hideWireMenu) return null;
-
-              const fromParts = w.from.split(':')
-              const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-              const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-              if (!p1 || !p2) return null
-
-              // Use click position, fall back to wire midpoint
-              const pts = [p1, ...(w.waypoints || []), p2];
-              const midPt = pts[Math.floor(pts.length / 2)];
-              const menuPos = wireClickPos || midPt;
-
-              // Build connection label — "LED [anode]" style, no instance number
-              const fromComp = components.find(c => c.id === fromParts[0]);
-              const toComp = components.find(c => c.id === toParts[0]);
-              const fromLabel = `${fromComp?.label || fromParts[0]} [${w.fromLabel || fromParts[1]}]`;
-              const toLabel = `${toComp?.label || toParts[0]} [${w.toLabel || toParts[1]}]`;
-
-              return (
-                <div key={`menu-${w.id}`} style={{
-                  position: 'absolute',
-                  left: menuPos.x,
-                  top: menuPos.y - 8,
-                  transform: 'translateX(-50%) translateY(-100%)',
-                  zIndex: 50,
-                  background: 'var(--bg2)', border: '1px solid var(--border)',
-                  display: 'flex', flexDirection: 'column', gap: 6,
-                  padding: '8px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                  minWidth: 180,
-                }}
-                  onPointerDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}>
-                  {/* Row 1: connection info — two lines, centered */}
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, textAlign: 'center' }}
-                    title={`${fromLabel} → ${toLabel}`}>
-                    <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{fromLabel}</div>
-                    <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{toLabel}</div>
-                  </div>
-                  {/* Row 2: controls — centered */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                    <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-                    <button
-                      style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                      onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
-                      onPointerDown={(e) => { e.stopPropagation(); }}
-                      title={w.isBelow ? "Bring to Front" : "Send to Back"}
-                    >
-                      {w.isBelow ? '↑' : '↓'}
-                    </button>
-                    <button
-                      style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                      title="Reset route to auto"
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={e => {
-                        e.stopPropagation();
-                        saveHistory();
-                        setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: [] } : ww));
-                      }}
-                    >↺</button>
-                    <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
-                  </div>
-                  <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                  <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                </div>
-              )
-            })()}
-
-            {/* Empty state */}
-            {components.length === 0 && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
-                <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
-                <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
-                <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                  Arduino Uno · LED · Resistor · Button · Servo · LCD
-                </p>
-              </div>
-            )}
-
-            {/* Components (Layered: Breadboards on Bottom) */}
-            {(() => {
-              const renderComponent = (comp) => {
-                const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
-                const hasError = errorCompIds.has(comp.id)
-                const isSelected = selected === comp.id
-                const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
-
-                const rad = ((comp.rotation || 0) * Math.PI) / 180;
-                const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-                const visualHalfHeight = visualH / 2;
-
-                return (
-                  <div 
-                    key={comp.id}
-                    id={`comp-master-${comp.id}`}
-                    style={{
-                      position: 'absolute',
-                      left: comp.x, top: comp.y,
-                      zIndex: isBreadboardType(comp.type) 
-                        ? (isSelected ? 4 : 2) 
-                        : (isSelected ? 10 : 5),
-                    }}
-                  >
-                    <CanvasComponent
-                      comp={comp}
-                      isSelected={isSelected}
-                      hasError={hasError}
-                      onMouseDown={e => onCompMouseDown(e, comp.id)}
-                      onTouchStart={e => onCompMouseDown(e, comp.id)}
-                      onClick={e => onCompClick(e, comp.id)}
-                      getComponentStateAttrs={getComponentStateAttrs}
-                      COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                      PIN_DEFS={PIN_DEFS}
-                    />
-
-                    {/* Wrapper for the actual emulator component and its dynamic pins */}
-                    <div style={{
-                      position: 'absolute',
-                      left: 0, top: 0,
-                      width: comp.w, height: comp.h,
-                      userSelect: 'none',
-                      pointerEvents: 'none',
-                      transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                      transformOrigin: 'center center',
-                    }}>
-
-                      {/* Serial-target board ring */}
-                      {isSerialBoardSelected && (() => {
-                        const getBounds = () => {
-                          const reg = COMPONENT_REGISTRY[comp.type];
-                          if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                          if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                          return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                        };
-                        const b = getBounds();
-                        return (
-                          <>
-                            <div style={{
-                              position: 'absolute',
-                              left: b.x - 10, top: b.y - 10,
-                              width: b.w + 20, height: b.h + 20,
-                              borderRadius: 10,
-                              border: '2px dashed #38bdf8',
-                              boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                              pointerEvents: 'none', zIndex: 9,
-                            }} />
-                            <div style={{
-                              position: 'absolute',
-                              left: b.x - 10,
-                              top: b.y - 26,
-                              background: '#0c4a6e',
-                              color: '#e0f2fe',
-                              border: '1px solid #38bdf8',
-                              borderRadius: 6,
-                              fontSize: 9,
-                              padding: '1px 6px',
-                              letterSpacing: '0.04em',
-                              fontFamily: 'JetBrains Mono, monospace',
-                              pointerEvents: 'none',
-                              zIndex: 11,
-                            }}>
-                              SERIAL TARGET
-                            </div>
-                          </>
-                        );
-                      })()}
-
-                      {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                      <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                        {COMPONENT_REGISTRY[comp.type] ? (
-                          // Local UI component rendering SVG
-                          React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                            state: oopStates[comp.id] || {},
-                            attrs: getComponentStateAttrs(comp),
-                            isRunning: isRunning
-                          })
                         ) : (
-                          // Fallback for unsupported components (if any left)
-                          <div
-                            style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                            ref={el => {
-                              if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
-                                neopixelRefs.current[comp.id] = el;
-                              }
-                            }}
-                          >
-                            {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                          </div>
+                          /* LIST VIEW */
+                          filteredItems.map(item => {
+                            const locked = isPaletteItemLocked(item.type);
+                            return (
+                              <div
+                                key={item.type}
+                                draggable={false}
+                                onTouchStart={e => !locked && handlePalettePressStart(item, e, group.group)}
+                                onTouchEnd={handlePalettePressEnd}
+                                onTouchMove={handlePalettePressEnd}
+                                onMouseDown={e => !locked && handlePalettePressStart(item, e, group.group)}
+                                onMouseUp={handlePalettePressEnd}
+                                onMouseLeave={e => {
+                                  handlePalettePressEnd(e);
+                                  if (!locked) e.currentTarget.style.background = 'var(--card)';
+                                }}
+                                onClick={() => {
+                                  if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
+                                  addComponentAtCenter(item);
+                                }}
+                                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
+                                style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
+                                onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
+                              >
+                                {locked && (
+                                  <div style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)', fontSize: 13, color: '#ef4444' }}>
+                                    🔒
+                                  </div>
+                                )}
+                                <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>{item.label}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>
+                                  {COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
+                                </div>
+                              </div>
+                            )
+                          })
                         )}
                       </div>
-
-                      {/* Pins */}
-                      {pins.map(pin => {
-                        const pinStrRef = `${comp.id}:${pin.id}`;
-                        const isHovered = hoveredPin === pinStrRef;
-                        const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                        // Snapping highlight
-                        const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
-
-                        // Hovered pin's category for passive highlighting
-                        const hoverCompId = hoveredPin?.split(':')[0];
-                        const hoverPinId = hoveredPin?.split(':')[1];
-                        const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                        const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                        const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                        const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                        const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                        const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                        const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
-
-                        // Check if a wire is connected to this pin
-                        const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                        const isSocket = connectedWire?.isSocket;
-                        
-                        // Check if the component is "seated" (has at least one socket wire)
-                        const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                        const isBreadboard = isBreadboardType(comp.type);
-                        const isFloating = !isBreadboard && isCompSeated && !isSocket;
-
-                        const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
-                        const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
-
-                        return (
-                          <div
-                            key={pin.id}
-                            id={`pin-dot-${comp.id}-${pin.id}`}
-                            title={`${pin.description || pin.id} — click to wire`}
-                            style={{
-                              position: 'absolute',
-                              left: pin.x, top: pin.y,
-                              width: 5, height: 5,
-                              background: pinColor === 'none' ? 'none' : pinColor,
-                              border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                              borderRadius: '0%', /* matching task3.html */
-                              cursor: 'crosshair',
-                              zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
-                              transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                              transition: '0.2s', /* matching task3.html transition */
-                              pointerEvents: 'all', /* Fix hit detection */
-                              boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
-                            }}
-                            onMouseEnter={() => setHoveredPin(pinStrRef)}
-                            onMouseLeave={() => setHoveredPin(null)}
-                            onTouchStart={() => setHoveredPin(pinStrRef)}
-                            onClick={() => setHoveredPin(pinStrRef)}
-                            onDoubleClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                          >
-                            {/* Pin label tooltip */}
-                            {isHovered && (
-                              <div style={{
-                                position: 'absolute', bottom: 18, left: '50%',
-                                transform: 'translateX(-50%)',
-                                background: '#111', color: '#fff',
-                                padding: '4px 8px', borderRadius: 4,
-                                fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                                pointerEvents: 'none', border: '1px solid #444',
-                                boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                              }}>
-                                {pin.description || pin.id}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Component label (Outside rotated container) */}
-                    <div style={{
-                      position: 'absolute',
-                      top: comp.h / 2 + visualHalfHeight + 4,
-                      left: comp.w / 2,
-                      transform: 'translateX(-50%)',
-                      fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                      whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                      pointerEvents: 'none',
-                      zIndex: 5,
-                    }}>
-                      {comp.label}
-                    </div>
-                  </div>
-                );
-              };
-
-              const breadboards = components.filter(c => isBreadboardType(c.type));
-              const others = components.filter(c => !isBreadboardType(c.type));
-
-              return (
-                <>
-                  {breadboards.map(renderComponent)}
-                  {others.map(renderComponent)}
-                </>
-              );
-            })()}
-          </div>{/* end zoom wrapper */}
-
-          {/* Minimalist Runtime panel (top-left) */}
-          {isRunning && !isCompiling && (
-            <div
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 14,
-                left: 14,
-                zIndex: 90,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                background: 'rgba(25, 25, 25, 0.65)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '10px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                padding: '6px 12px',
-                pointerEvents: 'auto'
-              }}
-            >
-              {/* Duration Segment */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
-                  </svg>
-                </div>
-                <span style={{ 
-                  color: 'var(--text)', 
-                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
-                  fontSize: '11px', 
-                  fontWeight: 600,
-                  letterSpacing: '0.02em',
-                  minWidth: '65px'
-                }}>
-                  {formatRunDuration(runDurationSec)}
-                </span>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
-
-              {/* Speed Segment */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
-                  </svg>
-                </div>
-                <span style={{ 
-                  color: 'var(--accent)', 
-                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
-                  fontSize: '11px', 
-                  fontWeight: 700,
-                  minWidth: '35px'
-                }}>
-                  {simulationSpeedPercent}%
-                </span>
-              </div>
-
-              {/* Paused Indicator Overlay */}
-              {isPaused && (
-                <div style={{ 
-                  position: 'absolute', 
-                  inset: 0, 
-                  background: 'rgba(245, 158, 11, 0.15)', 
-                  borderRadius: '10px', 
-                  border: '1px solid var(--orange)',
-                  zIndex: -1,
-                  animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                }} />
-              )}
-            </div>
-          )}
-
-          {/* Component Description Panel — shows info of canvas-selected component */}
-          {showComponentDesc && selectedComponentInfo && (
-            <div
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              onDoubleClick={e => e.stopPropagation()}
-              style={{ 
-                position: 'absolute', top: 12, right: 12, zIndex: 90, width: 200, 
-                maxHeight: 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column',
-                background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, 
-                boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' 
-              }}
-            >
-              {/* Header */}
-              <div style={{
-                padding: '12px 14px 10px',
-                borderBottom: '1px solid var(--border)',
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
-              }}>
-                <div style={{
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: 'var(--text)',
-                  letterSpacing: '-0.01em',
-                  lineHeight: '1.2'
-                }}>
-                  {selectedComponentInfo.label}
-                </div>
-
-
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}>
-                  {/* Category Chip */}
-                  <div style={{
-                    height: 24,
-                    fontSize: 9,
-                    fontWeight: 800,
-                    color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
-                    background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
-                    borderRadius: 6,
-                    padding: '0 10px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
-                  }}>
-                    {selectedComponentInfo.group}
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                      if (doc) {
-                        // Replace hardcoded localhost URLs with current origin
-                        const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
-                        const b = new Blob([finalDoc], { type: 'text/html' });
-                        window.open(URL.createObjectURL(b), '_blank');
-                      } else {
-                        window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                      }
-                    }}
-                    style={{
-                      height: 24,
-                      background: 'var(--bg3)',
-                      border: '1px solid var(--border)',
-                      padding: '0 12px',
-                      color: 'var(--text2)',
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      borderRadius: 6,
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = 'var(--bg4)';
-                      e.currentTarget.style.borderColor = 'var(--accent)';
-                      e.currentTarget.style.color = 'var(--accent)';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'var(--bg3)';
-                      e.currentTarget.style.borderColor = 'var(--border)';
-                      e.currentTarget.style.color = 'var(--text2)';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
-                    }}
-                  >
-                    <svg
-                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                    </svg>
-                    Documentation
-                  </button>
-                </div>
-              </div>
-
-              {/* Pin Wiring Dropdowns */}
-              <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
-                <div
-                  onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 'bold',
-                    color: 'var(--text3)',
-                    textTransform: 'uppercase',
-                    letterSpacing: 1,
-                    marginBottom: 8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    padding: '4px 0'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
-                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
-                >
-                  <span>Pin Mapping</span>
-                  <svg
-                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                    style={{
-                      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      opacity: 0.6
-                    }}
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </div>
-                {isPinMappingExpanded && (() => {
-                  const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
-                  if (compPins.length === 0) {
-                    return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
-                  }
-
-                  // Gather ALL components for destination endpoints (excluding self)
-                  const validTargets = components.filter(c => c.id !== selected);
-                  const targetOptions = [];
-                  validTargets.forEach(b => {
-                    const bPins = LOCAL_PIN_DEFS[b.type] || [];
-                    bPins.forEach(p => targetOptions.push({
-                      id: `${b.id}:${p.id}`,
-                      label: `${b.label || b.id} : ${p.id}`,
-                      type: b.type,
-                      description: p.description
-                    }));
-                  });
-
-                  return compPins.map(pin => {
-                    const pinIdStr = `${selected}:${pin.id}`;
-                    const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
-
-                    // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
-                    const filteredOptions = targetOptions.filter(opt => {
-                      if (!currentPinCat) return true; // Show all for unmapped/general pins
-                      const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
-                      return hasCategoryIntersection(currentPinCat, targetPinCat);
-                    });
-
-                    // Find if any wire is connected to this pin specifically
-                    const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
-                    // Determine current dropdown value
-                    let currentVal = '';
-                    if (connectedWire) {
-                      currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
-                    }
-
-                    const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
-
-                    return (
-                      <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
-                        <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
-                          {pin.id}
-                        </span>
-
-                        {/* Interactive Arrow & Color Picker */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const picker = e.currentTarget.querySelector('input[type="color"]');
-                            if (picker) picker.click();
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            opacity: connectedWire ? 1 : 0.6,
-                            transition: 'all 0.2s ease',
-                            position: 'relative',
-                            padding: '0 4px',
-                            flexShrink: 0
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.opacity = '1';
-                            e.currentTarget.style.transform = 'scale(1.1)';
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
-                            e.currentTarget.style.transform = 'scale(1)';
-                          }}
-                          title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
-                        >
-                          <svg
-                            width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke={pinPreferredColor}
-                            strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                          >
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                            <polyline points="12 5 19 12 12 19"></polyline>
-                          </svg>
-                          <input
-                            type="color"
-                            value={pinPreferredColor}
-                            onChange={(e) => {
-                              const newColor = e.target.value;
-                              setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
-                              if (connectedWire) {
-updateWireColor(connectedWire.id, newColor);
-                              }
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
-                            }}
-                          />
-                        </div>
-
-                        <select
-                          value={currentVal}
-                          onChange={(e) => {
-                            const selectedTarget = e.target.value;
-                            setWires(prev => {
-                              // 1. Generate the exact same wire syntax as manual mapping
-                              const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
-                              const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
-
-                              const newWire = selectedTarget ? {
-                                id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                                from: pinIdStr,
-                                to: selectedTarget,
-                                fromLabel: pin.id,
-                                toLabel: toPinLabel,
-                                color: finalColor,
-                                waypoints: []
-                              } : null;
-
-                              // 2. Filter cleanly using a map proxy to avoid reference staleness
-                              const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
-
-                              setWireStart(null); // Cancel manual wire draw
-                              return newWire ? [...filtered, newWire] : filtered;
-                            });
-                          }}
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            padding: '3px 6px',
-                            background: 'var(--card)',
-                            border: '1px solid var(--border)',
-                            color: currentVal ? 'var(--accent)' : 'var(--text2)',
-                            borderRadius: 4,
-                            fontSize: 10,
-                            fontFamily: 'JetBrains Mono, monospace',
-                            cursor: 'pointer',
-                            outline: 'none'
-                          }}
-                        >
-                          <option value="">-- Disconnected --</option>
-                          {filteredOptions.map(opt => (
-                            <option key={opt.id} value={opt.id}>{opt.label}</option>
-                          ))}
-                        </select>
-                      </div>
                     );
-                  });
-                })()}
+                  })}
+                  <div key="palette-tip" className="mt-auto px-2 py-2.5 text-[11px] text-[var(--text3)] leading-relaxed">
+                    Click or drag → drop to place · Del removes selected
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            </aside>
 
-          {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-          <div
-            data-export-ignore="true"
-            className="canvas-zoom-bar"
-            onClick={e => e.stopPropagation()}
-            onMouseDown={e => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              bottom: 86,
-              right: 14,
-              zIndex: 90,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: 'rgba(25, 25, 25, 0.65)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '12px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-              padding: '6px',
-              pointerEvents: 'auto'
-            }}
-          >
-            {/* Console Toggle */}
-            <button
-              onClick={() => setIsConsoleOpen(o => !o)}
-              style={{ background: isConsoleOpen ? 'var(--accent)' : 'none', border: 'none', color: isConsoleOpen ? '#fff' : 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '8px 10px', borderRadius: 8, display: 'flex', alignItems: 'center' }}
-              title="Toggle Console"
-            >
-              <TerminalIcon size={18} />
-            </button>
-
-            <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowCanvasMenu(m => !m)}
-                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 18, padding: '4px 10px', borderRadius: 8 }}
-                title="Canvas Menu"
-              >⋮</button>
-              {showCanvasMenu && (
+            {/* Palette right-click context menu */}
+            {paletteContextMenu && (() => {
+              const menuH = 175;
+              const adjustedY = paletteContextMenu.y + menuH > window.innerHeight
+                ? paletteContextMenu.y - menuH
+                : paletteContextMenu.y;
+              return (
                 <div
                   className="canvas-menu"
-                  onMouseLeave={() => setShowCanvasMenu(false)}
-                  style={{ 
-                    position: 'absolute', 
-                    bottom: '100%', 
-                    right: 0, 
-                    marginBottom: 10,
-                    zIndex: 10000, 
+                  onMouseDown={e => e.stopPropagation()}
+                  onMouseLeave={() => { setPaletteContextMenu(null); setIsPaletteHovered(false); }}
+                  style={{
+                    position: 'fixed',
+                    left: paletteContextMenu.x,
+                    top: adjustedY,
+                    zIndex: 10000,
                     background: theme === 'light' ? 'rgba(255, 255, 255, 0.98)' : 'rgba(13, 21, 37, 0.98)',
                     backdropFilter: 'blur(16px) saturate(1.4)',
                     WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
                     border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                    borderRadius: 12, 
+                    borderRadius: 12,
                     boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                    minWidth: 200,
                     padding: '5px',
-                    minWidth: 190,
                     animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                    transformOrigin: 'bottom right',
+                    transformOrigin: 'top left',
                     fontFamily: "'Space Grotesk', sans-serif",
                     willChange: 'transform, opacity, backdrop-filter',
                     backfaceVisibility: 'hidden',
                     WebkitBackfaceVisibility: 'hidden',
                   }}
                 >
-                  <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }}>Fit to Canvas</button>
-                  <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
-                  <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
-                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                  <button className="canvas-menu-item" onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
-                  {selected && !selected.match(/^w\d+$/) && (
-                    <button className={`canvas-menu-item${isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { if (!isRunning) { rotateComponent(selected); } setShowCanvasMenu(false); }} disabled={isRunning}>
-                      Rotate Selected
-                    </button>
-                  )}
-                  {selected && (
-                    <button className={`canvas-menu-item canvas-menu-item--danger${isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => {
-                      if (!isRunning) {
-                        saveHistory();
-                        if (selected.match(/^w\d+$/)) {
-                          setWires(prev => prev.filter(w => w.id !== selected))
-                        } else {
-                          setComponents(prev => prev.filter(c => c.id !== selected))
-                          setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
-                        }
-                        setSelected(null);
-                      }
-                      setShowCanvasMenu(false);
-                    }} disabled={isRunning}>
-                      Delete Selected
-                    </button>
-                  )}
-                  <button className="canvas-menu-item" onClick={() => { setIsWiringDisabled(d => !d); setShowCanvasMenu(false); }}>{isWiringDisabled ? 'Enable Wiring Mode' : 'Disable Wiring Mode'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
-                  <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
-                  <button className="canvas-menu-item" onClick={() => {
-                    const enabling = !wirepointsEnabled;
-                    setWirepointsEnabled(enabling);
-                    setShowCanvasMenu(false);
-                  }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setShowComponentDesc(d => !d); setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
-                  <button
-                    className="canvas-menu-item"
-                    onClick={() => {
-                      const next = !blocklyDisabled;
-                      setBlocklyDisabled(next);
-                      try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) {}
-                      setShowCanvasMenu(false);
-                    }}
-                    title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}
-                  >
-                    {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
-                  </button>
-                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                  <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <SimulationConsolePanel
-            isOpen={isConsoleOpen}
-            height={consoleHeight}
-            entries={consoleEntries}
-            activeTab={activeConsoleTab}
-            onTabChange={setActiveConsoleTab}
-            protocolLogs={protocolLogs}
-            onResizeStart={onMouseDownConsoleResize}
-            onClose={() => setIsConsoleOpen(false)}
-            onClear={() => {
-              if (activeConsoleTab === 'protocol') setProtocolLogs([]);
-              else clearConsoleEntries();
-            }}
-            onDownload={downloadConsoleLog}
-          />
-
-          {/* ── Quick-Add Popup (double-click on canvas) ── */}
-          {quickAdd && (() => {
-            const q = quickAddSearch.trim().toLowerCase();
-            const results = [];
-            if (q) {
-              outer: for (const group of LOCAL_CATALOG) {
-                for (const item of group.items) {
-                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                    results.push(item);
-                    if (results.length >= 4) break outer;
-                  }
-                }
-              }
-            }
-            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-            const VW = window.innerWidth, VH = window.innerHeight;
-            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-            return (
-              <div
-                className="canvas-menu"
-                data-quickadd="true"
-                onMouseDown={e => e.stopPropagation()}
-                onDoubleClick={e => e.stopPropagation()}
-                onMouseLeave={() => setQuickAdd(null)}
-                style={{
-                  position: 'fixed', 
-                  left, 
-                  top, 
-                  zIndex: 10000,
-                  width: menuW,
-                  background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                  backdropFilter: 'blur(16px) saturate(1.4)',
-                  WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                  border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                  borderRadius: 12,
-                  boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                  padding: '5px',
-                  animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                  transformOrigin: 'top left',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  willChange: 'transform, opacity, backdrop-filter',
-                  backfaceVisibility: 'hidden',
-                  WebkitBackfaceVisibility: 'hidden',
-                }}
-              >
-                {/* Search input */}
-                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <input
-                    ref={quickAddInputRef}
-                    data-quickadd="true"
-                    value={quickAddSearch}
-                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                    onKeyDown={e => {
-                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                      else if (e.key === 'Enter' && results.length > 0) {
-                        e.preventDefault();
-                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                        setQuickAdd(null);
-                      }
-                    }}
-                    placeholder="Search component..."
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: theme === 'light' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.2)', 
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)', padding: '12px 14px',
-                      borderRadius: 10, fontFamily: 'inherit', fontSize: 16, outline: 'none',
-                      transition: 'all 0.2s',
-                    }}
-                    onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                    onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
-                  />
-                </div>
-                {/* Result list */}
-                {results.map((item, i) => (
-                  <div
-                    key={`${item.type}-${i}`}
-                    className="canvas-menu-item"
-                    data-quickadd="true"
-                    onMouseEnter={() => setQuickAddIdx(i)}
-                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                    style={{
-                      background: i === selIdx ? 'var(--accent)' : 'transparent',
-                      color: i === selIdx ? '#fff' : 'var(--text)',
-                      borderRadius: 8,
-                      margin: '2px 5px',
-                      width: 'calc(100% - 10px)',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <span style={{ fontWeight: i === selIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
-                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
-                  </div>
-                ))}
-                {/* Empty state */}
-                {q && results.length === 0 && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                )}
-                {!q && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                )}
-              </div>
-            );
-          })()}
-        </main>
-        </div>
-        )}
-    {activeMobileTab === 'code' && (
-      <CodeEditorView
-        code={code} setCode={setCode}
-        activeCodeFileId={activeCodeFileId}
-        projectFiles={projectFiles}
-        openCodeTabs={openCodeTabs}
-        onOpenCodeFile={openCodeFile}
-        onCloseCodeTab={closeCodeTab}
-        onSaveCodeFile={saveCodeFile}
-        onDuplicateCodeFile={duplicateCodeFile}
-        onRenameCodeFile={renameCodeFile}
-        onDeleteCodeFile={deleteCodeFile}
-        onDownloadCodeFile={downloadCodeFile}
-        onToggleCodeFileDisabled={toggleCodeFileDisabled}
-        onCreateCodeFile={createCodeFile}
-        onUploadCodeFile={uploadCodeFile}
-        showCodeExplorer={showCodeExplorer}
-        onToggleCodeExplorer={() => setShowCodeExplorer(v => !v)}
-        explorerWidth={explorerWidth}
-        onMouseDownExplorerResize={onMouseDownExplorerResize}
-        isExplorerDragging={isExplorerDragging}
-        boardComponentMap={boardComponentMap}
-        onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
-        serialBoardKinds={serialBoardKinds}
-        serialBoardSourceModes={rp2040BoardSourceModes}
-        theme={theme}
-        projectName={currentProjectName}
-        editingDisabled={liveEditingDisabled}
-        editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required.' : 'Editing is disabled.'}
-        setSelected={setSelected}
-        libQuery={libQuery}
-        setLibQuery={setLibQuery}
-        handleSearchLibraries={handleSearchLibraries}
-        isSearchingLib={isSearchingLib}
-        libMessage={libMessage}
-        libInstalled={libInstalled}
-        libResults={libResults}
-        handleInstallLibrary={handleInstallLibrary}
-        installingLib={installingLib}
-      />
-    )}
-
-    {activeMobileTab === 'blocks' && (
-      <BlockEditorView
-        blocklyDisabled={blocklyDisabled}
-        setBlocklyDisabled={setBlocklyDisabled}
-        blocklyXml={blocklyXml}
-        setBlocklyXml={setBlocklyXml}
-        blocklyGeneratedCode={blocklyGeneratedCode}
-        setBlocklyGeneratedCode={setBlocklyGeneratedCode}
-        useBlocklyCode={useBlocklyCode}
-        setUseBlocklyCode={setUseBlocklyCode}
-        setCode={setCode}
-        setCodeTab={setCodeTab}
-        serialBoardFilter={serialBoardFilter}
-        serialBoardKinds={serialBoardKinds}
-        editingDisabled={liveEditingDisabled}
-        editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required.' : 'Editing is disabled.'}
-      />
-    )}
-
-    {activeMobileTab === 'serial' && (
-      <SerialMonitorView
-        serialPaused={serialPaused}
-        setSerialPaused={setSerialPaused}
-        isRunning={isRunning}
-        serialHistory={serialHistory}
-        setSerialHistory={setSerialHistory}
-        serialOutputRef={serialOutputRef}
-        serialInput={serialInput}
-        setSerialInput={setSerialInput}
-        sendSerialInput={sendSerialInput}
-        clearSerialMonitor={clearSerialMonitor}
-        serialViewMode={serialViewMode}
-        setSerialViewMode={setSerialViewMode}
-        serialBoardFilter={serialBoardFilter}
-        setSerialBoardFilter={setSerialBoardFilter}
-        serialBoardOptions={serialBoardOptions}
-        serialBoardLabels={serialBoardLabels}
-        serialBaudRate={serialBaudRate}
-        setSerialBaudRate={setSerialBaudRate}
-        serialBaudOptions={serialBaudOptions}
-        serialLineEnding={serialLineEnding}
-        setSerialLineEnding={setSerialLineEnding}
-        hardwareConnected={hardwareConnected}
-        plotterPaused={plotterPaused}
-        setPlotterPaused={setPlotterPaused}
-        plotData={plotData}
-        setPlotData={setPlotData}
-        selectedPlotPins={selectedPlotPins}
-        setSelectedPlotPins={setSelectedPlotPins}
-        plotterCanvasRef={plotterCanvasRef}
-        serialPlotLabelsRef={serialPlotLabelsRef}
-        theme={theme}
-        serialBoardKinds={serialBoardKinds}
-        serialBoardSourceModes={rp2040BoardSourceModes}
-        serialSendTarget={serialSendTarget}
-        setSerialSendTarget={setSerialSendTarget}
-        showSendTargetMenu={showSendTargetMenu}
-        setShowSendTargetMenu={setShowSendTargetMenu}
-        sendMenuRef={sendMenuRef}
-      />
-    )}
-  </div>
-
-  <MobileBottomNav activeTab={activeMobileTab} onTabChange={setActiveMobileTab} isRunning={isRunning} handleToggleRun={handleToggleRun} />
-
-        {/* MY PROJECTS SIDEBAR */}
-        {showProjectsSidebar && (
-          <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[5500] animate-in fade-in duration-300" 
-            onClick={() => setShowProjectsSidebar(false)}
-          />
-        )}
-        <aside
-          className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-transform duration-300 ease-out shadow-2xl"
-          style={{ 
-            position: 'fixed', top: 0, bottom: 0, right: 0,
-            width: 'min(88vw, 380px)', 
-            zIndex: 6000,
-            transform: showProjectsSidebar ? 'translateX(0)' : 'translateX(100%)',
-          }}
-        >
-          {showProjectsSidebar && (
-            <>
-              <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-                <span className="text-sm font-bold text-[var(--text)] tracking-tight">My Projects</span>
-                <button 
-                  onClick={() => setShowProjectsSidebar(false)} 
-                  className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-lg w-7 h-7 flex items-center justify-center transition-all active:scale-95"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </div>
-
-              <div className="px-5 pb-4 shrink-0">
-                <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
+                  <div style={{ padding: '7px 12px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{paletteContextMenu.item.label}</div>
                   {[
-                    { id: 'favourites', label: 'Fav' },
-                    { id: 'projects', label: 'Projects' },
-                    { id: 'custom', label: 'Custom' },
-                    { id: 'settings', label: 'Settings' },
-                  ].map((tab) => (
+                    {
+                      icon: favoriteComponents.has(paletteContextMenu.item.type) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>,
+                      label: favoriteComponents.has(paletteContextMenu.item.type) ? 'Remove from Favourites' : 'Add to Favourites',
+                      color: '#f59e0b',
+                      action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false); }
+                    },
+                    {
+                      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>,
+                      label: 'Component Documentation',
+                      color: 'var(--text)',
+                      action: () => {
+                        const doc = COMPONENT_REGISTRY[paletteContextMenu.item.type]?.doc;
+                        if (doc) {
+                          const b = new Blob([doc], { type: 'text/html' });
+                          window.open(URL.createObjectURL(b), '_blank');
+                        } else {
+                          window.open(`https://wokwi.com/docs/parts/${paletteContextMenu.item.type}`, '_blank');
+                        }
+                        setPaletteContextMenu(null); setIsPaletteHovered(false);
+                      }
+                    },
+                    {
+                      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+                      label: 'Edit a Copy',
+                      color: 'var(--text)',
+                      action: () => {
+                        const item = paletteContextMenu.item;
+                        const registryInfo = COMPONENT_REGISTRY[item.type];
+                        const editCopyData = {
+                          manifest: registryInfo?.manifest || item,
+                          logic: buildLogicSourceFromRegistry(registryInfo, item.type),
+                          ui: buildUiSourceFromRegistry(registryInfo, item.type),
+                          validation: buildValidationSourceFromRegistry(registryInfo),
+                          index: buildIndexSourceFromRegistry(registryInfo, item.type),
+                          docs: registryInfo?.docRaw || registryInfo?.doc || '',
+                        };
+
+                        const writeResult = writeEditCopyPayload(editCopyData);
+                        if (!writeResult.ok) {
+                          alert(`Unable to prepare Edit a Copy payload. ${writeResult.error?.message || 'Please clear browser storage and retry.'}`);
+                          setPaletteContextMenu(null);
+                          setIsPaletteHovered(false);
+                          return;
+                        }
+
+                        openComponentEditor();
+                        setPaletteContextMenu(null);
+                        setIsPaletteHovered(false);
+                      }
+                    },
+                  ].map(({ icon, label, color, action }) => (
                     <button
-                      key={tab.id}
-                      onClick={() => setProjectsSidebarTab(tab.id)}
-                      className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all duration-200
-                        ${projectsSidebarTab === tab.id 
-                          ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm' 
-                          : 'text-[var(--text3)] hover:text-[var(--text2)]'
-                        }`}
+                      key={label}
+                      className="canvas-menu-item"
+                      onClick={action}
+                      style={{ color }}
                     >
-                      {tab.label}
+                      {icon}
+                      {label}
                     </button>
                   ))}
                 </div>
-              </div>
+              );
+            })()}
 
-              <div className="flex-1 overflow-y-auto p-2">
-                {projectsSidebarTab === 'favourites' && (
-                  <div>
-                    <div className="text-[11px] text-[var(--text3)] px-1 py-1.5">Starred projects appear here.</div>
-                    {myProjects.filter(p => favouriteProjectIds.includes(p.id)).length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                        </div>
-                        <div className="text-sm font-bold text-[var(--text)] mb-1">No Favourites Yet</div>
-                        <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Star a project from the Projects tab to see it here.</div>
-                      </div>
-                    ) : myProjects.filter(p => favouriteProjectIds.includes(p.id)).map(proj => (
-                      <ProjectCard
-                        key={proj.id}
-                        proj={proj}
-                        currentProjectId={currentProjectId}
-                        renamingProjectId={renamingProjectId}
-                        renameValue={renameValue}
-                        setRenameValue={setRenameValue}
-                        handleConfirmRename={handleConfirmRename}
-                        setRenamingProjectId={setRenamingProjectId}
-                        handleLoadProject={handleLoadProject}
-                        isRunning={isRunning}
-                        setShowProjectsSidebar={setShowProjectsSidebar}
-                        onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                        formatProjectDate={formatProjectDate}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {projectsSidebarTab === 'projects' && (
-                  <div>
-                    <div className="flex justify-between items-center mb-4 px-1">
-                      <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Your Library</div>
-                      <button 
-                        onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
-                        className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                        NEW
-                      </button>
-                    </div>
-                    {myProjects.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--bg)]/30">
-                        <div className="w-14 h-14 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
-                        </div>
-                        <div className="text-sm font-bold text-[var(--text)] mb-1">No saved projects</div>
-                        <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Your circuits are auto-saved as you work.</div>
-                      </div>
-                    ) : myProjects.map(proj => (
-                      <ProjectCard
-                        key={proj.id}
-                        proj={proj}
-                        currentProjectId={currentProjectId}
-                        renamingProjectId={renamingProjectId}
-                        renameValue={renameValue}
-                        setRenameValue={setRenameValue}
-                        handleConfirmRename={handleConfirmRename}
-                        setRenamingProjectId={setRenamingProjectId}
-                        handleLoadProject={handleLoadProject}
-                        isRunning={isRunning}
-                        setShowProjectsSidebar={setShowProjectsSidebar}
-                        onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                        formatProjectDate={formatProjectDate}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {projectsSidebarTab === 'custom' && (
-                  <div>
-                    <div className="flex justify-between items-center mb-4 px-1">
-                      <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Custom Parts</div>
-                      <button 
-                        onClick={() => setShowCreateComponentModal(true)}
-                        className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                        CREATE
-                      </button>
-                    </div>
-                    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-xl">
-                       <div className="text-sm font-bold text-[var(--text)] mb-1 opacity-50">Nothing here yet</div>
-                       <div className="text-[11px] text-[var(--text3)] leading-normal">Custom components will appear here.</div>
-                    </div>
-                  </div>
-                )}
-
-                {projectsSidebarTab === 'settings' && (
-                  <div className="flex flex-col gap-2 py-1">
-                    <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
-                    <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
-                      <div className="flex flex-col">
-                        <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
-                        <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
-                      </div>
-                      <button 
-                        onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                        className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
-                      >
-                        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
-                      </button>
-                    </div>
-
-                    <div className="h-px bg-[var(--border)] my-1 opacity-50" />
-                    <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
-                    <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                      Backup
-                      <span className="ml-auto text-[11px] text-[var(--text3)]">Download ZIP</span>
-                    </button>
-                    <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => backupRestoreInputRef.current?.click()}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                      Restore
-                      <span className="ml-auto text-[11px] text-[var(--text3)]">From ZIP</span>
-                    </button>
-                    {isAuthenticated && (
-                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleSyncToCloud}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
-                        Sync to Cloud
-                        <span className="ml-auto text-[11px] text-[var(--text3)]">Upload</span>
-                      </button>
-                    )}
-                    {isAuthenticated && (
-                      <>
-                        <div className="h-px bg-[var(--border)] my-1" />
-                        <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Account</div>
-                        <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--red)] text-[var(--red)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                          Logout
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
-                {!isAnyAuthenticated ? (
-                  <button 
-                    onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
-                    className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
-                    Sign In to Sync
-                  </button>
-                ) : (
-                  <div 
-                    className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
-                    onClick={() => {
-                      if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
-                      else if (activeUser?.role === 'student') navigate('/student/dashboard')
-                      else if (activeUser?.role === 'admin') navigate(`/${activeUser?.role}/dashboard`)
-                        else navigate(`${activeUser?.role || 'user'}/dashboard`)
-                    }}
-                    title="Go to dashboard"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
-                      {activeUser?.name?.[0] || 'U'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
-                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
-                    </div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                  </div>
-                )}
-
-                <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)] shadow-inner">
+            {/* Create Component Modal (placeholder) */}
+            {showCreateComponentModal && (
+              <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
+                <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+                  <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
+                  <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
+                    To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
+                  </p>
                   <button
-                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${!isAuthenticated 
-                        ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]' 
-                        : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                    onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
-                  >
-                    Local
-                  </button>
-                  <button
-                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${isAuthenticated 
-                        ? 'bg-[var(--accent)] text-white shadow-md' 
-                        : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                    onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
-                  >
-                    Cloud
+                    onClick={() => setShowCreateComponentModal(false)}
+                    style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    Got it
                   </button>
                 </div>
               </div>
-            </>
-          )}
-        </aside>
+            )}
 
-        {/* GAMIFICATION GUIDE PANEL */}
-        {gamificationMode && gamPanelOpen && (
-          <aside style={{
-            width: 280, background: '#0a0d1a', borderLeft: '1px solid rgba(255,255,255,.07)',
-            display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
-            fontFamily: "'Space Grotesk', sans-serif",
-          }}>
-            {/* Tabs */}
-            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', flexShrink: 0 }}>
-              {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
-                <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
-                  flex: 1, padding: '9px 4px', background: 'none', border: 'none',
-                  borderBottom: `2px solid ${gamTab === tab.id ? '#00b4ff' : 'transparent'}`,
-                  color: gamTab === tab.id ? '#00b4ff' : 'rgba(255,255,255,.4)',
-                  fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                }}>{tab.label}</button>
-              ))}
-            </div>
-
-            {/* Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 80px' }}>
-
-              {gamTab === 'components' && (
-                <div>
-                  <div style={{
-                    padding: '9px 12px', borderRadius: 9, marginBottom: 14,
-                    background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
-                    border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
-                    fontSize: 12, fontWeight: 600,
-                    color: gamAllUnlocked ? '#22c55e' : '#ef4444',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
-                    {gamAllUnlocked ? '✅ All components unlocked' : `⚠️ ${gamLockedCount} need unlocking`}
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {(gamProjectComponents || []).map((c, i) => (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: 9,
-                        padding: '9px 11px', borderRadius: 9,
-                        background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
-                        border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
-                      }}>
-                        <span style={{ fontSize: 18, flexShrink: 0 }}>{c.isLocked ? '🔒' : (c.compDef?.icon || '✅')}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'rgba(255,255,255,.45)' : '#fff' }}>
-                            {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
-                          </div>
-                          <div style={{ fontSize: 9, color: c.isLocked ? '#ef4444' : '#22c55e', marginTop: 2 }}>
-                            {c.isLocked ? 'Study theory to unlock' : 'Available in palette'}
-                          </div>
-                        </div>
-                        {c.isLocked && c.compId && (
-                          <button
-                            onClick={() => navigate(`/components/${c.compId}/theory`)}
-                            style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                          >Unlock →</button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <button onClick={() => navigate('/components')} style={{ marginTop: 16, width: '100%', padding: '9px', background: 'rgba(0,180,255,.06)', border: '1px solid rgba(0,180,255,.2)', color: '#00b4ff', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                    🔓 Unlock More Components
-                  </button>
-                </div>
-              )}
-
-              {gamTab === 'wiring' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {gamProject?.wiring?.length > 0 ? gamProject.wiring.map((w, i) => (
-                    <div key={i} style={{ padding: '9px 11px', borderRadius: 8, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,180,255,.15)', border: '1px solid rgba(0,180,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#00b4ff', flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,.75)', lineHeight: 1.5 }}>
-                        <span style={{ color: '#00b4ff', fontFamily: 'monospace' }}>{w.from}</span>
-                        <span style={{ color: 'rgba(255,255,255,.3)', margin: '0 5px' }}>→</span>
-                        <span style={{ color: '#22c55e', fontFamily: 'monospace' }}>{w.to}</span>
-                      </div>
-                    </div>
-                  )) : (
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', textAlign: 'center', padding: '32px 0' }}>No wiring guide yet.</div>
-                  )}
-                </div>
-              )}
-
-              {gamTab === 'concepts' && gamProject && (
-                <div>
-                  {gamProject.concepts?.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Concepts</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
-                        {gamProject.concepts.map((c, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
-                            <span style={{ color: gamProject.color || '#22c55e', fontSize: 11 }}>▸</span>
-                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.65)', fontFamily: 'monospace' }}>{c}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {gamProject.starterCode && (
-                    <>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Starter Code</div>
-                      <div style={{ background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 9, padding: '11px', overflow: 'auto' }}>
-                        <pre style={{ margin: 0, fontSize: 10, color: '#a5f3fc', lineHeight: 1.7, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>{gamProject.starterCode}</pre>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            {gamProject && (
-              <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)' }}>
-                <button
-                  onClick={handleGamificationSubmit}
-                  disabled={!gamAllUnlocked}
-                  style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'rgba(255,255,255,.05)', border: gamAllUnlocked ? 'none' : '1px solid rgba(255,255,255,.1)', color: gamAllUnlocked ? '#fff' : 'rgba(255,255,255,.25)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
-                  title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
+            {/* CANVAS + SVG WIRE LAYER */}
+            <main
+              className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
+                cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
+                backgroundImage: showGrid
+                  ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
+                  : 'none',
+                touchAction: 'none', // Block browser pinch-to-zoom
+                pointerEvents: 'auto',
+                opacity: 1,
+              }}
+              ref={canvasRef}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              onDrop={onCanvasDrop}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+              onMouseDown={e => {
+                if (isCanvasLocked || wireStart || movingComp.current) return;
+                if (e.button !== 0 && e.button !== 1) return;
+                e.preventDefault();
+                didPanRef.current = false;
+                isPanningRef.current = true;
+                panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffsetRef.current.x, oy: canvasOffsetRef.current.y };
+              }}
+              onClick={(e) => {
+                if (didPanRef.current) return;
+                if (wireStart) {
+                  const r = canvasRef.current.getBoundingClientRect();
+                  const newPt = { x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom };
+                  setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
+                } else {
+                  setSelected(null)
+                  setWireClickPos(null)
+                }
+              }}
+              onDoubleClick={e => {
+                if (wireStart || isRunning) return;
+                // Don't open search if clicking on an input, button, select, textarea, or inside a context menu
+                const tag = e.target.tagName.toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'button' || tag === 'select') return;
+                if (e.target.closest('[data-contextmenu]')) return;
+                const rect = canvasRef.current.getBoundingClientRect();
+                const canvasX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                const canvasY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                setQuickAdd({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
+                setQuickAddSearch('');
+                setQuickAddIdx(0);
+              }}
+            >
+              {/* Zoom Wrapper — scales all circuit content */}
+              {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
+               React state (canvasOffset) is only committed once on mouseup. */}
+              <div ref={innerCanvasRef} style={{
+                position: 'absolute', top: 0, left: 0,
+                width: '10000px', height: '8000px',
+                transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
+              }}>
+                {/* BOTTOM SVG layer for wires (Below Components) */}
+                <svg
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
                 >
-                  {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
+                  {wires.filter(w => w.isBelow === true).map(w => {
+                    const fromParts = w.from.split(':')
+                    const toParts = w.to.split(':')
+                    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                    if (!p1 || !p2) return null
+                    const offset = wireOffsetMap.get(w.id) || 0;
+                    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
+                    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
+
+                    return (
+                      <CanvasWire
+                        key={w.id}
+                        wire={w}
+                        p1={p1} p2={p2} e1={e1} e2={e2}
+                        isSelected={selected === w.id}
+                        wirepointsEnabled={wirepointsEnabled}
+                        theme={theme}
+                        offset={wireOffsetMap.get(w.id) || 0}
+                        onSelect={(e) => {
+                          e.stopPropagation();
+                          setSelected(w.id);
+                          setHideWireMenu(false);
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                        }}
+                        onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                          setHideWireMenu(true);
+                          if (selected !== wire.id) { setSelected(wire.id); return; }
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                          const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                          const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                          segDragRef.current = dragData;
+                          setSegDrag(dragData);
+                        }}
+                        onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                          setHideWireMenu(true);
+                          if (ev.cancelable) ev.preventDefault();
+                          if (selected !== wire.id) { setSelected(wire.id); return; }
+                          const t = ev.touches[0];
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                          const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                          const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                          segDragRef.current = dragData;
+                          setSegDrag(dragData);
+                        }}
+                      />
+                    );
+                  })}
+                </svg>
+
+                {/* TOP SVG layer for wires (Above Components) & Context Menu */}
+                <svg
+                  ref={svgRef}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
+                >
+                  {/* Placed wires (Top layer) */}
+                  {wires.filter(w => w.isBelow !== true).map(w => {
+                    const fromParts = w.from.split(':')
+                    const toParts = w.to.split(':')
+                    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                    if (!p1 || !p2) return null
+                    const offset = wireOffsetMap.get(w.id) || 0;
+                    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
+                    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
+
+                    return (
+                      <CanvasWire
+                        key={w.id}
+                        wire={w}
+                        p1={p1} p2={p2} e1={e1} e2={e2}
+                        isSelected={selected === w.id}
+                        wirepointsEnabled={wirepointsEnabled}
+                        theme={theme}
+                        offset={wireOffsetMap.get(w.id) || 0}
+                        onSelect={(e) => {
+                          e.stopPropagation();
+                          setSelected(w.id);
+                          setHideWireMenu(false);
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                        }}
+                        onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                          setHideWireMenu(true);
+                          if (selected !== wire.id) { setSelected(wire.id); return; }
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                          const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                          const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                          segDragRef.current = dragData;
+                          setSegDrag(dragData);
+                        }}
+                        onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                          setHideWireMenu(true);
+                          if (ev.cancelable) ev.preventDefault();
+                          if (selected !== wire.id) { setSelected(wire.id); return; }
+                          const t = ev.touches[0];
+                          const rect = canvasRef.current.getBoundingClientRect();
+                          const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                          const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                          const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                          segDragRef.current = dragData;
+                          setSegDrag(dragData);
+                        }}
+                      />
+                    );
+                  })}
+
+                  {/* Preview wire while drawing */}
+                  {wireStart && (
+                    <path
+                      d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+                      stroke="var(--orange)"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      fill="none"
+                      strokeLinecap="round"
+                      opacity={0.8}
+                    />
+                  )}
+                </svg>
+
+                {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
+                {(() => {
+                  const comp = components.find(c => c.id === selected);
+                  if (!comp) return null;
+                  const reg = COMPONENT_REGISTRY[comp.type];
+                  if (!reg?.ContextMenu) return null;
+                  const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
+                  if (isRunning && !showDuringRun) return null;
+                  if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
+                  return (
+                    <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
+                      position: 'absolute',
+                      left: comp.x + comp.w / 2,
+                      top: comp.y - 14,
+                      transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
+                      transformOrigin: 'bottom center',
+                      background: 'var(--bg2)', border: '1px solid var(--border)',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 10px', borderRadius: '10px',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                      pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
+                    }}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                    >
+                      {React.createElement(reg.ContextMenu, {
+                        attrs: getComponentStateAttrs(comp),
+                        onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
+                      })}
+                      <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                      <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                    </div>
+                  );
+                })()}
+
+                {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
+                {(() => {
+                  const w = wires.find(w => w.id === selected);
+                  if (!w || isRunning || hideWireMenu) return null;
+
+                  const fromParts = w.from.split(':')
+                  const toParts = w.to.split(':')
+                  const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                  const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                  if (!p1 || !p2) return null
+
+                  // Use click position, fall back to wire midpoint
+                  const pts = [p1, ...(w.waypoints || []), p2];
+                  const midPt = pts[Math.floor(pts.length / 2)];
+                  const menuPos = wireClickPos || midPt;
+
+                  // Build connection label — "LED [anode]" style, no instance number
+                  const fromComp = components.find(c => c.id === fromParts[0]);
+                  const toComp = components.find(c => c.id === toParts[0]);
+                  const fromLabel = `${fromComp?.label || fromParts[0]} [${w.fromLabel || fromParts[1]}]`;
+                  const toLabel = `${toComp?.label || toParts[0]} [${w.toLabel || toParts[1]}]`;
+
+                  return (
+                    <div key={`menu-${w.id}`} style={{
+                      position: 'absolute',
+                      left: menuPos.x,
+                      top: menuPos.y - 8,
+                      transform: 'translateX(-50%) translateY(-100%)',
+                      zIndex: 50,
+                      background: 'var(--bg2)', border: '1px solid var(--border)',
+                      display: 'flex', flexDirection: 'column', gap: 6,
+                      padding: '8px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                      minWidth: 180,
+                    }}
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}>
+                      {/* Row 1: connection info — two lines, centered */}
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, textAlign: 'center' }}
+                        title={`${fromLabel} → ${toLabel}`}>
+                        <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{fromLabel}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{toLabel}</div>
+                      </div>
+                      {/* Row 2: controls — centered */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
+                        <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+                        <button
+                          style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
+                          onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
+                          onPointerDown={(e) => { e.stopPropagation(); }}
+                          title={w.isBelow ? "Bring to Front" : "Send to Back"}
+                        >
+                          {w.isBelow ? '↑' : '↓'}
+                        </button>
+                        <button
+                          style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
+                          title="Reset route to auto"
+                          onPointerDown={e => e.stopPropagation()}
+                          onClick={e => {
+                            e.stopPropagation();
+                            saveHistory();
+                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: [] } : ww));
+                          }}
+                        >↺</button>
+                        <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
+                      </div>
+                      <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                      <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                    </div>
+                  )
+                })()}
+
+                {/* Empty state */}
+                {components.length === 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
+                    <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
+                    <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
+                    <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                      Arduino Uno · LED · Resistor · Button · Servo · LCD
+                    </p>
+                  </div>
+                )}
+
+                {/* Components (Layered: Breadboards on Bottom) */}
+                {(() => {
+                  const renderComponent = (comp) => {
+                    const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
+                    const hasError = errorCompIds.has(comp.id)
+                    const isSelected = selected === comp.id
+                    const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
+
+                    const rad = ((comp.rotation || 0) * Math.PI) / 180;
+                    const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+                    const visualHalfHeight = visualH / 2;
+
+                    return (
+                      <div
+                        key={comp.id}
+                        id={`comp-master-${comp.id}`}
+                        style={{
+                          position: 'absolute',
+                          left: comp.x, top: comp.y,
+                          zIndex: isBreadboardType(comp.type)
+                            ? (isSelected ? 4 : 2)
+                            : (isSelected ? 10 : 5),
+                        }}
+                      >
+                        <CanvasComponent
+                          comp={comp}
+                          isSelected={isSelected}
+                          hasError={hasError}
+                          onMouseDown={e => onCompMouseDown(e, comp.id)}
+                          onTouchStart={e => onCompMouseDown(e, comp.id)}
+                          onClick={e => onCompClick(e, comp.id)}
+                          getComponentStateAttrs={getComponentStateAttrs}
+                          COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                          PIN_DEFS={PIN_DEFS}
+                        />
+
+                        {/* Wrapper for the actual emulator component and its dynamic pins */}
+                        <div style={{
+                          position: 'absolute',
+                          left: 0, top: 0,
+                          width: comp.w, height: comp.h,
+                          userSelect: 'none',
+                          pointerEvents: 'none',
+                          transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+                          transformOrigin: 'center center',
+                        }}>
+
+                          {/* Serial-target board ring */}
+                          {isSerialBoardSelected && (() => {
+                            const getBounds = () => {
+                              const reg = COMPONENT_REGISTRY[comp.type];
+                              if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                              if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                              return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                            };
+                            const b = getBounds();
+                            return (
+                              <>
+                                <div style={{
+                                  position: 'absolute',
+                                  left: b.x - 10, top: b.y - 10,
+                                  width: b.w + 20, height: b.h + 20,
+                                  borderRadius: 10,
+                                  border: '2px dashed #38bdf8',
+                                  boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                                  pointerEvents: 'none', zIndex: 9,
+                                }} />
+                                <div style={{
+                                  position: 'absolute',
+                                  left: b.x - 10,
+                                  top: b.y - 26,
+                                  background: '#0c4a6e',
+                                  color: '#e0f2fe',
+                                  border: '1px solid #38bdf8',
+                                  borderRadius: 6,
+                                  fontSize: 9,
+                                  padding: '1px 6px',
+                                  letterSpacing: '0.04em',
+                                  fontFamily: 'JetBrains Mono, monospace',
+                                  pointerEvents: 'none',
+                                  zIndex: 11,
+                                }}>
+                                  SERIAL TARGET
+                                </div>
+                              </>
+                            );
+                          })()}
+
+                          {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                          <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                            {COMPONENT_REGISTRY[comp.type] ? (
+                              // Local UI component rendering SVG
+                              React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                                state: oopStates[comp.id] || {},
+                                attrs: getComponentStateAttrs(comp),
+                                isRunning: isRunning
+                              })
+                            ) : (
+                              // Fallback for unsupported components (if any left)
+                              <div
+                                style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                                ref={el => {
+                                  if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
+                                    neopixelRefs.current[comp.id] = el;
+                                  }
+                                }}
+                              >
+                                {React.createElement(comp.type, getComponentStateAttrs(comp))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pins */}
+                          {pins.map(pin => {
+                            const pinStrRef = `${comp.id}:${pin.id}`;
+                            const isHovered = hoveredPin === pinStrRef;
+                            const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                            // Snapping highlight
+                            const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
+
+                            // Hovered pin's category for passive highlighting
+                            const hoverCompId = hoveredPin?.split(':')[0];
+                            const hoverPinId = hoveredPin?.split(':')[1];
+                            const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                            const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                            const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                            const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                            const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                            const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                            const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
+
+                            // Check if a wire is connected to this pin
+                            const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                            const isSocket = connectedWire?.isSocket;
+
+                            // Check if the component is "seated" (has at least one socket wire)
+                            const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
+                            const isBreadboard = isBreadboardType(comp.type);
+                            const isFloating = !isBreadboard && isCompSeated && !isSocket;
+
+                            const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
+                            const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
+
+                            return (
+                              <div
+                                key={pin.id}
+                                id={`pin-dot-${comp.id}-${pin.id}`}
+                                title={`${pin.description || pin.id} — click to wire`}
+                                style={{
+                                  position: 'absolute',
+                                  left: pin.x, top: pin.y,
+                                  width: 5, height: 5,
+                                  background: pinColor === 'none' ? 'none' : pinColor,
+                                  border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
+                                  borderRadius: '0%', /* matching task3.html */
+                                  cursor: 'crosshair',
+                                  zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
+                                  transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                                  transition: '0.2s', /* matching task3.html transition */
+                                  pointerEvents: 'all', /* Fix hit detection */
+                                  boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                                }}
+                                onMouseEnter={() => setHoveredPin(pinStrRef)}
+                                onMouseLeave={() => setHoveredPin(null)}
+                                onTouchStart={() => setHoveredPin(pinStrRef)}
+                                onClick={() => setHoveredPin(pinStrRef)}
+                                onDoubleClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                              >
+                                {/* Pin label tooltip */}
+                                {isHovered && (
+                                  <div style={{
+                                    position: 'absolute', bottom: 18, left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    background: '#111', color: '#fff',
+                                    padding: '4px 8px', borderRadius: 4,
+                                    fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                                    pointerEvents: 'none', border: '1px solid #444',
+                                    boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                                  }}>
+                                    {pin.description || pin.id}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Component label (Outside rotated container) */}
+                        <div style={{
+                          position: 'absolute',
+                          top: comp.h / 2 + visualHalfHeight + 4,
+                          left: comp.w / 2,
+                          transform: 'translateX(-50%)',
+                          fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                          whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                          pointerEvents: 'none',
+                          zIndex: 5,
+                        }}>
+                          {comp.label}
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  const breadboards = components.filter(c => isBreadboardType(c.type));
+                  const others = components.filter(c => !isBreadboardType(c.type));
+
+                  return (
+                    <>
+                      {breadboards.map(renderComponent)}
+                      {others.map(renderComponent)}
+                    </>
+                  );
+                })()}
+              </div>{/* end zoom wrapper */}
+
+              {/* Minimalist Runtime panel (top-left) */}
+              {isRunning && !isCompiling && (
+                <div
+                  data-export-ignore="true"
+                  onClick={e => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    left: 14,
+                    zIndex: 90,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    background: 'rgba(25, 25, 25, 0.65)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    padding: '6px 12px',
+                    pointerEvents: 'auto'
+                  }}
+                >
+                  {/* Duration Segment */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: 'var(--text)',
+                      fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      letterSpacing: '0.02em',
+                      minWidth: '65px'
+                    }}>
+                      {formatRunDuration(runDurationSec)}
+                    </span>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
+
+                  {/* Speed Segment */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: 'var(--accent)',
+                      fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      minWidth: '35px'
+                    }}>
+                      {simulationSpeedPercent}%
+                    </span>
+                  </div>
+
+                  {/* Paused Indicator Overlay */}
+                  {isPaused && (
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      borderRadius: '10px',
+                      border: '1px solid var(--orange)',
+                      zIndex: -1,
+                      animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                    }} />
+                  )}
+                </div>
+              )}
+
+              {/* Component Description Panel — shows info of canvas-selected component */}
+              {showComponentDesc && selectedComponentInfo && (
+                <div
+                  data-export-ignore="true"
+                  onClick={e => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
+                  onDoubleClick={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute', top: 12, right: 12, zIndex: 90, width: 200,
+                    maxHeight: 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column',
+                    background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden'
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{
+                    padding: '12px 14px 10px',
+                    borderBottom: '1px solid var(--border)',
+                    flexShrink: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
+                  }}>
+                    <div style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: 'var(--text)',
+                      letterSpacing: '-0.01em',
+                      lineHeight: '1.2'
+                    }}>
+                      {selectedComponentInfo.label}
+                    </div>
+
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8
+                    }}>
+                      {/* Category Chip */}
+                      <div style={{
+                        height: 24,
+                        fontSize: 9,
+                        fontWeight: 800,
+                        color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
+                        background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
+                        borderRadius: 6,
+                        padding: '0 10px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
+                      }}>
+                        {selectedComponentInfo.group}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
+                          if (doc) {
+                            // Replace hardcoded localhost URLs with current origin
+                            const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
+                            const b = new Blob([finalDoc], { type: 'text/html' });
+                            window.open(URL.createObjectURL(b), '_blank');
+                          } else {
+                            window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
+                          }
+                        }}
+                        style={{
+                          height: 24,
+                          background: 'var(--bg3)',
+                          border: '1px solid var(--border)',
+                          padding: '0 12px',
+                          color: 'var(--text2)',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          borderRadius: 6,
+                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = 'var(--bg4)';
+                          e.currentTarget.style.borderColor = 'var(--accent)';
+                          e.currentTarget.style.color = 'var(--accent)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'var(--bg3)';
+                          e.currentTarget.style.borderColor = 'var(--border)';
+                          e.currentTarget.style.color = 'var(--text2)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                        }}
+                      >
+                        <svg
+                          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                        </svg>
+                        Documentation
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Pin Wiring Dropdowns */}
+                  <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
+                    <div
+                      onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        color: 'var(--text3)',
+                        textTransform: 'uppercase',
+                        letterSpacing: 1,
+                        marginBottom: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        padding: '4px 0'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                    >
+                      <span>Pin Mapping</span>
+                      <svg
+                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                        style={{
+                          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          opacity: 0.6
+                        }}
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </div>
+                    {isPinMappingExpanded && (() => {
+                      const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
+                      if (compPins.length === 0) {
+                        return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
+                      }
+
+                      // Gather ALL components for destination endpoints (excluding self)
+                      const validTargets = components.filter(c => c.id !== selected);
+                      const targetOptions = [];
+                      validTargets.forEach(b => {
+                        const bPins = LOCAL_PIN_DEFS[b.type] || [];
+                        bPins.forEach(p => targetOptions.push({
+                          id: `${b.id}:${p.id}`,
+                          label: `${b.label || b.id} : ${p.id}`,
+                          type: b.type,
+                          description: p.description
+                        }));
+                      });
+
+                      return compPins.map(pin => {
+                        const pinIdStr = `${selected}:${pin.id}`;
+                        const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
+
+                        // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
+                        const filteredOptions = targetOptions.filter(opt => {
+                          if (!currentPinCat) return true; // Show all for unmapped/general pins
+                          const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
+                          return hasCategoryIntersection(currentPinCat, targetPinCat);
+                        });
+
+                        // Find if any wire is connected to this pin specifically
+                        const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
+                        // Determine current dropdown value
+                        let currentVal = '';
+                        if (connectedWire) {
+                          currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
+                        }
+
+                        const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
+
+                        return (
+                          <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
+                            <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
+                              {pin.id}
+                            </span>
+
+                            {/* Interactive Arrow & Color Picker */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const picker = e.currentTarget.querySelector('input[type="color"]');
+                                if (picker) picker.click();
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                opacity: connectedWire ? 1 : 0.6,
+                                transition: 'all 0.2s ease',
+                                position: 'relative',
+                                padding: '0 4px',
+                                flexShrink: 0
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.opacity = '1';
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
+                                e.currentTarget.style.transform = 'scale(1)';
+                              }}
+                              title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
+                            >
+                              <svg
+                                width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                stroke={pinPreferredColor}
+                                strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                              >
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                              </svg>
+                              <input
+                                type="color"
+                                value={pinPreferredColor}
+                                onChange={(e) => {
+                                  const newColor = e.target.value;
+                                  setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
+                                  if (connectedWire) {
+                                    updateWireColor(connectedWire.id, newColor);
+                                  }
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
+                                }}
+                              />
+                            </div>
+
+                            <select
+                              value={currentVal}
+                              onChange={(e) => {
+                                const selectedTarget = e.target.value;
+                                setWires(prev => {
+                                  // 1. Generate the exact same wire syntax as manual mapping
+                                  const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
+                                  const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
+
+                                  const newWire = selectedTarget ? {
+                                    id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                    from: pinIdStr,
+                                    to: selectedTarget,
+                                    fromLabel: pin.id,
+                                    toLabel: toPinLabel,
+                                    color: finalColor,
+                                    waypoints: []
+                                  } : null;
+
+                                  // 2. Filter cleanly using a map proxy to avoid reference staleness
+                                  const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
+
+                                  setWireStart(null); // Cancel manual wire draw
+                                  return newWire ? [...filtered, newWire] : filtered;
+                                });
+                              }}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                padding: '3px 6px',
+                                background: 'var(--card)',
+                                border: '1px solid var(--border)',
+                                color: currentVal ? 'var(--accent)' : 'var(--text2)',
+                                borderRadius: 4,
+                                fontSize: 10,
+                                fontFamily: 'JetBrains Mono, monospace',
+                                cursor: 'pointer',
+                                outline: 'none'
+                              }}
+                            >
+                              <option value="">-- Disconnected --</option>
+                              {filteredOptions.map(opt => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
+              <div
+                data-export-ignore="true"
+                className="canvas-zoom-bar"
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  bottom: 86,
+                  right: 14,
+                  zIndex: 90,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(25, 25, 25, 0.65)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                  padding: '6px',
+                  pointerEvents: 'auto'
+                }}
+              >
+                {/* Console Toggle */}
+                <button
+                  onClick={() => setIsConsoleOpen(o => !o)}
+                  style={{ background: isConsoleOpen ? 'var(--accent)' : 'none', border: 'none', color: isConsoleOpen ? '#fff' : 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '8px 10px', borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                  title="Toggle Console"
+                >
+                  <TerminalIcon size={18} />
                 </button>
-                <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.35)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                  📖 Full Guide
+
+                <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowCanvasMenu(m => !m)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 18, padding: '4px 10px', borderRadius: 8 }}
+                    title="Canvas Menu"
+                  >⋮</button>
+                  {showCanvasMenu && (
+                    <div
+                      className="canvas-menu"
+                      onMouseLeave={() => setShowCanvasMenu(false)}
+                      style={{
+                        position: 'absolute',
+                        bottom: '100%',
+                        right: 0,
+                        marginBottom: 10,
+                        zIndex: 10000,
+                        background: theme === 'light' ? 'rgba(255, 255, 255, 0.98)' : 'rgba(13, 21, 37, 0.98)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12,
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                        padding: '5px',
+                        minWidth: 190,
+                        animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                        transformOrigin: 'bottom right',
+                        fontFamily: "'Space Grotesk', sans-serif",
+                        willChange: 'transform, opacity, backdrop-filter',
+                        backfaceVisibility: 'hidden',
+                        WebkitBackfaceVisibility: 'hidden',
+                      }}
+                    >
+                      <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }}>Fit to Canvas</button>
+                      <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
+                      <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                      <button className="canvas-menu-item" onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
+                      {selected && !selected.match(/^w\d+$/) && (
+                        <button className={`canvas-menu-item${isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { if (!isRunning) { rotateComponent(selected); } setShowCanvasMenu(false); }} disabled={isRunning}>
+                          Rotate Selected
+                        </button>
+                      )}
+                      {selected && (
+                        <button className={`canvas-menu-item canvas-menu-item--danger${isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => {
+                          if (!isRunning) {
+                            saveHistory();
+                            if (selected.match(/^w\d+$/)) {
+                              setWires(prev => prev.filter(w => w.id !== selected))
+                            } else {
+                              setComponents(prev => prev.filter(c => c.id !== selected))
+                              setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
+                            }
+                            setSelected(null);
+                          }
+                          setShowCanvasMenu(false);
+                        }} disabled={isRunning}>
+                          Delete Selected
+                        </button>
+                      )}
+                      <button className="canvas-menu-item" onClick={() => { setIsWiringDisabled(d => !d); setShowCanvasMenu(false); }}>{isWiringDisabled ? 'Enable Wiring Mode' : 'Disable Wiring Mode'}</button>
+                      <button className="canvas-menu-item" onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
+                      <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
+                      <button className="canvas-menu-item" onClick={() => {
+                        const enabling = !wirepointsEnabled;
+                        setWirepointsEnabled(enabling);
+                        setShowCanvasMenu(false);
+                      }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
+                      <button className="canvas-menu-item" onClick={() => { setShowComponentDesc(d => !d); setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
+                      <button className="canvas-menu-item" onClick={() => { setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
+                      <button
+                        className="canvas-menu-item"
+                        onClick={() => {
+                          const next = !blocklyDisabled;
+                          setBlocklyDisabled(next);
+                          try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
+                          setShowCanvasMenu(false);
+                        }}
+                        title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}
+                      >
+                        {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
+                      </button>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                      <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <SimulationConsolePanel
+                isOpen={isConsoleOpen}
+                height={consoleHeight}
+                entries={consoleEntries}
+                activeTab={activeConsoleTab}
+                onTabChange={setActiveConsoleTab}
+                protocolLogs={protocolLogs}
+                onResizeStart={onMouseDownConsoleResize}
+                onClose={() => setIsConsoleOpen(false)}
+                onClear={() => {
+                  if (activeConsoleTab === 'protocol') setProtocolLogs([]);
+                  else clearConsoleEntries();
+                }}
+                onDownload={downloadConsoleLog}
+              />
+
+              {/* ── Quick-Add Popup (double-click on canvas) ── */}
+              {quickAdd && (() => {
+                const q = quickAddSearch.trim().toLowerCase();
+                const results = [];
+                if (q) {
+                  outer: for (const group of LOCAL_CATALOG) {
+                    for (const item of group.items) {
+                      if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                        results.push(item);
+                        if (results.length >= 4) break outer;
+                      }
+                    }
+                  }
+                }
+                const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+                const VW = window.innerWidth, VH = window.innerHeight;
+                const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+                const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+                const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
+                return (
+                  <div
+                    className="canvas-menu"
+                    data-quickadd="true"
+                    onMouseDown={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                    onMouseLeave={() => setQuickAdd(null)}
+                    style={{
+                      position: 'fixed',
+                      left,
+                      top,
+                      zIndex: 10000,
+                      width: menuW,
+                      background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                      backdropFilter: 'blur(16px) saturate(1.4)',
+                      WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                      border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                      borderRadius: 12,
+                      boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                      padding: '5px',
+                      animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                      transformOrigin: 'top left',
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      willChange: 'transform, opacity, backdrop-filter',
+                      backfaceVisibility: 'hidden',
+                      WebkitBackfaceVisibility: 'hidden',
+                    }}
+                  >
+                    {/* Search input */}
+                    <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                      <input
+                        ref={quickAddInputRef}
+                        data-quickadd="true"
+                        value={quickAddSearch}
+                        onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                          else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                          else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                          else if (e.key === 'Enter' && results.length > 0) {
+                            e.preventDefault();
+                            addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                            setQuickAdd(null);
+                          }
+                        }}
+                        placeholder="Search component..."
+                        style={{
+                          width: '100%', boxSizing: 'border-box',
+                          background: theme === 'light' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.2)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text)', padding: '12px 14px',
+                          borderRadius: 10, fontFamily: 'inherit', fontSize: 16, outline: 'none',
+                          transition: 'all 0.2s',
+                        }}
+                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                      />
+                    </div>
+                    {/* Result list */}
+                    {results.map((item, i) => (
+                      <div
+                        key={`${item.type}-${i}`}
+                        className="canvas-menu-item"
+                        data-quickadd="true"
+                        onMouseEnter={() => setQuickAddIdx(i)}
+                        onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                        style={{
+                          background: i === selIdx ? 'var(--accent)' : 'transparent',
+                          color: i === selIdx ? '#fff' : 'var(--text)',
+                          borderRadius: 8,
+                          margin: '2px 5px',
+                          width: 'calc(100% - 10px)',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <span style={{ fontWeight: i === selIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
+                        {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+                      </div>
+                    ))}
+                    {/* Empty state */}
+                    {q && results.length === 0 && (
+                      <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                    )}
+                    {!q && (
+                      <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
+                    )}
+                  </div>
+                );
+              })()}
+            </main>
+          </div>
+        )}
+        {activeMobileTab === 'code' && (
+          <CodeEditorView
+            code={code} setCode={setCode}
+            activeCodeFileId={activeCodeFileId}
+            projectFiles={projectFiles}
+            openCodeTabs={openCodeTabs}
+            onOpenCodeFile={openCodeFile}
+            onCloseCodeTab={closeCodeTab}
+            onSaveCodeFile={saveCodeFile}
+            onDuplicateCodeFile={duplicateCodeFile}
+            onRenameCodeFile={renameCodeFile}
+            onDeleteCodeFile={deleteCodeFile}
+            onDownloadCodeFile={downloadCodeFile}
+            onToggleCodeFileDisabled={toggleCodeFileDisabled}
+            onCreateCodeFile={createCodeFile}
+            onUploadCodeFile={uploadCodeFile}
+            showCodeExplorer={showCodeExplorer}
+            onToggleCodeExplorer={() => setShowCodeExplorer(v => !v)}
+            explorerWidth={explorerWidth}
+            onMouseDownExplorerResize={onMouseDownExplorerResize}
+            isExplorerDragging={isExplorerDragging}
+            boardComponentMap={boardComponentMap}
+            onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
+            serialBoardKinds={serialBoardKinds}
+            serialBoardSourceModes={rp2040BoardSourceModes}
+            theme={theme}
+            projectName={currentProjectName}
+            editingDisabled={liveEditingDisabled}
+            editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required.' : 'Editing is disabled.'}
+            setSelected={setSelected}
+            libQuery={libQuery}
+            setLibQuery={setLibQuery}
+            handleSearchLibraries={handleSearchLibraries}
+            isSearchingLib={isSearchingLib}
+            libMessage={libMessage}
+            libInstalled={libInstalled}
+            libResults={libResults}
+            handleInstallLibrary={handleInstallLibrary}
+            installingLib={installingLib}
+          />
+        )}
+
+        {activeMobileTab === 'blocks' && (
+          <BlockEditorView
+            blocklyDisabled={blocklyDisabled}
+            setBlocklyDisabled={setBlocklyDisabled}
+            blocklyXml={blocklyXml}
+            setBlocklyXml={setBlocklyXml}
+            blocklyGeneratedCode={blocklyGeneratedCode}
+            setBlocklyGeneratedCode={setBlocklyGeneratedCode}
+            useBlocklyCode={useBlocklyCode}
+            setUseBlocklyCode={setUseBlocklyCode}
+            setCode={setCode}
+            setCodeTab={setCodeTab}
+            serialBoardFilter={serialBoardFilter}
+            serialBoardKinds={serialBoardKinds}
+            editingDisabled={liveEditingDisabled}
+            editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required.' : 'Editing is disabled.'}
+          />
+        )}
+
+        {activeMobileTab === 'serial' && (
+          <SerialMonitorView
+            serialPaused={serialPaused}
+            setSerialPaused={setSerialPaused}
+            isRunning={isRunning}
+            serialHistory={serialHistory}
+            setSerialHistory={setSerialHistory}
+            serialOutputRef={serialOutputRef}
+            serialInput={serialInput}
+            setSerialInput={setSerialInput}
+            sendSerialInput={sendSerialInput}
+            clearSerialMonitor={clearSerialMonitor}
+            serialViewMode={serialViewMode}
+            setSerialViewMode={setSerialViewMode}
+            serialBoardFilter={serialBoardFilter}
+            setSerialBoardFilter={setSerialBoardFilter}
+            serialBoardOptions={serialBoardOptions}
+            serialBoardLabels={serialBoardLabels}
+            serialBaudRate={serialBaudRate}
+            setSerialBaudRate={setSerialBaudRate}
+            serialBaudOptions={serialBaudOptions}
+            serialLineEnding={serialLineEnding}
+            setSerialLineEnding={setSerialLineEnding}
+            hardwareConnected={hardwareConnected}
+            plotterPaused={plotterPaused}
+            setPlotterPaused={setPlotterPaused}
+            plotData={plotData}
+            setPlotData={setPlotData}
+            selectedPlotPins={selectedPlotPins}
+            setSelectedPlotPins={setSelectedPlotPins}
+            plotterCanvasRef={plotterCanvasRef}
+            serialPlotLabelsRef={serialPlotLabelsRef}
+            theme={theme}
+            serialBoardKinds={serialBoardKinds}
+            serialBoardSourceModes={rp2040BoardSourceModes}
+            serialSendTarget={serialSendTarget}
+            setSerialSendTarget={setSerialSendTarget}
+            showSendTargetMenu={showSendTargetMenu}
+            setShowSendTargetMenu={setShowSendTargetMenu}
+            sendMenuRef={sendMenuRef}
+          />
+        )}
+      </div>
+
+      <MobileBottomNav activeTab={activeMobileTab} onTabChange={setActiveMobileTab} isRunning={isRunning} handleToggleRun={handleToggleRun} />
+
+      {/* MY PROJECTS SIDEBAR */}
+      {showProjectsSidebar && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[5500] animate-in fade-in duration-300"
+          onClick={() => setShowProjectsSidebar(false)}
+        />
+      )}
+      <aside
+        className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-transform duration-300 ease-out shadow-2xl"
+        style={{
+          position: 'fixed', top: 0, bottom: 0, right: 0,
+          width: 'min(88vw, 380px)',
+          zIndex: 6000,
+          transform: showProjectsSidebar ? 'translateX(0)' : 'translateX(100%)',
+        }}
+      >
+        {showProjectsSidebar && (
+          <>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+              <span className="text-sm font-bold text-[var(--text)] tracking-tight">My Projects</span>
+              <button
+                onClick={() => setShowProjectsSidebar(false)}
+                className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-lg w-7 h-7 flex items-center justify-center transition-all active:scale-95"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="px-5 pb-4 shrink-0">
+              <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
+                {[
+                  { id: 'favourites', label: 'Fav' },
+                  { id: 'projects', label: 'Projects' },
+                  { id: 'custom', label: 'Custom' },
+                  { id: 'settings', label: 'Settings' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setProjectsSidebarTab(tab.id)}
+                    className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all duration-200
+                        ${projectsSidebarTab === tab.id
+                        ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm'
+                        : 'text-[var(--text3)] hover:text-[var(--text2)]'
+                      }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+              {projectsSidebarTab === 'favourites' && (
+                <div>
+                  <div className="text-[11px] text-[var(--text3)] px-1 py-1.5">Starred projects appear here.</div>
+                  {myProjects.filter(p => favouriteProjectIds.includes(p.id)).length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                      <div className="w-16 h-16 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                      </div>
+                      <div className="text-sm font-bold text-[var(--text)] mb-1">No Favourites Yet</div>
+                      <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Star a project from the Projects tab to see it here.</div>
+                    </div>
+                  ) : myProjects.filter(p => favouriteProjectIds.includes(p.id)).map(proj => (
+                    <ProjectCard
+                      key={proj.id}
+                      proj={proj}
+                      currentProjectId={currentProjectId}
+                      renamingProjectId={renamingProjectId}
+                      renameValue={renameValue}
+                      setRenameValue={setRenameValue}
+                      handleConfirmRename={handleConfirmRename}
+                      setRenamingProjectId={setRenamingProjectId}
+                      handleLoadProject={handleLoadProject}
+                      isRunning={isRunning}
+                      setShowProjectsSidebar={setShowProjectsSidebar}
+                      onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
+                      formatProjectDate={formatProjectDate}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {projectsSidebarTab === 'projects' && (
+                <div>
+                  <div className="flex justify-between items-center mb-4 px-1">
+                    <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Your Library</div>
+                    <button
+                      onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
+                      className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      NEW
+                    </button>
+                  </div>
+                  {myProjects.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--bg)]/30">
+                      <div className="w-14 h-14 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
+                      </div>
+                      <div className="text-sm font-bold text-[var(--text)] mb-1">No saved projects</div>
+                      <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Your circuits are auto-saved as you work.</div>
+                    </div>
+                  ) : myProjects.map(proj => (
+                    <ProjectCard
+                      key={proj.id}
+                      proj={proj}
+                      currentProjectId={currentProjectId}
+                      renamingProjectId={renamingProjectId}
+                      renameValue={renameValue}
+                      setRenameValue={setRenameValue}
+                      handleConfirmRename={handleConfirmRename}
+                      setRenamingProjectId={setRenamingProjectId}
+                      handleLoadProject={handleLoadProject}
+                      isRunning={isRunning}
+                      setShowProjectsSidebar={setShowProjectsSidebar}
+                      onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
+                      formatProjectDate={formatProjectDate}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {projectsSidebarTab === 'custom' && (
+                <div>
+                  <div className="flex justify-between items-center mb-4 px-1">
+                    <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Custom Parts</div>
+                    <button
+                      onClick={() => setShowCreateComponentModal(true)}
+                      className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      CREATE
+                    </button>
+                  </div>
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-xl">
+                    <div className="text-sm font-bold text-[var(--text)] mb-1 opacity-50">Nothing here yet</div>
+                    <div className="text-[11px] text-[var(--text3)] leading-normal">Custom components will appear here.</div>
+                  </div>
+                </div>
+              )}
+
+              {projectsSidebarTab === 'settings' && (
+                <div className="flex flex-col gap-2 py-1">
+                  <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
+                  <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
+                      <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
+                    </div>
+                    <button
+                      onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+                      className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
+                    >
+                      <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
+                    </button>
+                  </div>
+
+                  <div className="h-px bg-[var(--border)] my-1 opacity-50" />
+                  <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
+                  <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    Backup
+                    <span className="ml-auto text-[11px] text-[var(--text3)]">Download ZIP</span>
+                  </button>
+                  <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => backupRestoreInputRef.current?.click()}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                    Restore
+                    <span className="ml-auto text-[11px] text-[var(--text3)]">From ZIP</span>
+                  </button>
+                  {isAuthenticated && (
+                    <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleSyncToCloud}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
+                      Sync to Cloud
+                      <span className="ml-auto text-[11px] text-[var(--text3)]">Upload</span>
+                    </button>
+                  )}
+                  {isAuthenticated && (
+                    <>
+                      <div className="h-px bg-[var(--border)] my-1" />
+                      <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Account</div>
+                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--red)] text-[var(--red)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                        Logout
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
+              {!isAnyAuthenticated ? (
+                <button
+                  onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
+                  className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
+                  Sign In to Sync
+                </button>
+              ) : (
+                <div
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
+                  onClick={() => {
+                    if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
+                    else if (activeUser?.role === 'student') navigate('/student/dashboard')
+                    else if (activeUser?.role === 'admin') navigate(`/${activeUser?.role}/dashboard`)
+                    else navigate(`${activeUser?.role || 'user'}/dashboard`)
+                  }}
+                  title="Go to dashboard"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
+                    {activeUser?.name?.[0] || 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
+                    <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
+                  </div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                </div>
+              )}
+
+              <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)] shadow-inner">
+                <button
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
+                      ${!isAuthenticated
+                      ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]'
+                      : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
+                  onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
+                >
+                  Local
+                </button>
+                <button
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
+                      ${isAuthenticated
+                      ? 'bg-[var(--accent)] text-white shadow-md'
+                      : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
+                  onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
+                >
+                  Cloud
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </aside>
+
+      {/* GAMIFICATION GUIDE PANEL */}
+      {gamificationMode && gamPanelOpen && (
+        <aside style={{
+          width: 280, background: '#0a0d1a', borderLeft: '1px solid rgba(255,255,255,.07)',
+          display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
+          fontFamily: "'Space Grotesk', sans-serif",
+        }}>
+          {/* Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', flexShrink: 0 }}>
+            {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
+              <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
+                flex: 1, padding: '9px 4px', background: 'none', border: 'none',
+                borderBottom: `2px solid ${gamTab === tab.id ? '#00b4ff' : 'transparent'}`,
+                color: gamTab === tab.id ? '#00b4ff' : 'rgba(255,255,255,.4)',
+                fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              }}>{tab.label}</button>
+            ))}
+          </div>
+
+          {/* Body */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 80px' }}>
+
+            {gamTab === 'components' && (
+              <div>
+                <div style={{
+                  padding: '9px 12px', borderRadius: 9, marginBottom: 14,
+                  background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
+                  border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
+                  fontSize: 12, fontWeight: 600,
+                  color: gamAllUnlocked ? '#22c55e' : '#ef4444',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  {gamAllUnlocked ? '✅ All components unlocked' : `⚠️ ${gamLockedCount} need unlocking`}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {(gamProjectComponents || []).map((c, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 9,
+                      padding: '9px 11px', borderRadius: 9,
+                      background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
+                      border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
+                    }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22 }}>
+                        {c.isLocked ? '🔒' : (
+                          c.compDef?.icon && (c.compDef.icon.startsWith('/') || c.compDef.icon.endsWith('.png')) ? (
+                            <img src={c.compDef.icon} alt={c.label} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                          ) : (
+                            c.compDef?.icon || '✅'
+                          )
+                        )}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'rgba(255,255,255,.45)' : '#fff' }}>
+                          {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
+                        </div>
+                        <div style={{ fontSize: 9, color: c.isLocked ? '#ef4444' : '#22c55e', marginTop: 2 }}>
+                          {c.isLocked ? 'Study theory to unlock' : 'Available in palette'}
+                        </div>
+                      </div>
+                      {c.isLocked && c.compId && (
+                        <button
+                          onClick={() => navigate(`/components/${c.compId}/theory`)}
+                          style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                        >Unlock →</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button onClick={() => navigate('/components')} style={{ marginTop: 16, width: '100%', padding: '9px', background: 'rgba(0,180,255,.06)', border: '1px solid rgba(0,180,255,.2)', color: '#00b4ff', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  🔓 Unlock More Components
                 </button>
               </div>
             )}
-      </aside>
-    )}
+
+            {gamTab === 'wiring' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {gamProject?.wiring?.length > 0 ? gamProject.wiring.map((w, i) => (
+                  <div key={i} style={{ padding: '9px 11px', borderRadius: 8, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,180,255,.15)', border: '1px solid rgba(0,180,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#00b4ff', flexShrink: 0 }}>{i + 1}</div>
+                    <div style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,.75)', lineHeight: 1.5 }}>
+                      <span style={{ color: '#00b4ff', fontFamily: 'monospace' }}>{w.from}</span>
+                      <span style={{ color: 'rgba(255,255,255,.3)', margin: '0 5px' }}>→</span>
+                      <span style={{ color: '#22c55e', fontFamily: 'monospace' }}>{w.to}</span>
+                    </div>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', textAlign: 'center', padding: '32px 0' }}>No wiring guide yet.</div>
+                )}
+              </div>
+            )}
+
+            {gamTab === 'concepts' && gamProject && (
+              <div>
+                {gamProject.concepts?.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Concepts</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
+                      {gamProject.concepts.map((c, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                          <span style={{ color: gamProject.color || '#22c55e', fontSize: 11 }}>▸</span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,.65)', fontFamily: 'monospace' }}>{c}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {gamProject.starterCode && (
+                  <>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Starter Code</div>
+                    <div style={{ background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 9, padding: '11px', overflow: 'auto' }}>
+                      <pre style={{ margin: 0, fontSize: 10, color: '#a5f3fc', lineHeight: 1.7, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>{gamProject.starterCode}</pre>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {gamProject && (
+            <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)' }}>
+              <button
+                onClick={handleGamificationSubmit}
+                disabled={!gamAllUnlocked}
+                style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'rgba(255,255,255,.05)', border: gamAllUnlocked ? 'none' : '1px solid rgba(255,255,255,.1)', color: gamAllUnlocked ? '#fff' : 'rgba(255,255,255,.25)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
+                title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
+              >
+                {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
+              </button>
+              <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.35)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                📖 Full Guide
+              </button>
+            </div>
+          )}
+        </aside>
+      )}
 
       {/* SAVE DIALOG */}
       {showSaveDialog && (
@@ -11322,7 +11330,7 @@ updateWireColor(connectedWire.id, newColor);
           <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[580px] max-w-[90vw] shadow-[0_12px_50px_rgba(0,0,0,.5)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <div className="text-lg font-bold text-[var(--text)]">Board Firmware Manager</div>
-              <button 
+              <button
                 onClick={() => setShowFirmwareUploadDialog(false)}
                 className="text-[var(--text3)] hover:text-[var(--text)] transition-colors p-1"
               >
@@ -11347,7 +11355,7 @@ updateWireColor(connectedWire.id, newColor);
                     const firmwareName = attrs.firmwareArtifactName || '';
                     const hasFirmware = !!(attrs.firmwareHex || attrs.hex);
                     const kind = normalizeBoardKind(boardComp?.type || '');
-                    
+
                     return (
                       <div key={option.id} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl flex items-center justify-between gap-6 transition-all hover:border-[var(--accent)]/30 group">
                         <div className="flex-1 min-w-0">
@@ -11380,7 +11388,7 @@ updateWireColor(connectedWire.id, newColor);
                           >
                             <span className="text-[11px] font-bold">{useUploaded ? 'Using Upload' : 'Use Upload'}</span>
                           </Btn>
-                          
+
                           <Btn
                             onClick={() => {
                               setFirmwareUploadTarget(option.id);
@@ -11424,17 +11432,17 @@ updateWireColor(connectedWire.id, newColor);
 
       {/* F1 MENU */}
       {showF1Menu && (
-        <div 
+        <div
           className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
           onClick={() => setShowF1Menu(false)}
         >
-          <div 
+          <div
             className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
             onClick={e => e.stopPropagation()}
           >
             <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
             <div className="flex flex-col gap-3">
-              <Btn 
+              <Btn
                 onClick={() => {
                   downloadSimulationJson();
                   setShowF1Menu(false);
@@ -11443,7 +11451,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 Download Simulation JSON
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   openFirmwareDownloadDialog();
                   setShowF1Menu(false);
@@ -11452,7 +11460,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 Download Firmware
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   openFirmwareUploadDialog();
                   setShowF1Menu(false);
@@ -11461,7 +11469,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 Board Firmware Manager
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   setRp2040DebugTelemetryEnabled((prev) => !prev);
                   setShowF1Menu(false);
@@ -11470,7 +11478,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   setShowSpeedDialog(true);
                   setShowF1Menu(false);
@@ -11479,7 +11487,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 Simulation Speed ({simulationSpeed.toFixed(1)}x)
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   const resetSpeed = 1.0;
                   setSimulationSpeed(resetSpeed);
@@ -11492,7 +11500,7 @@ updateWireColor(connectedWire.id, newColor);
               >
                 Reset Simulation Speed (1.0x)
               </Btn>
-              <Btn 
+              <Btn
                 onClick={() => {
                   handleStartGDB();
                   setShowF1Menu(false);
@@ -11502,7 +11510,7 @@ updateWireColor(connectedWire.id, newColor);
                 Start GDB Session
               </Btn>
             </div>
-            <button 
+            <button
               className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
               onClick={() => setShowF1Menu(false)}
             >
@@ -11526,7 +11534,7 @@ updateWireColor(connectedWire.id, newColor);
                 <span className="text-[10px] font-bold text-[var(--text2)] uppercase tracking-wider">Current Rate</span>
                 <span className="text-sm font-mono font-bold text-[var(--accent)]">{simulationSpeed.toFixed(1)}x</span>
               </div>
-              <input 
+              <input
                 type="range"
                 min="0.1"
                 max="10"
@@ -11551,7 +11559,7 @@ updateWireColor(connectedWire.id, newColor);
 
             <div className="grid grid-cols-3 gap-2 mb-6">
               {[0.1, 0.5, 1.0, 2.0, 5.0, 10.0].map(val => (
-                <Btn 
+                <Btn
                   key={val}
                   onClick={() => {
                     setSimulationSpeed(val);
@@ -11568,7 +11576,7 @@ updateWireColor(connectedWire.id, newColor);
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-              <Btn 
+              <Btn
                 onClick={() => {
                   const resetSpeed = 1.0;
                   setSimulationSpeed(resetSpeed);
@@ -11592,18 +11600,18 @@ updateWireColor(connectedWire.id, newColor);
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           onMouseLeave={() => setProjContextMenu(null)}
-          style={{ 
-            position: 'fixed', 
-            left: projContextMenu.x, 
+          style={{
+            position: 'fixed',
+            left: projContextMenu.x,
             top: Math.min(projContextMenu.y, window.innerHeight - 240),
-            zIndex: 10000, 
+            zIndex: 10000,
             background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
             backdropFilter: 'blur(16px) saturate(1.4)',
             WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
             border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-            borderRadius: 12, 
+            borderRadius: 12,
             boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-            minWidth: 200, 
+            minWidth: 200,
             padding: '5px',
             animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
             transformOrigin: 'top left',
@@ -11620,35 +11628,35 @@ updateWireColor(connectedWire.id, newColor);
               <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/50" />
             </div>
           </div>
-          
+
           <div className="p-1 flex flex-col gap-0.5">
-            <button 
+            <button
               className="canvas-menu-item"
               onClick={() => { toggleFavourite(projContextMenu.proj.id); setProjContextMenu(null); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "none"} stroke={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "currentColor"} strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
               {favouriteProjectIds.includes(projContextMenu.proj.id) ? 'Unfavourite' : 'Favourite'}
             </button>
-            
-            <button 
+
+            <button
               className="canvas-menu-item"
               onClick={() => { handleCopyProject(projContextMenu.proj); setProjContextMenu(null); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
               Make a Copy
             </button>
-            
-            <button 
+
+            <button
               className="canvas-menu-item"
-              onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => {} }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
+              onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => { } }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
               Rename Project
             </button>
-            
+
             <div className="h-px bg-[var(--border)] my-1 mx-2 opacity-50" />
-            
-            <button 
+
+            <button
               className="canvas-menu-item canvas-menu-item--danger"
               onClick={() => { handleDeleteProject(projContextMenu.proj.id); setProjContextMenu(null); }}
             >

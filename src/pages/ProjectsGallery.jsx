@@ -364,11 +364,16 @@ function ProjectCard({ project, isLocked, isSeqLocked, isCompleted, missingCompo
                 {missingComponents.map(c => (
                   <button
                     key={c.id}
-                    style={compReqStyles.reqChip}
+                    style={{ ...compReqStyles.reqChip, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     onClick={() => navigate(`/components/${c.id}/theory`)}
                     title={`Study ${c.name} to unlock`}
                   >
-                    {c.icon} {c.name} →
+                    {c.icon && (c.icon.startsWith('/') || c.icon.endsWith('.png')) ? (
+                      <img src={c.icon} alt={c.name} style={{ width: 16, height: 16, objectFit: 'contain' }} />
+                    ) : (
+                      c.icon
+                    )}
+                    <span>{c.name} →</span>
                   </button>
                 ))}
               </div>

@@ -310,7 +310,13 @@ function NodeModal({ project, isCompleted, isAvailable, onClose, onStart }) {
             </div>
             {rewards.slice(0,2).map((r, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: i < rewards.length-1 ? 5 : 0 }}>
-                <span style={{ fontSize: 18 }}>{r.icon}</span>
+                <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22 }}>
+                  {r.icon && (r.icon.startsWith('/') || r.icon.endsWith('.png')) ? (
+                    <img src={r.icon} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    r.icon
+                  )}
+                </span>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{r.name}</div>
                   <div style={{ fontSize: 10, color: '#64748b' }}>{r.description}</div>

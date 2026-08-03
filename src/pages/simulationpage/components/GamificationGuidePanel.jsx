@@ -52,7 +52,15 @@ function GamificationGuidePanelBase({
                   background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
                   border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
                 }}>
-                  <span style={{ fontSize: 18, flexShrink: 0 }}>{c.isLocked ? '🔒' : (c.compDef?.icon || '✅')}</span>
+                  <span style={{ fontSize: 18, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22 }}>
+                    {c.isLocked ? '🔒' : (
+                      c.compDef?.icon && (c.compDef.icon.startsWith('/') || c.compDef.icon.endsWith('.png')) ? (
+                        <img src={c.compDef.icon} alt={c.label} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      ) : (
+                        c.compDef?.icon || '✅'
+                      )
+                    )}
+                  </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'var(--text3)' : 'var(--text)' }}>
                       {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
@@ -123,14 +131,7 @@ function GamificationGuidePanelBase({
 
       {gamProject && (
         <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg1)' }}>
-          <button
-            onClick={handleGamificationSubmit}
-            disabled={!gamAllUnlocked}
-            style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'var(--bg3)', border: gamAllUnlocked ? 'none' : '1px solid var(--border)', color: gamAllUnlocked ? '#fff' : 'var(--text3)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
-            title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
-          >
-            {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
-          </button>
+
           <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
             📖 Full Guide
           </button>
