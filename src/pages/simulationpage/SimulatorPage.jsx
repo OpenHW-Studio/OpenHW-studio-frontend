@@ -275,12 +275,12 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   const getBestPowerPins = (comp, bb) => {
     const pins = LOCAL_PIN_DEFS[comp.type] || [];
     const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
-    
+
     const bbVccPins = bbPins.filter(p => p.id.startsWith('top_vcc') || p.id.startsWith('bottom_vcc') || p.id === 't+' || p.id === 'b+' || p.id === 'VCC' || p.id === '5V');
     const bbGndPins = bbPins.filter(p => p.id.startsWith('top_gnd') || p.id.startsWith('bottom_gnd') || p.id === 't-' || p.id === 'b-' || p.id === 'GND');
 
     const isOccupied = (pinId) => newWires.some(w => w.from === `${bb.id}:${pinId}` || w.to === `${bb.id}:${pinId}`);
-    
+
     const availableBbVccPins = bbVccPins.filter(p => !isOccupied(p.id));
     const availableBbGndPins = bbGndPins.filter(p => !isOccupied(p.id));
 
@@ -291,7 +291,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
 
     const vccPins = [];
     const gndPins = [];
-    
+
     pins.forEach(pin => {
       const cats = getPinCategory(pin.id, pin.description || '', comp.type) || [];
       if (cats.includes('POWER') || cats.includes('VIN')) vccPins.push(pin);
@@ -320,7 +320,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
     vccList.forEach(vcc => {
       const vccX = vcc ? comp.x + getPinX(comp, vcc) : 0;
       const vccY = vcc ? comp.y + getPinY(comp, vcc) : 0;
-      
+
       let voltageType = null;
       if (vcc) {
         const idAndDesc = ((vcc.id || '') + ' ' + (vcc.description || '')).toUpperCase();
@@ -331,7 +331,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       gndList.forEach(gnd => {
         const gndX = gnd ? comp.x + getPinX(comp, gnd) : 0;
         const gndY = gnd ? comp.y + getPinY(comp, gnd) : 0;
-        
+
         finalBbVccPins.forEach(bbVcc => {
           const bbVccX = bb.x + (bbVcc.x || 0);
           const bbVccY = bb.y + (bbVcc.y || 0);
@@ -343,7 +343,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
             const distToBbGnd = gnd ? Math.hypot(gndX - bbGndX, gndY - bbGndY) : 0;
 
             const pinDist = (vcc && gnd) ? Math.hypot(vccX - gndX, vccY - gndY) : 0;
-            
+
             let score = (pinDist * 5) + distToBbVcc + distToBbGnd;
 
             // Offset the wires diagonally so they don't overlap. Always shift in the same direction so consecutive components don't interleave/criss-cross.
@@ -390,7 +390,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
     };
 
     if (pair.vcc) {
-      const alreadyWired = newWires.some(w => 
+      const alreadyWired = newWires.some(w =>
         w.from === `${comp.id}:${pair.vcc.id}` || w.to === `${comp.id}:${pair.vcc.id}`
       );
       if (!alreadyWired) {
@@ -408,7 +408,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       }
     }
     if (pair.gnd) {
-      const alreadyWired = newWires.some(w => 
+      const alreadyWired = newWires.some(w =>
         w.from === `${comp.id}:${pair.gnd.id}` || w.to === `${comp.id}:${pair.gnd.id}`
       );
       if (!alreadyWired) {
@@ -489,6 +489,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const isLiveStudent = liveMeetingMode && !isLiveTeacher;
   const canvasOnly = assessmentParams.get("canvas-only") === "1";
   const readOnly = assessmentParams.get("readonly") === "1";
+  const isDemoRoute = location.pathname.endsWith('/demo');
 
   // -- Gamification --
   const {
@@ -740,7 +741,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const lastLoadedSlugRef = useRef(null)
   useEffect(() => {
     const project = guidedProjectState?.project
-    const slug = project?.slug || (gamificationMode ? projectName : null)
+    const slug = project?.slug || (gamificationMode || canvasOnly || isDemoRoute ? projectName : null)
 
     if (!slug || lastLoadedSlugRef.current === slug) return
     lastLoadedSlugRef.current = slug
@@ -769,7 +770,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       .catch(async () => {
         if (project?.schemas?.arduino) {
           loadFromSchema()
-        } else if ((canvasOnly || gamificationMode) && slug) {
+        } else if ((canvasOnly || gamificationMode || isDemoRoute) && slug) {
           try {
             const data = await import("../../services/guidedProjects.json")
             const root = data.default || data
@@ -783,7 +784,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 }
               }
             }
-          } catch {}
+          } catch { }
           setIsLoadingGuidedSchema(false)
           setShowComingSoon(true)
         } else {
@@ -825,7 +826,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setEsp32SimulationMode(mode);
     try {
       localStorage.setItem('openhw.esp32.simulationMode', mode);
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   useEffect(() => {
@@ -1667,7 +1668,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
-  
+
   useEffect(() => {
     const handleDownloadPcap = (e) => {
       const { componentId } = e.detail;
@@ -1989,9 +1990,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         const uiComponent = resolveUiExport(exportsUI);
         const contextMenu =
           exportsUI[
-            Object.keys(exportsUI).find((k) =>
-              k.toLowerCase().includes("contextmenu"),
-            )
+          Object.keys(exportsUI).find((k) =>
+            k.toLowerCase().includes("contextmenu"),
+          )
           ];
 
         if (uiComponent) {
@@ -2193,41 +2194,41 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }
     };
 
-loadDemoProject();
-     return () => {
-       cancelled = true;
-       if (deferTimer !== null) window.clearTimeout(deferTimer);
-     };
-   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadDemoProject();
+    return () => {
+      cancelled = true;
+      if (deferTimer !== null) window.clearTimeout(deferTimer);
+    };
+  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
-    useEffect(() => {
-      if (!returnTo) return;
+  // ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+  useEffect(() => {
+    if (!returnTo) return;
 
-      // Check if we have circuit data from Project Bank Editor
-      const stored = localStorage.getItem("bankProjectCriteria");
-      if (!stored) return;
+    // Check if we have circuit data from Project Bank Editor
+    const stored = localStorage.getItem("bankProjectCriteria");
+    if (!stored) return;
 
-      try {
-        const parsed = JSON.parse(stored);
-        // Only load if it has the full payload format (components/connections)
-        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
-          const { components: normalizedComponents, wires: normalizedConnections } =
-            normalizeImportedCircuitData(parsed.components, parsed.connections);
+    try {
+      const parsed = JSON.parse(stored);
+      // Only load if it has the full payload format (components/connections)
+      if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+        const { components: normalizedComponents, wires: normalizedConnections } =
+          normalizeImportedCircuitData(parsed.components, parsed.connections);
 
-          setBoard(parsed.board || "arduino_uno");
-          setComponents(normalizedComponents);
-          setWires(normalizedConnections);
-          setCode(parsed.code || "");
-          syncNextIds(normalizedComponents, normalizedConnections);
-        }
-      } catch (e) {
-        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+        setBoard(parsed.board || "arduino_uno");
+        setComponents(normalizedComponents);
+        setWires(normalizedConnections);
+        setCode(parsed.code || "");
+        syncNextIds(normalizedComponents, normalizedConnections);
       }
-    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+    } catch (e) {
+      console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+    }
+  }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── Offline component queue: flush to backend when connectivity restores ──
-    useEffect(() => {
+  // ── Offline component queue: flush to backend when connectivity restores ──
+  useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -2251,7 +2252,7 @@ loadDemoProject();
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-// ── Sync backend custom components (cache-first, version-checked) ──────────
+  // ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
@@ -2581,8 +2582,8 @@ loadDemoProject();
         if (!cancelled) {
           alert(
             error?.response?.data?.message ||
-              error.message ||
-              "Failed to load shared simulation.",
+            error.message ||
+            "Failed to load shared simulation.",
           );
         }
       }
@@ -2629,8 +2630,8 @@ loadDemoProject();
           setLiveMeetingStatus("Connection failed");
           alert(
             error?.response?.data?.message ||
-              error.message ||
-              "Failed to load live simulation.",
+            error.message ||
+            "Failed to load live simulation.",
           );
         }
       }
@@ -3371,9 +3372,9 @@ loadDemoProject();
               BOUNDS: exportsUI.BOUNDS,
               ContextMenu:
                 exportsUI[
-                  Object.keys(exportsUI).find((k) =>
-                    k.toLowerCase().includes("contextmenu"),
-                  )
+                Object.keys(exportsUI).find((k) =>
+                  k.toLowerCase().includes("contextmenu"),
+                )
                 ],
               contextMenuDuringRun: !!(
                 exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun
@@ -3491,9 +3492,9 @@ loadDemoProject();
           BOUNDS: exportsUI.BOUNDS,
           ContextMenu:
             exportsUI[
-              Object.keys(exportsUI).find((k) =>
-                k.toLowerCase().includes("contextmenu"),
-              )
+            Object.keys(exportsUI).find((k) =>
+              k.toLowerCase().includes("contextmenu"),
+            )
             ],
           contextMenuDuringRun: !!(
             exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun
@@ -3612,9 +3613,9 @@ loadDemoProject();
               BOUNDS: exportsUI.BOUNDS,
               ContextMenu:
                 exportsUI[
-                  Object.keys(exportsUI).find((k) =>
-                    k.toLowerCase().includes("contextmenu"),
-                  )
+                Object.keys(exportsUI).find((k) =>
+                  k.toLowerCase().includes("contextmenu"),
+                )
                 ],
               contextMenuDuringRun: !!(
                 exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun
@@ -3904,14 +3905,14 @@ loadDemoProject();
     const currentBoardTypes = components
       .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
       .map((c) => c.type);
-    
+
     const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
     if (newTypesToPreload.length > 0) {
       newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
       const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
       const dummyComponents = newTypesToPreload.map(type => ({ type }));
       prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
-      
+
       const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
       return () => { clearTimeout(timer); prefetchWorker.terminate(); };
     }
@@ -4346,8 +4347,8 @@ loadDemoProject();
         const rp2040Mode =
           kind === "rp2040"
             ? normalizeRp2040Env(
-                resolveComponentAttrString(bc?.attrs, "env", "native"),
-              )
+              resolveComponentAttrString(bc?.attrs, "env", "native"),
+            )
             : "native";
 
         for (let i = 0; i < result.length; i += 1) {
@@ -4801,7 +4802,7 @@ loadDemoProject();
           exitX,
           exitY,
         });
-      } catch (e) {}
+      } catch (e) { }
       return {
         x: exitX,
         y: exitY,
@@ -4845,7 +4846,7 @@ loadDemoProject();
         console.groupEnd();
       });
     };
-  } catch (e) {}
+  } catch (e) { }
 
   const getPinPosWithGhosts = useCallback(
     (compId, pinId) => {
@@ -5494,11 +5495,11 @@ loadDemoProject();
       const rect = canvasRef.current.getBoundingClientRect();
       const x =
         (e.clientX - rect.left - canvasOffsetRef.current.x) /
-          canvasZoomRef.current -
+        canvasZoomRef.current -
         (item.w || 60) / 2;
       const y =
         (e.clientY - rect.top - canvasOffsetRef.current.y) /
-          canvasZoomRef.current -
+        canvasZoomRef.current -
         (item.h || 60) / 2;
       await addComponentInternal(item, x, y);
       dragPayload.current = null;
@@ -5894,11 +5895,11 @@ loadDemoProject();
         const rect = canvasRef.current.getBoundingClientRect();
         const rawX = snapToGrid(
           (e.clientX - rect.left - canvasOffsetRef.current.x) /
-            canvasZoomRef.current,
+          canvasZoomRef.current,
         );
         const rawY = snapToGrid(
           (e.clientY - rect.top - canvasOffsetRef.current.y) /
-            canvasZoomRef.current,
+          canvasZoomRef.current,
         );
         mousePosUpdate = { x: rawX, y: rawY };
       } else {
@@ -7563,7 +7564,7 @@ loadDemoProject();
       if (cleaned) {
         return /\.[a-z0-9]+$/i.test(cleaned)
           ? sanitizeDownloadStem(cleaned, "firmware") +
-              cleaned.match(/\.[a-z0-9]+$/i)[0]
+          cleaned.match(/\.[a-z0-9]+$/i)[0]
           : `${sanitizeDownloadStem(cleaned, "firmware")}${defaultExt}`;
       }
 
@@ -8265,8 +8266,8 @@ loadDemoProject();
       console.error("Failed to share simulation", error);
       alert(
         error?.response?.data?.message ||
-          error.message ||
-          "Failed to share simulation.",
+        error.message ||
+        "Failed to share simulation.",
       );
       return "";
     } finally {
@@ -8851,77 +8852,77 @@ loadDemoProject();
       const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
       if (typeof boardHex === "string" && boardHex.trim()) return boardHex;
 
-    const compileUnit = getBoardCompileFiles(boardComp.id);
-    if (!compileUnit.hasMainFile) {
-      throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
-    }
-    const sourceCode = compileUnit.mainCode || '';
-    const cacheKeyBoard = `${kind}:${boardComp.id}`;
-    const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-    const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
-
-    const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-    const librariesTxt = libFile 
-      ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
-      : '';
-
-    const cacheSource = [
-      sourceCode,
-      ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-      fqbn,
-      buildEngine,
-      librariesTxt,
-      'targetEngine:hardware'
-    ].join('\n/*__SPLIT__*/\n');
-
-    let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-    if (!compiled) {
-      if (kind === 'esp32') {
-        const startRes = await startEsp32Compile({
-          code: sourceCode,
-          libraries_txt: librariesTxt,
-          targetEngine: 'hardware'
-        });
-        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-          throw new Error('Failed to start ESP32 compilation.');
-        }
-        const jobId = startRes.jobId || startRes.buildId;
-        let pollCount = 0;
-        while (true) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const statusRes = await getEsp32CompileStatus(jobId);
-          if (!statusRes) continue;
-          
-          if (statusRes.status === 'success') {
-            if (!statusRes.binary_content) {
-              throw new Error('Compilation succeeded but no binary content was returned.');
-            }
-            compiled = { hex: statusRes.binary_content };
-            break;
-          } else if (statusRes.status === 'failed') {
-            throw new Error(statusRes.error || 'ESP32 compilation failed.');
-          }
-          
-          pollCount++;
-          if (pollCount > 180) {
-            throw new Error('ESP32 compilation timed out after 90 seconds.');
-          }
-        }
-      } else {
-        compiled = await compileCode({
-          code: sourceCode,
-          files: compileUnit.files,
-          sketchName: compileUnit.sketchName,
-          fqbn,
-          target: kind,
-          libraries_txt: librariesTxt,
-          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-        });
+      const compileUnit = getBoardCompileFiles(boardComp.id);
+      if (!compileUnit.hasMainFile) {
+        throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
       }
-      setCachedHex(cacheSource, cacheKeyBoard, compiled);
-    }
-    return compiled.hex;
-  }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
+      const sourceCode = compileUnit.mainCode || '';
+      const cacheKeyBoard = `${kind}:${boardComp.id}`;
+      const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
+      const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
+
+      const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+      const librariesTxt = libFile
+        ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
+        : '';
+
+      const cacheSource = [
+        sourceCode,
+        ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+        fqbn,
+        buildEngine,
+        librariesTxt,
+        'targetEngine:hardware'
+      ].join('\n/*__SPLIT__*/\n');
+
+      let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+      if (!compiled) {
+        if (kind === 'esp32') {
+          const startRes = await startEsp32Compile({
+            code: sourceCode,
+            libraries_txt: librariesTxt,
+            targetEngine: 'hardware'
+          });
+          if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+            throw new Error('Failed to start ESP32 compilation.');
+          }
+          const jobId = startRes.jobId || startRes.buildId;
+          let pollCount = 0;
+          while (true) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const statusRes = await getEsp32CompileStatus(jobId);
+            if (!statusRes) continue;
+
+            if (statusRes.status === 'success') {
+              if (!statusRes.binary_content) {
+                throw new Error('Compilation succeeded but no binary content was returned.');
+              }
+              compiled = { hex: statusRes.binary_content };
+              break;
+            } else if (statusRes.status === 'failed') {
+              throw new Error(statusRes.error || 'ESP32 compilation failed.');
+            }
+
+            pollCount++;
+            if (pollCount > 180) {
+              throw new Error('ESP32 compilation timed out after 90 seconds.');
+            }
+          }
+        } else {
+          compiled = await compileCode({
+            code: sourceCode,
+            files: compileUnit.files,
+            sketchName: compileUnit.sketchName,
+            fqbn,
+            target: kind,
+            libraries_txt: librariesTxt,
+            ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+          });
+        }
+        setCachedHex(cacheSource, cacheKeyBoard, compiled);
+      }
+      return compiled.hex;
+    }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
 
   const {
     hardwareAvailablePorts,
@@ -9084,9 +9085,9 @@ loadDemoProject();
       const selectedRunBaud = Number.isFinite(parsedRunBaud)
         ? parsedRunBaud
         : Number(
-            BOARD_DEFAULT_BAUD[selectedSerialBoardKind] ||
-              BOARD_DEFAULT_BAUD.arduino_uno,
-          );
+          BOARD_DEFAULT_BAUD[selectedSerialBoardKind] ||
+          BOARD_DEFAULT_BAUD.arduino_uno,
+        );
       const selectedRunBoardId =
         serialBoardFilter !== "all" && serialBoardMap.has(serialBoardFilter)
           ? serialBoardFilter
@@ -9164,12 +9165,12 @@ loadDemoProject();
           const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
           const uploadedFirmware = useUploaded
             ? String(
-                resolveComponentAttrString(
-                  boardComp?.attrs,
-                  "firmwareHex",
-                  "",
-                ) || resolveComponentAttrString(boardComp?.attrs, "hex", ""),
-              ).trim()
+              resolveComponentAttrString(
+                boardComp?.attrs,
+                "firmwareHex",
+                "",
+              ) || resolveComponentAttrString(boardComp?.attrs, "hex", ""),
+            ).trim()
             : "";
 
           if (useUploaded && uploadedFirmware) {
@@ -9217,8 +9218,8 @@ loadDemoProject();
             : "";
           const activePythonSource =
             activeFileExt === ".py" &&
-            activeFileTargetsBoard &&
-            !isFileDisabled(activeFilePath)
+              activeFileTargetsBoard &&
+              !isFileDisabled(activeFilePath)
               ? activeBoardFile
                 ? String(activeBoardFile.content || "")
                 : activeFileContent
@@ -9240,8 +9241,8 @@ loadDemoProject();
             activeFileExt === ".py" && activeFileTargetsBoard;
           const preferredMainPath =
             activeBoardExt === ".ino" &&
-            activeBoardFile &&
-            !isFileDisabled(activeBoardFile.path)
+              activeBoardFile &&
+              !isFileDisabled(activeBoardFile.path)
               ? activeBoardFile.path
               : "";
           const compileUnit = getBoardCompileFiles(
@@ -9253,8 +9254,8 @@ loadDemoProject();
             : activeFileExt === ".py" && activeFileTargetsBoard
               ? String(activeCodeFile?.content || "") || String(code || "")
               : compileUnit.mainCode ||
-                getBoardMainCode(boardComp.id) ||
-                String(code || "");
+              getBoardMainCode(boardComp.id) ||
+              String(code || "");
 
           if (kind !== "rp2040" && !compileUnit.hasMainFile) {
             boardsWithoutCompilableSketch.push(boardComp.id);
@@ -9312,8 +9313,8 @@ loadDemoProject();
               const firmwareEntryPy =
                 runtimeEnv === "circuitpython"
                   ? (firmwareAssets.pythonFiles || []).find(
-                      (f) => String(f.name || "").toLowerCase() === "code.py",
-                    )
+                    (f) => String(f.name || "").toLowerCase() === "code.py",
+                  )
                   : firmwareAssets.mainPy;
 
               let pyToRun =
@@ -9398,8 +9399,8 @@ loadDemoProject();
             }
 
             const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-            const librariesTxt = libFile 
-              ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+            const librariesTxt = libFile
+              ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
               : '';
 
             const cacheKeyBoard = `${kind}:${boardComp.id}`;
@@ -9467,8 +9468,8 @@ loadDemoProject();
           }
 
           const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-          const librariesTxt = libFile 
-            ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+          const librariesTxt = libFile
+            ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
             : '';
 
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
@@ -9497,25 +9498,25 @@ loadDemoProject();
                   libraries_txt: librariesTxt,
                   targetEngine: 'frontend'
                 });
-                
+
                 if (!startRes || (!startRes.jobId && !startRes.buildId)) {
                   throw new Error('Failed to start ESP32 compilation.');
                 }
-                
+
                 if (startRes.cache === 'hit') {
                   logSerial(`Using server-cached compilation for ${boardComp.id}...`);
                 }
-                
+
                 const jobId = startRes.jobId || startRes.buildId;
                 let pollCount = 0;
                 let lastPrintedProgressLen = 0;
-                
+
                 while (true) {
                   await new Promise(resolve => setTimeout(resolve, 500));
                   const statusRes = await getEsp32CompileStatus(jobId);
-                  
+
                   if (!statusRes) continue;
-                  
+
                   const progressLines = statusRes.progress || [];
                   if (progressLines.length > lastPrintedProgressLen) {
                     for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
@@ -9523,7 +9524,7 @@ loadDemoProject();
                     }
                     lastPrintedProgressLen = progressLines.length;
                   }
-                  
+
                   if (statusRes.status === 'success') {
                     if (!statusRes.binary_content) {
                       throw new Error('Compilation succeeded but no binary content was returned.');
@@ -9538,7 +9539,7 @@ loadDemoProject();
                     const errMsg = statusRes.error || 'ESP32 compilation failed.';
                     throw new Error(errMsg);
                   }
-                  
+
                   pollCount++;
                   if (pollCount > 180) {
                     throw new Error('ESP32 compilation timed out after 90 seconds.');
@@ -9588,8 +9589,8 @@ loadDemoProject();
         const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
 
         const libFile = (projectFiles || []).find(f => f.path.endsWith('/library.txt') || f.name === 'library.txt');
-        const librariesTxt = libFile 
-          ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+        const librariesTxt = libFile
+          ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
           : '';
 
         const cacheStr = [finalCode, engine, librariesTxt].join('\n/*__SPLIT__*/\n');
@@ -9685,9 +9686,9 @@ loadDemoProject();
           netWorker.postMessage({
             type: 'ANNOUNCE_AP',
             componentId: ap.id,
-            ssid:     ap.attrs?.ssid     ?? 'OpenHW-GUEST',
+            ssid: ap.attrs?.ssid ?? 'OpenHW-GUEST',
             password: ap.attrs?.password ?? '',
-            channel:  Number(ap.attrs?.channel  ?? 6),
+            channel: Number(ap.attrs?.channel ?? 6),
             internet: String(ap.attrs?.internet ?? '1') !== '0',
           });
         }
@@ -9925,20 +9926,20 @@ loadDemoProject();
         // ── Network Worker: real WiFi stack status (from dedicated network worker) ──
         if (msg.type === 'wifi_status') {
           const resolvedBoardId = String(msg.boardId || '').trim() || 'default';
-          const status   = String(msg.status   || 'idle');
-          const ssid     = String(msg.ssid     || '');
-          const ip       = String(msg.ip       || '');
-          const packets  = Number(msg.packetCount || 0);
+          const status = String(msg.status || 'idle');
+          const ssid = String(msg.ssid || '');
+          const ip = String(msg.ip || '');
+          const packets = Number(msg.packetCount || 0);
           const connected = status === 'connected' || status === 'got_ip';
 
           liveOopStatesRef.current[resolvedBoardId] = {
             ...(liveOopStatesRef.current[resolvedBoardId] || {}),
-            wirelessMode:      'full',
-            wirelessStatus:    status,
+            wirelessMode: 'full',
+            wirelessStatus: status,
             wirelessConnected: connected,
-            wirelessSsid:      ssid,
-            wirelessIp:        ip,
-            wirelessPackets:   packets,
+            wirelessSsid: ssid,
+            wirelessIp: ip,
+            wirelessPackets: packets,
           };
           notifyLiveOopStateListeners(resolvedBoardId);
 
@@ -10091,9 +10092,9 @@ loadDemoProject();
             : "";
           const framePreview = Array.isArray(spi.framePreview)
             ? spi.framePreview
-                .slice(0, 8)
-                .map((v) => `0x${Number(v).toString(16).padStart(2, "0")}`)
-                .join(",")
+              .slice(0, 8)
+              .map((v) => `0x${Number(v).toString(16).padStart(2, "0")}`)
+              .join(",")
             : "";
           const command = Number.isFinite(Number(spi.command))
             ? `cmd=0x${Number(spi.command).toString(16).padStart(2, "0")}`
@@ -10582,9 +10583,9 @@ loadDemoProject();
             const ctx = i2sAudioCtxRef.current;
             if (ctx.state === "suspended") ctx.resume();
 
-            const port       = msg.port ?? 0;
+            const port = msg.port ?? 0;
             const sampleRate = msg.sampleRate || 44100;
-            const bits       = msg.bits || 16;
+            const bits = msg.bits || 16;
 
             // 2. Decode base64 → raw bytes
             const binStr = atob(msg.pcm_b64);
@@ -10652,7 +10653,7 @@ loadDemoProject();
         ]);
         if (
           (PROTOCOL_EVENT_TYPES.has(msg.type) ||
-           (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0)) &&
+            (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0)) &&
           !protocolLogsTimerRef.current
         ) {
           protocolLogsTimerRef.current = setTimeout(() => {
@@ -10720,7 +10721,7 @@ loadDemoProject();
       } catch (e) {
         console.warn('Failed to stringify components/wires for worker', e);
       }
-      
+
       console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
 
       worker.postMessage({
@@ -11565,24 +11566,24 @@ loadDemoProject();
           skipFonts: true,
           width: actualW,
           height: actualH,
-            onclone: (_clonedDoc, clonedEl) => {
-              // Selective color fix: Target graphics but SPARE the text
-              clonedEl
-                .querySelectorAll("path, rect, circle, polygon")
-                .forEach((el) => {
-                  const fill = el.getAttribute("fill");
-                  if (fill && fill.includes("color("))
-                    el.setAttribute("fill", "#777");
-                  const stroke = el.getAttribute("stroke");
-                  if (stroke && stroke.includes("color("))
-                    el.setAttribute("stroke", "#777");
-                });
-              // Ensure labels are visible on white bg
-              clonedEl.querySelectorAll("text, span, div").forEach((el) => {
-                if (el.style.color && el.style.color.includes("color("))
-                  el.style.color = "#1e293b";
+          onclone: (_clonedDoc, clonedEl) => {
+            // Selective color fix: Target graphics but SPARE the text
+            clonedEl
+              .querySelectorAll("path, rect, circle, polygon")
+              .forEach((el) => {
+                const fill = el.getAttribute("fill");
+                if (fill && fill.includes("color("))
+                  el.setAttribute("fill", "#777");
+                const stroke = el.getAttribute("stroke");
+                if (stroke && stroke.includes("color("))
+                  el.setAttribute("stroke", "#777");
               });
-            },
+            // Ensure labels are visible on white bg
+            clonedEl.querySelectorAll("text, span, div").forEach((el) => {
+              if (el.style.color && el.style.color.includes("color("))
+                el.style.color = "#1e293b";
+            });
+          },
         });
 
         // Memory Flush: Clear the iframe content immediately to free RAM
@@ -11809,8 +11810,8 @@ loadDemoProject();
       });
 
       // Teleport computed styles
-      const propsToCopy = ["display","position","left","top","width","height","transform","transformOrigin","color","fontSize","fontWeight","fontFamily","textAlign","visibility","opacity","backgroundColor","zIndex","border","borderWidth","borderStyle","borderColor","borderRadius","padding","margin","lineHeight","overflow","boxSizing","clipPath","mask","filter","mixBlendMode","outline","boxShadow","textShadow","cursor"];
-      const svgProps = ["fill","stroke","stroke-width","stroke-linecap","stroke-linejoin","stroke-miterlimit","stroke-dasharray","stroke-dashoffset","stroke-opacity","fill-opacity","fill-rule","marker-start","marker-mid","marker-end"];
+      const propsToCopy = ["display", "position", "left", "top", "width", "height", "transform", "transformOrigin", "color", "fontSize", "fontWeight", "fontFamily", "textAlign", "visibility", "opacity", "backgroundColor", "zIndex", "border", "borderWidth", "borderStyle", "borderColor", "borderRadius", "padding", "margin", "lineHeight", "overflow", "boxSizing", "clipPath", "mask", "filter", "mixBlendMode", "outline", "boxShadow", "textShadow", "cursor"];
+      const svgProps = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "fill-opacity", "fill-rule", "marker-start", "marker-mid", "marker-end"];
 
       [idoc.body, ...Array.from(idoc.body.querySelectorAll("*"))].forEach((cloned) => {
         const dataId = cloned.getAttribute("data-thumb-id");
@@ -11822,19 +11823,19 @@ loadDemoProject();
           if (p === "fontSize" && (cloned.tagName === "text" || cloned.tagName === "tspan")) return;
           cloned.style.setProperty(p, s.getPropertyValue(p), "important");
         });
-        if (["path","circle","rect","line","polygon","text","ellipse","g","svg"].includes(cloned.tagName)) {
+        if (["path", "circle", "rect", "line", "polygon", "text", "ellipse", "g", "svg"].includes(cloned.tagName)) {
           svgProps.forEach((attr) => {
             const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
             if (val) {
               const fv = val.includes("color(") ? "#777" : val;
               cloned.setAttribute(attr, fv);
-              if (["fill","stroke","stroke-width","opacity","visibility"].includes(attr)) cloned.style.setProperty(attr, fv, "important");
+              if (["fill", "stroke", "stroke-width", "opacity", "visibility"].includes(attr)) cloned.style.setProperty(attr, fv, "important");
             }
           });
           const w = s.getPropertyValue("width");
           const h = s.getPropertyValue("height");
-          if (w && w !== "auto" && w !== "100%") { cloned.setAttribute("width", w.replace("px","")); cloned.style.setProperty("width", w, "important"); }
-          if (h && h !== "auto" && h !== "100%") { cloned.setAttribute("height", h.replace("px","")); cloned.style.setProperty("height", h, "important"); }
+          if (w && w !== "auto" && w !== "100%") { cloned.setAttribute("width", w.replace("px", "")); cloned.style.setProperty("width", w, "important"); }
+          if (h && h !== "auto" && h !== "100%") { cloned.setAttribute("height", h.replace("px", "")); cloned.style.setProperty("height", h, "important"); }
         }
         cloned.style.setProperty("visibility", "visible", "important");
         cloned.style.setProperty("opacity", s.opacity || "1", "important");
@@ -12731,8 +12732,8 @@ loadDemoProject();
     if (!win) return;
     win.document.write(
       `<html><head><title>Schematic</title>` +
-        `<style>@page{margin:0;size:A4 landscape}body{margin:0;padding:0}svg{width:100%;height:auto;display:block}</style></head>` +
-        `<body>${svgStr}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script></body></html>`,
+      `<style>@page{margin:0;size:A4 landscape}body{margin:0;padding:0}svg{width:100%;height:auto;display:block}</style></head>` +
+      `<body>${svgStr}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script></body></html>`,
     );
     win.document.close();
   }, []);
@@ -12817,8 +12818,8 @@ loadDemoProject();
           const rp2040Mode =
             boardKind === "rp2040"
               ? normalizeRp2040Env(
-                  resolveComponentAttrString(bc?.attrs, "env", "native"),
-                )
+                resolveComponentAttrString(bc?.attrs, "env", "native"),
+              )
               : "native";
           const fileName = getDefaultMainFileName(boardKind, bc.id, {
             rp2040Mode,
@@ -13109,208 +13110,208 @@ loadDemoProject();
 
         {/* TOP BAR */}
         {!canvasOnly && (
-        <TopToolbox
-          board={board}
-          setBoard={setBoard}
-          isRunning={isRunning}
-          isPaused={isPaused}
-          handleRun={handleRun}
-          handlePause={handlePause}
-          handleResume={handleResume}
-          handleStop={handleStop}
-          isCompiling={isCompiling}
-          isBooting={isBooting}
-          assessmentMode={assessmentMode}
-          assessmentProjectName={assessmentProjectName}
-          isSubmittingAssessment={isSubmittingAssessment}
-          handleAssessmentSubmit={handleAssessmentSubmit}
-          undo={undo}
-          redo={redo}
-          selected={selected}
-          rotateComponent={rotateComponent}
-          theme={theme}
-          toggleTheme={toggleTheme}
-          showViewPanel={showViewPanel}
-          setShowViewPanel={setShowViewPanel}
-          viewPanelSection={viewPanelSection}
-          setViewPanelSection={setViewPanelSection}
-          schematicDataUrl={schematicDataUrl}
-          setSchematicDataUrl={setSchematicDataUrl}
-          schematicLoading={schematicLoading}
-          setSchematicLoading={setSchematicLoading}
-          downloadSchematicPng={downloadSchematicPng}
-          downloadSchematicPdf={downloadSchematicPdf}
-          generateSchematic={generateSchematic}
-          downloadCompCsv={downloadCompCsv}
-          importFileRef={importFileRef}
-          downloadPng={downloadPng}
-          importPng={importPng}
-          downloadSimulationJson={downloadSimulationJson}
-          handleSave={handleSave}
-          isExporting={isExporting}
-          handleShareSimulation={handleShareSimulation}
-          isSharingSimulation={isSharingSimulation}
-          refreshProjectList={refreshProjectList}
-          showProjectsDropdown={showProjectsDropdown}
-          setShowProjectsDropdown={setShowProjectsDropdown}
-          handleNewProject={handleNewProject}
-          handleStartRename={handleStartRename}
-          handleConfirmRename={handleConfirmRename}
-          renamingProjectId={renamingProjectId}
-          setRenamingProjectId={setRenamingProjectId}
-          renameValue={renameValue}
-          setRenameValue={setRenameValue}
-          handleLoadProject={handleLoadProject}
-          handleDeleteProject={handleDeleteProject}
-          handleBackupWorkflow={handleBackupWorkflow}
-          backupRestoreInputRef={backupRestoreInputRef}
-          wokwiImportInputRef={wokwiImportInputRef}
-          handleImportWokwiZip={handleImportWokwiZip}
-          handleRestoreWorkflow={handleRestoreWorkflow}
-          handleSyncToCloud={handleSyncToCloud}
-          user={activeUser}
-          gamPanelOpen={gamPanelOpen}
-          setGamPanelOpen={setGamPanelOpen}
-          gamificationMode={gamificationMode}
-          navigate={navigate}
-          isAuthenticated={isAnyAuthenticated}
-          myProjects={myProjects}
-          currentProjectId={currentProjectId}
-          projectName={currentProjectName}
-          formatProjectDate={formatProjectDate}
-          saveHistory={saveHistory}
-          setWires={setWires}
-          setComponents={setComponents}
-          setSelected={setSelected}
-          history={history}
-          components={components}
-          wires={wires}
-          webSerialSupported={webSerialSupported}
-          hardwareBoards={boardComponents}
-          hardwareBoardId={hardwareBoardId}
-          setHardwareBoardId={handleHardwareBoardChange}
-          hardwarePortPath={hardwarePortPath}
-          setHardwarePortPath={setHardwarePortPath}
-          resolvedHardwarePort={resolvedHardwarePort}
-          hardwareAvailablePorts={hardwareAvailablePorts}
-          showAllHardwarePorts={showAllHardwarePorts}
-          setShowAllHardwarePorts={setShowAllHardwarePorts}
-          refreshHardwarePorts={refreshHardwarePorts}
-          isLoadingHardwarePorts={isLoadingHardwarePorts}
-          hardwareBaudRate={hardwareBaudRate}
-          setHardwareBaudRate={setHardwareBaudRate}
-          hardwareResetMethod={hardwareResetMethod}
-          setHardwareResetMethod={setHardwareResetMethod}
-          connectHardwareSerial={connectHardwareSerial}
-          disconnectHardwareSerial={disconnectHardwareSerial}
-          uploadToHardware={handleUploadToHardware}
-          hardwareConnected={hardwareConnected}
-          hardwareConnecting={hardwareConnecting}
-          isUploadingHardware={isUploadingHardware}
-          hardwareStatus={hardwareStatus}
-          editingDisabled={liveEditingDisabled}
-          setShowProjectsSidebar={setShowProjectsSidebar}
-          setProjectsSidebarTab={setProjectsSidebarTab}
-          validationErrors={validationErrors}
-          autofixPlan={autofixPlan}
-          autofixStatus={autofixStatus}
-          autofixLog={autofixLog}
-          onApplyPlan={handleApplyPlan}
-          onRefresh={triggerAutofixAnalysis}
-          autoWiringEnabled={autoWiringEnabled}
-          setAutoWiringEnabled={setAutoWiringEnabled}
-          autoBreadboardEnabled={autoBreadboardEnabled}
-          setAutoBreadboardEnabled={setAutoBreadboardEnabled}
-          autoCodingEnabled={autoCodingEnabled}
-          setAutoCodingEnabled={setAutoCodingEnabled}
-          showAutofix={showAutofix}
-          setShowAutofix={setShowAutofix}
-          showShortcuts={showShortcuts}
-          setShowShortcuts={setShowShortcuts}
-          useBlocklyCode={useBlocklyCode}
-          setUseBlocklyCode={setUseBlocklyCode}
-          onStartTour={() => {
-            localStorage.removeItem("openhw-tour-completed");
-            setShowTour(true);
-          }}
-          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
-          code={code}
-        />
+          <TopToolbox
+            board={board}
+            setBoard={setBoard}
+            isRunning={isRunning}
+            isPaused={isPaused}
+            handleRun={handleRun}
+            handlePause={handlePause}
+            handleResume={handleResume}
+            handleStop={handleStop}
+            isCompiling={isCompiling}
+            isBooting={isBooting}
+            assessmentMode={assessmentMode}
+            assessmentProjectName={assessmentProjectName}
+            isSubmittingAssessment={isSubmittingAssessment}
+            handleAssessmentSubmit={handleAssessmentSubmit}
+            undo={undo}
+            redo={redo}
+            selected={selected}
+            rotateComponent={rotateComponent}
+            theme={theme}
+            toggleTheme={toggleTheme}
+            showViewPanel={showViewPanel}
+            setShowViewPanel={setShowViewPanel}
+            viewPanelSection={viewPanelSection}
+            setViewPanelSection={setViewPanelSection}
+            schematicDataUrl={schematicDataUrl}
+            setSchematicDataUrl={setSchematicDataUrl}
+            schematicLoading={schematicLoading}
+            setSchematicLoading={setSchematicLoading}
+            downloadSchematicPng={downloadSchematicPng}
+            downloadSchematicPdf={downloadSchematicPdf}
+            generateSchematic={generateSchematic}
+            downloadCompCsv={downloadCompCsv}
+            importFileRef={importFileRef}
+            downloadPng={downloadPng}
+            importPng={importPng}
+            downloadSimulationJson={downloadSimulationJson}
+            handleSave={handleSave}
+            isExporting={isExporting}
+            handleShareSimulation={handleShareSimulation}
+            isSharingSimulation={isSharingSimulation}
+            refreshProjectList={refreshProjectList}
+            showProjectsDropdown={showProjectsDropdown}
+            setShowProjectsDropdown={setShowProjectsDropdown}
+            handleNewProject={handleNewProject}
+            handleStartRename={handleStartRename}
+            handleConfirmRename={handleConfirmRename}
+            renamingProjectId={renamingProjectId}
+            setRenamingProjectId={setRenamingProjectId}
+            renameValue={renameValue}
+            setRenameValue={setRenameValue}
+            handleLoadProject={handleLoadProject}
+            handleDeleteProject={handleDeleteProject}
+            handleBackupWorkflow={handleBackupWorkflow}
+            backupRestoreInputRef={backupRestoreInputRef}
+            wokwiImportInputRef={wokwiImportInputRef}
+            handleImportWokwiZip={handleImportWokwiZip}
+            handleRestoreWorkflow={handleRestoreWorkflow}
+            handleSyncToCloud={handleSyncToCloud}
+            user={activeUser}
+            gamPanelOpen={gamPanelOpen}
+            setGamPanelOpen={setGamPanelOpen}
+            gamificationMode={gamificationMode}
+            navigate={navigate}
+            isAuthenticated={isAnyAuthenticated}
+            myProjects={myProjects}
+            currentProjectId={currentProjectId}
+            projectName={currentProjectName}
+            formatProjectDate={formatProjectDate}
+            saveHistory={saveHistory}
+            setWires={setWires}
+            setComponents={setComponents}
+            setSelected={setSelected}
+            history={history}
+            components={components}
+            wires={wires}
+            webSerialSupported={webSerialSupported}
+            hardwareBoards={boardComponents}
+            hardwareBoardId={hardwareBoardId}
+            setHardwareBoardId={handleHardwareBoardChange}
+            hardwarePortPath={hardwarePortPath}
+            setHardwarePortPath={setHardwarePortPath}
+            resolvedHardwarePort={resolvedHardwarePort}
+            hardwareAvailablePorts={hardwareAvailablePorts}
+            showAllHardwarePorts={showAllHardwarePorts}
+            setShowAllHardwarePorts={setShowAllHardwarePorts}
+            refreshHardwarePorts={refreshHardwarePorts}
+            isLoadingHardwarePorts={isLoadingHardwarePorts}
+            hardwareBaudRate={hardwareBaudRate}
+            setHardwareBaudRate={setHardwareBaudRate}
+            hardwareResetMethod={hardwareResetMethod}
+            setHardwareResetMethod={setHardwareResetMethod}
+            connectHardwareSerial={connectHardwareSerial}
+            disconnectHardwareSerial={disconnectHardwareSerial}
+            uploadToHardware={handleUploadToHardware}
+            hardwareConnected={hardwareConnected}
+            hardwareConnecting={hardwareConnecting}
+            isUploadingHardware={isUploadingHardware}
+            hardwareStatus={hardwareStatus}
+            editingDisabled={liveEditingDisabled}
+            setShowProjectsSidebar={setShowProjectsSidebar}
+            setProjectsSidebarTab={setProjectsSidebarTab}
+            validationErrors={validationErrors}
+            autofixPlan={autofixPlan}
+            autofixStatus={autofixStatus}
+            autofixLog={autofixLog}
+            onApplyPlan={handleApplyPlan}
+            onRefresh={triggerAutofixAnalysis}
+            autoWiringEnabled={autoWiringEnabled}
+            setAutoWiringEnabled={setAutoWiringEnabled}
+            autoBreadboardEnabled={autoBreadboardEnabled}
+            setAutoBreadboardEnabled={setAutoBreadboardEnabled}
+            autoCodingEnabled={autoCodingEnabled}
+            setAutoCodingEnabled={setAutoCodingEnabled}
+            showAutofix={showAutofix}
+            setShowAutofix={setShowAutofix}
+            showShortcuts={showShortcuts}
+            setShowShortcuts={setShowShortcuts}
+            useBlocklyCode={useBlocklyCode}
+            setUseBlocklyCode={setUseBlocklyCode}
+            onStartTour={() => {
+              localStorage.removeItem("openhw-tour-completed");
+              setShowTour(true);
+            }}
+            returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+            code={code}
+          />
         )}
 
         {!canvasOnly && (<>
-        <SimulatorStatusBanners
-          studentAssignmentMode={studentAssignmentMode}
-          assignmentSubmissionAssignment={assignmentSubmissionAssignment}
-          isAssignmentSubmissionClosed={isAssignmentSubmissionClosed}
-          assignmentSubmissionState={assignmentSubmissionState}
-          handleSubmitClassAssignment={handleSubmitClassAssignment}
-          liveMeetingMode={liveMeetingMode}
-          isLiveTeacher={isLiveTeacher}
-          liveCanEdit={liveCanEdit}
-          liveMeetingShareCode={liveMeetingShareCode}
-          liveSessionCode={liveSessionCode}
-          liveMeetingStatus={liveMeetingStatus}
-          liveMeetingParticipantCounts={liveMeetingParticipantCounts}
-          liveEditRequestPending={liveEditRequestPending}
-          handleRequestLiveEditAccess={handleRequestLiveEditAccess}
-          handleEndLiveEditAccess={handleEndLiveEditAccess}
-          liveGrantedEditors={liveGrantedEditors}
-          handleRespondToLiveEditRequest={handleRespondToLiveEditRequest}
-          livePendingEditRequests={livePendingEditRequests}
-        />
+          <SimulatorStatusBanners
+            studentAssignmentMode={studentAssignmentMode}
+            assignmentSubmissionAssignment={assignmentSubmissionAssignment}
+            isAssignmentSubmissionClosed={isAssignmentSubmissionClosed}
+            assignmentSubmissionState={assignmentSubmissionState}
+            handleSubmitClassAssignment={handleSubmitClassAssignment}
+            liveMeetingMode={liveMeetingMode}
+            isLiveTeacher={isLiveTeacher}
+            liveCanEdit={liveCanEdit}
+            liveMeetingShareCode={liveMeetingShareCode}
+            liveSessionCode={liveSessionCode}
+            liveMeetingStatus={liveMeetingStatus}
+            liveMeetingParticipantCounts={liveMeetingParticipantCounts}
+            liveEditRequestPending={liveEditRequestPending}
+            handleRequestLiveEditAccess={handleRequestLiveEditAccess}
+            handleEndLiveEditAccess={handleEndLiveEditAccess}
+            liveGrantedEditors={liveGrantedEditors}
+            handleRespondToLiveEditRequest={handleRespondToLiveEditRequest}
+            livePendingEditRequests={livePendingEditRequests}
+          />
 
-        <SimulatorDialogsGroup
-          activeUser={activeUser}
-          showShareDialog={showShareDialog}
-          setShowShareDialog={setShowShareDialog}
-          isSharingSimulation={isSharingSimulation}
-          shareUrl={shareUrl}
-          handleCopyShareUrl={handleCopyShareUrl}
-          shareCopied={shareCopied}
-          showSaveDialog={showSaveDialog}
-          setShowSaveDialog={setShowSaveDialog}
-          saveDialogName={saveDialogName}
-          setSaveDialogName={setSaveDialogName}
-          handleConfirmSave={handleConfirmSave}
-          showFirmwareDownloadDialog={showFirmwareDownloadDialog}
-          setShowFirmwareDownloadDialog={setShowFirmwareDownloadDialog}
-          firmwareDownloadTarget={firmwareDownloadTarget}
-          setFirmwareDownloadTarget={setFirmwareDownloadTarget}
-          firmwareBoardOptions={firmwareBoardOptions}
-          handleDownloadFirmware={handleDownloadFirmware}
-          showFirmwareUploadDialog={showFirmwareUploadDialog}
-          setShowFirmwareUploadDialog={setShowFirmwareUploadDialog}
-          boardComponentMap={boardComponentMap}
-          normalizeBoardKind={normalizeBoardKind}
-          toggleBoardFirmwareSource={toggleBoardFirmwareSource}
-          setFirmwareUploadTarget={setFirmwareUploadTarget}
-          firmwareUploadInputRef={firmwareUploadInputRef}
-          firmwareUploadTarget={firmwareUploadTarget}
-          applyUploadedFirmwareToBoard={applyUploadedFirmwareToBoard}
-        />
+          <SimulatorDialogsGroup
+            activeUser={activeUser}
+            showShareDialog={showShareDialog}
+            setShowShareDialog={setShowShareDialog}
+            isSharingSimulation={isSharingSimulation}
+            shareUrl={shareUrl}
+            handleCopyShareUrl={handleCopyShareUrl}
+            shareCopied={shareCopied}
+            showSaveDialog={showSaveDialog}
+            setShowSaveDialog={setShowSaveDialog}
+            saveDialogName={saveDialogName}
+            setSaveDialogName={setSaveDialogName}
+            handleConfirmSave={handleConfirmSave}
+            showFirmwareDownloadDialog={showFirmwareDownloadDialog}
+            setShowFirmwareDownloadDialog={setShowFirmwareDownloadDialog}
+            firmwareDownloadTarget={firmwareDownloadTarget}
+            setFirmwareDownloadTarget={setFirmwareDownloadTarget}
+            firmwareBoardOptions={firmwareBoardOptions}
+            handleDownloadFirmware={handleDownloadFirmware}
+            showFirmwareUploadDialog={showFirmwareUploadDialog}
+            setShowFirmwareUploadDialog={setShowFirmwareUploadDialog}
+            boardComponentMap={boardComponentMap}
+            normalizeBoardKind={normalizeBoardKind}
+            toggleBoardFirmwareSource={toggleBoardFirmwareSource}
+            setFirmwareUploadTarget={setFirmwareUploadTarget}
+            firmwareUploadInputRef={firmwareUploadInputRef}
+            firmwareUploadTarget={firmwareUploadTarget}
+            applyUploadedFirmwareToBoard={applyUploadedFirmwareToBoard}
+          />
 
-        <SimulatorChromeOverlays
-          previewBanner={previewBanner}
-          setPreviewBanner={setPreviewBanner}
-          isExporting={isExporting}
-          gamificationMode={gamificationMode}
-          gamProject={gamProject}
-          navigate={navigate}
-          currentLevelData={currentLevelData}
-          currentLevel={currentLevel}
-          xpProgress={xpProgress}
-          nextLevel={nextLevel}
-          coins={coins}
-          gamAllUnlocked={gamAllUnlocked}
-          gamLockedCount={gamLockedCount}
-          gamPanelOpen={gamPanelOpen}
-          setGamPanelOpen={setGamPanelOpen}
-          handleGamificationSubmit={handleGamificationSubmit}
-          lockToast={lockToast}
-          wireStart={wireStart}
-          userRole={user?.role}
-        />
+          <SimulatorChromeOverlays
+            previewBanner={previewBanner}
+            setPreviewBanner={setPreviewBanner}
+            isExporting={isExporting}
+            gamificationMode={gamificationMode}
+            gamProject={gamProject}
+            navigate={navigate}
+            currentLevelData={currentLevelData}
+            currentLevel={currentLevel}
+            xpProgress={xpProgress}
+            nextLevel={nextLevel}
+            coins={coins}
+            gamAllUnlocked={gamAllUnlocked}
+            gamLockedCount={gamLockedCount}
+            gamPanelOpen={gamPanelOpen}
+            setGamPanelOpen={setGamPanelOpen}
+            handleGamificationSubmit={handleGamificationSubmit}
+            lockToast={lockToast}
+            wireStart={wireStart}
+            userRole={user?.role}
+          />
         </>)}
 
         <F1MenuOverlay
@@ -13345,43 +13346,43 @@ loadDemoProject();
           onClick={() => setProjContextMenu(null)}
         >
           {!canvasOnly && (
-          <>
-          {/* PALETTE — hover to expand */}
-          <PalettePanel
-            isPaletteHovered={isPaletteHovered}
-            setIsPaletteHovered={setIsPaletteHovered}
-            theme={theme}
-            liveEditingDisabled={liveEditingDisabled}
-            addComponentAtCenter={addComponentAtCenter}
-            onPaletteDragStart={onPaletteDragStart}
-            handleUploadZip={handleUploadZip}
-            openComponentEditor={openComponentEditor}
-            showLockToast={showLockToast}
-            isPaletteItemLocked={isPaletteItemLocked}
-            CATALOG={LOCAL_CATALOG}
-            GROUP_COLORS={GROUP_COLORS}
-            GROUP_ICON_SVG={GROUP_ICON_SVG}
-            COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-            COMPONENT_DESCRIPTIONS={COMPONENT_DESCRIPTIONS}
-            WOKWI_TO_COMP_ID={WOKWI_TO_COMP_ID}
-            componentZipInputRef={componentZipInputRef}
-            buildLogicSourceFromRegistry={buildLogicSourceFromRegistry}
-            buildUiSourceFromRegistry={buildUiSourceFromRegistry}
-            buildValidationSourceFromRegistry={
-              buildValidationSourceFromRegistry
-            }
-            buildIndexSourceFromRegistry={buildIndexSourceFromRegistry}
-            forceExpand={
-              tourActiveStep === "palette" || tourActiveStep === "drag-demo"
-            }
-            writeEditCopyPayload={writeEditCopyPayload}
-          />
+            <>
+              {/* PALETTE — hover to expand */}
+              <PalettePanel
+                isPaletteHovered={isPaletteHovered}
+                setIsPaletteHovered={setIsPaletteHovered}
+                theme={theme}
+                liveEditingDisabled={liveEditingDisabled}
+                addComponentAtCenter={addComponentAtCenter}
+                onPaletteDragStart={onPaletteDragStart}
+                handleUploadZip={handleUploadZip}
+                openComponentEditor={openComponentEditor}
+                showLockToast={showLockToast}
+                isPaletteItemLocked={isPaletteItemLocked}
+                CATALOG={LOCAL_CATALOG}
+                GROUP_COLORS={GROUP_COLORS}
+                GROUP_ICON_SVG={GROUP_ICON_SVG}
+                COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                COMPONENT_DESCRIPTIONS={COMPONENT_DESCRIPTIONS}
+                WOKWI_TO_COMP_ID={WOKWI_TO_COMP_ID}
+                componentZipInputRef={componentZipInputRef}
+                buildLogicSourceFromRegistry={buildLogicSourceFromRegistry}
+                buildUiSourceFromRegistry={buildUiSourceFromRegistry}
+                buildValidationSourceFromRegistry={
+                  buildValidationSourceFromRegistry
+                }
+                buildIndexSourceFromRegistry={buildIndexSourceFromRegistry}
+                forceExpand={
+                  tourActiveStep === "palette" || tourActiveStep === "drag-demo"
+                }
+                writeEditCopyPayload={writeEditCopyPayload}
+              />
 
-          <CreateComponentModal
-            open={showCreateComponentModal}
-            onClose={handleCloseCreateComponentModal}
-          />
-          </>)} 
+              <CreateComponentModal
+                open={showCreateComponentModal}
+                onClose={handleCloseCreateComponentModal}
+              />
+            </>)}
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
@@ -13414,7 +13415,7 @@ loadDemoProject();
               e.preventDefault();
               e.dataTransfer.dropEffect = "copy";
             }}
-            onMouseMove={() => {}}
+            onMouseMove={() => { }}
             onMouseDown={(e) => {
               if (isCanvasLocked || wireStart || movingComp.current) return;
               if (e.button !== 0 && e.button !== 1) return;
@@ -13435,11 +13436,11 @@ loadDemoProject();
                 const newPt = {
                   x: snapToGrid(
                     (e.clientX - r.left - canvasOffsetRef.current.x) /
-                      canvasZoom,
+                    canvasZoom,
                   ),
                   y: snapToGrid(
                     (e.clientY - r.top - canvasOffsetRef.current.y) /
-                      canvasZoom,
+                    canvasZoom,
                   ),
                 };
                 setWireStart((prev) => ({
@@ -13563,43 +13564,43 @@ loadDemoProject();
               }}>
                 {!isRunning ? (
                   <>
-                  <button
-                    onClick={handleRun}
-                    disabled={isCompiling}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'var(--accent)', border: 'none', color: '#000',
-                      padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                      cursor: isCompiling ? 'wait' : 'pointer',
-                      opacity: isCompiling ? 0.6 : 1, transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { if (!isCompiling) { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 4px 12px rgba(0,212,255,0.4)' }}}
-                    onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = 'none' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                    {isCompiling ? 'Compiling...' : 'Run'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const url = `/${projectName}/demo`
-                      if (window.self !== window.top) {
-                        window.parent.location.href = url
-                      } else {
-                        window.location.href = url
-                      }
-                    }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                      cursor: 'pointer', transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.2)' }}
-                    onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.1)' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                    Edit
-                  </button>
+                    <button
+                      onClick={handleRun}
+                      disabled={isCompiling}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'var(--accent)', border: 'none', color: '#000',
+                        padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                        cursor: isCompiling ? 'wait' : 'pointer',
+                        opacity: isCompiling ? 0.6 : 1, transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => { if (!isCompiling) { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 4px 12px rgba(0,212,255,0.4)' } }}
+                      onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = 'none' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                      {isCompiling ? 'Compiling...' : 'Run'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const url = `/${projectName}/demo`
+                        if (window.self !== window.top) {
+                          window.parent.location.href = url
+                        } else {
+                          window.location.href = url
+                        }
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
+                        color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                        cursor: 'pointer', transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.2)' }}
+                      onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.1)' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
+                      Edit
+                    </button>
                   </>
                 ) : (
                   <>
@@ -13737,502 +13738,378 @@ loadDemoProject();
           </main>
 
           {!canvasOnly && (
-          <>
-          {/* ── QuickAddPortal — mounts to document.body, zero canvas re-render cost ── */}
-          <QuickAddPortal
-            catalog={LOCAL_CATALOG}
-            onAddComponentRef={addComponentAtRef}
-            isPaletteItemLocked={isPaletteItemLocked}
-            showLockToast={showLockToast}
-          />
+            <>
+              {/* ── QuickAddPortal — mounts to document.body, zero canvas re-render cost ── */}
+              <QuickAddPortal
+                catalog={LOCAL_CATALOG}
+                onAddComponentRef={addComponentAtRef}
+                isPaletteItemLocked={isPaletteItemLocked}
+                showLockToast={showLockToast}
+              />
 
-          {/* RIGHT PANEL */}
-          <RightPanel
-            ref={rightPanelRef}
-            isPanelOpen={isPanelOpen}
-            panelWidth={panelWidth}
-            isDragging={isDragging}
-            onMouseDownResize={onMouseDownResize}
-            setIsPanelOpen={setIsPanelOpen}
-            explorerWidth={explorerWidth}
-            isExplorerDragging={isExplorerDragging}
-            onMouseDownExplorerResize={onMouseDownExplorerResize}
-            selected={selected}
-            setSelected={setSelected}
-            theme={theme}
-            projectName={currentProjectName}
-            validationErrors={validationErrors}
-            showValidation={showValidation}
-            setShowValidation={setShowValidation}
-            healthScore={healthScore}
-            applyFix={applyFix}
-            codeTab={codeTab}
-            setCodeTab={setCodeTab}
-            code={code}
-            setCode={setCode}
-            blocklyXml={blocklyXml}
-            setBlocklyXml={setBlocklyXml}
-            blocklyGeneratedCode={blocklyGeneratedCode}
-            setBlocklyGeneratedCode={setBlocklyGeneratedCode}
-            useBlocklyCode={useBlocklyCode}
-            setUseBlocklyCode={setUseBlocklyCode}
-            blocklyDisabled={blocklyDisabled}
-            setBlocklyDisabled={setBlocklyDisabled}
-            projectFiles={projectFiles}
-            openCodeTabs={openCodeTabs}
-            activeCodeFileId={activeCodeFileId}
-            showCodeExplorer={showCodeExplorer}
-            onToggleCodeExplorer={() => setShowCodeExplorer((v) => !v)}
-            onOpenCodeFile={openCodeFile}
-            onCloseCodeTab={closeCodeTab}
-            onSaveCodeFile={saveCodeFile}
-            onDuplicateCodeFile={duplicateCodeFile}
-            onRenameCodeFile={renameCodeFile}
-            onDeleteCodeFile={deleteCodeFile}
-            onDownloadCodeFile={downloadCodeFile}
-            onToggleCodeFileDisabled={toggleCodeFileDisabled}
-            onCreateCodeFile={createCodeFile}
-            onCreateCodeTab={createCodeTab}
-            onUploadCodeFile={uploadCodeFile}
-            libQuery={libQuery}
-            setLibQuery={setLibQuery}
-            handleSearchLibraries={handleSearchLibraries}
-            isSearchingLib={isSearchingLib}
-            libMessage={libMessage}
-            libInstalled={libInstalled}
-            libResults={libResults}
-            handleInstallLibrary={handleInstallLibrary}
-            installingLib={installingLib}
-            serialPaused={serialPaused}
-            setSerialPaused={setSerialPaused}
-            isRunning={isRunning}
-            serialHistory={serialHistory}
-            setSerialHistory={setSerialHistory}
-            serialOutputRef={serialOutputRef}
-            serialInput={serialInput}
-            setSerialInput={setSerialInput}
-            sendSerialInput={sendSerialInput}
-            clearSerialMonitor={clearSerialMonitor}
-            serialViewMode={serialViewMode}
-            setSerialViewMode={setSerialViewMode}
-            serialBoardFilter={serialBoardFilter}
-            setSerialBoardFilter={setSerialBoardFilter}
-            serialBoardOptions={serialBoardOptions}
-            serialBoardLabels={serialBoardLabels}
-            serialBoardKinds={serialBoardKinds}
-            serialBoardSourceModes={rp2040BoardSourceModes}
-            serialBaudRate={serialBaudRate}
-            setSerialBaudRate={updateGlobalBaudRate}
-            serialBaudOptions={serialBaudOptions}
-            serialLineEnding={serialLineEnding}
-            setSerialLineEnding={setSerialLineEnding}
-            hardwareConnected={hardwareConnected}
-            plotterPaused={plotterPaused}
-            setPlotterPaused={setPlotterPaused}
-            plotDataRef={plotDataRef}
-            selectedPlotPins={selectedPlotPins}
-            setSelectedPlotPins={setSelectedPlotPins}
-            serialPlotLabelsRef={serialPlotLabelsRef}
-            plotterTimeDiv={plotterTimeDiv}
-            setPlotterTimeDiv={setPlotterTimeDiv}
-            showConnectionsPanel={showConnectionsPanel}
-            wires={wires}
-            updateWireColor={updateWireColor}
-            deleteWire={deleteWire}
-            boardComponentMap={boardComponentMap}
-            onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
-            editingDisabled={liveEditingDisabled}
-            editingDisabledMessage={
-              liveMeetingMode
-                ? "Teacher approval is required before you can edit this live simulation."
-                : "Editing is disabled."
-            }
-            boardLineEndings={boardLineEndings}
-            setBoardLineEndings={setBoardLineEndings}
-            boardAutoscrolls={boardAutoscrolls}
-            setBoardAutoscrolls={setBoardAutoscrolls}
-            boardBaudRates={boardBaudRates}
-            setBoardBaudRates={updateBoardBaudRate}
-            boardPausedStates={boardPausedStates}
-            setBoardPausedStates={setBoardPausedStates}
-            boardInputs={boardInputs}
-            setBoardInputs={setBoardInputs}
-            isSerialSplit={isSerialSplit}
-            setIsSerialSplit={setIsSerialSplit}
-            serialSplitRatio={serialSplitRatio}
-            setSerialSplitRatio={setSerialSplitRatio}
-            serialBoardFilter2={serialBoardFilter2}
-            setSerialBoardFilter2={setSerialBoardFilter2}
-          />
+              {/* RIGHT PANEL */}
+              <RightPanel
+                ref={rightPanelRef}
+                isPanelOpen={isPanelOpen}
+                panelWidth={panelWidth}
+                isDragging={isDragging}
+                onMouseDownResize={onMouseDownResize}
+                setIsPanelOpen={setIsPanelOpen}
+                explorerWidth={explorerWidth}
+                isExplorerDragging={isExplorerDragging}
+                onMouseDownExplorerResize={onMouseDownExplorerResize}
+                selected={selected}
+                setSelected={setSelected}
+                theme={theme}
+                projectName={currentProjectName}
+                validationErrors={validationErrors}
+                showValidation={showValidation}
+                setShowValidation={setShowValidation}
+                healthScore={healthScore}
+                applyFix={applyFix}
+                codeTab={codeTab}
+                setCodeTab={setCodeTab}
+                code={code}
+                setCode={setCode}
+                blocklyXml={blocklyXml}
+                setBlocklyXml={setBlocklyXml}
+                blocklyGeneratedCode={blocklyGeneratedCode}
+                setBlocklyGeneratedCode={setBlocklyGeneratedCode}
+                useBlocklyCode={useBlocklyCode}
+                setUseBlocklyCode={setUseBlocklyCode}
+                blocklyDisabled={blocklyDisabled}
+                setBlocklyDisabled={setBlocklyDisabled}
+                projectFiles={projectFiles}
+                openCodeTabs={openCodeTabs}
+                activeCodeFileId={activeCodeFileId}
+                showCodeExplorer={showCodeExplorer}
+                onToggleCodeExplorer={() => setShowCodeExplorer((v) => !v)}
+                onOpenCodeFile={openCodeFile}
+                onCloseCodeTab={closeCodeTab}
+                onSaveCodeFile={saveCodeFile}
+                onDuplicateCodeFile={duplicateCodeFile}
+                onRenameCodeFile={renameCodeFile}
+                onDeleteCodeFile={deleteCodeFile}
+                onDownloadCodeFile={downloadCodeFile}
+                onToggleCodeFileDisabled={toggleCodeFileDisabled}
+                onCreateCodeFile={createCodeFile}
+                onCreateCodeTab={createCodeTab}
+                onUploadCodeFile={uploadCodeFile}
+                libQuery={libQuery}
+                setLibQuery={setLibQuery}
+                handleSearchLibraries={handleSearchLibraries}
+                isSearchingLib={isSearchingLib}
+                libMessage={libMessage}
+                libInstalled={libInstalled}
+                libResults={libResults}
+                handleInstallLibrary={handleInstallLibrary}
+                installingLib={installingLib}
+                serialPaused={serialPaused}
+                setSerialPaused={setSerialPaused}
+                isRunning={isRunning}
+                serialHistory={serialHistory}
+                setSerialHistory={setSerialHistory}
+                serialOutputRef={serialOutputRef}
+                serialInput={serialInput}
+                setSerialInput={setSerialInput}
+                sendSerialInput={sendSerialInput}
+                clearSerialMonitor={clearSerialMonitor}
+                serialViewMode={serialViewMode}
+                setSerialViewMode={setSerialViewMode}
+                serialBoardFilter={serialBoardFilter}
+                setSerialBoardFilter={setSerialBoardFilter}
+                serialBoardOptions={serialBoardOptions}
+                serialBoardLabels={serialBoardLabels}
+                serialBoardKinds={serialBoardKinds}
+                serialBoardSourceModes={rp2040BoardSourceModes}
+                serialBaudRate={serialBaudRate}
+                setSerialBaudRate={updateGlobalBaudRate}
+                serialBaudOptions={serialBaudOptions}
+                serialLineEnding={serialLineEnding}
+                setSerialLineEnding={setSerialLineEnding}
+                hardwareConnected={hardwareConnected}
+                plotterPaused={plotterPaused}
+                setPlotterPaused={setPlotterPaused}
+                plotDataRef={plotDataRef}
+                selectedPlotPins={selectedPlotPins}
+                setSelectedPlotPins={setSelectedPlotPins}
+                serialPlotLabelsRef={serialPlotLabelsRef}
+                plotterTimeDiv={plotterTimeDiv}
+                setPlotterTimeDiv={setPlotterTimeDiv}
+                showConnectionsPanel={showConnectionsPanel}
+                wires={wires}
+                updateWireColor={updateWireColor}
+                deleteWire={deleteWire}
+                boardComponentMap={boardComponentMap}
+                onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
+                editingDisabled={liveEditingDisabled}
+                editingDisabledMessage={
+                  liveMeetingMode
+                    ? "Teacher approval is required before you can edit this live simulation."
+                    : "Editing is disabled."
+                }
+                boardLineEndings={boardLineEndings}
+                setBoardLineEndings={setBoardLineEndings}
+                boardAutoscrolls={boardAutoscrolls}
+                setBoardAutoscrolls={setBoardAutoscrolls}
+                boardBaudRates={boardBaudRates}
+                setBoardBaudRates={updateBoardBaudRate}
+                boardPausedStates={boardPausedStates}
+                setBoardPausedStates={setBoardPausedStates}
+                boardInputs={boardInputs}
+                setBoardInputs={setBoardInputs}
+                isSerialSplit={isSerialSplit}
+                setIsSerialSplit={setIsSerialSplit}
+                serialSplitRatio={serialSplitRatio}
+                setSerialSplitRatio={setSerialSplitRatio}
+                serialBoardFilter2={serialBoardFilter2}
+                setSerialBoardFilter2={setSerialBoardFilter2}
+              />
 
-          <ProjectsSidebarChrome
-            showProjectsSidebar={showProjectsSidebar}
-            setShowProjectsSidebar={setShowProjectsSidebar}
-            projectsSidebarTab={projectsSidebarTab}
-            setProjectsSidebarTab={setProjectsSidebarTab}
-            favouriteProjectIds={favouriteProjectIds}
-            myProjects={myProjects}
-            currentProjectId={currentProjectId}
-            renamingProjectId={renamingProjectId}
-            setRenamingProjectId={setRenamingProjectId}
-            renameValue={renameValue}
-            setRenameValue={setRenameValue}
-            handleConfirmRename={handleConfirmRename}
-            formatProjectDate={formatProjectDate}
-            handleNewProject={handleNewProject}
-            handleLoadProject={handleLoadProject}
-            isRunning={isRunning}
-            isAnyAuthenticated={isAnyAuthenticated}
-            isAuthenticated={isAuthenticated}
-            activeUser={activeUser}
-            navigate={navigate}
-            logout={logout}
-            autoSaveEnabled={autoSaveEnabled}
-            setAutoSaveEnabled={setAutoSaveEnabled}
-            handleBackupWorkflow={handleBackupWorkflow}
-            backupRestoreInputRef={backupRestoreInputRef}
-            wokwiImportInputRef={wokwiImportInputRef}
-            handleSyncToCloud={handleSyncToCloud}
-            setShowCreateComponentModal={setShowCreateComponentModal}
-            projContextMenu={projContextMenu}
-            toggleFavourite={toggleFavourite}
-            handleCopyProject={handleCopyProject}
-            handleStartRename={handleStartRename}
-            handleDeleteProject={handleDeleteProject}
-            setProjContextMenu={setProjContextMenu}
-            gamificationMode={gamificationMode}
-            assessmentMode={assessmentMode}
-          />
+              <ProjectsSidebarChrome
+                showProjectsSidebar={showProjectsSidebar}
+                setShowProjectsSidebar={setShowProjectsSidebar}
+                projectsSidebarTab={projectsSidebarTab}
+                setProjectsSidebarTab={setProjectsSidebarTab}
+                favouriteProjectIds={favouriteProjectIds}
+                myProjects={myProjects}
+                currentProjectId={currentProjectId}
+                renamingProjectId={renamingProjectId}
+                setRenamingProjectId={setRenamingProjectId}
+                renameValue={renameValue}
+                setRenameValue={setRenameValue}
+                handleConfirmRename={handleConfirmRename}
+                formatProjectDate={formatProjectDate}
+                handleNewProject={handleNewProject}
+                handleLoadProject={handleLoadProject}
+                isRunning={isRunning}
+                isAnyAuthenticated={isAnyAuthenticated}
+                isAuthenticated={isAuthenticated}
+                activeUser={activeUser}
+                navigate={navigate}
+                logout={logout}
+                autoSaveEnabled={autoSaveEnabled}
+                setAutoSaveEnabled={setAutoSaveEnabled}
+                handleBackupWorkflow={handleBackupWorkflow}
+                backupRestoreInputRef={backupRestoreInputRef}
+                wokwiImportInputRef={wokwiImportInputRef}
+                handleSyncToCloud={handleSyncToCloud}
+                setShowCreateComponentModal={setShowCreateComponentModal}
+                projContextMenu={projContextMenu}
+                toggleFavourite={toggleFavourite}
+                handleCopyProject={handleCopyProject}
+                handleStartRename={handleStartRename}
+                handleDeleteProject={handleDeleteProject}
+                setProjContextMenu={setProjContextMenu}
+                gamificationMode={gamificationMode}
+                assessmentMode={assessmentMode}
+              />
 
-          {gamificationMode && gamPanelOpen && gamProject && user?.role !== 'user' && (
-            <GamificationGuidePanel
-              gamTab={gamTab}
-              setGamTab={setGamTab}
-              gamProject={gamProject}
-              gamAllUnlocked={gamAllUnlocked}
-              gamLockedCount={gamLockedCount}
-              gamProjectComponents={gamProjectComponents}
-              navigate={navigate}
-              handleGamificationSubmit={handleGamificationSubmit}
-            />
-          )}
-
-          {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
-          {showSpeedDialog && (
-            <div
-              className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
-              onClick={() => chrome.setShowSpeedDialog(false)}
-            >
-              <div
-                className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="text-base font-bold mb-2 text-[var(--text)]">
-                  Simulation Speed
-                </div>
-                <div className="text-xs text-[var(--text3)] mb-6 leading-relaxed">
-                  Adjust how fast the simulation runs relative to real-time.
-                  Higher speeds may impact UI responsiveness.
-                </div>
-
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[10px] font-bold text-[var(--text2)] uppercase tracking-wider">
-                      Current Rate
-                    </span>
-                    <span className="text-sm font-mono font-bold text-[var(--accent)]">
-                      {simulationSpeed.toFixed(1)}x
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="10"
-                    step="0.1"
-                    value={simulationSpeed}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setSimulationSpeed(val);
-                      if (isRunning && workerRef.current) {
-                        workerRef.current.postMessage({
-                          type: "SET_SPEED",
-                          speed: val,
-                        });
-                      }
-                    }}
-                    className="w-full accent-[var(--accent)] h-1.5 bg-[var(--border)] rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between mt-2 text-[9px] text-[var(--text3)] font-mono">
-                    <span>0.1x</span>
-                    <span>1.0x</span>
-                    <span>5.0x</span>
-                    <span>10.0x</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mb-6">
-                  {[0.1, 0.5, 1.0, 2.0, 5.0, 10.0].map((val) => (
-                    <Btn
-                      key={val}
-                      onClick={() => {
-                        setSimulationSpeed(val);
-                        if (isRunning && workerRef.current) {
-                          workerRef.current.postMessage({
-                            type: "SET_SPEED",
-                            speed: val,
-                          });
-                        }
-                      }}
-                      color={simulationSpeed === val ? "var(--accent)" : ""}
-                      style={{ fontSize: "11px", padding: "6px 0" }}
-                    >
-                      {val === 1.0 ? "Normal" : `${val}x`}
-                    </Btn>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    justifyContent: "flex-end",
-                    borderTop: "1px solid var(--border)",
-                    paddingTop: "16px",
-                  }}
-                >
-                  <Btn
-                    onClick={() => {
-                      const resetSpeed = 1.0;
-                      setSimulationSpeed(resetSpeed);
-                      if (isRunning && workerRef.current) {
-                        workerRef.current.postMessage({
-                          type: "SET_SPEED",
-                          speed: resetSpeed,
-                        });
-                      }
-                    }}
-                  >
-                    Reset
-                  </Btn>
-                  <Btn
-                    color="var(--accent)"
-                    onClick={() => chrome.setShowSpeedDialog(false)}
-                  >
-                    Done
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── ENGINE SELECTOR DIALOG ─────────────────────────────────────── */}
-          {showEngineSelector && (
-            <div
-              className="fixed inset-0 bg-[rgba(0,0,0,.6)] backdrop-blur-sm flex items-center justify-center z-[9999]"
-              onClick={() => setShowEngineSelector(false)}
-            >
-              <div
-                className="bg-[var(--bg2)] border border-[var(--border)] rounded-2xl p-8 w-[480px] shadow-[0_20px_60px_rgba(0,0,0,.6)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="text-xl font-bold mb-2 text-[var(--text)] tracking-tight">
-                  Select Simulation Engine
-                </div>
-                <div className="text-sm text-[var(--text3)] mb-8 leading-relaxed">
-                  Choose the computational engine that best fits your simulation
-                  needs. Changes are applied in real-time.
-                </div>
-
-                <div className="space-y-4 mb-8">
-                  {/* Classic Logic Option */}
-                  <div
-                    className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === "logic" ? "border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]" : "border-[var(--border)] hover:border-[var(--border-hover)]"}`}
-                    onClick={() => {
-                      setSolverMode("logic");
-                    }}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="font-bold text-[var(--text)]">
-                        Classic Logic
-                      </span>
-                      {solverMode === "logic" && (
-                        <span className="text-[10px] bg-[var(--accent)] text-white px-3 py-1 rounded-full font-bold uppercase tracking-wider">
-                          This is Current Engine
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-[var(--text2)] leading-normal">
-                      High-performance Boolean propagation. Ideal for large
-                      digital circuits and low-end hardware.
-                    </div>
-                  </div>
-                </div>
-
-                <Btn
-                  onClick={() => setShowEngineSelector(false)}
-                  style={{
-                    width: "100%",
-                    padding: "14px",
-                    borderRadius: "12px",
-                  }}
-                  className="font-bold tracking-wide"
-                >
-                  Continue with Classic Logic
-                </Btn>
-              </div>
-            </div>
-          )}
-
-          {/* COMPONENT INSPECTOR HUD - High Performance Telemetry */}
-          {showInspector && hoveredElement && (
-            <div
-              style={{
-                position: "fixed",
-                left:
-                  mousePos.x * canvasZoom +
-                  canvasOffset.x +
-                  (canvasRef.current?.getBoundingClientRect().left || 0) +
-                  20,
-                top:
-                  mousePos.y * canvasZoom +
-                  canvasOffset.y +
-                  (canvasRef.current?.getBoundingClientRect().top || 0) +
-                  20,
-                background: "#0f172a",
-                border: "1px solid #334155",
-                borderRadius: "12px",
-                padding: "14px",
-                zIndex: 100000,
-                color: "#f8fafc",
-                fontFamily: "'Inter', system-ui, sans-serif",
-                fontSize: "11px",
-                pointerEvents: "none",
-                boxShadow: "0 20px 50px -12px rgba(0, 0, 0, 0.6)",
-                minWidth: "200px",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "9px",
-                    color: "#94a3b8",
-                    fontWeight: "800",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  Electrical Telemetry
-                </div>
-                <div
-                  style={{
-                    width: "6px",
-                    height: "6px",
-                    borderRadius: "50%",
-                    background: "#4ade80",
-                    boxShadow: "0 0 8px #4ade80",
-                  }}
+              {gamificationMode && gamPanelOpen && gamProject && user?.role !== 'user' && (
+                <GamificationGuidePanel
+                  gamTab={gamTab}
+                  setGamTab={setGamTab}
+                  gamProject={gamProject}
+                  gamAllUnlocked={gamAllUnlocked}
+                  gamLockedCount={gamLockedCount}
+                  gamProjectComponents={gamProjectComponents}
+                  navigate={navigate}
+                  handleGamificationSubmit={handleGamificationSubmit}
                 />
-              </div>
+              )}
 
-              <div style={{ marginBottom: "12px" }}>
+              {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
+              {showSpeedDialog && (
                 <div
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: "800",
-                    color: "#fff",
-                    marginBottom: "2px",
-                  }}
+                  className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
+                  onClick={() => chrome.setShowSpeedDialog(false)}
                 >
-                  {hoveredElement.label}
-                </div>
-                <div style={{ fontSize: "10px", color: "#64748b" }}>
-                  Node ID: {hoveredElement.id}
-                </div>
-              </div>
+                  <div
+                    className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-base font-bold mb-2 text-[var(--text)]">
+                      Simulation Speed
+                    </div>
+                    <div className="text-xs text-[var(--text3)] mb-6 leading-relaxed">
+                      Adjust how fast the simulation runs relative to real-time.
+                      Higher speeds may impact UI responsiveness.
+                    </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "10px",
-                  marginBottom: "14px",
-                }}
-              >
+                    <div className="mb-6">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-[var(--text2)] uppercase tracking-wider">
+                          Current Rate
+                        </span>
+                        <span className="text-sm font-mono font-bold text-[var(--accent)]">
+                          {simulationSpeed.toFixed(1)}x
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="10"
+                        step="0.1"
+                        value={simulationSpeed}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setSimulationSpeed(val);
+                          if (isRunning && workerRef.current) {
+                            workerRef.current.postMessage({
+                              type: "SET_SPEED",
+                              speed: val,
+                            });
+                          }
+                        }}
+                        className="w-full accent-[var(--accent)] h-1.5 bg-[var(--border)] rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between mt-2 text-[9px] text-[var(--text3)] font-mono">
+                        <span>0.1x</span>
+                        <span>1.0x</span>
+                        <span>5.0x</span>
+                        <span>10.0x</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mb-6">
+                      {[0.1, 0.5, 1.0, 2.0, 5.0, 10.0].map((val) => (
+                        <Btn
+                          key={val}
+                          onClick={() => {
+                            setSimulationSpeed(val);
+                            if (isRunning && workerRef.current) {
+                              workerRef.current.postMessage({
+                                type: "SET_SPEED",
+                                speed: val,
+                              });
+                            }
+                          }}
+                          color={simulationSpeed === val ? "var(--accent)" : ""}
+                          style={{ fontSize: "11px", padding: "6px 0" }}
+                        >
+                          {val === 1.0 ? "Normal" : `${val}x`}
+                        </Btn>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "flex-end",
+                        borderTop: "1px solid var(--border)",
+                        paddingTop: "16px",
+                      }}
+                    >
+                      <Btn
+                        onClick={() => {
+                          const resetSpeed = 1.0;
+                          setSimulationSpeed(resetSpeed);
+                          if (isRunning && workerRef.current) {
+                            workerRef.current.postMessage({
+                              type: "SET_SPEED",
+                              speed: resetSpeed,
+                            });
+                          }
+                        }}
+                      >
+                        Reset
+                      </Btn>
+                      <Btn
+                        color="var(--accent)"
+                        onClick={() => chrome.setShowSpeedDialog(false)}
+                      >
+                        Done
+                      </Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ENGINE SELECTOR DIALOG ─────────────────────────────────────── */}
+              {showEngineSelector && (
+                <div
+                  className="fixed inset-0 bg-[rgba(0,0,0,.6)] backdrop-blur-sm flex items-center justify-center z-[9999]"
+                  onClick={() => setShowEngineSelector(false)}
+                >
+                  <div
+                    className="bg-[var(--bg2)] border border-[var(--border)] rounded-2xl p-8 w-[480px] shadow-[0_20px_60px_rgba(0,0,0,.6)]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-xl font-bold mb-2 text-[var(--text)] tracking-tight">
+                      Select Simulation Engine
+                    </div>
+                    <div className="text-sm text-[var(--text3)] mb-8 leading-relaxed">
+                      Choose the computational engine that best fits your simulation
+                      needs. Changes are applied in real-time.
+                    </div>
+
+                    <div className="space-y-4 mb-8">
+                      {/* Classic Logic Option */}
+                      <div
+                        className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === "logic" ? "border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]" : "border-[var(--border)] hover:border-[var(--border-hover)]"}`}
+                        onClick={() => {
+                          setSolverMode("logic");
+                        }}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-bold text-[var(--text)]">
+                            Classic Logic
+                          </span>
+                          {solverMode === "logic" && (
+                            <span className="text-[10px] bg-[var(--accent)] text-white px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                              This is Current Engine
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[var(--text2)] leading-normal">
+                          High-performance Boolean propagation. Ideal for large
+                          digital circuits and low-end hardware.
+                        </div>
+                      </div>
+                    </div>
+
+                    <Btn
+                      onClick={() => setShowEngineSelector(false)}
+                      style={{
+                        width: "100%",
+                        padding: "14px",
+                        borderRadius: "12px",
+                      }}
+                      className="font-bold tracking-wide"
+                    >
+                      Continue with Classic Logic
+                    </Btn>
+                  </div>
+                </div>
+              )}
+
+              {/* COMPONENT INSPECTOR HUD - High Performance Telemetry */}
+              {showInspector && hoveredElement && (
                 <div
                   style={{
-                    background: "#1e293b",
-                    padding: "8px",
-                    borderRadius: "8px",
+                    position: "fixed",
+                    left:
+                      mousePos.x * canvasZoom +
+                      canvasOffset.x +
+                      (canvasRef.current?.getBoundingClientRect().left || 0) +
+                      20,
+                    top:
+                      mousePos.y * canvasZoom +
+                      canvasOffset.y +
+                      (canvasRef.current?.getBoundingClientRect().top || 0) +
+                      20,
+                    background: "#0f172a",
                     border: "1px solid #334155",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "9px",
-                      color: "#94a3b8",
-                      marginBottom: "4px",
-                    }}
-                  >
-                    VOLTAGE
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: "700",
-                      color: "#38bdf8",
-                    }}
-                  >
-                    {hoveredElement.voltage?.toFixed(2) ??
-                      (hoveredElement.voltageDrop?.toFixed(2) || "0.00")}
-                    V
-                  </div>
-                </div>
-                {hoveredElement.current !== undefined && (
-                  <div
-                    style={{
-                      background: "#1e293b",
-                      padding: "8px",
-                      borderRadius: "8px",
-                      border: "1px solid #334155",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        color: "#94a3b8",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      CURRENT
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "13px",
-                        fontWeight: "700",
-                        color: "#4ade80",
-                      }}
-                    >
-                      {(hoveredElement.current * 1000).toFixed(1)}mA
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {hoveredElement.power !== undefined && (
-                <div
-                  style={{
-                    background: "rgba(244, 114, 182, 0.1)",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid rgba(244, 114, 182, 0.2)",
-                    marginBottom: "14px",
+                    borderRadius: "12px",
+                    padding: "14px",
+                    zIndex: 100000,
+                    color: "#f8fafc",
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                    fontSize: "11px",
+                    pointerEvents: "none",
+                    boxShadow: "0 20px 50px -12px rgba(0, 0, 0, 0.6)",
+                    minWidth: "200px",
                   }}
                 >
                   <div
@@ -14240,274 +14117,398 @@ loadDemoProject();
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
+                      marginBottom: "10px",
                     }}
                   >
-                    <span
+                    <div
                       style={{
                         fontSize: "9px",
-                        color: "#f472b6",
-                        fontWeight: "700",
-                      }}
-                    >
-                      POWER DISSIPATION
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "12px",
+                        color: "#94a3b8",
                         fontWeight: "800",
-                        color: "#f472b6",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
                       }}
                     >
-                      {(hoveredElement.power * 1000).toFixed(1)}mW
-                    </span>
+                      Electrical Telemetry
+                    </div>
+                    <div
+                      style={{
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: "#4ade80",
+                        boxShadow: "0 0 8px #4ade80",
+                      }}
+                    />
                   </div>
-                </div>
-              )}
 
-              {/* MINI-OSCILLOSCOPE SPARKLINE */}
-              {hoveredElement.history && hoveredElement.history.length > 1 && (
-                <div style={{ marginTop: "4px" }}>
+                  <div style={{ marginBottom: "12px" }}>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        fontWeight: "800",
+                        color: "#fff",
+                        marginBottom: "2px",
+                      }}
+                    >
+                      {hoveredElement.label}
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#64748b" }}>
+                      Node ID: {hoveredElement.id}
+                    </div>
+                  </div>
+
                   <div
                     style={{
-                      fontSize: "9px",
-                      color: "#94a3b8",
-                      marginBottom: "6px",
-                      fontWeight: "600",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "10px",
+                      marginBottom: "14px",
                     }}
                   >
-                    Signal Integrity (200ms)
+                    <div
+                      style={{
+                        background: "#1e293b",
+                        padding: "8px",
+                        borderRadius: "8px",
+                        border: "1px solid #334155",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "9px",
+                          color: "#94a3b8",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        VOLTAGE
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "#38bdf8",
+                        }}
+                      >
+                        {hoveredElement.voltage?.toFixed(2) ??
+                          (hoveredElement.voltageDrop?.toFixed(2) || "0.00")}
+                        V
+                      </div>
+                    </div>
+                    {hoveredElement.current !== undefined && (
+                      <div
+                        style={{
+                          background: "#1e293b",
+                          padding: "8px",
+                          borderRadius: "8px",
+                          border: "1px solid #334155",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "9px",
+                            color: "#94a3b8",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          CURRENT
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            color: "#4ade80",
+                          }}
+                        >
+                          {(hoveredElement.current * 1000).toFixed(1)}mA
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {hoveredElement.power !== undefined && (
+                    <div
+                      style={{
+                        background: "rgba(244, 114, 182, 0.1)",
+                        padding: "10px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(244, 114, 182, 0.2)",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            color: "#f472b6",
+                            fontWeight: "700",
+                          }}
+                        >
+                          POWER DISSIPATION
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "800",
+                            color: "#f472b6",
+                          }}
+                        >
+                          {(hoveredElement.power * 1000).toFixed(1)}mW
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MINI-OSCILLOSCOPE SPARKLINE */}
+                  {hoveredElement.history && hoveredElement.history.length > 1 && (
+                    <div style={{ marginTop: "4px" }}>
+                      <div
+                        style={{
+                          fontSize: "9px",
+                          color: "#94a3b8",
+                          marginBottom: "6px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Signal Integrity (200ms)
+                      </div>
+                      <div
+                        style={{
+                          height: "35px",
+                          background: "rgba(0,0,0,0.3)",
+                          borderRadius: "6px",
+                          padding: "2px",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <svg
+                          width="100%"
+                          height="100%"
+                          viewBox="0 0 140 35"
+                          preserveAspectRatio="none"
+                          style={{ overflow: "visible" }}
+                        >
+                          <polyline
+                            fill="none"
+                            stroke="#38bdf8"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            points={hoveredElement.history
+                              .map(
+                                (v, i) =>
+                                  `${(i / (hoveredElement.history.length - 1)) * 140},${35 - (Math.min(v, 5) / 5) * 30}`,
+                              )
+                              .join(" ")}
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+
                   <div
                     style={{
-                      height: "35px",
-                      background: "rgba(0,0,0,0.3)",
-                      borderRadius: "6px",
-                      padding: "2px",
-                      position: "relative",
-                      overflow: "hidden",
+                      marginTop: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "9px",
+                      color: "#475569",
                     }}
                   >
                     <svg
-                      width="100%"
-                      height="100%"
-                      viewBox="0 0 140 35"
-                      preserveAspectRatio="none"
-                      style={{ overflow: "visible" }}
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
                     >
-                      <polyline
-                        fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={hoveredElement.history
-                          .map(
-                            (v, i) =>
-                              `${(i / (hoveredElement.history.length - 1)) * 140},${35 - (Math.min(v, 5) / 5) * 30}`,
-                          )
-                          .join(" ")}
-                      />
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                     </svg>
+                    <span>WASM MNA Engine Active</span>
                   </div>
                 </div>
               )}
 
-              <div
-                style={{
-                  marginTop: "10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "9px",
-                  color: "#475569",
+              {/* MODAL / OVERLAY LAYER (Global) */}
+              <ComponentContextMenu
+                x={compContextMenu?.x}
+                y={compContextMenu?.y}
+                comp={components.find((c) => c.id === compContextMenu?.compId)}
+                info={(() => {
+                  const comp = components.find(
+                    (c) => c.id === compContextMenu?.compId,
+                  );
+                  if (!comp) return null;
+                  for (const g of LOCAL_CATALOG) {
+                    const item = g.items.find((i) => i.type === comp.type);
+                    if (item) return { ...item, group: g.group };
+                  }
+                  return {
+                    label: comp.label || comp.id,
+                    group: "Universal",
+                    description: "Interactive Simulator Component",
+                  };
+                })()}
+                visible={!!compContextMenu}
+                onClose={() => setCompContextMenu(null)}
+                onRename={() => {
+                  const id = compContextMenu.compId;
+                  const comp = components.find((c) => c.id === id);
+                  if (comp && canvasRef.current) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const vx =
+                      (comp.x + (comp.w || 0) / 2) * canvasZoom +
+                      canvasOffset.x +
+                      rect.left;
+                    const vy = comp.y * canvasZoom + canvasOffset.y + rect.top;
+                    setRenameState({ id, x: vx, y: vy });
+                  }
                 }}
-              >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                >
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                </svg>
-                <span>WASM MNA Engine Active</span>
-              </div>
-            </div>
-          )}
+                onPinMap={() => {
+                  const id = compContextMenu.compId;
+                  setSelected(id);
+                  setShowComponentDesc(true);
+                  // Small delay to ensure the [selected] effect (which collapses mapping) runs first
+                  setTimeout(() => setIsPinMappingExpanded(true), 50);
+                }}
+                onRotate={() => rotateComponent(compContextMenu.compId)}
+                onDelete={() => {
+                  if (liveEditingDisabled) return;
+                  saveHistory();
+                  const id = compContextMenu.compId;
+                  // Shared Ownership Cleanup: Only delete if no other owners exist
+                  setComponents((prev) =>
+                    prev
+                      .map((c) => {
+                        if (c.ownerIds?.includes(id)) {
+                          return {
+                            ...c,
+                            ownerIds: c.ownerIds.filter((oid) => oid !== id),
+                          };
+                        }
+                        return c;
+                      })
+                      .filter(
+                        (c) =>
+                          c.id !== id && (!c.ownerIds || c.ownerIds.length > 0),
+                      ),
+                  );
 
-          {/* MODAL / OVERLAY LAYER (Global) */}
-          <ComponentContextMenu
-            x={compContextMenu?.x}
-            y={compContextMenu?.y}
-            comp={components.find((c) => c.id === compContextMenu?.compId)}
-            info={(() => {
-              const comp = components.find(
-                (c) => c.id === compContextMenu?.compId,
-              );
-              if (!comp) return null;
-              for (const g of LOCAL_CATALOG) {
-                const item = g.items.find((i) => i.type === comp.type);
-                if (item) return { ...item, group: g.group };
-              }
-              return {
-                label: comp.label || comp.id,
-                group: "Universal",
-                description: "Interactive Simulator Component",
-              };
-            })()}
-            visible={!!compContextMenu}
-            onClose={() => setCompContextMenu(null)}
-            onRename={() => {
-              const id = compContextMenu.compId;
-              const comp = components.find((c) => c.id === id);
-              if (comp && canvasRef.current) {
-                const rect = canvasRef.current.getBoundingClientRect();
-                const vx =
-                  (comp.x + (comp.w || 0) / 2) * canvasZoom +
-                  canvasOffset.x +
-                  rect.left;
-                const vy = comp.y * canvasZoom + canvasOffset.y + rect.top;
-                setRenameState({ id, x: vx, y: vy });
-              }
-            }}
-            onPinMap={() => {
-              const id = compContextMenu.compId;
-              setSelected(id);
-              setShowComponentDesc(true);
-              // Small delay to ensure the [selected] effect (which collapses mapping) runs first
-              setTimeout(() => setIsPinMappingExpanded(true), 50);
-            }}
-            onRotate={() => rotateComponent(compContextMenu.compId)}
-            onDelete={() => {
-              if (liveEditingDisabled) return;
-              saveHistory();
-              const id = compContextMenu.compId;
-              // Shared Ownership Cleanup: Only delete if no other owners exist
-              setComponents((prev) =>
-                prev
-                  .map((c) => {
-                    if (c.ownerIds?.includes(id)) {
-                      return {
-                        ...c,
-                        ownerIds: c.ownerIds.filter((oid) => oid !== id),
-                      };
-                    }
-                    return c;
-                  })
-                  .filter(
-                    (c) =>
-                      c.id !== id && (!c.ownerIds || c.ownerIds.length > 0),
-                  ),
-              );
+                  setWires((prev) =>
+                    prev
+                      .map((w) => {
+                        if (w.ownerIds?.includes(id)) {
+                          return {
+                            ...w,
+                            ownerIds: w.ownerIds.filter((oid) => oid !== id),
+                          };
+                        }
+                        return w;
+                      })
+                      .filter(
+                        (w) =>
+                          !w.from.startsWith(id + ":") &&
+                          !w.to.startsWith(id + ":") &&
+                          (!w.ownerIds || w.ownerIds.length > 0),
+                      ),
+                  );
 
-              setWires((prev) =>
-                prev
-                  .map((w) => {
-                    if (w.ownerIds?.includes(id)) {
-                      return {
-                        ...w,
-                        ownerIds: w.ownerIds.filter((oid) => oid !== id),
-                      };
-                    }
-                    return w;
-                  })
-                  .filter(
-                    (w) =>
-                      !w.from.startsWith(id + ":") &&
-                      !w.to.startsWith(id + ":") &&
-                      (!w.ownerIds || w.ownerIds.length > 0),
-                  ),
-              );
+                  // Remove AutoCode snippet
+                  if (id) {
+                    setProjectFiles((prev) =>
+                      prev.map((f) => {
+                        if (f.content) {
+                          const newContent = removeCodeSnippet(f.content, id);
+                          if (activeCodeFileId === f.id && code !== newContent) {
+                            setCode(newContent);
+                          }
+                          return { ...f, content: newContent };
+                        }
+                        return f;
+                      }),
+                    );
+                  }
+                  if (selected === id) setSelected(null);
+                }}
+                onDoc={() => {
+                  const comp = components.find(
+                    (c) => c.id === compContextMenu.compId,
+                  );
+                  const reg = COMPONENT_REGISTRY[comp?.type];
+                  const helpUrl = reg?.manifest?.helpUrl || reg?.helpUrl;
+                  if (helpUrl) window.open(helpUrl, "_blank");
+                }}
+                updateComponentAttr={updateComponentAttr}
+                onValueEdit={(id, key = "value") => {
+                  const comp = components.find((c) => c.id === id);
+                  if (comp && canvasRef.current) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const vx =
+                      (comp.x + (comp.w || 0) / 2) * canvasZoom +
+                      canvasOffset.x +
+                      rect.left;
+                    const vy = comp.y * canvasZoom + canvasOffset.y + rect.top;
+                    setValueState({ id, x: vx, y: vy, key });
+                  }
+                }}
+                theme={theme}
+                programmableBoards={components.filter((c) =>
+                  isProgrammableBoardType(c.type),
+                )}
+                boardColors={boardColors}
+                onWireToBoard={handleWireToBoard}
+                onOpenCode={handleOpenCode}
+                onAutoCode={handleAutoCode}
+              />
 
-              // Remove AutoCode snippet
-              if (id) {
-                setProjectFiles((prev) =>
-                  prev.map((f) => {
-                    if (f.content) {
-                      const newContent = removeCodeSnippet(f.content, id);
-                      if (activeCodeFileId === f.id && code !== newContent) {
-                        setCode(newContent);
-                      }
-                      return { ...f, content: newContent };
-                    }
-                    return f;
-                  }),
-                );
-              }
-              if (selected === id) setSelected(null);
-            }}
-            onDoc={() => {
-              const comp = components.find(
-                (c) => c.id === compContextMenu.compId,
-              );
-              const reg = COMPONENT_REGISTRY[comp?.type];
-              const helpUrl = reg?.manifest?.helpUrl || reg?.helpUrl;
-              if (helpUrl) window.open(helpUrl, "_blank");
-            }}
-            updateComponentAttr={updateComponentAttr}
-            onValueEdit={(id, key = "value") => {
-              const comp = components.find((c) => c.id === id);
-              if (comp && canvasRef.current) {
-                const rect = canvasRef.current.getBoundingClientRect();
-                const vx =
-                  (comp.x + (comp.w || 0) / 2) * canvasZoom +
-                  canvasOffset.x +
-                  rect.left;
-                const vy = comp.y * canvasZoom + canvasOffset.y + rect.top;
-                setValueState({ id, x: vx, y: vy, key });
-              }
-            }}
-            theme={theme}
-            programmableBoards={components.filter((c) =>
-              isProgrammableBoardType(c.type),
-            )}
-            boardColors={boardColors}
-            onWireToBoard={handleWireToBoard}
-            onOpenCode={handleOpenCode}
-            onAutoCode={handleAutoCode}
-          />
+              <ComponentRenamePanel
+                comp={components.find((c) => c.id === renameState.id)}
+                x={renameState.x}
+                y={renameState.y}
+                visible={!!renameState.id && renameState.x !== 0}
+                onConfirm={(newId) =>
+                  handleRenameComponentId(renameState.id, newId)
+                }
+                onCancel={() => setRenameState({ id: null, x: 0, y: 0 })}
+                theme={theme}
+              />
 
-          <ComponentRenamePanel
-            comp={components.find((c) => c.id === renameState.id)}
-            x={renameState.x}
-            y={renameState.y}
-            visible={!!renameState.id && renameState.x !== 0}
-            onConfirm={(newId) =>
-              handleRenameComponentId(renameState.id, newId)
-            }
-            onCancel={() => setRenameState({ id: null, x: 0, y: 0 })}
-            theme={theme}
-          />
+              {showTour && (
+                <TourGuide
+                  onFinish={handleFinishTour}
+                  onStepChange={setTourActiveStep}
+                  onDemoAction={handleTourDemoAction}
+                />
+              )}
 
-          {showTour && (
-            <TourGuide
-              onFinish={handleFinishTour}
-              onStepChange={setTourActiveStep}
-              onDemoAction={handleTourDemoAction}
-            />
-          )}
-
-          <ComponentValuePanel
-            comp={components.find((c) => c.id === valueState.id)}
-            attrKey={valueState.key}
-            x={valueState.x}
-            y={valueState.y}
-            visible={!!valueState.id && valueState.x !== 0}
-            onConfirm={(val) => {
-              updateComponentAttr(valueState.id, valueState.key, val);
-              setValueState({ id: null, x: 0, y: 0, key: "value" });
-            }}
-            onCancel={() =>
-              setValueState({ id: null, x: 0, y: 0, key: "value" })
-            }
-            theme={theme}
-            />
-          </>)}
+              <ComponentValuePanel
+                comp={components.find((c) => c.id === valueState.id)}
+                attrKey={valueState.key}
+                x={valueState.x}
+                y={valueState.y}
+                visible={!!valueState.id && valueState.x !== 0}
+                onConfirm={(val) => {
+                  updateComponentAttr(valueState.id, valueState.key, val);
+                  setValueState({ id: null, x: 0, y: 0, key: "value" });
+                }}
+                onCancel={() =>
+                  setValueState({ id: null, x: 0, y: 0, key: "value" })
+                }
+                theme={theme}
+              />
+            </>)}
         </div>
 
-          {/* Guided project schema loading overlay */}
+        {/* Guided project schema loading overlay */}
         {isLoadingGuidedSchema && (
           <div
             style={{
@@ -14563,7 +14564,7 @@ loadDemoProject();
                 textAlign: 'center',
               }}
             >
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
               <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
                 Coming Soon
               </div>

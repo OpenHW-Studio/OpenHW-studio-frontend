@@ -197,7 +197,7 @@ export const fetchProfile = async () => {
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
   
-  if (data.user) normalizeUser(data.user);
+  if (data.user) saveUser(data.user); // normalizeUser is called inside saveUser
   
   return data;
 };

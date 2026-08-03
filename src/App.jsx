@@ -145,7 +145,7 @@ const MaintenanceGuard = ({ children }) => {
         } else if (!error.response || error.response.status === 503) {
           // Only trigger maintenance mode for API requests
           if (isMounted && reqUrl.includes("/api")) {
-             setMaintenance(true);
+            setMaintenance(true);
           }
         }
         return Promise.reject(error);
@@ -195,8 +195,8 @@ function ThemeToggleButton() {
 
   // Hide on simulator or demo/guided pages to prevent overlay with simulation controls
   const isSimulator = location.pathname.includes('/simulator') ||
-                      location.pathname.includes('/demo') ||
-                      location.pathname.includes('/guided');
+    location.pathname.includes('/demo') ||
+    location.pathname.includes('/guided');
   if (isSimulator) return null;
 
   return (
@@ -226,9 +226,9 @@ function ThemeToggleButton() {
       title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
       {theme === 'dark' ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="M4.93 4.93l1.41 1.41" /><path d="M17.66 17.66l1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="M6.34 17.66l-1.41 1.41" /><path d="M19.07 4.93l-1.41 1.41" /></svg>
       ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
       )}
     </button>
   );
@@ -255,296 +255,296 @@ export default function App() {
                       justifyContent: "center",
                     }}
                   >
-                  <div className="loader"></div>
-                </div>
-              }
-            >
-              <Routes>
-                {/* Public Routes */}
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/about" element={<AboutUsNew />} />
-                <Route path="/examples" element={<ExamplesPage />} />
-                <Route path="/login" element={<UserLoginPage />} />
-                <Route
-                  path="/signin"
-                  element={<Navigate to="/classroom/signin" replace />}
-                />
-                <Route path="/signup" element={<UserSignupPage />} />
-                <Route path="/classroom/signin" element={<SigninPage />} />
-                <Route path="/classroom/signup" element={<SignupPage />} />
-                <Route
-                  path="/forgot-password"
-                  element={<ForgotPasswordPage />}
-                />
-                <Route
-                  path="/reset-password/:token"
-                  element={<ResetPasswordPage />}
-                />
-                <Route path="/select-role" element={<RoleSelectPage />} />
+                    <div className="loader"></div>
+                  </div>
+                }
+              >
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/about" element={<AboutUsNew />} />
+                  <Route path="/examples" element={<ExamplesPage />} />
+                  <Route path="/login" element={<UserLoginPage />} />
+                  <Route
+                    path="/signin"
+                    element={<Navigate to="/classroom/signin" replace />}
+                  />
+                  <Route path="/signup" element={<UserSignupPage />} />
+                  <Route path="/classroom/signin" element={<SigninPage />} />
+                  <Route path="/classroom/signup" element={<SignupPage />} />
+                  <Route
+                    path="/forgot-password"
+                    element={<ForgotPasswordPage />}
+                  />
+                  <Route
+                    path="/reset-password/:token"
+                    element={<ResetPasswordPage />}
+                  />
+                  <Route path="/select-role" element={<RoleSelectPage />} />
 
-                <Route path="/login-success" element={<AuthSuccess />} />
+                  <Route path="/login-success" element={<AuthSuccess />} />
 
-                <Route path="/projects" element={<ProjectsGallery />} />
-                <Route path="/components" element={<ComponentsPage />} />
-                <Route
-                  path="/component-editor"
-                  element={<ComponentEditorPage />}
-                />
-                <Route path="/alignment-lab" element={<ComponentLab />} />
+                  <Route path="/projects" element={<ProjectsGallery />} />
+                  <Route path="/components" element={<ComponentsPage />} />
+                  <Route
+                    path="/component-editor"
+                    element={<ComponentEditorPage />}
+                  />
+                  <Route path="/alignment-lab" element={<ComponentLab />} />
 
-                <Route path="/adventure" element={<AdventureMapPage />} />
-                <Route path="/grade" element={<GradingPage />} />
+                  <Route path="/adventure" element={<AdventureMapPage />} />
+                  <Route path="/grade" element={<GradingPage />} />
 
-                {/* Guest accessible simulator */}
-                <Route
-                  path="/simulator"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/mobile-simulator"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
+                  {/* Guest accessible simulator */}
+                  <Route
+                    path="/simulator"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/mobile-simulator"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
 
-                <Route
-                  path="/simulator/live/:liveCode"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/mobile-simulator/live/:liveCode"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
+                  <Route
+                    path="/simulator/live/:liveCode"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/mobile-simulator/live/:liveCode"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
 
-                <Route
-                  path="/simulator/share/:shareId"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/mobile-simulator/share/:shareId"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
+                  <Route
+                    path="/simulator/share/:shareId"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/mobile-simulator/share/:shareId"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
 
-                <Route
-                  path="/simulator/share/:shareId/assignment/:classId/:assignmentId"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/simulator/assignment/:classId/:assignmentId"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
+                  <Route
+                    path="/simulator/share/:shareId/assignment/:classId/:assignmentId"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/simulator/assignment/:classId/:assignmentId"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
 
-                <Route path="/explore" element={<ExploreCommunity />} />
+                  <Route path="/explore" element={<ExploreCommunity />} />
 
-                <Route
-                  path="/:projectName/demo"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
-                    />
-                  }
-                />
+                  <Route
+                    path="/:projectName/demo"
+                    element={
+                      <ResponsiveSimulatorRoute
+                        desktopElement={<SimulatorPage />}
+                        mobileElement={<MobileSimulatorPage />}
+                      />
+                    }
+                  />
 
-                <Route
-                  path="/guide"
-                  element={<Navigate to="/led-blink/guide" replace />}
-                />
+                  <Route
+                    path="/guide"
+                    element={<Navigate to="/led-blink/guide" replace />}
+                  />
 
-                <Route
-                  path="/:projectName/guide"
-                  element={<ProjectGuidePage />}
-                />
+                  <Route
+                    path="/:projectName/guide"
+                    element={<ProjectGuidePage />}
+                  />
 
-                <Route
-                  path="/:projectName/assessment"
-                  element={<ProjectAssessmentPage />}
-                />
-                <Route
-                  path="/:projectName/reading"
-                  element={<ProjectTheoryPage />}
-                />
-                <Route
-                  path="/:projectName/quiz"
-                  element={<ProjectQuizPage />}
-                />
-                <Route
-                  path="/:projectName/components"
-                  element={<ProjectComponentUnlockPage />}
-                />
-                <Route
-                  path="/:projectName/guided"
-                  element={<GuidedSimulatorPage />}
-                />
+                  <Route
+                    path="/:projectName/assessment"
+                    element={<ProjectAssessmentPage />}
+                  />
+                  <Route
+                    path="/:projectName/reading"
+                    element={<ProjectTheoryPage />}
+                  />
+                  <Route
+                    path="/:projectName/quiz"
+                    element={<ProjectQuizPage />}
+                  />
+                  <Route
+                    path="/:projectName/components"
+                    element={<ProjectComponentUnlockPage />}
+                  />
+                  <Route
+                    path="/:projectName/guided"
+                    element={<GuidedSimulatorPage />}
+                  />
 
-                {/* Protected: General User */}
-                <Route
-                  path="/user/dashboard"
-                  element={
-                    <ProtectedRoute allowedRole="user">
-                      <UserDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/user/profile"
-                  element={
-                    <ProtectedRoute allowedRole="user">
-                      <UserProfilePage />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* Protected: General User */}
+                  <Route
+                    path="/user/dashboard"
+                    element={
+                      <ProtectedRoute allowedRole="user">
+                        <UserDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/user/profile"
+                    element={
+                      <ProtectedRoute allowedRole="user">
+                        <UserProfilePage />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* Protected: Student */}
-                <Route
-                  path="/student/dashboard"
-                  element={
-                    <ProtectedRoute allowedRole="student">
-                      <StudentDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student/classes/:classId"
-                  element={
-                    <ProtectedRoute allowedRole="student">
-                      <StudentClassDetailPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student/profile"
-                  element={
-                    <ProtectedRoute allowedRole="student">
-                      <StudentProfilePage />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* Protected: Student */}
+                  <Route
+                    path="/student/dashboard"
+                    element={
+                      <ProtectedRoute allowedRole="student">
+                        <StudentDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/student/classes/:classId"
+                    element={
+                      <ProtectedRoute allowedRole="student">
+                        <StudentClassDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/student/profile"
+                    element={
+                      <ProtectedRoute allowedRole="student">
+                        <StudentProfilePage />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* Protected: Teacher */}
-                <Route
-                  path="/teacher/dashboard"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/classes/:classId"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherClassDetailPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/classes/:classId/projects/:projectSlug/edit"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProjectContentEditor />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/profile"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProfilePage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/project-bank"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProjectBankPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/project-bank/new"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProjectContentEditor />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/project-bank/:projectSlug/edit"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProjectContentEditor />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* Protected: Teacher */}
+                  <Route
+                    path="/teacher/dashboard"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/classes/:classId"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherClassDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/classes/:classId/projects/:projectSlug/edit"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherProjectContentEditor />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/profile"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherProfilePage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/project-bank"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherProjectBankPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/project-bank/new"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherProjectContentEditor />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/project-bank/:projectSlug/edit"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <TeacherProjectContentEditor />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* Admin */}
-                <Route path="/admin" element={<AdminLandingPage />} />
-                <Route path="/admin/login" element={<AdminLoginPage />} />
-                <Route
-                  path="/admin/dashboard"
-                  element={
-                    <ProtectedRoute allowedRole="admin">
-                      <AdminPage />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* Admin */}
+                  <Route path="/admin" element={<AdminLandingPage />} />
+                  <Route path="/admin/login" element={<AdminLoginPage />} />
+                  <Route
+                    path="/admin/dashboard"
+                    element={
+                      <ProtectedRoute allowedRole="admin">
+                        <AdminPage />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* Fallback */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </React.Suspense>
-          </MaintenanceGuard>
-        </GamificationProvider>
-      </AuthProvider>
+                  {/* Fallback */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </React.Suspense>
+            </MaintenanceGuard>
+          </GamificationProvider>
+        </AuthProvider>
       </VisitorTracker>
     </BrowserRouter>
   );

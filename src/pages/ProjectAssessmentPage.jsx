@@ -14,6 +14,15 @@ import {
   Trash2, Clipboard, ShieldAlert, Sparkles, CheckCircle2, AlertCircle, FileText, LogOut 
 } from 'lucide-react'
 
+// Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor', 'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+]
+
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
 const PHASE_COLOR = { wire: '#10b981', code: '#3b82f6', run: '#f59e0b' }
 
@@ -359,6 +368,11 @@ export default function ProjectAssessmentPage() {
   const { projectName = '' } = useParams()
   const location = useLocation()
   const classId = new URLSearchParams(location.search).get('classId')
+  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
+  const mapPath = classId
+    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
+    : `/adventure?journey=${journey}`
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
   const [classProjectContent, setClassProjectContent] = useState(null)
 
@@ -514,7 +528,7 @@ export default function ProjectAssessmentPage() {
       }}>
         <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, height: 64 }}>
           <button
-            onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : `/adventure`)}
+            onClick={goBackToMap}
             style={{
               background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.05)',
               border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(15, 23, 42, 0.1)',
@@ -866,7 +880,7 @@ export default function ProjectAssessmentPage() {
                   <span>Resume in Simulator</span>
                 </button>
                 {result.passed && (
-                  <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure')} style={{
+                  <button onClick={goBackToMap} style={{
                     background: 'linear-gradient(135deg, #10b981, #059669)',
                     border: 'none', borderRadius: 14, padding: '14px',
                     fontSize: 13.5, fontWeight: 900, color: '#fff', cursor: 'pointer',

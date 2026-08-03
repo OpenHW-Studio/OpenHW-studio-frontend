@@ -12,6 +12,15 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, ArrowRight, ShieldAlert, Sparkles, Check, X, Award, Sun, Moon, HelpCircle, FileText, LogOut } from 'lucide-react'
 
+// Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor', 'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+]
+
 export default function ProjectQuizPage() {
   const { projectName } = useParams()
   const location = useLocation()
@@ -22,7 +31,12 @@ export default function ProjectQuizPage() {
     navigate('/')
   }
   const classId = new URLSearchParams(location.search).get('classId')
-  const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
+  // Determine which journey this project belongs to for the back-navigation
+  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
+  const mapPath = classId
+    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
+    : `/adventure?journey=${journey}`
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { awardXP } = useGamification()
 
   const baseProject = PROJECTS.find(p => p.slug === projectName)
@@ -184,7 +198,7 @@ export default function ProjectQuizPage() {
         <ShieldAlert size={64} color="#f43f5e" style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Mission Parameters Offline</div>
         <div style={{ color: '#94a3b8', marginBottom: 24 }}>We couldn't load the quiz for: {projectName}</div>
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           padding: '12px 24px', borderRadius: 14, border: 'none', background: color, color: '#fff', fontWeight: 800, cursor: 'pointer'
         }}>
           Return to World Map
@@ -242,7 +256,7 @@ export default function ProjectQuizPage() {
           </div>
         </div>
 
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           background: passed ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #4f46e5, #6366f1)',
           color: '#fff', fontWeight: 900, fontSize: 14,
           padding: '16px 36px', borderRadius: 20, border: 'none',
@@ -331,7 +345,7 @@ export default function ProjectQuizPage() {
         transition: 'background 0.3s ease, border-bottom 0.3s ease',
       }}>
         <button
-          onClick={() => navigate(mapPath)}
+          onClick={goBackToMap}
           style={{
             background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.05)',
             border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(15, 23, 42, 0.1)',

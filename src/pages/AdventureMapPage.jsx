@@ -14,7 +14,7 @@ import {
   Map, Package, ScrollText, Trophy, BarChart2, ShoppingCart,
   Star, Coins, Gem, Lock, Check, ChevronLeft, ChevronRight,
   Zap, Radio, Cpu, Thermometer, RotateCcw, Lightbulb,
-  BookOpen, HelpCircle, Gift, Wrench, ArrowRight, User,
+  BookOpen, HelpCircle, Gift, Wrench, ArrowLeft, ArrowRight, User,
   Flame, LogOut, Settings, Calendar, Shield, Layers,
   Activity, Wifi, Server, Award, Monitor, Volume2, Keyboard,
   ScanLine, Gauge, Plug, ToggleLeft, Timer, Cog, Sun, Moon,
@@ -368,6 +368,8 @@ export default function AdventureMapPage() {
   const [showRightPanel, setShowRightPanel] = useState(false)
   const [selectedStepKey, setSelectedStepKey] = useState(null)
   const [sidebarTab, setSidebarTab] = useState('world-map')
+  // Slug to auto-open when navigating back from a project page
+  const [pendingOpenSlug, setPendingOpenSlug] = useState(() => location.state?.openProject || null)
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
 
@@ -401,6 +403,123 @@ export default function AdventureMapPage() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Auto-open the island panel when returning from a project page via router state
+  useEffect(() => {
+    const openSlug = location.state?.openProject
+    if (openSlug) setPendingOpenSlug(openSlug)
+  }, [location.state])
+
+  // ── All hooks must be declared before the early return to satisfy Rules of Hooks ──
+  const resolvedProjects = useMemo(() => {
+    const source = [...PROJECTS]
+    const content = classAdventure || buildFallbackClassAdventureContent()
+    const projectRows = Array.isArray(content?.projects) ? content.projects : []
+    if (!projectRows.length) return source
+    return projectRows
+      .filter((project) => project.enabled !== false)
+      .map((project, index) => ({
+        ...source.find((base) => base.slug === project.slug),
+        ...project,
+        number: Number.isFinite(project.order) ? project.order : index + 1,
+        world: Number(String(project.worldId || '').replace('world-', '')) || 1,
+        color: project.color || source.find((base) => base.slug === project.slug)?.color || '#3b82f6',
+      }))
+      .sort((a, b) => (a.world - b.world) || (a.number - b.number))
+  }, [classAdventure])
+
+  // When returning from a project page, resolve the pending slug to open the island panel
+  useEffect(() => {
+    if (!pendingOpenSlug || !resolvedProjects.length) return
+    const target = resolvedProjects.find(p => p.slug === pendingOpenSlug)
+    if (!target) return
+    // Determine which world index contains this project
+    const journey = getProjectJourney(target)
+    const worlds = journey === 'esp32' ? ESP32_WORLDS : ARDUINO_WORLDS
+    const worldIdx = worlds.findIndex(w => w.slugs.includes(target.slug))
+    if (worldIdx !== -1) setActiveWorldIdx(worldIdx)
+    setSelectedProject(target)
+    setShowRightPanel(true)
+    setPendingOpenSlug(null) // clear so it doesn't re-trigger
+  }, [pendingOpenSlug, resolvedProjects])
+
+  const completedProjects = useMemo(() => {
+    const classCompleted = classProgress?.completedProjects?.map(p => p.projectSlug || p) || []
+    const inferredCompleted = resolvedProjects.filter(p => {
+      const progress = getLocalAdventureStepProgress(p.slug)
+      return progress?.completedSteps?.includes(`${p.slug}:sim`)
+    }).map(p => p.slug)
+    return Array.from(new Set([...localCompletedProjects, ...classCompleted, ...inferredCompleted]))
+  }, [localCompletedProjects, classProgress, resolvedProjects])
+
+  const getStatus = useCallback((project) => {
+    if (!project) return 'locked'
+    if (completedProjects.includes(project.slug)) return 'completed'
+    if (!project.prerequisite) return 'available'
+    return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
+  }, [completedProjects])
+
+  const currentWorld = useMemo(() => WORLDS[activeWorldIdx] || WORLDS[0], [WORLDS, activeWorldIdx])
+
+  const currentWorldProjects = useMemo(() => {
+    const journeyProjects = resolvedProjects.filter(p => getProjectJourney(p) === activeJourney)
+    return journeyProjects.filter(p => currentWorld.slugs.includes(p.slug)).sort((a, b) => a.number - b.number)
+  }, [resolvedProjects, activeJourney, currentWorld])
+
+  const activeProject = useMemo(() => {
+    if (selectedProject && currentWorldProjects.some(p => p.slug === selectedProject.slug)) {
+      return selectedProject
+    }
+    const firstIncomplete = currentWorldProjects.find(p => getStatus(p) === 'available')
+    return firstIncomplete || currentWorldProjects[0] || null
+  }, [currentWorldProjects, selectedProject, getStatus])
+
+  const getSubstepStatus = useCallback((project, stepKey) => {
+    if (!project) return 'locked'
+    const projStatus = getStatus(project)
+    if (projStatus === 'locked') return 'locked'
+    if (completedProjects.includes(project.slug)) return 'completed'
+    const progress = getLocalAdventureStepProgress(project.slug)
+    const completedSteps = progress?.completedSteps || []
+    if (completedSteps.includes(`${project.slug}:${stepKey}`)) return 'completed'
+    const stepOrder = { 'read': 1, 'quiz': 2, 'unlock': 3, 'guide': 4, 'sim': 5 }
+    const currentOrder = progress?.currentStepOrder || 1
+    if (stepOrder[stepKey] === currentOrder) return 'current'
+    if (stepOrder[stepKey] < currentOrder) return 'unlocked'
+    return 'locked'
+  }, [completedProjects, getStatus])
+
+  // Auto-select active step when activeProject updates
+  useEffect(() => {
+    if (activeProject) {
+      const steps = ['read', 'quiz', 'unlock', 'guide', 'sim']
+      const activeStep = steps.find(s => getSubstepStatus(activeProject, s) === 'current') || 'read'
+      setSelectedStepKey(activeStep)
+    }
+  }, [activeProject, getSubstepStatus])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadClassAdventure = async () => {
+      if (!classId) return
+      try {
+        const [adventureResponse, progressResponse] = await Promise.all([
+          getAdventureContent(classId),
+          getAdventureProgress(classId),
+        ])
+        if (cancelled) return
+        setClassAdventure(adventureResponse?.resolved || null)
+        setClassProgress(progressResponse?.progress || null)
+      } catch {
+        if (!cancelled) {
+          setClassAdventure(null)
+          setClassProgress(null)
+        }
+      }
+    }
+    loadClassAdventure()
+    return () => { cancelled = true }
+  }, [classId])
 
   if (!journeyParam) {
     const initials = (user?.name || 'Alex').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -1010,100 +1129,7 @@ export default function AdventureMapPage() {
     )
   }
 
-  const resolvedProjects = useMemo(() => {
-    const source = [...PROJECTS]
-    const content = classAdventure || buildFallbackClassAdventureContent()
-    const projectRows = Array.isArray(content?.projects) ? content.projects : []
-    if (!projectRows.length) return source
-    return projectRows
-      .filter((project) => project.enabled !== false)
-      .map((project, index) => ({
-        ...source.find((base) => base.slug === project.slug),
-        ...project,
-        number: Number.isFinite(project.order) ? project.order : index + 1,
-        world: Number(String(project.worldId || '').replace('world-', '')) || 1,
-        color: project.color || source.find((base) => base.slug === project.slug)?.color || '#3b82f6',
-      }))
-      .sort((a, b) => (a.world - b.world) || (a.number - b.number))
-  }, [classAdventure])
 
-  const completedProjects = useMemo(() => {
-    const classCompleted = classProgress?.completedProjects?.map(p => p.projectSlug || p) || []
-    const inferredCompleted = resolvedProjects.filter(p => {
-      const progress = getLocalAdventureStepProgress(p.slug)
-      return progress?.completedSteps?.includes(`${p.slug}:sim`)
-    }).map(p => p.slug)
-    return Array.from(new Set([...localCompletedProjects, ...classCompleted, ...inferredCompleted]))
-  }, [localCompletedProjects, classProgress, resolvedProjects])
-
-  const getStatus = useCallback((project) => {
-    if (!project) return 'locked'
-    if (completedProjects.includes(project.slug)) return 'completed'
-    if (!project.prerequisite) return 'available'
-    return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
-  }, [completedProjects])
-
-  const currentWorld = useMemo(() => WORLDS[activeWorldIdx] || WORLDS[0], [WORLDS, activeWorldIdx])
-
-  const currentWorldProjects = useMemo(() => {
-    const journeyProjects = resolvedProjects.filter(p => getProjectJourney(p) === activeJourney)
-    return journeyProjects.filter(p => currentWorld.slugs.includes(p.slug)).sort((a, b) => a.number - b.number)
-  }, [resolvedProjects, activeJourney, currentWorld])
-
-  const activeProject = useMemo(() => {
-    if (selectedProject && currentWorldProjects.some(p => p.slug === selectedProject.slug)) {
-      return selectedProject
-    }
-    const firstIncomplete = currentWorldProjects.find(p => getStatus(p) === 'available')
-    return firstIncomplete || currentWorldProjects[0] || null
-  }, [currentWorldProjects, selectedProject, getStatus])
-
-  const getSubstepStatus = useCallback((project, stepKey) => {
-    if (!project) return 'locked'
-    const projStatus = getStatus(project)
-    if (projStatus === 'locked') return 'locked'
-    if (completedProjects.includes(project.slug)) return 'completed'
-    const progress = getLocalAdventureStepProgress(project.slug)
-    const completedSteps = progress?.completedSteps || []
-    if (completedSteps.includes(`${project.slug}:${stepKey}`)) return 'completed'
-    const stepOrder = { 'read': 1, 'quiz': 2, 'unlock': 3, 'guide': 4, 'sim': 5 }
-    const currentOrder = progress?.currentStepOrder || 1
-    if (stepOrder[stepKey] === currentOrder) return 'current'
-    if (stepOrder[stepKey] < currentOrder) return 'unlocked'
-    return 'locked'
-  }, [completedProjects, getStatus])
-
-  // Auto-select active step when activeProject updates
-  useEffect(() => {
-    if (activeProject) {
-      const steps = ['read', 'quiz', 'unlock', 'guide', 'sim']
-      const activeStep = steps.find(s => getSubstepStatus(activeProject, s) === 'current') || 'read'
-      setSelectedStepKey(activeStep)
-    }
-  }, [activeProject, getSubstepStatus])
-
-  useEffect(() => {
-    let cancelled = false
-    const loadClassAdventure = async () => {
-      if (!classId) return
-      try {
-        const [adventureResponse, progressResponse] = await Promise.all([
-          getAdventureContent(classId),
-          getAdventureProgress(classId),
-        ])
-        if (cancelled) return
-        setClassAdventure(adventureResponse?.resolved || null)
-        setClassProgress(progressResponse?.progress || null)
-      } catch {
-        if (!cancelled) {
-          setClassAdventure(null)
-          setClassProgress(null)
-        }
-      }
-    }
-    loadClassAdventure()
-    return () => { cancelled = true }
-  }, [classId])
 
   const handleStart = (slug, mode) => {
     const sp = new URLSearchParams()
@@ -1172,6 +1198,10 @@ export default function AdventureMapPage() {
         @keyframes floatUp {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-5px); }
+        }
+        @keyframes islandFloat {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
         }
         @keyframes pathDash {
           0% { stroke-dashoffset: 0; }
@@ -1717,7 +1747,7 @@ export default function AdventureMapPage() {
                 fontWeight: 800, fontSize: 11, cursor: 'pointer', transition: 'all 0.2s',
               }}
             >
-              <LogOut size={13} strokeWidth={2.5} />
+              <ArrowLeft size={13} strokeWidth={2.5} />
               Exit
             </button>
 

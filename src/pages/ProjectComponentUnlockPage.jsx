@@ -211,7 +211,20 @@ export default function ProjectComponentUnlockPage() {
               borderRadius: 16,
               boxShadow: isDarkMode ? 'none' : '0 4px 12px rgba(0,0,0,0.02)'
             }}>
-              <span style={{ fontSize: 22 }}>{comp.icon || '📦'}</span>
+              <span style={{ 
+                fontSize: 22, 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                width: (comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png'))) ? 36 : 24, 
+                height: (comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png'))) ? 36 : 24 
+              }}>
+                {comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png')) ? (
+                  <img src={comp.icon} alt={comp.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  comp.icon || '📦'
+                )}
+              </span>
               <span style={{ fontSize: 13, fontWeight: 800, color: isDarkMode ? '#f8fafc' : '#0f172a' }}>{comp.name}</span>
             </div>
           ))}
@@ -471,14 +484,24 @@ export default function ProjectComponentUnlockPage() {
                 >
                   {/* Icon Block */}
                   <div style={{
-                    width: 56, height: 56, borderRadius: 16,
+                    width: (comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png'))) ? 80 : 56,
+                    height: (comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png'))) ? 80 : 56,
+                    borderRadius: 16,
                     background: iconBg,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 26, flexShrink: 0,
                     boxShadow: isUnlocked ? '0 8px 20px rgba(0,0,0,0.1)' : 'none',
                     transition: 'all 0.25s',
                   }}>
-                    {isUnlocked ? (comp.icon || '📦') : <Lock size={20} color={isDarkMode ? '#64748b' : '#94a3b8'} />}
+                    {isUnlocked ? (
+                      comp.icon && (comp.icon.startsWith('/') || comp.icon.endsWith('.png')) ? (
+                        <img src={comp.icon} alt={comp.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }} />
+                      ) : (
+                        comp.icon || '📦'
+                      )
+                    ) : (
+                      <Lock size={20} color={isDarkMode ? '#64748b' : '#94a3b8'} />
+                    )}
                   </div>
 
                   {/* Info details */}

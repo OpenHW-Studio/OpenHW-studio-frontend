@@ -11,6 +11,15 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { BookOpen, Sparkles, ArrowRight, ArrowLeft, Trophy, CheckCircle, ShieldAlert, Award, Sun, Moon, FileText, LogOut } from 'lucide-react'
 
+// Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor', 'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+]
+
 export default function ProjectTheoryPage() {
   const { projectName } = useParams()
   const location = useLocation()
@@ -21,7 +30,11 @@ export default function ProjectTheoryPage() {
     navigate('/')
   }
   const classId = new URLSearchParams(location.search).get('classId')
-  const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
+  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
+  const mapPath = classId
+    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
+    : `/adventure?journey=${journey}`
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { awardXP } = useGamification()
   
@@ -148,7 +161,7 @@ export default function ProjectTheoryPage() {
         <ShieldAlert size={64} color="#f43f5e" style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Mission Coordinates Lost</div>
         <div style={{ color: '#94a3b8', marginBottom: 24 }}>We couldn't map the project details for: {projectName}</div>
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           padding: '12px 24px', borderRadius: 14, border: 'none', background: color, color: '#fff', fontWeight: 800, cursor: 'pointer'
         }}>
           Return to World Map
@@ -180,7 +193,7 @@ export default function ProjectTheoryPage() {
         <p style={{ color: isDarkMode ? '#94a3b8' : '#475569', fontSize: 15, maxWidth: 460, margin: '12px auto 32px', lineHeight: 1.6 }}>
           Excellent work, cadet! You have successfully reviewed all {total} learning objectives for <strong>{project.title}</strong>. You are now authorized to proceed to the Quiz Level.
         </p>
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           background: 'linear-gradient(135deg, #10b981, #059669)',
           color: '#fff', fontWeight: 900, fontSize: 14,
           padding: '16px 36px', borderRadius: 20, border: 'none',
@@ -252,7 +265,7 @@ export default function ProjectTheoryPage() {
         transition: 'background 0.3s ease, border-bottom 0.3s ease',
       }}>
         <button
-          onClick={() => navigate(mapPath)}
+          onClick={goBackToMap}
           style={{
             background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.05)',
             border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(15, 23, 42, 0.1)',

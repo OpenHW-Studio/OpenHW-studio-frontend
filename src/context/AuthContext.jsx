@@ -63,6 +63,11 @@ export function AuthProvider({ children }) {
     logoutService()
     setUser(null)
     setToken(null)
+    // Also clear any lingering admin session to prevent state leakage
+    removeAdminToken()
+    removeAdminUser()
+    setAdminUser(null)
+    setAdminToken(null)
   }
 
   const updateUserSession = (userProfile) => {
