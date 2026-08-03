@@ -1,0 +1,73 @@
+
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Final Grading Summary</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; }
+          h1 { color: #38bdf8; text-align: center; margin-bottom: 30px; }
+          .summary-card { background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; border: 1px solid #334155; }
+          .avg-score { font-size: 56px; font-weight: bold; color: #10b981; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #1e293b; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+          th, td { padding: 15px 20px; text-align: left; border-bottom: 1px solid #334155; }
+          th { background: #020617; color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 0.05em; }
+          tr:hover { background: #334155; }
+          a { color: #38bdf8; text-decoration: none; font-weight: 500; }
+          a:hover { text-decoration: underline; color: #7dd3fc; }
+        </style>
+      </head>
+      <body>
+        <h1>OpenHW Grading Matrix Results</h1>
+        <div class="summary-card">
+          <h2 style="margin-top:0; color: #94a3b8;">Overall Average Score</h2>
+          <div class="avg-score">95%</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Total Score</th>
+              <th>Spatial</th>
+              <th>Behavioral (Time)</th>
+              <th>AI Semantic</th>
+              <th>Code Logic</th>
+              <th>Code Behav</th>
+              <th>Artifacts</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+        <tr>
+          <td>Arduino Uno + LED</td>
+          <td><strong>94%</strong></td>
+          <td>75%</td>
+          <td>96%</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>
+            <a href="./uno_led_report.html" target="_blank">View HTML</a> | 
+            <a href="./uno_led_bundle.json" target="_blank">JSON Bundle</a>
+          </td>
+        </tr>
+      
+        <tr>
+          <td>Arduino Uno + Buzzer</td>
+          <td><strong>95%</strong></td>
+          <td>87%</td>
+          <td>93%</td>
+          <td>99%</td>
+          <td>97%</td>
+          <td>100%</td>
+          <td>
+            <a href="./uno_buzzer_report.html" target="_blank">View HTML</a> | 
+            <a href="./uno_buzzer_bundle.json" target="_blank">JSON Bundle</a>
+          </td>
+        </tr>
+      
+          </tbody>
+        </table>
+      </body>
+      </html>
+      

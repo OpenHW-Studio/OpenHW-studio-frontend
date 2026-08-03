@@ -1,0 +1,21 @@
+{
+  "uno_led": "bcf94e91c31e19d5baffc8d57accd8ef3ab5ff64",
+  "uno_resistor": "88316946763581b19a62f2b15f2f7e60f257a0da",
+  "uno_button": "88316946763581b19a62f2b15f2f7e60f257a0da",
+  "uno_buzzer": "0b9ffbf8f96933c5fda20bd5aab13992f854d327",
+  "uno_slide_switch": "1def867a1a3904c7aa988258a233574ed9cbae67",
+  "uno_potentiometer": "8b8f616187d60d9db0780da0802d25695da5945e",
+  "uno_dht22": "18845b19a232caf608d674a942ff6f1ea359ca93",
+  "uno_hcsr04": "01a8b1fe36444054625c6a92546fff06f9f5694b",
+  "uno_servo": "f5bcd4eba06bd1254d8e1c7d2f7d372c4b2ac8e2",
+  "uno_pir": "0ad000d4ea63f8620a0d2a68df8f4cedeedcdcd9",
+  "pico_led": "901ca42e0b127fe3fd8ad150aaf620f8a3888f5a",
+  "pico_button": "097c9c8f7d9c0e848b7db09d213caf44e1aba88c",
+  "pico_buzzer": "88b8a9630461266636ab7f3306af2364fa47a987",
+  "pico_slide_switch": "6727aaf22c77c4e587d4e92e2d404fdec4843bc6",
+  "pico_potentiometer": "6646f04e6ab824cddc606b460829388c456141d1",
+  "pico_dht22": "8d4832da0d17987da3c73b9d62402b654521adde",
+  "pico_hcsr04": "8c70eb7e2c55c792f70a46f76df36cbcd4b7abbb",
+  "pico_servo": "ecf2b4fcace6fb439e94875a1dfe4216699ce7f0",
+  "pico_pir": "706b4b73f463b839d53b061141f2891d8f6f13b8"
+}

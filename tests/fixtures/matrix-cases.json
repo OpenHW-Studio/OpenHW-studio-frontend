@@ -1,0 +1,21 @@
+[
+  { "board": "Arduino Uno", "component": "LED", "key": "uno_led" },
+  { "board": "Arduino Uno", "component": "Pushbutton", "key": "uno_button" },
+  { "board": "Arduino Uno", "component": "Buzzer", "key": "uno_buzzer" },
+  { "board": "Arduino Uno", "component": "Slide Switch", "key": "uno_slide_switch" },
+  { "board": "Arduino Uno", "component": "Potentiometer", "key": "uno_potentiometer" },
+  { "board": "Arduino Uno", "component": "DHT22", "key": "uno_dht22" },
+  { "board": "Arduino Uno", "component": "HC-SR04", "key": "uno_hcsr04" },
+  { "board": "Arduino Uno", "component": "Servo Motor", "key": "uno_servo" },
+  { "board": "Arduino Uno", "component": "PIR Motion Sensor", "key": "uno_pir" },
+  
+  { "board": "Raspberry Pi Pico", "component": "LED", "key": "pico_led" },
+  { "board": "Raspberry Pi Pico", "component": "Pushbutton", "key": "pico_button" },
+  { "board": "Raspberry Pi Pico", "component": "Buzzer", "key": "pico_buzzer" },
+  { "board": "Raspberry Pi Pico", "component": "Slide Switch", "key": "pico_slide_switch" },
+  { "board": "Raspberry Pi Pico", "component": "Potentiometer", "key": "pico_potentiometer" },
+  { "board": "Raspberry Pi Pico", "component": "DHT22", "key": "pico_dht22" },
+  { "board": "Raspberry Pi Pico", "component": "HC-SR04", "key": "pico_hcsr04" },
+  { "board": "Raspberry Pi Pico", "component": "Servo Motor", "key": "pico_servo" },
+  { "board": "Raspberry Pi Pico", "component": "PIR Motion Sensor", "key": "pico_pir" }
+]

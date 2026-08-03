@@ -83,6 +83,18 @@ export function AuthProvider({ children }) {
     setAdminToken(null)
   }
 
+  const updateUserSession = (userProfile) => {
+    saveUser(userProfile)
+    setUser(userProfile)
+  }
+
+  const adminLogout = () => {
+    removeAdminToken()
+    removeAdminUser()
+    setAdminUser(null)
+    setAdminToken(null)
+  }
+
   const isAuthenticated = !!user && !!token
   const role = user?.role || null // 'student' | 'teacher' | 'user'
 
