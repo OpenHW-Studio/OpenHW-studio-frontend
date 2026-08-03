@@ -25,8 +25,9 @@ import {
 } from './projectService.js';
 
 const DB_NAME = 'openhw-projects';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'projects';
+const QUEUE_STORE = 'pendingCloudQueue';
 
 let _db = null;
 
@@ -41,6 +42,9 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE)) {
         const store = db.createObjectStore(STORE, { keyPath: 'id' });
         store.createIndex('by_owner_ts', ['owner', 'savedAt'], { unique: false });
+      }
+      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+        db.createObjectStore(QUEUE_STORE, { keyPath: 'projectId' });
       }
     };
     req.onsuccess = (e) => { _db = e.target.result; resolve(_db); };
@@ -68,6 +72,60 @@ function idbRequest(storeName, mode, fn) {
 
 function isAuthenticated(owner) {
   return owner && owner !== 'guest';
+}
+
+// ─── Offline Queue Helpers ───────────────────────────────────────────────────
+
+export async function enqueuePendingCloudProject(payload) {
+  try {
+    await idbRequest(QUEUE_STORE, 'readwrite', (store) => store.put(payload));
+    console.log(`[ProjectStore] Queued project ${payload.projectId} for offline cloud sync.`);
+  } catch (err) {
+    console.warn('[ProjectStore] Failed to enqueue project save:', err);
+  }
+}
+
+export async function removePendingCloudProject(projectId) {
+  try {
+    await idbRequest(QUEUE_STORE, 'readwrite', (store) => store.delete(projectId));
+  } catch (err) {
+    /* non-fatal */
+  }
+}
+
+export async function flushPendingProjectsQueue() {
+  try {
+    const db = await openDB();
+    const queuedItems = await new Promise((resolve) => {
+      const t = db.transaction(QUEUE_STORE, 'readonly');
+      const req = t.objectStore(QUEUE_STORE).getAll();
+      req.onsuccess = (e) => resolve(e.target.result || []);
+      req.onerror = () => resolve([]);
+    });
+
+    if (!queuedItems.length) return;
+
+    console.log(`[ProjectStore] Draining ${queuedItems.length} queued offline project saves...`);
+    for (const payload of queuedItems) {
+      try {
+        await saveProjectToCloud(payload);
+        await removePendingCloudProject(payload.projectId);
+        console.log(`[ProjectStore] Successfully auto-synced project ${payload.projectId} to cloud.`);
+      } catch (err) {
+        console.warn(`[ProjectStore] Auto-sync retry failed for ${payload.projectId}:`, err.message);
+        break; // Still offline or backend unreachable
+      }
+    }
+  } catch (err) {
+    console.warn('[ProjectStore] Error draining project queue:', err);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[ProjectStore] Connectivity restored. Auto-syncing pending cloud projects...');
+    flushPendingProjectsQueue();
+  });
 }
 
 // ─── ID generation ────────────────────────────────────────────────────────────
@@ -109,30 +167,34 @@ export async function saveProject(project) {
   };
   await idbRequest(STORE, 'readwrite', (store) => store.put(record));
   if (isAuthenticated(project.owner)) {
+    const cloudPayload = {
+      projectId: project.id,
+      name: uniqueName,
+      board: project.board,
+      components: project.components,
+      connections: project.connections,
+      wires: project.wires,
+      code: project.code,
+      blocklyXml: project.blocklyXml,
+      blocklyGeneratedCode: project.blocklyGeneratedCode,
+      useBlocklyCode: project.useBlocklyCode,
+      projectFiles: project.projectFiles,
+      openCodeTabs: project.openCodeTabs,
+      activeCodeFileId: project.activeCodeFileId,
+      thumbnail: project.thumbnail,
+      savedAt: record.savedAt,
+    };
     try {
-      await saveProjectToCloud({
-        projectId: project.id,
-        name: uniqueName,
-        board: project.board,
-        components: project.components,
-        connections: project.connections,
-        wires: project.wires,
-        code: project.code,
-        blocklyXml: project.blocklyXml,
-        blocklyGeneratedCode: project.blocklyGeneratedCode,
-        useBlocklyCode: project.useBlocklyCode,
-        projectFiles: project.projectFiles,
-        openCodeTabs: project.openCodeTabs,
-        activeCodeFileId: project.activeCodeFileId,
-        thumbnail: project.thumbnail,
-        savedAt: record.savedAt,
-      });
+      await saveProjectToCloud(cloudPayload);
+      await removePendingCloudProject(project.id);
     } catch (err) {
       console.warn('[ProjectStore] Cloud save failed (offline?):', err.message);
+      await enqueuePendingCloudProject(cloudPayload);
     }
   }
   return uniqueName;
 }
+
 
 export async function loadProject(id) {
   return idbRequest(STORE, 'readonly', (store) => store.get(id));

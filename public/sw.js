@@ -1,27 +1,98 @@
-/*
- * Legacy cleanup service worker.
+/**
+ * OpenHW Studio - Offline PWA Service Worker
  *
- * This file intentionally unregisters itself and clears old caches so clients
- * that still have a prior SW registration recover from stale app-shell assets.
+ * Provides offline caching for static assets, JavaScript bundles, Web Workers,
+ * WASM binaries, and local Wokwi custom elements.
  */
 
-self.addEventListener('install', () => {
+const CACHE_NAME = 'openhw-studio-v1';
+const PRECACHE_ASSETS = [
+  '/',
+  '/index.html',
+  '/wokwi-elements.bundle.js',
+  '/title-logo.png',
+  '/favicon.ico',
+];
+
+// Install Event - Pre-cache core shell resources
+self.addEventListener('install', (event) => {
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Pre-caching core app shell assets...');
+      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+        console.warn('[SW] Pre-cache partial failure (non-fatal):', err);
+      });
+    })
+  );
 });
 
+// Activate Event - Clean up stale cache versions
 self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache version:', key);
+            return caches.delete(key);
+          }
+          return null;
+        })
+      )
+    ).then(() => self.clients.claim())
+  );
+});
 
-    const registrations = await self.registration.unregister();
-    await self.clients.claim();
+// Fetch Event - Serve from Cache with Network Fallback
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  const url = new URL(req.url);
 
-    if (registrations) {
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      clients.forEach((client) => {
-        client.navigate(client.url);
-      });
-    }
-  })());
+  // Bypass non-GET requests and dynamic API / auth / websocket calls
+  if (
+    req.method !== 'GET' ||
+    url.pathname.startsWith('/api') ||
+    url.pathname.startsWith('/auth') ||
+    url.pathname.startsWith('/ws') ||
+    url.protocol === 'ws:' ||
+    url.protocol === 'wss:'
+  ) {
+    return;
+  }
+
+  // Strategy: Cache-First for static JS, CSS, WASM, Web Workers, Images, Fonts
+  event.respondWith(
+    caches.match(req).then((cachedResponse) => {
+      if (cachedResponse) {
+        // Fetch fresh version in background for next reload (Stale-While-Revalidate)
+        fetch(req)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+              caches.open(CACHE_NAME).then((cache) => cache.put(req, networkResponse.clone()));
+            }
+          })
+          .catch(() => {/* Offline fallback */});
+        return cachedResponse;
+      }
+
+      // Network Fallback with Cache Put
+      return fetch(req)
+        .then((networkResponse) => {
+          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+            return networkResponse;
+          }
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, responseToCache));
+          return networkResponse;
+        })
+        .catch(() => {
+          // If offline and requesting navigation (HTML page), return cached index.html
+          if (req.mode === 'navigate') {
+            return caches.match('/index.html') || caches.match('/');
+          }
+          return null;
+        });
+    })
+  );
 });
