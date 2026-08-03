@@ -58,7 +58,7 @@ import { listProjects, deleteProject, formatProjectDate } from "../../services/p
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/api/examples" : "/api/examples");
 
 const LEVEL_ICONS = { BEGINNER: Terminal, INTERMEDIATE: BarChart3, ADVANCED: Target };
 const CATEGORY_ICONS = { Zap, Sliders, Eye, Smartphone, Layers, Cpu, Wifi, Terminal, BarChart3, Target, Microchip };
