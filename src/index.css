@@ -1197,6 +1197,11 @@ body {
 .palette-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 
 /* ─── PANEL SCROLLBAR (serial, code, library, wires, admin panels) ───────── */

@@ -256,9 +256,17 @@ const PlotterCanvas = React.memo(({
     });
   };
 
-  const animate = () => {
+  const lastDrawTimeRef = useRef(0);
+
+  const animate = (timestamp) => {
     if (!plotterPaused && isRunning) {
-      draw();
+      const elapsed = timestamp - lastDrawTimeRef.current;
+      if (elapsed >= 16.6) { // Cap at ~60 FPS (16.6ms per frame)
+        draw();
+        lastDrawTimeRef.current = timestamp;
+      }
+    } else {
+      lastDrawTimeRef.current = timestamp;
     }
     requestRef.current = requestAnimationFrame(animate);
   };
