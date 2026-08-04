@@ -1584,6 +1584,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                         boardColors={boardColors}
                         theme={theme}
                         isRunning={isRunning}
+                        serialPlotLabelsRef={serialPlotLabelsRef}
                       />
                     </div>
                   )}

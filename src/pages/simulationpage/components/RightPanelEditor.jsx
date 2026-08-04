@@ -77,7 +77,7 @@ const RightPanelEditor = memo(({
     <div 
       ref={containerRef} 
       style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', minHeight: 0 }}
-      onKeyDownCapture={(e) => {
+      onKeyDown={(e) => {
         if (editorOptions?.readOnly) {
           // If in read-only mode, aggressively prevent typing so Monaco's suggestions don't get triggered
           // Allow only navigational keys (arrows, page up/down) or copy shortcuts if needed, 
@@ -85,14 +85,14 @@ const RightPanelEditor = memo(({
           // Actually, blocking everything except arrows/copy is safer.
           const isNav = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End'].includes(e.key);
           const isCopy = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C');
-          if (!isNav && !isCopy) {
+          const isSelectAll = (e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A');
+          if (!isNav && !isCopy && !isSelectAll) {
             e.preventDefault();
             e.stopPropagation();
           }
         }
         // Stop key events (like Backspace/Delete) from bubbling to Wokwi Simulator global listeners
         e.stopPropagation();
-        e.nativeEvent.stopPropagation();
       }}
     >
       {compareWithId ? (
