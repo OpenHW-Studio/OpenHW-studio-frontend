@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, deleteProject } from '../../services/projectStore.js'
+import { listProjects, deleteProject, subscribeToProjectStoreChanges } from '../../services/projectStore.js'
 import { getToken } from '../../services/authService.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
@@ -61,6 +61,16 @@ export default function SavedCircuitsSection({ user }) {
   }, [user])
 
   useEffect(() => { load() }, [load])
+
+  // FIX Bug 2: re-load when another tab saves, renames, or deletes a project
+  useEffect(() => {
+    const unsubscribe = subscribeToProjectStoreChanges((event) => {
+      if (['PROJECT_SAVED', 'PROJECT_RENAMED', 'PROJECT_DELETED'].includes(event.type)) {
+        load()
+      }
+    })
+    return unsubscribe
+  }, [load])
 
   useEffect(() => {
     const el = trackRef.current

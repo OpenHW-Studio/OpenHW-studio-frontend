@@ -359,11 +359,14 @@ export class AVRRunner {
             }
             // Inject _setAvrPinDirect for components (like DHT22) that need
             // to directly drive an AVR input pin during bit-banged protocols.
+            // IMPORTANT: do NOT update this.pinStates here. pinStates must only
+            // reflect what the Arduino CPU last drove. If we update it here (on
+            // behalf of the DHT), the attachPort listener will see no change when
+            // the Arduino later pulls the same pin LOW, and will skip calling
+            // updateOopPin — so the DHT never receives the LOW wake signal.
             if (!(inst as any)._setAvrPinDirect) {
                 (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
-                    let cleanPin = boardPin.replace(/^D/i, '');
-                    this.pinStates[cleanPin] = isHigh;
-                    this.pinStates[`D${cleanPin}`] = isHigh;
+                    const cleanPin = boardPin.replace(/^D/i, '');
                     const num = parseInt(cleanPin, 10);
                     if (!isNaN(num)) {
                         if (num >= 8 && num <= 13) {
@@ -891,9 +894,6 @@ export class AVRRunner {
             return rails;
         };        const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => {
             const voltage = typeof isHighOrVoltage === 'number' ? isHighOrVoltage : (isHighOrVoltage ? 5.0 : 0.0);
-            if (arduinoPinStr === '5') {
-                console.log(`[Worker updateOopPin] Pin 5, isHighOrVoltage: ${isHighOrVoltage}, voltage: ${voltage}V`);
-            }
             const visitedEdges = new Set<string>();
             const visitedNodes = new Set<string>();
 
@@ -918,9 +918,6 @@ export class AVRRunner {
 
             const visitNode = (rawNode: string, v: number) => {
                 const node = normalizePin(rawNode);
-                if (arduinoPinStr === '5' || rawNode.includes('btn7') || rawNode.includes('uno1:5')) {
-                    console.log(`[Worker visitNode] Pin 5 path, rawNode: ${rawNode}, node: ${node}, voltage: ${v}V`);
-                }
                 if (visitedNodes.has(node)) return;
 
                 const [compId, compPin] = node.split(':');
@@ -1005,15 +1002,23 @@ export class AVRRunner {
                     if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
                     inst.setPinVoltage(compPin, v);
                     this.circuitDirty = true;
-                    if (this.cpu) {
+                    if (this.cpu && compId !== customCompId) {
                         inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
                     }
                     this.tickI2S(inst, compId, compPin, v > 1.8);
 
-                    // Propagate external voltage back to simulated AVR CPU ports
+                    // Propagate external voltage back to simulated AVR CPU ports.
+                    // IMPORTANT: only update pinStates when propagation comes FROM the board
+                    // (no customCompId) or from a board-originated source.
+                    // If customCompId is an external component (e.g. DHT22), do NOT touch
+                    // pinStates — doing so poisons the attachPort change-detection, causing
+                    // the Arduino's own LOW wake signal to be silently skipped.
                     if (isMainBoard) {
                         const isHigh = v > 1.8;
-                        this.pinStates[compPin] = isHigh;
+                        const originIsExternal = customCompId && customCompId !== this.boardId;
+                        if (!originIsExternal) {
+                            this.pinStates[compPin] = isHigh;
+                        }
                         if (compPin.startsWith('A')) {
                             const bit = parseInt(compPin.slice(1), 10);
                             if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
@@ -1064,10 +1069,7 @@ export class AVRRunner {
                 }
                 if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
                 const state = port.pinState(bit);
-                if (pinStr === '5') {
-                    console.log(`[Worker getAvrPinModeState] Pin 5, port: ${port ? 'portD' : 'null'}, bit: ${bit}, avrState: ${state}, PinState.InputPullUp: ${PinState.InputPullUp}`);
-                }
-                if (state === PinState.High || state === PinState.InputPullUp) {
+                if (state === PinState.High || state === PinState.InputPullUp || state === 2) {
                     return { isDriven: true, isHigh: true };
                 }
                 if (state === PinState.Low) {
@@ -1136,7 +1138,7 @@ export class AVRRunner {
                             bit = num;
                         }
                     }
-                    const isPullUp = port ? port.pinState(bit) === PinState.InputPullUp : false;
+                    const isPullUp = port ? (port.pinState(bit) === PinState.InputPullUp || port.pinState(bit) === 2) : false;
 
                     // INPUT_PULLUP pins propagate their weak pull-up voltage outward.
                     // This allows pushbuttons to pull the pin LOW when pressed (overriding
@@ -1184,13 +1186,12 @@ export class AVRRunner {
                     if (inst.pins['ECHO']) {
                         updateOopPin('ECHO', echoV, compId);
                     }
-                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
-                    const dataV = (inst as any)._drivingBus && (inst as any)._lastDrivenVoltage !== undefined
+                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22' || inst.type.includes('dht')) {
+                    const dataV = (inst as any)._lastDrivenVoltage !== undefined
                         ? (inst as any)._lastDrivenVoltage
-                        : inst.pins['DATA']?.voltage ?? 5.0;
-                    if (inst.pins['DATA']) {
-                        updateOopPin('DATA', dataV, compId);
-                    }
+                        : (inst.pins['DATA']?.voltage ?? inst.pins['SDA']?.voltage ?? 5.0);
+                    const pinName = inst.pins['DATA'] ? 'DATA' : (inst.pins['SDA'] ? 'SDA' : 'DATA');
+                    updateOopPin(pinName, dataV, compId);
                 } else if (inst.type.includes('a4988')) {
                     ['1A', '1B', '2A', '2B'].forEach(pin => {
                         if (inst.pins[pin]) {
@@ -1351,13 +1352,13 @@ export class AVRRunner {
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
                     // Allow OUTPUT, InputPullUp, and Input (high-impedance release for open-drain buses like 1-Wire/I2C)
                     const state = port.pinState(i);
-                    const isOutputOrPullUpOrInput = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp || state === PinState.Input;
+                    const isOutputOrPullUpOrInput = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp || state === PinState.Input || state === 2;
                     if (!isOutputOrPullUpOrInput) {
                         return;
                     }
 
                     // For open-drain buses (like 1-Wire / I2C), switching to high-impedance Input releases the wire HIGH.
-                    const isHigh = state === PinState.InputPullUp || state === PinState.High || state === PinState.Input || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
+                    const isHigh = state === PinState.InputPullUp || state === 2 || state === PinState.High || state === PinState.Input || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1580,10 +1581,6 @@ export class AVRRunner {
             if (shouldSolvePhysics) {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
-                }
-                if (this.cpu) {
-                    const pind = this.cpu.data[0x29];
-                    console.log(`[PhysicsSolve] PIND2=${(pind>>2)&1} PIND3=${(pind>>3)&1} PIND4=${(pind>>4)&1} PIND5=${(pind>>5)&1} DDRD=${this.cpu.data[0x2A]} PORTD=${this.cpu.data[0x2B]}`);
                 }
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
