@@ -1522,6 +1522,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialIngressArbitrationRef = useRef(new Map());
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
+  const pendingSerialLogsRef = useRef([]);
 
   const canvasRef = useRef(null);
   const innerCanvasRef = useRef(null); // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
@@ -3217,6 +3218,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     let lastFrameAt = frameStart;
     let frameCount = 0;
     let worstFrameMs = 0;
+    let lastFlushAt = 0;
 
     const sample = (now) => {
       frameCount += 1;
@@ -3236,7 +3238,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           segDragRef.current ||
           isExplorerDraggingRef.current;
 
-        workerRef.current.postMessage({ type: "FLUSH_VISUALS" });
+        const threshold = isInteracting ? 80 : 30; // 12fps during drag, ~33fps when running
+        if (now - lastFlushAt >= threshold) {
+          workerRef.current.postMessage({ type: "FLUSH_VISUALS" });
+          lastFlushAt = now;
+        }
       }
 
       const windowMs = now - frameStart;
@@ -8889,34 +8895,46 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
       parseSerialForPlotter(chunk);
       const ts = getSerialTimestamp();
-      setSerialHistory((prev) => {
-        let next =
-          prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
-        if (next.length > 0) {
-          const last = next[next.length - 1];
-          if (
-            last.dir === "rx" &&
-            last.boardId === normalizedBoardId &&
-            last.source === normalizedSource &&
-            !last.text.endsWith("\n")
-          ) {
-            next[next.length - 1] = { ...last, text: last.text + chunk };
-            return next;
+
+      if (!isRunning) {
+        // If simulation is not running (e.g. static debug output), update state immediately
+        setSerialHistory((prev) => {
+          let next =
+            prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+          if (next.length > 0) {
+            const last = next[next.length - 1];
+            if (
+              last.dir === "rx" &&
+              last.boardId === normalizedBoardId &&
+              last.source === normalizedSource &&
+              !last.text.endsWith("\n")
+            ) {
+              next[next.length - 1] = { ...last, text: last.text + chunk };
+              return next;
+            }
           }
-        }
-        return [
-          ...next,
-          {
-            dir: "rx",
-            text: chunk,
-            ts,
-            boardId: normalizedBoardId,
-            source: normalizedSource,
-          },
-        ];
-      });
+          return [
+            ...next,
+            {
+              dir: "rx",
+              text: chunk,
+              ts,
+              boardId: normalizedBoardId,
+              source: normalizedSource,
+            },
+          ];
+        });
+      } else {
+        // Queue serial output chunks to batch-update state and prevent main-thread re-render choking
+        pendingSerialLogsRef.current.push({
+          chunk,
+          boardId: normalizedBoardId,
+          source: normalizedSource,
+          ts,
+        });
+      }
     },
-    [parseSerialForPlotter],
+    [parseSerialForPlotter, isRunning],
   );
 
   const pushSerialRxChunk = useCallback(
@@ -8948,6 +8966,59 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       appendSerialRxChunk(entry.chunk, entry.boardId, entry.source);
     });
   }, [serialPaused, appendSerialRxChunk]);
+
+  const flushSerialLogs = useCallback(() => {
+    const logsToFlush = pendingSerialLogsRef.current;
+    if (logsToFlush.length === 0) return;
+    pendingSerialLogsRef.current = [];
+
+    setSerialHistory((prev) => {
+      let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+
+      logsToFlush.forEach(({ chunk, boardId, source, ts }) => {
+        if (next.length > 0) {
+          const last = next[next.length - 1];
+          if (
+            last.dir === "rx" &&
+            last.boardId === boardId &&
+            last.source === source &&
+            !last.text.endsWith("\n")
+          ) {
+            next[next.length - 1] = { ...last, text: last.text + chunk };
+            return;
+          }
+        }
+        next.push({
+          dir: "rx",
+          text: chunk,
+          ts,
+          boardId,
+          source,
+        });
+      });
+
+      if (next.length > 2000) {
+        next = next.slice(next.length - 1800);
+      }
+      return next;
+    });
+  }, []);
+
+  // Periodic flush loop to batch-update console logs every 100ms
+  useEffect(() => {
+    if (!isRunning) {
+      if (pendingSerialLogsRef.current.length > 0) {
+        flushSerialLogs();
+      }
+      return;
+    }
+
+    const interval = setInterval(() => {
+      flushSerialLogs();
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isRunning, flushSerialLogs]);
 
   const pushSerialTxLine = useCallback(
     (text, boardId = "all", source = "sim") => {
