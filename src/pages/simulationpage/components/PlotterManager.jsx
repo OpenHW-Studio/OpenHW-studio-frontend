@@ -48,8 +48,11 @@ export const PlotterToolbar = ({ onAddChannel, isPaused, onTogglePause, onClear,
           <option value={10}>10ms</option>
           <option value={100}>100ms</option>
           <option value={500}>500ms</option>
-          <option value={1000}>1000ms</option>
-          <option value={2000}>2000ms</option>
+          <option value={1000}>1000ms (1s)</option>
+          <option value={2000}>2000ms (2s)</option>
+          <option value={5000}>5000ms (5s)</option>
+          <option value={10000}>10000ms (10s)</option>
+          <option value={30000}>30000ms (30s)</option>
         </select>
       </div>
 
@@ -73,7 +76,7 @@ export const PlotterToolbar = ({ onAddChannel, isPaused, onTogglePause, onClear,
   );
 };
 
-export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardColors, selectedPins, setSelectedPins, onClose }) => {
+export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardColors, selectedPins, setSelectedPins, onClose, plotDataRef, serialPlotLabelsRef }) => {
   const boards = (boardOptions || []).filter(id => id !== 'all');
   const [selectedBoardId, setSelectedBoardId] = React.useState(boards[0] || null);
 
@@ -121,7 +124,35 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
 
   const activeBoardId = selectedBoardId || boards[0];
   const activeKind = boardKinds[activeBoardId] || 'arduino_uno';
-  const activePins = activeKind === 'rp2040' ? PICO_BASE_PINS : UNO_BASE_PINS;
+  const basePins = activeKind === 'rp2040' ? PICO_BASE_PINS : UNO_BASE_PINS;
+  
+  const [serialVars, setSerialVars] = React.useState([]);
+  React.useEffect(() => {
+    const foundVars = new Set();
+
+    // 1. Include labels parsed directly by serial plotter
+    if (serialPlotLabelsRef?.current && Array.isArray(serialPlotLabelsRef.current)) {
+      serialPlotLabelsRef.current.forEach(lbl => {
+        if (lbl) foundVars.add(lbl);
+      });
+    }
+
+    // 2. Include labels stored in recent plotData frames
+    if (plotDataRef?.current) {
+      const data = plotDataRef.current;
+      const limit = Math.max(0, data.length - 200);
+      for (let i = data.length - 1; i >= limit; i--) {
+        const pt = data[i];
+        if (pt.serialVars && (pt.boardId === activeBoardId || boards.length === 1 || pt.boardId === 'default')) {
+          Object.keys(pt.serialVars).forEach(k => foundVars.add(k));
+        }
+      }
+    }
+
+    setSerialVars(Array.from(foundVars));
+  }, [activeBoardId, plotDataRef, serialPlotLabelsRef, boards.length]);
+
+  const activePins = [...basePins, ...serialVars];
   const activeBoardColor = boardColors[activeBoardId] || 'var(--accent)';
 
   return (
@@ -229,7 +260,7 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
           </div>
         ) : (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(42px, 1fr))', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 6 }}>
               {activePins.map(pin => {
                 const pinIdx = selectedPins.findIndex(p => p.boardId === activeBoardId && p.pinId === pin);
                 const isSelected = pinIdx >= 0;
@@ -239,6 +270,7 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
                 return (
                   <button
                     key={pin}
+                    title={pin}
                     onClick={() => {
                       setSelectedPins(prev => {
                         if (isSelected) return prev.filter(p => p.boardId !== activeBoardId || p.pinId !== pin);
@@ -247,7 +279,7 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
                       });
                     }}
                     style={{
-                      padding: '8px 2px',
+                      padding: '6px 4px',
                       fontSize: 10,
                       fontWeight: 700,
                       background: isSelected ? `${selectedColor}25` : 'rgba(255,255,255,0.02)',
@@ -255,6 +287,10 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
                       border: `1px solid ${isSelected ? selectedColor : 'var(--border)'}`,
                       borderRadius: 6,
                       cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      width: '100%',
                       transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
                       boxShadow: isSelected ? `inset 0 0 10px ${selectedColor}15` : 'none'
                     }}
@@ -280,7 +316,8 @@ export const PlotterManager = ({
   plotDataRef, selectedPlotPins, setSelectedPlotPins,
   plotterTimeDiv, setPlotterTimeDiv,
   serialBoardOptions, serialBoardLabels, serialBoardKinds,
-  boardColors, theme, isRunning
+  boardColors, theme, isRunning,
+  serialPlotLabelsRef
 }) => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
@@ -302,6 +339,8 @@ export const PlotterManager = ({
           selectedPins={selectedPlotPins}
           setSelectedPins={setSelectedPlotPins}
           onClose={() => setShowAddChannel(false)}
+          plotDataRef={plotDataRef}
+          serialPlotLabelsRef={serialPlotLabelsRef}
         />
       )}
 
@@ -309,7 +348,7 @@ export const PlotterManager = ({
         <div style={{ display: 'flex', minHeight: '100%', width: '100%' }}>
           {selectedPlotPins.length > 0 && (
             <div style={{
-              width: 65,
+              width: 85,
               background: 'var(--bg2)',
               borderRight: '1px solid var(--border)',
               display: 'flex',
@@ -317,18 +356,49 @@ export const PlotterManager = ({
               flexShrink: 0,
               zIndex: 2
             }}>
-              {selectedPlotPins.map((chan, i) => {
+              {selectedPlotPins.map((rawChan, i) => {
+                const chan = typeof rawChan === 'string' ? { boardId: 'default', pinId: rawChan } : rawChan;
+                if (!chan || !chan.pinId) return null;
+                const isAnalog = typeof chan.pinId === 'string' && chan.pinId.startsWith('A');
+                const isLogic = !isNaN(parseInt(chan.pinId));
+                const trackHeight = (isAnalog || isLogic) ? 100 : 160;
                 const color = PLOTTER_COLORS[i % PLOTTER_COLORS.length];
-                const boardLabel = serialBoardLabels[chan.boardId] || chan.boardId;
+                const boardLabel = serialBoardLabels[chan.boardId] || chan.boardId || 'default';
+
+                // Extract latest value for live sidebar badge display
+                let liveVal = null;
+                if (plotDataRef?.current && plotDataRef.current.length > 0) {
+                  const lastPt = plotDataRef.current[plotDataRef.current.length - 1];
+                  if (lastPt) {
+                    if (isAnalog) {
+                      const pinIdx = parseInt(chan.pinId.slice(1));
+                      const rawAnalog = lastPt.analog?.[pinIdx];
+                      if (rawAnalog !== undefined) {
+                        liveVal = (rawAnalog * 5 / 1023).toFixed(2) + 'V';
+                      }
+                    } else if (isLogic) {
+                      const logicVal = lastPt.pins?.[chan.pinId];
+                      if (logicVal !== undefined) {
+                        liveVal = logicVal ? 'HIGH' : 'LOW';
+                      }
+                    } else {
+                      const sVal = lastPt.serialVars?.[chan.pinId];
+                      if (sVal !== undefined && typeof sVal === 'number') {
+                        liveVal = sVal.toFixed(2);
+                      }
+                    }
+                  }
+                }
+
                 return (
                   <div key={`${chan.boardId}:${chan.pinId}`} style={{
-                    height: 80,
+                    height: trackHeight,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderBottom: '1px solid var(--border)',
-                    padding: '4px 2px',
+                    padding: '4px 4px',
                     gap: 3,
                     position: 'relative',
                     background: i % 2 === 1 ? 'rgba(255,255,255,0.01)' : 'transparent',
@@ -337,9 +407,36 @@ export const PlotterManager = ({
                     <span style={{ fontSize: 9, color: 'var(--text4)', textTransform: 'lowercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center' }} title={boardLabel}>
                       {boardLabel}
                     </span>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: color, fontFamily: 'JetBrains Mono, monospace' }}>
+                    <span 
+                      style={{ 
+                        fontSize: 11, 
+                        fontWeight: 800, 
+                        color: color, 
+                        fontFamily: 'JetBrains Mono, monospace',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '100%',
+                        textAlign: 'center'
+                      }}
+                      title={chan.pinId}
+                    >
                       {chan.pinId}
                     </span>
+                    {liveVal !== null && (
+                      <span style={{ 
+                        fontSize: 10, 
+                        fontWeight: 700, 
+                        color: 'var(--text1)', 
+                        fontFamily: 'JetBrains Mono, monospace',
+                        background: 'var(--bg3)',
+                        padding: '1px 4px',
+                        borderRadius: 3,
+                        marginTop: 1
+                      }}>
+                        {liveVal}
+                      </span>
+                    )}
                     <button
                       onClick={() => setSelectedPlotPins(prev => prev.filter(p => p.boardId !== chan.boardId || p.pinId !== chan.pinId))}
                       style={{ background: 'transparent', border: 'none', color: 'var(--text4)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}

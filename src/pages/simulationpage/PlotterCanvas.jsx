@@ -1,7 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 
 const PLOTTER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-const TRACK_HEIGHT = 80;
+const getTrackHeight = (pinId) => {
+  if (!pinId) return 100;
+  const isAnalog = typeof pinId === 'string' && pinId.startsWith('A');
+  const isLogic = !isNaN(parseInt(pinId));
+  const isHardwarePin = isAnalog || isLogic;
+  return isHardwarePin ? 100 : 160;
+};
 
 const PlotterCanvas = React.memo(({ 
   plotDataRef, 
@@ -13,6 +19,7 @@ const PlotterCanvas = React.memo(({
 }) => {
   const canvasRef = useRef(null);
   const requestRef = useRef();
+  const sessionBoundsRef = useRef({});
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -33,22 +40,30 @@ const PlotterCanvas = React.memo(({
 
     // Read from Ref directly
     const plotData = plotDataRef?.current || [];
+    if (plotData.length === 0) {
+      sessionBoundsRef.current = {};
+    }
     
     // We need to find the "initial state" for each channel (the last point before startTime)
     // and then all points within the window.
     
-    const trackHeight = TRACK_HEIGHT;
     const getX = (time) => ((time - startTime) / timeWindow) * width;
 
-    selectedPlotPins.forEach((chan, i) => {
-      const trackTop = i * trackHeight;
+    let currentTop = 0;
+    selectedPlotPins.forEach((rawChan, i) => {
+      const chan = typeof rawChan === 'string' ? { boardId: 'default', pinId: rawChan } : rawChan;
+      if (!chan || !chan.pinId) return;
+
+      const trackHeight = getTrackHeight(chan.pinId);
+      const trackTop = currentTop;
       const trackBottom = trackTop + trackHeight;
       const trackMid = trackTop + trackHeight / 2;
       const trackHighY = trackTop + (trackHeight * 0.15);
       const trackLowY = trackBottom - (trackHeight * 0.15);
+      currentTop += trackHeight;
       
       const color = PLOTTER_COLORS[i % PLOTTER_COLORS.length];
-      const isAnalog = chan.pinId.startsWith('A');
+      const isAnalog = typeof chan.pinId === 'string' && chan.pinId.startsWith('A');
       const isLogic = !isNaN(parseInt(chan.pinId));
       const isSerial = !isAnalog && !isLogic;
 
@@ -85,23 +100,32 @@ const PlotterCanvas = React.memo(({
       }
 
       // --- Data Processing for this Channel ---
-      const channelAllData = plotData.filter(pt => pt.boardId === chan.boardId);
-      if (channelAllData.length === 0) return;
-
-      // Find the last point BEFORE the window starts to have a continuous line from the left edge
       let lastPointBefore = null;
       const windowPoints = [];
-      
-      for (let j = channelAllData.length - 1; j >= 0; j--) {
-        const pt = channelAllData[j];
+      let hasAnyData = false;
+
+      // Iterate backwards and break early when we go past the startTime.
+      // This avoids scanning the entire plotData array (which causes the UI freeze).
+      for (let j = plotData.length - 1; j >= 0; j--) {
+        const pt = plotData[j];
+        if (pt.boardId !== chan.boardId) continue;
+
+        hasAnyData = true;
+
         if (pt.time < startTime) {
           lastPointBefore = pt;
           break;
         }
+        
         if (pt.time >= startTime && pt.time <= now) {
-          windowPoints.unshift(pt);
+          windowPoints.push(pt);
         }
       }
+
+      if (!hasAnyData) return;
+      
+      // Reverse since we collected them backwards
+      windowPoints.reverse();
 
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
@@ -147,17 +171,56 @@ const PlotterCanvas = React.memo(({
         });
         if (lastY !== null) ctx.lineTo(width, lastY); // Extend to right edge
       } else if (isSerial) {
-        // Find serial min/max for scaling
-        let sMin = 0, sMax = 1, found = false;
-        const allRelevant = lastPointBefore ? [lastPointBefore, ...windowPoints] : windowPoints;
-        allRelevant.forEach(pt => {
-          const v = pt.serialVars?.[chan.pinId];
-          if (v !== undefined) {
-            if (!found) { sMin = v; sMax = v; found = true; }
-            else { sMin = Math.min(sMin, v); sMax = Math.max(sMax, v); }
+        // Maintain session-wide sticky min/max so range doesn't shrink back when old data points scroll off screen
+        const chanKey = `${chan.boardId}:${chan.pinId}`;
+        if (!sessionBoundsRef.current[chanKey]) {
+          sessionBoundsRef.current[chanKey] = { min: Infinity, max: -Infinity };
+        }
+        const sBounds = sessionBoundsRef.current[chanKey];
+
+        // Scan all plotData points in session to update sticky bounds
+        plotData.forEach(pt => {
+          if (pt.boardId === chan.boardId) {
+            const v = pt.serialVars?.[chan.pinId];
+            if (v !== undefined && typeof v === 'number' && !isNaN(v)) {
+              if (v < sBounds.min) sBounds.min = v;
+              if (v > sBounds.max) sBounds.max = v;
+            }
           }
         });
-        if (sMin === sMax) { sMin -= 1; sMax += 1; }
+
+        let sMin = sBounds.min;
+        let sMax = sBounds.max;
+        let found = (sMin !== Infinity && sMax !== -Infinity);
+
+        if (!found) {
+          sMin = 0;
+          sMax = 100;
+        } else {
+          // Stable Baseline Range: Default base range to [0, 100] (or expand if data goes below 0 or above 100).
+          // This prevents historical lines from jumping/shifting when a new value appears or when old data scrolls off screen!
+          const baseMin = sMin < 0 ? Math.floor(sMin / 10) * 10 - 10 : 0;
+          const baseMax = Math.max(100, Math.ceil(sMax / 10) * 10 + 10);
+          
+          sMin = Math.min(sMin, baseMin);
+          sMax = Math.max(sMax, baseMax);
+
+          // Add subtle padding so line doesn't touch exact canvas border
+          const pad = (sMax - sMin) * 0.05;
+          sMin -= pad;
+          sMax += pad;
+        }
+
+        // Draw subtle Y-axis range text on the track background
+        ctx.fillStyle = isLightTheme ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(sMax.toFixed(1), width - 6, trackHighY + 3);
+        ctx.fillText(sMin.toFixed(1), width - 6, trackLowY + 3);
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
 
         if (lastPointBefore && lastPointBefore.serialVars?.[chan.pinId] !== undefined) {
           const v = lastPointBefore.serialVars[chan.pinId];
@@ -166,25 +229,44 @@ const PlotterCanvas = React.memo(({
           started = true;
           lastY = y;
         }
+
         windowPoints.forEach(pt => {
           const v = pt.serialVars?.[chan.pinId];
           if (v !== undefined) {
-            const x = getX(pt.time);
+            const x = Math.max(0, getX(pt.time));
             const y = trackLowY - ((v - sMin) / (sMax - sMin)) * (trackLowY - trackHighY);
-            if (!started) { ctx.moveTo(0, y); started = true; }
-            else ctx.lineTo(x, y);
+            if (!started) {
+              ctx.moveTo(0, y);
+              started = true;
+            } else {
+              // Sample & Hold step line: hold previous value until new reading at x
+              if (lastY !== null) {
+                ctx.lineTo(x, lastY);
+              }
+              ctx.lineTo(x, y);
+            }
             lastY = y;
           }
         });
-        if (lastY !== null) ctx.lineTo(width, lastY); // Extend to right edge
+        if (lastY !== null) {
+          ctx.lineTo(width, lastY); // Extend flat to right edge (current time)
+        }
       }
       ctx.stroke();
     });
   };
 
-  const animate = () => {
+  const lastDrawTimeRef = useRef(0);
+
+  const animate = (timestamp) => {
     if (!plotterPaused && isRunning) {
-      draw();
+      const elapsed = timestamp - lastDrawTimeRef.current;
+      if (elapsed >= 16.6) { // Cap at ~60 FPS (16.6ms per frame)
+        draw();
+        lastDrawTimeRef.current = timestamp;
+      }
+    } else {
+      lastDrawTimeRef.current = timestamp;
     }
     requestRef.current = requestAnimationFrame(animate);
   };
@@ -194,7 +276,12 @@ const PlotterCanvas = React.memo(({
     return () => cancelAnimationFrame(requestRef.current);
   }, [selectedPlotPins, plotterPaused, plotterTimeDiv, theme, isRunning]);
 
-  const canvasHeight = selectedPlotPins.length > 0 ? (selectedPlotPins.length * TRACK_HEIGHT) : 600;
+  const totalTrackHeight = selectedPlotPins.reduce((sum, rawChan) => {
+    const chan = typeof rawChan === 'string' ? { boardId: 'default', pinId: rawChan } : rawChan;
+    return sum + (chan?.pinId ? getTrackHeight(chan.pinId) : 100);
+  }, 0);
+
+  const canvasHeight = selectedPlotPins.length > 0 ? totalTrackHeight : 600;
 
   return (
     <div style={{ flex: 1, position: 'relative', background: theme === 'light' ? '#f8fafc' : '#070b14', overflowY: 'auto' }}>

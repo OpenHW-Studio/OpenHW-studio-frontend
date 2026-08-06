@@ -84,7 +84,8 @@ const PalettePanel = memo(({
               onDragStart={e => onPaletteDragStart(e, item)}
               onClick={() => { addComponentAtCenter(item); }}
               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
+              title={item.warning ? `${item.label}\n⚠️ ${item.warning}` : item.label}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box', position: 'relative' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = `${gColor}44`; e.currentTarget.style.background = 'var(--bg)'; }}
             >
@@ -141,10 +142,10 @@ const PalettePanel = memo(({
                       addComponentAtCenter(item);
                     }}
                     onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                    title={item.label}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
-                    onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
-                    onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
+                    title={item.warning ? `${item.label}\n⚠️ ${item.warning}` : item.label}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: item.warning ? '1px solid #f59e0b88' : '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
+                    onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = item.warning ? '#f59e0b' : groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
+                    onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = item.warning ? '#f59e0b88' : 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
                   >
                     {/* Overlay for locked state */}
                     {locked && (
@@ -182,7 +183,8 @@ const PalettePanel = memo(({
                     addComponentAtCenter(item);
                   }}
                   onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                  style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
+                  title={item.warning ? `${item.label}\n⚠️ ${item.warning}` : item.label}
+                  style={{ padding: '7px 10px', borderRadius: 7, border: item.warning ? '1px solid #f59e0b88' : '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${item.warning ? '#f59e0b' : groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
                   onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
                   onMouseLeave={e => { if (!locked) e.currentTarget.style.background = 'var(--card)'; }}
                 >
@@ -398,6 +400,8 @@ const PalettePanel = memo(({
               display: paletteViewMode === 'grid' ? 'block' : 'flex',
               flexDirection: 'column', gap: paletteViewMode === 'list' ? 2 : 0,
               padding: '4px 8px 8px',
+              willChange: 'transform',
+              transform: 'translate3d(0,0,0)',
             }}>
             {catalogItemsGrid}
               <div key="palette-tip" className="mt-auto px-2 py-2.5 text-[11px] text-[var(--text3)] leading-relaxed">

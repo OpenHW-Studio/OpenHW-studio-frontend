@@ -3933,9 +3933,9 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
       if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
       if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
-      if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
-      if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
-      if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+      delete diagramJsonPayload.blocklyXml;
+      delete diagramJsonPayload.blocklyGeneratedCode;
+      delete diagramJsonPayload.useBlocklyCode;
       // Always strip file-tree / tab state — not useful to display
       delete diagramJsonPayload.projectFiles;
       delete diagramJsonPayload.openCodeTabs;

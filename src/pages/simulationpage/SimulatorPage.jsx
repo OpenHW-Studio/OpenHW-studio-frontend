@@ -1513,6 +1513,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialIngressArbitrationRef = useRef(new Map());
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
+  const pendingSerialLogsRef = useRef([]);
 
   const canvasRef = useRef(null);
   const innerCanvasRef = useRef(null); // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
@@ -3174,6 +3175,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     let lastFrameAt = frameStart;
     let frameCount = 0;
     let worstFrameMs = 0;
+    let lastFlushAt = 0;
 
     const sample = (now) => {
       frameCount += 1;
@@ -3184,7 +3186,22 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }
 
       if (workerRef.current) {
-        workerRef.current.postMessage({ type: "FLUSH_VISUALS" });
+
+        // If the user is actively panning or dragging, throttle visual updates to ~12fps
+        // This frees up the main thread to prioritize DOM layout and mouse events, fixing the drag lag.
+        const isInteracting =
+          isPanningRef.current ||
+          movingComp.current ||
+          isComponentDragging ||
+          segDragRef.current ||
+          isExplorerDraggingRef.current;
+
+        const threshold = isInteracting ? 80 : 30; // 12fps during drag, ~33fps when running
+        if (now - lastFlushAt >= threshold) {
+          workerRef.current.postMessage({ type: "FLUSH_VISUALS" });
+          lastFlushAt = now;
+        }
+
       }
 
       const windowMs = now - frameStart;
@@ -4455,11 +4472,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         diagramJsonPayload.connections.length === 0
       )
         delete diagramJsonPayload.connections;
-      if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
-      if (!diagramJsonPayload.blocklyGeneratedCode)
-        delete diagramJsonPayload.blocklyGeneratedCode;
-      if (!diagramJsonPayload.useBlocklyCode)
-        delete diagramJsonPayload.useBlocklyCode;
+
+      delete diagramJsonPayload.blocklyXml;
+      delete diagramJsonPayload.blocklyGeneratedCode;
+      delete diagramJsonPayload.useBlocklyCode;
+
       // Always strip file-tree / tab state — not useful to display
       delete diagramJsonPayload.projectFiles;
       delete diagramJsonPayload.openCodeTabs;
@@ -8698,44 +8715,64 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     serialPlotBufferRef.current = lines[lines.length - 1];
 
     completeLines.forEach((line) => {
-      const parts = line.split(/[,\s\t]+/).filter(Boolean);
-      if (parts.length === 0) return;
+      const trimmed = line.trim();
+      if (!trimmed) return;
 
-      const isNumeric = parts.every((p) => !isNaN(parseFloat(p)));
-      if (!isNumeric) {
-        serialPlotLabelsRef.current = parts;
-        setSelectedPlotPins((prev) => {
-          const nextPins = [...prev];
-          parts.forEach((lbl) => {
-            if (!nextPins.includes(lbl)) nextPins.push(lbl);
-          });
-          return nextPins;
+      // 1. Key:Value format (e.g., "Temperature:24.5" or "Temp: 24.5, Humidity: 60.0")
+      if (trimmed.includes(':')) {
+        const pairs = trimmed.split(/[,\t]+/).filter(Boolean);
+        const parsedVars = {};
+        let validPairCount = 0;
+
+        pairs.forEach(pair => {
+          const colonIdx = pair.indexOf(':');
+          if (colonIdx > 0) {
+            const label = pair.slice(0, colonIdx).trim();
+            const valStr = pair.slice(colonIdx + 1).trim();
+            const val = parseFloat(valStr);
+            if (label && /^[A-Za-z0-9_ -]+$/.test(label) && !isNaN(val)) {
+              parsedVars[label] = val;
+              validPairCount++;
+            }
+          }
         });
-        return;
-      }
 
-      latestParsedSerialRef.current = parts.map((p) => parseFloat(p));
-      if (serialPlotLabelsRef.current.length < parts.length) {
-        for (
-          let i = serialPlotLabelsRef.current.length;
-          i < parts.length;
-          i++
-        ) {
-          serialPlotLabelsRef.current.push(`SVar${i}`);
+        if (validPairCount > 0) {
+          const labels = Object.keys(parsedVars);
+          labels.forEach(lbl => {
+            if (!serialPlotLabelsRef.current.includes(lbl)) {
+              serialPlotLabelsRef.current.push(lbl);
+            }
+          });
+          latestParsedSerialRef.current = Object.values(parsedVars);
+          return;
         }
       }
 
-      setSelectedPlotPins((prev) => {
-        let changed = false;
-        const nextPins = [...prev];
-        serialPlotLabelsRef.current.slice(0, parts.length).forEach((lbl) => {
-          if (!nextPins.includes(lbl)) {
-            nextPins.push(lbl);
-            changed = true;
+      // 2. Purely numeric values (e.g. "24.5, 60.0" or "24.5 60.0")
+      const parts = trimmed.split(/[,\s\t]+/).filter(Boolean);
+      if (parts.length === 0) return;
+
+      const isNumeric = parts.every((p) => !isNaN(parseFloat(p)));
+      if (isNumeric) {
+        latestParsedSerialRef.current = parts.map((p) => parseFloat(p));
+        if (serialPlotLabelsRef.current.length < parts.length) {
+          for (let i = serialPlotLabelsRef.current.length; i < parts.length; i++) {
+            serialPlotLabelsRef.current.push(`SVar${i}`);
           }
-        });
-        return changed ? nextPins : prev;
-      });
+        }
+        return;
+      }
+
+      // 3. Potential Header Line (e.g. "Temperature, Humidity")
+      // Ignore text lines if they contain sentence punctuation (!, ?, ., ;, etc.) or error log words
+      const hasSentencePunctuation = /[!?.;"']/.test(trimmed);
+      const isCleanHeader = parts.length <= 8 && parts.every(p => /^[A-Za-z0-9_\-]+$/.test(p));
+      const hasLogWords = /^(failed|error|warning|info|connecting|connected|initializing|setup|reading|booting)$/i.test(parts[0]);
+
+      if (!hasSentencePunctuation && isCleanHeader && !hasLogWords) {
+        serialPlotLabelsRef.current = parts;
+      }
     });
   }, []);
 
@@ -8766,34 +8803,46 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
       parseSerialForPlotter(chunk);
       const ts = getSerialTimestamp();
-      setSerialHistory((prev) => {
-        let next =
-          prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
-        if (next.length > 0) {
-          const last = next[next.length - 1];
-          if (
-            last.dir === "rx" &&
-            last.boardId === normalizedBoardId &&
-            last.source === normalizedSource &&
-            !last.text.endsWith("\n")
-          ) {
-            next[next.length - 1] = { ...last, text: last.text + chunk };
-            return next;
+
+      if (!isRunning) {
+        // If simulation is not running (e.g. static debug output), update state immediately
+        setSerialHistory((prev) => {
+          let next =
+            prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+          if (next.length > 0) {
+            const last = next[next.length - 1];
+            if (
+              last.dir === "rx" &&
+              last.boardId === normalizedBoardId &&
+              last.source === normalizedSource &&
+              !last.text.endsWith("\n")
+            ) {
+              next[next.length - 1] = { ...last, text: last.text + chunk };
+              return next;
+            }
           }
-        }
-        return [
-          ...next,
-          {
-            dir: "rx",
-            text: chunk,
-            ts,
-            boardId: normalizedBoardId,
-            source: normalizedSource,
-          },
-        ];
-      });
+          return [
+            ...next,
+            {
+              dir: "rx",
+              text: chunk,
+              ts,
+              boardId: normalizedBoardId,
+              source: normalizedSource,
+            },
+          ];
+        });
+      } else {
+        // Queue serial output chunks to batch-update state and prevent main-thread re-render choking
+        pendingSerialLogsRef.current.push({
+          chunk,
+          boardId: normalizedBoardId,
+          source: normalizedSource,
+          ts,
+        });
+      }
     },
-    [parseSerialForPlotter],
+    [parseSerialForPlotter, isRunning],
   );
 
   const pushSerialRxChunk = useCallback(
@@ -8825,6 +8874,59 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       appendSerialRxChunk(entry.chunk, entry.boardId, entry.source);
     });
   }, [serialPaused, appendSerialRxChunk]);
+
+  const flushSerialLogs = useCallback(() => {
+    const logsToFlush = pendingSerialLogsRef.current;
+    if (logsToFlush.length === 0) return;
+    pendingSerialLogsRef.current = [];
+
+    setSerialHistory((prev) => {
+      let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+
+      logsToFlush.forEach(({ chunk, boardId, source, ts }) => {
+        if (next.length > 0) {
+          const last = next[next.length - 1];
+          if (
+            last.dir === "rx" &&
+            last.boardId === boardId &&
+            last.source === source &&
+            !last.text.endsWith("\n")
+          ) {
+            next[next.length - 1] = { ...last, text: last.text + chunk };
+            return;
+          }
+        }
+        next.push({
+          dir: "rx",
+          text: chunk,
+          ts,
+          boardId,
+          source,
+        });
+      });
+
+      if (next.length > 2000) {
+        next = next.slice(next.length - 1800);
+      }
+      return next;
+    });
+  }, []);
+
+  // Periodic flush loop to batch-update console logs every 100ms
+  useEffect(() => {
+    if (!isRunning) {
+      if (pendingSerialLogsRef.current.length > 0) {
+        flushSerialLogs();
+      }
+      return;
+    }
+
+    const interval = setInterval(() => {
+      flushSerialLogs();
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isRunning, flushSerialLogs]);
 
   const pushSerialTxLine = useCallback(
     (text, boardId = "all", source = "sim") => {
@@ -10262,8 +10364,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
 
           livePinStatesRef.current = msg.pins;
-          if (codeTab === "serial" && !plotterPaused) {
-            // Only grow plot history when the plotter is visible.
+          if (!plotterPaused) {
+            // Record plot history when simulation state arrives
             const serialVars = {};
             latestParsedSerialRef.current.forEach((val, idx) => {
               const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;

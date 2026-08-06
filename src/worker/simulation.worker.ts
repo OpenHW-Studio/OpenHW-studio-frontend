@@ -1354,9 +1354,15 @@ const coreMessageHandler = async (e: MessageEvent) => {
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
+        // DHT-type components manage their own bus state via _setAvrPinDirect.
+        // Calling repropagateAllVoltages immediately after onEvent triggers a
+        // netlist traversal that fires onPinStateChange on the DHT mid-transmission,
+        // corrupting the 40-bit packet. Skip repropagation for these components.
+        const isDhtTarget = /dht/i.test(String(data.compId || ''));
+
         const runQuickBurst = (r: BoardRunner) => {
             if (r.running && r.cpu) {
-                if (typeof (r as any).repropagateAllVoltages === 'function') {
+                if (!isDhtTarget && typeof (r as any).repropagateAllVoltages === 'function') {
                     (r as any).repropagateAllVoltages();
                 }
                 if (typeof (r as any).pollADCChannels === 'function') {

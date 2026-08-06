@@ -2546,6 +2546,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   // Stable ref to always hold the latest syncGeneratedCode without making it
   // a useEffect dependency (which would re-fire the effect on every parent render).
   const syncGeneratedCodeRef = useRef(null)
+  const lastSentXmlRef = useRef(null)
 
   const [loadStatus, setLoadStatus] = useState('loading')
   const [errMsg, setErrMsg] = useState('')
@@ -2596,7 +2597,9 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
       if (code && notifyParent && onChange) onChange(code)
       if (notifyParent && emitXml && onXmlChange) {
         const dom = workspaceToBlocklyDom(B, ws)
-        onXmlChange(serializeBlocklyXml(B, dom))
+        const nextXml = serializeBlocklyXml(B, dom)
+        lastSentXmlRef.current = nextXml
+        onXmlChange(nextXml)
       }
       return code
     } catch (err) {
@@ -2970,12 +2973,9 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     if (!isReady || !workspaceRef.current || !window.Blockly) return;
 
     const currentXml = captureWorkspaceXml();
-    // Only load if the XML prop actually differs from what is in the workspace.
-    // This handles two cases:
-    //   a) init() ran with empty xml (CDN loaded after project data) → workspace
-    //      is empty but xml prop now has saved blocks → load them.
-    //   b) init() already loaded the xml → currentXml matches xml → skip (no-op).
-    if (xml && xml !== currentXml) {
+    // Only load if the XML prop actually differs from what is in the workspace
+    // and did not originate from this component's own change emitter.
+    if (xml && xml !== lastSentXmlRef.current && xml !== currentXml) {
       const B = window.Blockly;
       // Disable events so Blockly doesn't fire BLOCK_CREATE events into the
       // change listener for every block loaded from XML. We call

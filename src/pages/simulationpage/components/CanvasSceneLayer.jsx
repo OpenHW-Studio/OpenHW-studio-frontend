@@ -115,6 +115,7 @@ function CanvasSceneLayerBase({
   }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
 
   const backgroundGridRef = useRef(null);
+  const gridRafRef = useRef(null);
 
   useEffect(() => {
     const target = innerCanvasRef.current;
@@ -132,14 +133,19 @@ function CanvasSceneLayerBase({
 
       backgroundGridRef.current.style.backgroundPosition = `${x}px ${y}px`;
       backgroundGridRef.current.style.backgroundSize = `${15 * scale}px ${15 * scale}px`;
+      gridRafRef.current = null;
     };
 
+    // Run once immediately to sync initial state
     syncGrid();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.attributeName === 'style') {
-          syncGrid();
+          // RAF-throttle: only schedule one syncGrid per display frame
+          if (!gridRafRef.current) {
+            gridRafRef.current = requestAnimationFrame(syncGrid);
+          }
           break;
         }
       }
@@ -149,6 +155,10 @@ function CanvasSceneLayerBase({
 
     return () => {
       observer.disconnect();
+      if (gridRafRef.current) {
+        cancelAnimationFrame(gridRafRef.current);
+        gridRafRef.current = null;
+      }
     };
   }, [innerCanvasRef, canvasOffset, canvasZoom, showGrid]);
 
@@ -172,6 +182,8 @@ function CanvasSceneLayerBase({
         position: 'absolute', top: 0, left: 0,
         width: '10000px', height: '8000px',
         transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
+        willChange: 'transform',
+        contain: 'layout style',
       }}>
       {/* BOTTOM SVG layer for wires (Below Components) */}
       <svg
@@ -560,6 +572,12 @@ function CanvasSceneLayerBase({
                   const isHovered = hoveredPin === pinStrRef;
                   const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
                   const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
+                  const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+
+                  // Optimization: Skip rendering empty overlay pin-dots during dragging to keep DOM count tiny.
+                  if (isComponentDragging && !connectedWire && !isSnapping) {
+                    return null;
+                  }
 
                   const hoverCompId = hoveredPin?.split(':')[0];
                   const hoverPinId = hoveredPin?.split(':')[1];
@@ -579,7 +597,6 @@ function CanvasSceneLayerBase({
                   const isRelated = hoverHasShared && currentHasShared && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
 
                   const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
-                  const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
                   const isSocket = connectedWire?.isSocket;
 
                   const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
