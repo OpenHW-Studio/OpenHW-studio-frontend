@@ -17,6 +17,7 @@ import { GamificationToasts } from "./services/gamification/Gamificationpanel.js
 import LandingPage from "./pages/LandingPage.jsx";
 import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
 import UserSignupPage from "./pages/auth/UserSignupPage.jsx";
+
 import RoleSelectPage from "./pages/RoleSelectPage.jsx";
 import ProjectTheoryPage from "./pages/ProjectTheoryPage.jsx";
 import ProjectQuizPage from "./pages/ProjectQuizPage.jsx";
@@ -38,7 +39,7 @@ import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
 import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 import TeacherClassDetailPage from "./pages/teacher/TeacherClassDetailPage.jsx";
 import StudentClassDetailPage from "./pages/student/StudentClassDetailPage.jsx";
-import UserProfilePage from "./pages/user/UserProfilePage.jsx";
+
 const SimulatorPage = React.lazy(
   () => import("./pages/simulationpage/SimulatorPage.jsx"),
 );
@@ -442,23 +443,7 @@ export default function App() {
                     }
                   />
 
-                  {/* Protected: General User */}
-                  <Route
-                    path="/user/dashboard"
-                    element={
-                      <ProtectedRoute allowedRole="user">
-                        <UserDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/user/profile"
-                    element={
-                      <ProtectedRoute allowedRole="user">
-                        <UserProfilePage />
-                      </ProtectedRoute>
-                    }
-                  />
+
 
                   {/* Protected: Student */}
                   <Route
