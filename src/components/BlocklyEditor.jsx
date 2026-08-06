@@ -3008,7 +3008,6 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     isFirstXmlLoadRef.current = false;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xml, loadStatus, captureWorkspaceXml, resetBlocklyHistory]);
-
   // ── Resize Blockly when container changes ──────────────────────────────────
   useEffect(() => {
     if (!wsContainerRef.current) return
@@ -3539,7 +3538,6 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             </svg>
           </button>
         </div>
-
         {/* 
           Manual Change Detected warning - Hidden per user request
           {isManualChangeDetected && (

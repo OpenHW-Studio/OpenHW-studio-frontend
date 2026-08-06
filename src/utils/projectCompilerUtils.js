@@ -41,8 +41,7 @@ export function extractProjectMetaFromPng(bytes) {
 
     const payloadBytes = data.slice(markerByteIdx + markerBytes.length);
     const jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(payloadBytes);
-    const cleanStr = jsonStr.replace(/^[\x00-\x1F]+/, '');
-    return JSON.parse(cleanStr);
+    return JSON.parse(jsonStr);
 }
 
 /**

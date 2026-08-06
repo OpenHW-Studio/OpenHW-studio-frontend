@@ -84,9 +84,6 @@ export class BackendProxyRunner implements BoardRunner {
                 try {
                     // TODO: Clean up or adjust this component instantiation logic in future if needed
                     const inst = new RegistryClass(compDef.id, manifest);
-const optionsAny = options as any;
-inst.sab = optionsAny?.sab;
-inst.sabOffset = optionsAny?.sabOffsets ? optionsAny.sabOffsets[compDef.id] : undefined;
                     if (compDef.attrs) inst.state = { ...inst.state, ...compDef.attrs };
                     this.instances.set(compDef.id, inst);
                 } catch (err) {
@@ -96,9 +93,6 @@ inst.sabOffset = optionsAny?.sabOffsets ? optionsAny.sabOffsets[compDef.id] : un
                 try {
                     // TODO: Clean up generic board instantiation if necessary
                     const inst = new BaseComponent(compDef.id, manifest) as any;
-const optionsAny2 = options as any;
-inst.sab = optionsAny2?.sab;
-inst.sabOffset = optionsAny2?.sabOffsets ? optionsAny2.sabOffsets[compDef.id] : undefined;
                     if (compDef.attrs) inst.state = { ...inst.state, ...compDef.attrs };
                     this.instances.set(compDef.id, inst);
                 } catch (err) {
@@ -148,23 +142,6 @@ inst.sabOffset = optionsAny2?.sabOffsets ? optionsAny2.sabOffsets[compDef.id] : 
         this.running = false;
         if (this.statusInterval) clearInterval(this.statusInterval);
         if (this.runLoopTimer) clearTimeout(this.runLoopTimer);
-    }
-
-    /** Temporarily freeze the run-loop without tearing down component state. */
-    public pause() {
-        this.running = false;
-        if (this.runLoopTimer) {
-            clearTimeout(this.runLoopTimer);
-            this.runLoopTimer = null;
-        }
-    }
-
-    /** Resume the run-loop after a pause(). Resets the wall-clock reference. */
-    public resume() {
-        if (this.running) return;
-        this.running = true;
-        this.lastTime = performance.now();
-        this.runLoop();
     }
 
     // Public method to be called by worker.onmessage when backend sends GPIO sync

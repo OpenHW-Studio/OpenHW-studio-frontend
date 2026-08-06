@@ -10,15 +10,35 @@
         const savedTheme = localStorage.getItem("theme") || "dark";
         document.documentElement.setAttribute("data-theme", savedTheme);
       })();
-      // Register Service Worker for offline app shell booting
-      if ("serviceWorker" in navigator && location.protocol !== "file:") {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker
-            .register("/sw.js")
-            .then((reg) => console.log("[SW] Offline Service Worker registered:", reg.scope))
-            .catch((err) => console.warn("[SW] Registration failed:", err));
-        });
-      }
+      // Clear legacy service worker caches before loading anything else.
+      (function resetLegacyServiceWorker() {
+        if (!("serviceWorker" in navigator)) return;
+        const RESET_FLAG = "openhw_sw_reset_v3";
+        navigator.serviceWorker
+          .getRegistrations()
+          .then(async (registrations) => {
+            if (!registrations || !registrations.length) return;
+            try {
+              console.log("[SW-Reset] Cleaning up old service workers...");
+              await Promise.all(
+                registrations.map((reg) => reg.unregister().catch(() => {})),
+              );
+              if ("caches" in window) {
+                const keys = await caches.keys();
+                await Promise.all(
+                  keys.map((key) => caches.delete(key).catch(() => {})),
+                );
+              }
+              if (!sessionStorage.getItem(RESET_FLAG)) {
+                sessionStorage.setItem(RESET_FLAG, "1");
+                console.log(
+                  "[SW-Reset] Cleanup complete. Please refresh the page if you encounter any issues.",
+                );
+              }
+            } catch (err) {}
+          })
+          .catch(() => {});
+      })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,9 +46,11 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <!-- Wokwi Elements — Served locally for offline support -->
-    <script src="/wokwi-elements.bundle.js" defer></script>
-
+    <!-- Wokwi Elements — Updated version to fix 404 -->
+    <script
+      src="https://unpkg.com/@wokwi/elements@1.9.2/dist/wokwi-elements.bundle.js"
+      defer
+    ></script>
   </head>
 
   <body>

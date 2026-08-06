@@ -118,7 +118,7 @@ const RightPanelEditor = memo(({
           onMount={handleEditorMount}
           onChange={v => {
             if (editorOptions?.readOnly) return;
-            if (activeCodeFileId === 'project/diagram.json') return;
+            if (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') return;
             if (editingDisabled) return;
             isInternalUpdate.current = true;
             setLocalCode(v || '');

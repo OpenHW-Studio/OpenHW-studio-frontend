@@ -74,6 +74,7 @@ function isAuthenticated(owner) {
   return owner && owner !== 'guest';
 }
 
+
 // ─── Local-only project list (no cloud call) ─────────────────────────────────
 // FIX Bug 3: used by ensureUniqueProjectName to avoid double cloud requests
 
@@ -247,6 +248,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
+
 // ─── ID generation ────────────────────────────────────────────────────────────
 
 export function generateProjectId() {
@@ -288,6 +290,7 @@ export async function saveProject(project) {
   await idbRequest(STORE, 'readwrite', (store) => store.put(record));
 
   if (isAuthenticated(project.owner)) {
+
     const cloudPayload = {
       projectId: project.id,
       name: uniqueName,
@@ -316,7 +319,6 @@ export async function saveProject(project) {
       await removePendingCloudProject(project.id);
     } catch (err) {
       console.warn('[ProjectStore] Cloud save failed (offline?):', err.message);
-      await enqueuePendingCloudProject(cloudPayload);
     }
   }
 

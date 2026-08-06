@@ -1013,8 +1013,6 @@ export class RP2040Runner implements BoardRunner {
                 const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
-                inst.sab = this.options?.sab;
-                inst.sabOffset = this.options?.sabOffsets ? this.options.sabOffsets[cDef.id] : undefined;
                 (inst as any)._runner = this;
                 (inst as any)._simCpu = {
                     addClockEvent: (cb: () => void, avrCycles: number) => {
@@ -4147,20 +4145,6 @@ export class RP2040Runner implements BoardRunner {
             }
         });
         this.gpioUnsubscribers = [];
-    }
-
-    /** Temporarily freeze the CPU run-loop without tearing down any state. */
-    pause() {
-        this.running = false;
-    }
-
-    /** Resume the CPU run-loop after a pause(). Resets the wall-clock reference
-     *  so that no catch-up cycles are generated for the frozen duration. */
-    resume() {
-        if (this.running) return;
-        this.running = true;
-        this.lastTime = performance.now();
-        this.runLoop();
     }
 }
 

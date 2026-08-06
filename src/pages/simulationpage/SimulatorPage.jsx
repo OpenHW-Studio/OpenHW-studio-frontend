@@ -40,7 +40,6 @@ import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
-import { isComponentHidden, getComponentWarning } from "./utils/componentVisibilityConfig";
 import {
   calculateProjectPlanApplication,
   getRotatedPoint,
@@ -208,7 +207,7 @@ import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/api/examples" : "/api/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -490,6 +489,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const isLiveStudent = liveMeetingMode && !isLiveTeacher;
   const canvasOnly = assessmentParams.get("canvas-only") === "1";
   const readOnly = assessmentParams.get("readonly") === "1";
+  const isDemoRoute = location.pathname.endsWith('/demo');
 
   // -- Gamification --
   const {
@@ -741,7 +741,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const lastLoadedSlugRef = useRef(null)
   useEffect(() => {
     const project = guidedProjectState?.project
-    const slug = project?.slug || (gamificationMode ? projectName : null)
+    const slug = project?.slug || (gamificationMode || canvasOnly || isDemoRoute ? projectName : null)
 
     if (!slug || lastLoadedSlugRef.current === slug) return
     lastLoadedSlugRef.current = slug
@@ -770,7 +770,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       .catch(async () => {
         if (project?.schemas?.arduino) {
           loadFromSchema()
-        } else if ((canvasOnly || gamificationMode) && slug) {
+        } else if ((canvasOnly || gamificationMode || isDemoRoute) && slug) {
           try {
             const data = await import("../../services/guidedProjects.json")
             const root = data.default || data
@@ -940,7 +940,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false);
   const [wirepointsEnabled, setWirepointsEnabled] = useState(false);
   const canvasZoomRef = useRef(1);
-  const stateSabRef = useRef(null);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const canvasOffsetRef = useRef({ x: 0, y: 0 });
   const [isCanvasLocked, setIsCanvasLocked] = useState(false);
@@ -1027,13 +1026,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               connections: engineConnections,
             },
             violations: violations,
-            // v3: pass pin definitions and component registry so the autowire
-            // engine can resolve board pins and look up helper-component rules
-            pinDefs: LOCAL_PIN_DEFS,
-            registry: Object.keys(COMPONENT_REGISTRY).reduce((acc, key) => {
-              acc[key] = { manifest: JSON.parse(JSON.stringify(COMPONENT_REGISTRY[key]?.manifest || {})) };
-              return acc;
-            }, {}),
           },
         });
       };
@@ -1083,7 +1075,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }
     };
 
-    // v3: no separate 'init' handshake — worker lazy-inits WASM on first 'analyze'
+    worker.postMessage({ type: "init" });
     return worker;
   }, []);
 
@@ -1102,7 +1094,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [isRunning, setIsRunning] = useState(false);
   const [pinStates, setPinStates] = useState({});
   const [oopStates, setOopStates] = useState({});
-  const [isQueuedForTeacherKey, setIsQueuedForTeacherKey] = useState(false);
 
   // Inject safety pulse animation
   useEffect(() => {
@@ -1663,14 +1654,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         const compId = String(comp?.id || "").trim();
         if (!compId) return;
         const nextState = comp.state || {};
-
-        // Hybrid Mode: Native Web Component DOM bypass
-        const nativeEl = document.getElementById(compId);
-        if (nativeEl && typeof nativeEl.setSimulationState === 'function') {
-          nativeEl.setSimulationState(nextState);
-          return; // Bypass React entirely!
-        }
-
         if (serializedStateEquals(nextStates[compId], nextState)) return;
         nextStates[compId] = nextState;
         changedIds.push(compId);
@@ -1686,25 +1669,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
-
-  // Global SharedArrayBuffer Web Component Ticker Loop (Bypasses React)
-  useEffect(() => {
-    let active = true;
-    const tickLoop = () => {
-      if (!active) return;
-      const w = window;
-      if (w.__sabTickers) {
-        w.__sabTickers.forEach((t) => {
-          if (typeof t.tick === 'function') {
-            t.tick();
-          }
-        });
-      }
-      requestAnimationFrame(tickLoop);
-    };
-    requestAnimationFrame(tickLoop);
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     const handleDownloadPcap = (e) => {
@@ -1841,8 +1805,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
-  const [shareVisibility, setShareVisibility] = useState("public");
-  const [shareLinkType, setShareLinkType] = useState("snapshot");
   const [liveMeetingShareCode, setLiveMeetingShareCode] =
     useState(liveSessionCode);
   const [liveMeetingStatus, setLiveMeetingStatus] = useState(
@@ -1875,7 +1837,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   });
   const currentProjectIdRef = useRef(null); // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
-  const justSharedRef = useRef(null);
   const liveSocketRef = useRef(null);
   const liveSyncTimerRef = useRef(null);
   const liveApplyingRemoteRef = useRef(false);
@@ -2471,9 +2432,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     const preferredActive = String(
       normalizedSnapshot.activeCodeFileId || "",
     ).trim();
-    const activeId = normalizedFiles.some((file) => file.id === preferredActive && file.id !== "project/diagram.json")
+    const activeId = normalizedFiles.some((file) => file.id === preferredActive)
       ? preferredActive
-      : normalizedTabs.find((t) => t !== "project/diagram.json") || normalizedFiles.find((f) => f.id !== "project/diagram.json")?.id || "";
+      : normalizedTabs[0] || normalizedFiles[0]?.id || "";
     liveApplyingRemoteRef.current = true;
     setBoard(normalizedSnapshot.board || "arduino_uno");
     setCode(normalizedSnapshot.code || "");
@@ -2585,10 +2546,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   useEffect(() => {
     if (!shareId || shareId === "new") return;
-    if (justSharedRef.current === shareId) {
-      justSharedRef.current = null;
-      return;
-    }
 
     let cancelled = false;
 
@@ -3229,6 +3186,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }
 
       if (workerRef.current) {
+
         // If the user is actively panning or dragging, throttle visual updates to ~12fps
         // This frees up the main thread to prioritize DOM layout and mouse events, fixing the drag lag.
         const isInteracting =
@@ -3243,6 +3201,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           workerRef.current.postMessage({ type: "FLUSH_VISUALS" });
           lastFlushAt = now;
         }
+
       }
 
       const windowMs = now - frameStart;
@@ -4247,7 +4206,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           delete diagramJsonPayload.connections;
         if (!diagramJsonPayload.blocklyXml)
           delete diagramJsonPayload.blocklyXml;
-        delete diagramJsonPayload.blocklyGeneratedCode;
+        if (!diagramJsonPayload.blocklyGeneratedCode)
+          delete diagramJsonPayload.blocklyGeneratedCode;
         if (!diagramJsonPayload.useBlocklyCode)
           delete diagramJsonPayload.useBlocklyCode;
         delete diagramJsonPayload.projectFiles;
@@ -4512,9 +4472,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         diagramJsonPayload.connections.length === 0
       )
         delete diagramJsonPayload.connections;
+
       delete diagramJsonPayload.blocklyXml;
       delete diagramJsonPayload.blocklyGeneratedCode;
       delete diagramJsonPayload.useBlocklyCode;
+
       // Always strip file-tree / tab state — not useful to display
       delete diagramJsonPayload.projectFiles;
       delete diagramJsonPayload.openCodeTabs;
@@ -4611,6 +4573,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       setCode("");
       return;
     }
+    if (activeCodeFile.content === currentCodeRef.current) return;
     if (activeCodeFile.id === "project/diagram.json") return; // Safety measure
 
     suppressCodeSyncRef.current = true;
@@ -5110,11 +5073,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     async (item, x, y) => {
       if (liveEditingDisabled) return;
       saveHistory();
-
-      const warningMsg = getComponentWarning(item.type);
-      if (warningMsg) {
-        console.warn(`[Component Warning] ${item.label || item.type}: ${warningMsg}`);
-      }
 
       const usedIds = new Set(components.map((c) => String(c.id || "")));
       const id = allocateComponentId(item.type, usedIds);
@@ -6277,7 +6235,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               ),
             );
           }
-          if (mousePosUpdate && !compUpdate && !isPanningRef.current) {
+          if (mousePosUpdate && !compUpdate) {
             // Only update mouse pos for wire pulling, not component dragging
             setMousePos(mousePosUpdate);
           }
@@ -8064,9 +8022,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       normalizedFiles,
     );
     const preferredActive = String(proj.activeCodeFileId || "").trim();
-    const activeId = normalizedFiles.some((f) => f.id === preferredActive && f.id !== "project/diagram.json")
+    const activeId = normalizedFiles.some((f) => f.id === preferredActive)
       ? preferredActive
-      : normalizedTabs.find((t) => t !== "project/diagram.json") || normalizedFiles.find((f) => f.id !== "project/diagram.json")?.id || "";
+      : normalizedTabs[0] || "";
     setBoard(proj.board || "arduino_uno");
     setCode(proj.code || "");
     setBlocklyXml(proj.blocklyXml || "");
@@ -8179,7 +8137,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     )
       delete diagramJsonPayload.connections;
     if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
-    delete diagramJsonPayload.blocklyGeneratedCode;
+    if (!diagramJsonPayload.blocklyGeneratedCode)
+      delete diagramJsonPayload.blocklyGeneratedCode;
     if (!diagramJsonPayload.useBlocklyCode)
       delete diagramJsonPayload.useBlocklyCode;
     zip.file("diagram.json", JSON.stringify(diagramJsonPayload, null, 2));
@@ -8239,9 +8198,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         normalizedFiles,
       );
       const preferredActive = String(json.activeCodeFileId || "").trim();
-      const activeId = normalizedFiles.some((f) => f.id === preferredActive && f.id !== "project/diagram.json")
+      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
         ? preferredActive
-        : normalizedTabs.find((t) => t !== "project/diagram.json") || normalizedFiles.find((f) => f.id !== "project/diagram.json")?.id || "";
+        : normalizedTabs[0] || normalizedFiles[0]?.id || "";
       setBoard(json.board || "arduino_uno");
       setCode(json.code || "");
       setBlocklyXml(json.blocklyXml || "");
@@ -8313,40 +8272,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const handleGenerateShareUrl = async () => {
     setIsSharingSimulation(true);
     try {
-      // 1. Save the project to Cloud & IndexedDB first
-      const name = currentProjectName || "Untitled";
-      const owner = getOwner();
-      let id = currentProjectIdRef.current;
-      if (!id) {
-        id = generateProjectId();
-        currentProjectIdRef.current = id;
-        setCurrentProjectId(id);
-      }
-      clearTimeout(autoSaveTimerRef.current);
-      const finalName = await saveProject({
-        id,
-        name,
-        board,
-        components,
-        connections: wires,
-        code,
-        blocklyXml,
-        blocklyGeneratedCode,
-        useBlocklyCode,
-        projectFiles,
-        openCodeTabs,
-        activeCodeFileId,
-        owner,
-      });
-      setCurrentProjectName(finalName || name);
-      await refreshProjectList();
-      setTimeout(() => captureThumbnailRef.current?.(), 1500);
-
-      // 2. Create the Shared Simulation snapshot with chosen visibility
       const response = await createSharedSimulation({
-        name: finalName || name || "Untitled",
-        isPublic: shareVisibility === "public",
-        parentProjectId: shareLinkType === "live" ? id : "",
+        name: currentProjectName || "Untitled",
+        isPublic: true,
         board,
         components,
         connections: wires,
@@ -8359,11 +8287,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       const url = `${window.location.origin}/simulator/share/${response.shareId}`;
       setShareUrl(url);
       setShareCopied(false);
-
-      // 3. Update browser address bar to the shared simulation link
-      justSharedRef.current = response.shareId;
-      navigate(`/simulator/share/${response.shareId}`);
-
       return url;
     } catch (error) {
       console.error("Failed to share simulation", error);
@@ -8394,25 +8317,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       return;
     }
 
-    if (shareId) {
-      setShareUrl(`${window.location.origin}/simulator/share/${shareId}`);
-    } else {
-      setShareUrl("");
-    }
+    setShareUrl("");
     setShareCopied(false);
-    setShareVisibility("public");
-    setShareLinkType("snapshot");
     setShowShareDialog(true);
-  };
-
-  const handleShareVisibilityChange = (val) => {
-    setShareVisibility(val);
-    setShareUrl("");
-  };
-
-  const handleShareLinkTypeChange = (val) => {
-    setShareLinkType(val);
-    setShareUrl("");
+    await handleGenerateShareUrl();
   };
 
   const handleCopyShareUrl = async () => {
@@ -9237,7 +9145,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     runCircuitValidation,
   ]);
 
-  const handleRun = async (options = {}) => {
+  const handleRun = async () => {
     try {
       if (runStartGuardRef.current || isRunning || isCompiling) {
         appendConsoleEntry("info", "Run is already in progress.", "simulator");
@@ -9922,39 +9830,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           setValidationToast({
             level: msg.level || "info",
             message: msg.message,
-          });
-          return;
-        }
-
-        if (msg.type === "TEACHER_KEY_CAPTURE_COMPLETE") {
-          appendConsoleEntry("info", "Visual telemetry capture complete! Compiling WASM binary...", "simulator");
-
-          // Spin up a temporary grading worker to bundle the WASM key
-          const GradingWorker = (await import("../../worker/grading-engine.worker.ts?worker")).default;
-          const grader = new GradingWorker();
-
-          grader.onmessage = (ge) => {
-            const gMsg = ge.data;
-            if (gMsg.type === 'KEY_GENERATED') {
-              const blob = new Blob([gMsg.key], { type: "application/octet-stream" });
-              const url = URL.createObjectURL(blob);
-              const anchor = document.createElement("a");
-              anchor.href = url;
-              // Use the requested naming format: [board]_[component].bin
-              anchor.download = `${msg.board}_${msg.component}.bin`;
-              anchor.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1500);
-              appendConsoleEntry("info", `Teacher reference key downloaded: ${anchor.download}`, "simulator");
-              grader.terminate();
-            } else if (gMsg.type === 'LOG') {
-              console.log("[Grader for TeacherKey]", gMsg.msg);
-            }
-          };
-
-          grader.postMessage({
-            type: 'GENERATE_KEY_FROM_TELEMETRY',
-            projectJson: msg.projectJson,
-            telemetry: msg.telemetry
           });
           return;
         }
@@ -10960,47 +10835,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
       console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
 
-      const componentSabOffsets = {};
-      let currentSabOffset = 0;
-      components.forEach((c) => {
-        componentSabOffsets[c.id] = currentSabOffset;
-        if (c.type === "openhw-neopixel-matrix" || c.type === "wokwi-neopixel-matrix") {
-          const rows = parseInt(c.attrs?.rows || "8", 10);
-          const cols = parseInt(c.attrs?.cols || "8", 10);
-          currentSabOffset += (rows * cols * 4); // 4 bytes per pixel (RGBA)
-        } else {
-          currentSabOffset += 8; // Default 8 bytes per component (e.g. 1 Float64 or 2 Float32s)
-        }
-      });
-
-      // Align buffer to nearest 4KB block
-      const bufferSize = Math.max(4096, Math.ceil(currentSabOffset / 4096) * 4096);
-      stateSabRef.current = new SharedArrayBuffer(bufferSize);
-
-      // Expose to window for Web Components
-      const isTeacherKeyCapture = !!options?.isTeacherKeyCapture;
-      let teacherKeyBoardId = null;
-      let teacherKeyComponentId = null;
-      let teacherKeyProjectJson = null;
-
-      if (isTeacherKeyCapture) {
-        const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("esp32"));
-        const peripheralComp = components.find((c) => c.id !== boardComp?.id);
-        teacherKeyBoardId = boardComp ? boardComp.type.split("-").pop() : "board";
-        teacherKeyComponentId = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
-        const payload = buildSimulationJsonPayload();
-        teacherKeyProjectJson = JSON.stringify(payload, null, 2);
-      }
-
       worker.postMessage({
         type: "START",
-        isTeacherKeyCapture,
-        teacherKeyBoardId,
-        teacherKeyComponentId,
-        teacherKeyProjectJson,
-        teacherKeyDurationMs: 7900,
-        sab: stateSabRef.current,
-        sabOffsets: componentSabOffsets,
         networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
         neopixels: neopixelWiring,
@@ -11104,47 +10940,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       window.removeEventListener('mouseup', handleMouseUp)
     }
   }, [])
-
-  const dispatchTeacherKeyCapture = useCallback(() => {
-    if (!workerRef.current) {
-      alert("Worker failed to start. Cannot capture key.");
-      return;
-    }
-
-    const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("esp32"));
-    const peripheralComp = components.find((c) => c.id !== boardComp?.id);
-    const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
-    const peripheralName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
-
-    const payload = buildSimulationJsonPayload();
-    const projectJson = JSON.stringify(payload, null, 2);
-
-    workerRef.current.postMessage({
-      type: "START_KEY_CAPTURE",
-      durationMs: 7900,
-      projectJson: projectJson,
-      board: boardName,
-      component: peripheralName
-    });
-  }, [components, buildSimulationJsonPayload]);
-
-  useEffect(() => {
-    if (isRunning && isQueuedForTeacherKey) {
-      setIsQueuedForTeacherKey(false);
-      appendConsoleEntry("info", "Simulation running! Visual telemetry recording started for 8 seconds...", "simulator");
-    }
-  }, [isRunning, isQueuedForTeacherKey, appendConsoleEntry]);
-
-  const generateTeacherKey = useCallback(async () => {
-    if (!isRunning) {
-      appendConsoleEntry("info", "Compiling and starting simulation to capture teacher key...", "simulator");
-      setIsQueuedForTeacherKey(true);
-      await handleRun({ isTeacherKeyCapture: true });
-    } else {
-      appendConsoleEntry("info", "Starting visual telemetry recording for 8 seconds...", "simulator");
-      dispatchTeacherKeyCapture();
-    }
-  }, [isRunning, handleRun, dispatchTeacherKeyCapture, appendConsoleEntry]);
 
   const handleStop = () => {
     const wasRunning = isRunning;
@@ -11648,7 +11443,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:transparent;"></body></html>',
         );
         idoc.close();
 
@@ -11873,7 +11668,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: "#ffffff",
+          backgroundColor: null,
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11931,8 +11726,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       out.height = CH;
       const ctx = out.getContext("2d");
 
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
       // Branding logo (bottom-right)
@@ -13195,9 +12988,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       typeof meta?.activeCodeFileId === "string"
         ? meta.activeCodeFileId.trim()
         : "";
-    const activeId = normalizedFiles.some((f) => f.id === preferredActive && f.id !== "project/diagram.json")
+    const activeId = normalizedFiles.some((f) => f.id === preferredActive)
       ? preferredActive
-      : normalizedTabs.find((t) => t !== "project/diagram.json") || normalizedFiles.find((f) => f.id !== "project/diagram.json")?.id || "";
+      : normalizedTabs[0] || normalizedFiles[0]?.id || "";
 
     setProjectFiles(normalizedFiles);
     setOpenCodeTabs(normalizedTabs);
@@ -13323,8 +13116,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       activeCodeFileId,
       code,
       setCode,
-      handleExportPng: downloadPng,
-      handleImportPng: () => importFileRef.current?.click(),
     });
 
     return (
@@ -13352,10 +13143,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               gap: "20px",
               color: "var(--text)",
               animation: "panelContentIn 0.3s ease-out",
-              pointerEvents: "auto",
             }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
           >
             <div style={{ flex: 1 }}>
               <h4
@@ -13376,12 +13164,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             </div>
             <div style={{ display: "flex", gap: "10px" }}>
               <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleNewProject();
-                  setRestoreProjectPrompt(null);
-                }}
+                onClick={() => setRestoreProjectPrompt(null)}
                 style={{
                   background: "transparent",
                   border: "1px solid var(--border)",
@@ -13392,7 +13175,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                   fontSize: "13px",
                   fontWeight: "600",
                   transition: "all 0.2s",
-                  pointerEvents: "auto",
                 }}
                 onMouseEnter={(e) =>
                   (e.target.style.background = "var(--card2)")
@@ -13404,16 +13186,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 Start Fresh
               </button>
               <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try {
-                    handleLoadProject(restoreProjectPrompt);
-                  } catch (err) {
-                    console.error("Error during project restore", err);
-                  } finally {
-                    setRestoreProjectPrompt(null);
-                  }
+                onClick={() => {
+                  handleLoadProject(restoreProjectPrompt);
+                  setRestoreProjectPrompt(null);
                 }}
                 style={{
                   background: "var(--accent)",
@@ -13605,11 +13380,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             shareUrl={shareUrl}
             handleCopyShareUrl={handleCopyShareUrl}
             shareCopied={shareCopied}
-            shareVisibility={shareVisibility}
-            setShareVisibility={handleShareVisibilityChange}
-            shareLinkType={shareLinkType}
-            setShareLinkType={handleShareLinkTypeChange}
-            handleGenerateShareUrl={handleGenerateShareUrl}
             showSaveDialog={showSaveDialog}
             setShowSaveDialog={setShowSaveDialog}
             saveDialogName={saveDialogName}
@@ -13651,6 +13421,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             handleGamificationSubmit={handleGamificationSubmit}
             lockToast={lockToast}
             wireStart={wireStart}
+            userRole={user?.role}
           />
         </>)}
 
@@ -13658,7 +13429,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           showF1Menu={showF1Menu}
           setShowF1Menu={setShowF1Menu}
           downloadSimulationJson={downloadSimulationJson}
-          generateTeacherKey={generateTeacherKey}
           openFirmwareDownloadDialog={openFirmwareDownloadDialog}
           openFirmwareUploadDialog={openFirmwareUploadDialog}
           rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled}
@@ -14246,7 +14016,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 assessmentMode={assessmentMode}
               />
 
-              {gamificationMode && gamPanelOpen && gamProject && (
+              {gamificationMode && gamPanelOpen && gamProject && user?.role !== 'user' && (
                 <GamificationGuidePanel
                   gamTab={gamTab}
                   setGamTab={setGamTab}
@@ -14953,4 +14723,3 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 }
 
 export default SimulatorPage;
-
