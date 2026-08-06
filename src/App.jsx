@@ -210,7 +210,6 @@ function ThemeToggleButton() {
         width: '46px',
         height: '46px',
         borderRadius: '50%',
-        border: 'none',
         background: theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
