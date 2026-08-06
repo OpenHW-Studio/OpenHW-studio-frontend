@@ -5,7 +5,6 @@ function F1MenuOverlayBase({
   showF1Menu,
   setShowF1Menu,
   downloadSimulationJson,
-  generateTeacherKey,
   openFirmwareDownloadDialog,
   openFirmwareUploadDialog,
   rp2040DebugTelemetryEnabled,
@@ -77,15 +76,6 @@ function F1MenuOverlayBase({
           <span className="text-xs bg-[var(--card)] px-2.5 py-1 rounded-full text-[var(--text2)] font-mono">v3.9</span>
         </div>
         <div className="flex flex-col gap-3">
-          <Btn
-            onClick={() => {
-              generateTeacherKey?.();
-              closeMenu();
-            }}
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--green)', color: 'var(--green)' }}
-          >
-            Generate Teacher Reference Key (8s Visual Capture)
-          </Btn>
           <Btn
             onClick={() => {
               downloadSimulationJson?.();

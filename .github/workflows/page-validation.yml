@@ -16,27 +16,11 @@ jobs:
   page-validation:
     name: Validate Page Runtime & Console Errors
     runs-on: ubuntu-latest
-    
-    # 1. Spin up MongoDB as a background service
-    services:
-      mongodb:
-        image: mongo:latest
-        ports:
-          - 27017:27017
-          
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
         with:
           path: OpenHW-studio-frontend
-
-      # 2. Checkout backend code
-      - name: Checkout backend code
-        uses: actions/checkout@v4
-        with:
-          repository: OpenHW-Studio/openhw-studio-backend
-          path: openhw-studio-backend
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
@@ -116,28 +100,6 @@ jobs:
         working-directory: OpenHW-studio-frontend
         run: npx playwright install-deps chromium
 
-      # 3. Setup and Boot the Backend
-      - name: Setup Backend Environment
-        working-directory: openhw-studio-backend
-        run: |
-          echo "PORT=5000" >> .env
-          echo "MONGO_URI=mongodb://127.0.0.1:27017/openhw-studio-local" >> .env
-          echo "JWT_SECRET=fake_jwt_secret_for_ci_123" >> .env
-          echo "SESSION_SECRET=fake_session_secret_for_ci_123" >> .env
-          echo "GOOGLE_CLIENT_ID=fake_google_client_id" >> .env
-          echo "GOOGLE_CLIENT_SECRET=fake_google_client_secret" >> .env
-          echo "ALLOWED_ORIGINS=http://localhost:5173" >> .env
-          echo "FRONTEND_URL=http://localhost:5173" >> .env
-          echo "HOT_POOL_ENABLED=false" >> .env
-          npm install
-
-      - name: Boot Backend Server
-        working-directory: openhw-studio-backend
-        run: npm start &
-        
-      # Wait a few seconds to ensure backend is fully up
-      - name: Wait for backend
-        run: sleep 10
 
       - name: Run page validation tests
         working-directory: OpenHW-studio-frontend

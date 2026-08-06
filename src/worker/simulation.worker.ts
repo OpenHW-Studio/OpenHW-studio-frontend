@@ -52,8 +52,6 @@ let boardInjectSessions: Map<string, {
     restore?: () => void;
 }> = new Map();
 
-
-
 /**
  * MessagePort to the Render Worker. Set when the main thread sends SET_RENDER_PORT.
  * When set, display pixel frames are sent directly here (zero-copy) instead of
@@ -830,18 +828,10 @@ function routeDisplayFrames(components: any[]): any[] {
         let transferable: ArrayBuffer | null = null;
         let bufferForWorker: ArrayBuffer | null = null;
 
-        if (typeof SharedArrayBuffer !== 'undefined' && rawBuffer instanceof SharedArrayBuffer) {
-            bufferForWorker = rawBuffer;
-            transferable = null;
-        } else if (rawBuffer instanceof Uint8Array && rawBuffer.buffer) {
-            if (typeof SharedArrayBuffer !== 'undefined' && rawBuffer.buffer instanceof SharedArrayBuffer) {
-                bufferForWorker = rawBuffer;
-                transferable = null;
-            } else {
-                // Slice to get a fresh ArrayBuffer we can transfer without detaching the original.
-                bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
-                transferable = bufferForWorker;
-            }
+        if (rawBuffer instanceof Uint8Array && rawBuffer.buffer) {
+            // Slice to get a fresh ArrayBuffer we can transfer without detaching the original.
+            bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+            transferable = bufferForWorker;
         } else if (rawBuffer instanceof ArrayBuffer) {
             bufferForWorker = rawBuffer.slice(0);
             transferable = bufferForWorker;
@@ -917,20 +907,12 @@ function postRunnerState(stateObj: any, boardId: string) {
         const msg = (stateObj && typeof stateObj === 'object')
             ? { ...stateObj, boardId: resolvedBoardId, components: resolvedComponents }
             : stateObj;
-            
-        if (isRecordingTrace) {
-            handleRecorderState(msg, resolvedBoardId);
-        }
-        
         postMessage(msg);
         emitSyncHeartbeat(resolvedBoardId, msg);
         return;
     }
 
     if (stateObj.type !== 'state') {
-        if (isRecordingTrace) {
-            handleRecorderState(stateObj, resolvedBoardId);
-        }
         postMessage({ ...stateObj, boardId: resolvedBoardId });
         return;
     }
@@ -938,109 +920,10 @@ function postRunnerState(stateObj: any, boardId: string) {
     const msg: any = { type: 'state', boardId: resolvedBoardId };
 
     if (stateObj.pins) msg.pins = stateObj.pins;
-    if (stateObj.components) msg.components = resolvedComponents;
-    if (stateObj.simTimeMs) msg.simTimeMs = stateObj.simTimeMs;
-    
-    if (isRecordingTrace) {
-        handleRecorderState(msg, resolvedBoardId);
-    }
-    
+    if (stateObj.analog) msg.analog = stateObj.analog;
+    if (resolvedComponents) msg.components = resolvedComponents;
     postMessage(msg);
     emitSyncHeartbeat(resolvedBoardId, msg);
-}
-
-function handleRecorderState(stateObj: any, boardId: string) {
-    if (!isRecordingTrace) return;
-    const activeRunner = mode === 'single' ? runner : boardRunners.get(boardId);
-    if (!activeRunner) return;
-    
-    const nowMs = activeRunner.getSimulatedTimeMs?.() ?? 0;
-    
-    // Stop recording if we hit the cutoff
-    if (nowMs - traceCaptureStartMs > traceCutoffMs) {
-        isRecordingTrace = false;
-        finalizeRecorderTrace();
-        return;
-    }
-
-    // 1. Process Pin Changes
-    if (stateObj.type === 'state' && stateObj.pins) {
-        for (const pinId in stateObj.pins) {
-            const newState = !!stateObj.pins[pinId];
-            const prevState = traceLastPinStates[pinId];
-            if (prevState === undefined) {
-                traceLastPinStates[pinId] = newState;
-                continue; // baseline
-            }
-            if (newState !== prevState) {
-                traceBuffer.push({ PinChange: { pin: pinId, state: newState, time_ms: Math.floor(nowMs) } });
-                traceLastPinStates[pinId] = newState;
-            }
-        }
-    }
-    
-    // 2. Process Serial
-    if (stateObj.type === 'serial') {
-        traceBuffer.push({ SerialOutput: { data: stateObj.data, time_ms: Math.floor(nowMs) } });
-    }
-    
-    // 3. Process Component State (deltas)
-    if (stateObj.components && Array.isArray(stateObj.components)) {
-        for (const comp of stateObj.components) {
-            const cid = comp.id;
-            const metrics = comp.metrics || {};
-            const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
-            const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
-            const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
-            
-            for (const key in emitSource) {
-                const val = emitSource[key];
-                const stateKey = `${cid}:${key}`;
-                const serialized = typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
-                const lastSerialized = traceLastComponentStates[stateKey];
-                
-                if (lastSerialized === undefined || lastSerialized !== serialized) {
-                    traceBuffer.push({ ComponentState: { id: cid, key: key, value: val, time_ms: Math.floor(nowMs) } });
-                    traceLastComponentStates[stateKey] = serialized;
-                }
-            }
-        }
-    }
-}
-
-async function finalizeRecorderTrace() {
-    if (captureFlushInterval) {
-        clearInterval(captureFlushInterval);
-        captureFlushInterval = null;
-    }
-    console.log(`[SimWorker:Recorder] Trace capture complete. Generating binary key via grading engine...`);
-    const telemetryPayload = {
-        events: traceBuffer,
-        serial: "",
-        duration_ms: traceCutoffMs,
-        error: null,
-        crashed: false,
-        rich_metrics: null, // we skip deep snapshot for this proxy mode
-        coverage_issues: [],
-        ignored_events: []
-    };
-    
-    try {
-        // Delegate to grading worker natively inside the worker
-        const gradingWorkerMod = await import('./grading-engine.worker.ts');
-        // Actually, we can just send it back to the main thread and let GradingPage package it!
-        // Wait, the main thread F1MenuOverlay doesn't have the GradingWorker initialized.
-        // We can just post a special message back to the UI, and the UI will spawn the GradingWorker to bundle it.
-        postMessage({ 
-            type: 'TEACHER_KEY_CAPTURE_COMPLETE', 
-            telemetry: telemetryPayload,
-            projectJson: traceActiveProjectJson,
-            board: traceBoardId,
-            component: traceComponentId
-        });
-    } catch (e) {
-        console.error("Failed to finalize trace:", e);
-    }
 }
 
 function isSoftSerialLabel(label: string): boolean {
@@ -1081,46 +964,9 @@ let activeTelemetryMode = 'detail';
 let activeTelemetryWatchedParamsMap: Record<string, string[]> = {};
 let activeDeepSiliconEnabled = false;
 
-// ── Teacher Key Recorder State ──────────────────────────────────────────────
-let isRecordingTrace = false;
-let traceCutoffMs = 0;
-let traceBuffer: any[] = [];
-let traceComponentMetrics: Record<string, any> = {};
-let traceLastComponentStates: Record<string, string> = {};
-let traceLastPinStates: Record<string, boolean> = {};
-let traceDeepSnapshotCache: any = null;
-let traceActiveProjectJson: string | null = null;
-let traceBoardId: string | null = null;
-let traceComponentId: string | null = null;
-let traceCaptureStartMs = 0;
-let captureFlushInterval: any = null;
-
 // ── Early Hardware Message Queue ─────────────────────────────────────────────
 let isInitializingRunners = false;
 let earlyHardwareMessages: any[] = [];
-
-function emitComponentStateEventsToTrace(snapshot: any, timeMs: number) {
-    if (snapshot && Array.isArray(snapshot.components)) {
-        for (const comp of snapshot.components) {
-            const cid = comp.id;
-            const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
-            const metrics = comp.metrics || {};
-            const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
-            const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
-            
-            for (const key in emitSource) {
-                const val = emitSource[key];
-                const stateKey = `${cid}:${key}`;
-                const serialized = typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
-                
-                traceBuffer.push({ ComponentState: { id: cid, key: key, value: val, time_ms: timeMs } });
-                traceLastComponentStates[stateKey] = serialized;
-            }
-        }
-    }
-}
-
-
 
 const coreMessageHandler = async (e: MessageEvent) => {
     const data = e.data;
@@ -1137,46 +983,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
         return;
     }
 
-    if (data.type === 'START_KEY_CAPTURE') {
-        console.log('[SimWorker] START_KEY_CAPTURE received. Preparing telemetry buffer...');
-        isRecordingTrace = true;
-        traceBuffer = [];
-        traceBoardId = data.board;
-        traceComponentId = data.component;
-        traceActiveProjectJson = data.projectJson;
-        const activeRunner = mode === 'single' ? runner : boardRunners.get(traceBoardId || "");
-        traceCaptureStartMs = activeRunner?.getSimulatedTimeMs?.() ?? 0;
-        traceCutoffMs = data.durationMs || 7900;
-        
-        console.log(`[SimWorker] Telemetry recording started for ${traceCutoffMs}ms`);
-
-        if (captureFlushInterval) clearInterval(captureFlushInterval);
-        captureFlushInterval = setInterval(() => {
-            const runnerToFlush = mode === 'single' ? runner : boardRunners.get(traceBoardId || "");
-            if (runnerToFlush && typeof (runnerToFlush as any).forceEmitState === 'function') {
-                (runnerToFlush as any).forceEmitState();
-            }
-        }, 16.6);
-
-        setTimeout(() => {
-            if (captureFlushInterval) {
-                clearInterval(captureFlushInterval);
-                captureFlushInterval = null;
-            }
-            console.log(`[SimWorker] Telemetry recording finished. Collected ${traceBuffer.length} frames.`);
-            isRecordingTrace = false;
-            postMessage({
-                type: 'TEACHER_KEY_CAPTURE_COMPLETE',
-                telemetry: traceBuffer,
-                board: traceBoardId,
-                component: traceComponentId,
-                projectJson: traceActiveProjectJson
-            });
-            traceBuffer = [];
-        }, traceCutoffMs);
-        return;
-    }
-
     // ── Smart Prefetching ─────────────────────────────────────────────────────
     if (data.type === 'PRELOAD_RUNNERS') {
         const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
@@ -1186,6 +992,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
             } else if (/(esp32)/i.test(type)) {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/esp32-runner.ts').catch(() => {});
             } else if (/pico|rp2040/i.test(type)) {
                 import('./runners/rp2040-runner.ts').catch(() => {});
             } else {
@@ -1376,55 +1183,10 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         telemetryMode: activeTelemetryMode,
                         telemetryWatchedParams: activeTelemetryWatchedParamsMap,
                         deepSiliconEnabled: activeDeepSiliconEnabled,
-                        sab: data.sab,
-                        sabOffsets: data.sabOffsets,
                     }
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
-                
-                // If this is teacher key capture, initialize capture state and baseline snapshot before starting execution
-                if (data.isTeacherKeyCapture) {
-                    console.log('[SimWorker] Single board isTeacherKeyCapture. Initializing capture state and baseline at T=0.');
-                    isRecordingTrace = true;
-                    traceBuffer = [];
-                    traceBoardId = data.teacherKeyBoardId || null;
-                    traceComponentId = data.teacherKeyComponentId || null;
-                    traceActiveProjectJson = data.teacherKeyProjectJson || null;
-                    traceCaptureStartMs = runner.getSimulatedTimeMs?.() ?? 0;
-                    traceCutoffMs = data.teacherKeyDurationMs || 7900;
-                    
-                    traceLastComponentStates = {};
-                    traceLastPinStates = {};
-                    
-                    const baselineSnapshot = runner.getRichTelemetrySnapshot({ mode: 'deep' });
-                    emitComponentStateEventsToTrace(baselineSnapshot, 0);
-
-                    if (captureFlushInterval) clearInterval(captureFlushInterval);
-                    captureFlushInterval = setInterval(() => {
-                        if (runner && typeof (runner as any).forceEmitState === 'function') {
-                            (runner as any).forceEmitState();
-                        }
-                    }, 16.6);
-
-                    setTimeout(() => {
-                        if (captureFlushInterval) {
-                            clearInterval(captureFlushInterval);
-                            captureFlushInterval = null;
-                        }
-                        console.log(`[SimWorker] Telemetry recording finished. Collected ${traceBuffer.length} frames.`);
-                        isRecordingTrace = false;
-                        postMessage({
-                            type: 'TEACHER_KEY_CAPTURE_COMPLETE',
-                            telemetry: traceBuffer,
-                            board: traceBoardId,
-                            component: traceComponentId,
-                            projectJson: traceActiveProjectJson
-                        });
-                        traceBuffer = [];
-                    }, traceCutoffMs);
-                }
-
-                // Start execution
+                // TODO: Remove this temporary execute call if runners start automatically in the future
                 if (runner && typeof (runner as any).execute === 'function') {
                     (runner as any).execute();
                 }
@@ -1458,7 +1220,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     scheduleCircuitPythonInject(runner!, singleBoardId, singleBoardRuntimeFiles);
                 }
             }
-            startTeacherKeyCaptureIfRequested(data);
             return;
         }
 
@@ -1551,14 +1312,16 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
                     esp32Rom,
-                    sab: data.sab,
-                    sabOffsets: data.sabOffsets,
                 }
             );
 
             boardRunners.set(boardComp.id, boardRunner);
             boardTypes.set(boardComp.id, String(boardComp.type || ''));
             boardSerialOutput.set(boardComp.id, '');
+            // TODO: Remove this temporary execute call if runners start automatically in the future
+            if (typeof (boardRunner as any).execute === 'function') {
+                (boardRunner as any).execute();
+            }
         }
 
         for (const [boardId, pyScript] of uartInjectionScripts.entries()) {
@@ -1586,59 +1349,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
             }
         });
 
-        // If this is teacher key capture, initialize capture state and baseline snapshot before starting execution
-        if (data.isTeacherKeyCapture) {
-            console.log('[SimWorker] Multi-board isTeacherKeyCapture. Initializing capture state and baseline at T=0.');
-            isRecordingTrace = true;
-            traceBuffer = [];
-            traceBoardId = data.teacherKeyBoardId || null;
-            traceComponentId = data.teacherKeyComponentId || null;
-            traceActiveProjectJson = data.teacherKeyProjectJson || null;
-            
-            traceLastComponentStates = {};
-            traceLastPinStates = {};
-            
-            const activeRunner = boardRunners.get(traceBoardId || "");
-            if (activeRunner) {
-                traceCaptureStartMs = activeRunner.getSimulatedTimeMs?.() ?? 0;
-                traceCutoffMs = data.teacherKeyDurationMs || 7900;
-                
-                const baselineSnapshot = activeRunner.getRichTelemetrySnapshot({ mode: 'deep' });
-                emitComponentStateEventsToTrace(baselineSnapshot, 0);
-            }
-
-            if (captureFlushInterval) clearInterval(captureFlushInterval);
-            captureFlushInterval = setInterval(() => {
-                const runnerToFlush = boardRunners.get(traceBoardId || "");
-                if (runnerToFlush && typeof (runnerToFlush as any).forceEmitState === 'function') {
-                    (runnerToFlush as any).forceEmitState();
-                }
-            }, 16.6);
-
-            setTimeout(() => {
-                if (captureFlushInterval) {
-                    clearInterval(captureFlushInterval);
-                    captureFlushInterval = null;
-                }
-                console.log(`[SimWorker] Telemetry recording finished. Collected ${traceBuffer.length} frames.`);
-                isRecordingTrace = false;
-                postMessage({
-                    type: 'TEACHER_KEY_CAPTURE_COMPLETE',
-                    telemetry: traceBuffer,
-                    board: traceBoardId,
-                    component: traceComponentId,
-                    projectJson: traceActiveProjectJson
-                });
-                traceBuffer = [];
-            }, traceCutoffMs);
-        }
-
-        // Now start execution for all runners!
-        boardRunners.forEach((br) => {
-            if (typeof (br as any).execute === 'function') {
-                (br as any).execute();
-            }
-        });
     } else if (data.type === 'STOP') {
         stopAllRunners();
     } else if (data.type === 'INTERACT') {

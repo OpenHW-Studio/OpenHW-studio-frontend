@@ -4,7 +4,7 @@ import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? 'https://openhw-studio.fossee.in/api/examples' : '/api/examples');
+  (import.meta.env.DEV ? 'https://openhw-studio.fossee.in/examples' : '/examples');
 
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || 'https://openhw-studio.fossee.in/docs/';
