@@ -129,7 +129,6 @@ const CATEGORY_BLOCKS = {
   control: [
     { type: 'on_start', label: 'on start' },
     { type: 'forever', label: 'forever' },
-    { type: 'wait_secs', label: 'wait' },
     { type: 'repeat_times', label: 'repeat times' },
     { type: 'repeat_while', label: 'repeat while' },
     { type: 'if_then', label: 'if then' },
@@ -2890,6 +2889,12 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
           const blocks = ws.getAllBlocks(false)
           const pinUsage = new Map()
 
+          // Helper: return true if two blocks are in the same connected stack
+          // (meaning they execute sequentially, so reusing a pin is valid)
+          const shareRootBlock = (a, b) => {
+            return a.getRootBlock().id === b.getRootBlock().id
+          }
+
           blocks.forEach(block => {
             const pinFields = []
             block.inputList.forEach(input => {
@@ -2928,10 +2933,20 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             }
           })
 
-          // Identify and mark conflicts
+          // Identify and mark conflicts — but SKIP blocks that share the same root block.
+          // Reusing the same pin sequentially in the same stack is valid (e.g. blink patterns).
           pinUsage.forEach((usages, usageKey) => {
             if (usages.length > 1) {
-              usages.forEach(({ block }) => {
+              // Filter down to only blocks that are in different independent stacks
+              const trueConflicts = usages.filter(({ block: blockA }, idxA) => {
+                // A block is a true conflict if at least one OTHER block using the
+                // same pin/state does NOT share the same root block with it.
+                return usages.some(({ block: blockB }, idxB) => {
+                  if (idxA === idxB) return false
+                  return !shareRootBlock(blockA, blockB)
+                })
+              })
+              trueConflicts.forEach(({ block }) => {
                 if (!block.data || !block.data.startsWith('origHue:')) {
                   block.data = 'origHue:' + block.getHue()
                 }
