@@ -689,20 +689,22 @@ function CanvasSceneLayerBase({
                 })}
               </div>
 
-              <div style={{
-                position: 'absolute',
-                top: (comp.rotation === 90 || comp.rotation === 270)
-                  ? comp.h / 2 + comp.w / 2 + 4
-                  : comp.h + 4,
-                left: comp.w / 2,
-                transform: 'translateX(-50%)',
-                fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                pointerEvents: 'none',
-                zIndex: 5,
-              }}>
-                {comp.label}
-              </div>
+              {comp.type !== 'openhw-text' && (
+                <div style={{
+                  position: 'absolute',
+                  top: (comp.rotation === 90 || comp.rotation === 270)
+                    ? comp.h / 2 + comp.w / 2 + 4
+                    : comp.h + 4,
+                  left: comp.w / 2,
+                  transform: 'translateX(-50%)',
+                  fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                  whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}>
+                  {comp.label}
+                </div>
+              )}
             </div>
           );
         };
