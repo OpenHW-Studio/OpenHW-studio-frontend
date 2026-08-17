@@ -357,10 +357,26 @@ function CanvasSceneLayerBase({
         const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
         if (isRunning && !showDuringRun) return null;
         if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
+
+        // Use BOUNDS to calculate the actual center dynamically (essential for text component)
+        let bW = comp.w || 60;
+        let bH = comp.h || 60;
+        if (typeof reg.BOUNDS === 'function') {
+            const attrs = getComponentStateAttrs(comp);
+            const b = reg.BOUNDS(attrs);
+            if (b) {
+                bW = b.w;
+                bH = b.h;
+            }
+        } else if (reg.BOUNDS) {
+            bW = reg.BOUNDS.w || bW;
+            bH = reg.BOUNDS.h || bH;
+        }
+
         return (
           <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
             position: 'absolute',
-            left: comp.x + comp.w / 2,
+            left: comp.x + bW / 2,
             top: comp.y - 14,
             transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
             transformOrigin: 'bottom center',
