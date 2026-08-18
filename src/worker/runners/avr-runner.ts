@@ -1,4 +1,5 @@
 import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
+import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig } from './mega-timers.ts';
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
@@ -105,8 +106,10 @@ export class AVRRunner {
         this.boardId = options.boardId || fallbackBoard?.id || 'openhw-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
+        const isMega = this.boardId.toLowerCase().includes('mega');
+
         // Setup memory and CPU
-        const program = new Uint16Array(32768);
+        const program = isMega ? new Uint16Array(131072) : new Uint16Array(32768);
         const { data } = parse(hexData);
         const u8 = new Uint8Array(program.buffer);
         u8.set(data);
@@ -116,15 +119,32 @@ export class AVRRunner {
         this.cpu = new CPU(program, 0x2200);
         this.cpuCyclesAtStart = this.cpu.cycles;
 
-        this.timers = [
-            new AVRTimer(this.cpu, timer0Config),
-            new AVRTimer(this.cpu, timer1Config),
-            new AVRTimer(this.cpu, timer2Config),
-        ];
+        if (isMega) {
+            console.log(`AVRRunner: Initializing MEGA peripherals. Usart config:`, megaUsart0Config);
+            this.timers = [
+                new AVRTimer(this.cpu, megaTimer0Config),
+                new AVRTimer(this.cpu, megaTimer1Config),
+                new AVRTimer(this.cpu, megaTimer2Config),
+                new AVRTimer(this.cpu, megaTimer3Config),
+                new AVRTimer(this.cpu, megaTimer4Config),
+                new AVRTimer(this.cpu, megaTimer5Config),
+            ];
+            this.adc = new AVRADC(this.cpu, megaAdcConfig);
+            this.usart = new AVRUSART(this.cpu, megaUsart0Config, 16e6);
+            this.twi = new AVRTWI(this.cpu, megaTwiConfig, 16e6);
+            this.spi = new AVRSPI(this.cpu, megaSpiConfig, 16e6);
+        } else {
+            this.timers = [
+                new AVRTimer(this.cpu, timer0Config),
+                new AVRTimer(this.cpu, timer1Config),
+                new AVRTimer(this.cpu, timer2Config),
+            ];
+            this.adc = new AVRADC(this.cpu, adcConfig);
+            this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+            this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+            this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+        }
 
-        this.adc = new AVRADC(this.cpu, adcConfig);
-
-        this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
         this.usart.onByteTransmit = (value) => {
             const char = String.fromCharCode(value);
             this.pulseBoardLed('1');
@@ -134,9 +154,6 @@ export class AVRRunner {
                 this.onStateUpdate({ type: 'serial', data: char, value, boardId: this.boardId, source: 'uart0' });
             }
         };
-
-        this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
-        this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
 
         // Instantiate components
         (componentsDef || []).forEach(cDef => {

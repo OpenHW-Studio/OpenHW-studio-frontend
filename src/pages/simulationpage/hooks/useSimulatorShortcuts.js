@@ -228,6 +228,32 @@ export function useSimulatorShortcuts({
         return;
       }
 
+      // Add Text Component ('t')
+      if (key === 't' && !mod && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        saveHistory();
+        const textCount = components.filter(c => c.type === 'openhw-text').length;
+        const offset = textCount * 20;
+        
+        // Calculate center of screen
+        const zoom = canvasZoomRef?.current || 1;
+        const cOffset = canvasOffsetRef?.current || { x: 0, y: 0 };
+        const centerX = (-cOffset.x + window.innerWidth / 2) / zoom;
+        const centerY = (-cOffset.y + window.innerHeight / 2) / zoom;
+
+        const newComp = {
+          type: 'openhw-text',
+          id: `openhw-text-${Date.now()}`,
+          x: centerX - 30 + offset,
+          y: centerY - 15 + offset,
+          attrs: {}
+        };
+        
+        setComponents(prev => [...prev, newComp]);
+        setSelected(newComp.id);
+        return;
+      }
+
       // When Blocks tab is active and panel is open, ALL canvas shortcuts belong to Blockly!
       if (isPanelOpen && codeTab === 'block') {
         return;
