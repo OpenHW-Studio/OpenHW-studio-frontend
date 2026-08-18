@@ -59,7 +59,8 @@ const PAGE_CSS = `
   }
   .about-page-root p { margin: 0; }
   .about-page-root a { color: inherit; text-decoration: none; }
-  .about-page-root img { display: block; max-width: 100%; }
+  .about-page-root img:not(.brand-logo) { display: block; max-width: 100%; }
+  .about-page-root .brand-logo { max-width: 70px; }
 
   .about-wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; width: 100%; position: relative; z-index: 2; }
 
@@ -357,6 +358,17 @@ export default function AboutUsNewPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
 
+  const [theme, setTheme] = React.useState(() => {
+    return localStorage.getItem("theme") || "dark";
+  });
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+  };
+
   const handleDashboard = () => {
     if (role === "teacher") navigate("/teacher/dashboard");
     else if (role === "student") navigate("/student/dashboard");
@@ -367,36 +379,45 @@ export default function AboutUsNewPage() {
     <div className="about-page-root">
       <style>{PAGE_CSS}</style>
 
-      {/* HEADER NAV */}
-      <header className="about-nav">
-        <div className="about-nav-inner">
-          <div className="about-brand" onClick={() => navigate("/")}>
-            <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="about-brand-logo-img" />
-            <div className="about-brand-text">
-              <div className="name">OpenHW-Studio</div>
-              <div className="sub">By FOSSEE, IIT Bombay</div>
-            </div>
+      {/* NAV */}
+      <nav className="nav">
+        <div className="nav-brand about-brand" onClick={() => navigate("/")}>
+          <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="about-brand-logo-img" />
+          <div className="about-brand-text">
+            <div className="name">OpenHW-Studio</div>
+            <div className="sub">By FOSSEE, IIT Bombay</div>
           </div>
-          <nav className="about-links">
-            <Link to="/">Home</Link>
-            <Link to="/explore">Explore</Link>
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Learn</a>
-            <Link to="/simulator">Simulate</Link>
-            <Link to="/examples">Projects</Link>
-            <Link to="/contributors">Community</Link>
-            <Link to="/about" className="active">About Us</Link>
-          </nav>
+        </div>
+        <div className="nav-actions">
+          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
+            About Us
+          </button>
+          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
+            Examples
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={toggleTheme}
+            title="Toggle Dark/Light Mode"
+          >
+            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+          </button>
           {isAuthenticated ? (
-            <button className="about-nav-cta" onClick={handleDashboard}>
+            <button className="btn btn-primary" onClick={handleDashboard}>
               Dashboard →
             </button>
           ) : (
-            <button className="about-nav-cta" onClick={() => navigate("/signup")}>
-              Get Started →
-            </button>
+            <>
+              <button className="btn btn-ghost" onClick={() => navigate("/login")}>
+                Log In
+              </button>
+              <button className="btn btn-primary" onClick={() => navigate("/signup")}>
+                Get Started
+              </button>
+            </>
           )}
         </div>
-      </header>
+      </nav>
 
       <main style={{ position: "relative" }}>
         {/* SLEEK CIRCUIT TRACES ON LEFT MARGIN */}
