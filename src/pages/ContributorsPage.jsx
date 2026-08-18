@@ -94,7 +94,7 @@ const PAGE_CSS = `
   }
   .contrib-page-root p { margin: 0; }
   .contrib-page-root a { color: inherit; text-decoration: none; }
-  .contrib-page-root img { display: block; max-width: 100%; }
+  .contrib-page-root img:not(.contrib-brand-logo-img) { display: block; max-width: 100%; }
 
   .contrib-wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; width: 100%; position: relative; z-index: 2; }
 
@@ -299,6 +299,17 @@ export default function ContributorsPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
 
+  const [theme, setTheme] = React.useState(() => {
+    return localStorage.getItem("theme") || "dark";
+  });
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+  };
+
   const handleDashboard = () => {
     if (role === "teacher") navigate("/teacher/dashboard");
     else if (role === "student") navigate("/student/dashboard");
@@ -310,35 +321,44 @@ export default function ContributorsPage() {
       <style>{PAGE_CSS}</style>
 
       {/* NAV */}
-      <header className="contrib-nav">
-        <div className="contrib-nav-inner">
-          <div className="contrib-brand" onClick={() => navigate("/")}>
-            <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="contrib-brand-logo-img" />
-            <div className="contrib-brand-text">
-              <div className="name">OpenHW-Studio</div>
-              <div className="sub">By FOSSEE, IIT Bombay</div>
-            </div>
+      <nav className="nav">
+        <div className="nav-brand contrib-brand" onClick={() => navigate("/")}>
+          <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="contrib-brand-logo-img" />
+          <div className="contrib-brand-text">
+            <div className="name">OpenHW-Studio</div>
+            <div className="sub">By FOSSEE, IIT Bombay</div>
           </div>
-          <nav className="contrib-links">
-            <Link to="/">Home</Link>
-            <Link to="/explore">Explore</Link>
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Learn</a>
-            <Link to="/simulator">Simulate</Link>
-            <Link to="/examples">Projects</Link>
-            <Link to="/contributors" className="active">Community</Link>
-            <Link to="/about">About Us</Link>
-          </nav>
+        </div>
+        <div className="nav-actions">
+          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
+            About Us
+          </button>
+          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
+            Examples
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={toggleTheme}
+            title="Toggle Dark/Light Mode"
+          >
+            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+          </button>
           {isAuthenticated ? (
-            <button className="contrib-nav-cta" onClick={handleDashboard}>
+            <button className="btn btn-primary" onClick={handleDashboard}>
               Dashboard →
             </button>
           ) : (
-            <button className="contrib-nav-cta" onClick={() => navigate("/signup")}>
-              Get Started →
-            </button>
+            <>
+              <button className="btn btn-ghost" onClick={() => navigate("/login")}>
+                Log In
+              </button>
+              <button className="btn btn-primary" onClick={() => navigate("/signup")}>
+                Get Started
+              </button>
+            </>
           )}
         </div>
-      </header>
+      </nav>
 
       {/* HERO & HEADER */}
       <main className="contrib-wrap">
