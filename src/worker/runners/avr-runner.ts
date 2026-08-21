@@ -1121,51 +1121,68 @@ export class AVRRunner {
             // never pull the pin LOW because the pull-up voltage never reaches the button.
             // Floating INPUT pins should NOT propagate, as external components own the line.
             inputPins.forEach(pin => {
-                const { isDriven, isHigh } = getAvrPinModeState(pin);
-                if (isDriven) {
-                    this.pinStates[pin] = isHigh;
-
-                    // Determine if this pin is specifically INPUT_PULLUP
-                    let port: AVRIOPort | null = null;
-                    let bit = 0;
-                    const num = parseInt(pin, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            port = this.portB;
-                            bit = num - 8;
-                        } else if (num >= 0 && num <= 7) {
-                            port = this.portD;
-                            bit = num;
+                // Check if any connected component on this net is actively driving LOW
+                let isDrivenLow = false;
+                this.instances.forEach((inst, cId) => {
+                    if (cId === this.boardId) return;
+                    const lastV = (inst as any)._lastDrivenVoltage !== undefined
+                        ? (inst as any)._lastDrivenVoltage
+                        : ((inst as any).echoOutputVoltage !== undefined
+                            ? (inst as any).echoOutputVoltage
+                            : (inst.pins['OUT']?.voltage ?? inst.pins['SIG']?.voltage ?? inst.pins['DATA']?.voltage ?? inst.pins['SDA']?.voltage));
+                    if ((inst as any)._drivingBus && lastV !== undefined && lastV < 1.8) {
+                        const boardPin = (inst as any).getConnectedBoardPin
+                            ? (inst as any).getConnectedBoardPin()
+                            : ((inst as any).getBoardPin ? (inst as any).getBoardPin() : null);
+                        if (boardPin === pin) {
+                            isDrivenLow = true;
                         }
                     }
-                    const isPullUp = port ? (port.pinState(bit) === PinState.InputPullUp || port.pinState(bit) === 2) : false;
+                });
 
-                    // INPUT_PULLUP pins propagate their weak pull-up voltage outward.
-                    // This allows pushbuttons to pull the pin LOW when pressed (overriding
-                    // the weak pull-up with a direct GND connection through the switch).
-                    if (isPullUp) {
-                        // Check if any connected component on this net is actively driving LOW
-                        let isDrivenLow = false;
-                        this.instances.forEach((inst, cId) => {
-                            if (cId === this.boardId) return;
-                            if ((inst as any)._drivingBus && (inst as any)._lastDrivenVoltage !== undefined && (inst as any)._lastDrivenVoltage < 1.8) {
-                                const boardPin = (inst as any).getBoardPin ? (inst as any).getBoardPin() : null;
-                                if (boardPin === pin) {
-                                    isDrivenLow = true;
-                                }
-                            }
-                        });
-                        if (!isDrivenLow) {
+                let port: AVRIOPort | null = null;
+                let bit = 0;
+                const num = parseInt(pin, 10);
+                if (!isNaN(num)) {
+                    if (num >= 8 && num <= 13) {
+                        port = this.portB;
+                        bit = num - 8;
+                    } else if (num >= 0 && num <= 7) {
+                        port = this.portD;
+                        bit = num;
+                    }
+                } else if (pin.startsWith('A')) {
+                    port = this.portC;
+                    const parsed = parseInt(pin.slice(1), 10);
+                    if (!isNaN(parsed)) bit = parsed;
+                }
+
+                if (isDrivenLow) {
+                    this.pinStates[pin] = false;
+                    if (port) port.setPin(bit, false);
+                } else {
+                    const { isDriven, isHigh } = getAvrPinModeState(pin);
+                    if (isDriven) {
+                        this.pinStates[pin] = isHigh;
+
+                        const isPullUp = port ? (port.pinState(bit) === PinState.InputPullUp || port.pinState(bit) === 2) : false;
+                        if (isPullUp) {
                             updateOopPin(pin, true);
                         }
                     }
                 }
             });
             analogPins.forEach(pin => {
-                const { isDriven, isHigh } = getAvrPinModeState(pin);
-                if (isDriven) {
-                    this.pinStates[pin] = isHigh;
-                    updateOopPin(pin, isHigh);
+                const bit = parseInt(pin.slice(1), 10);
+                const port = this.portC;
+                const pinState = port ? port.pinState(bit) : null;
+                const isDigitalOutput = pinState === PinState.High || pinState === PinState.Low;
+                if (isDigitalOutput) {
+                    const { isDriven, isHigh } = getAvrPinModeState(pin);
+                    if (isDriven) {
+                        this.pinStates[pin] = isHigh;
+                        updateOopPin(pin, isHigh);
+                    }
                 }
             });
             outputPins.forEach(pin => {
