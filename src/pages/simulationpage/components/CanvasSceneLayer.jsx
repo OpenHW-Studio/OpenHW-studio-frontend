@@ -4,7 +4,7 @@ import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
 import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
-const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
+const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr }) => {
   const liveState = useSyncExternalStore(
     useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
     useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
@@ -15,7 +15,8 @@ const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponent
     state: liveState,
     attrs: getComponentStateAttrs(comp, liveState),
     isRunning: isRunning,
-    comp: comp
+    comp: comp,
+    updateComponentAttr: updateComponentAttr
   });
 });
 
@@ -492,7 +493,9 @@ function CanvasSceneLayerBase({
               style={{
                 position: 'absolute',
                 left: comp.x, top: comp.y,
-                zIndex: (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
+                zIndex: comp.type === 'openhw-image'
+                  ? (isSelected ? 1 : 0)
+                  : (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
                   ? (isSelected ? 4 : 2)
                   : (isSelected ? 10 : 5),
                 opacity: comp.isGhost ? 0.4 : 1,
@@ -572,6 +575,7 @@ function CanvasSceneLayerBase({
                       isRunning={isRunning}
                       getLiveOopStateSnapshot={getLiveOopStateSnapshot}
                       subscribeLiveOopState={subscribeLiveOopState}
+                      updateComponentAttr={updateComponentAttr}
                     />
                   ) : (
                     <ReactiveFallbackComponentUI
@@ -705,7 +709,7 @@ function CanvasSceneLayerBase({
                 })}
               </div>
 
-              {comp.type !== 'openhw-text' && (
+              {comp.type !== 'openhw-text' && comp.type !== 'openhw-image' && (
                 <div style={{
                   position: 'absolute',
                   top: (comp.rotation === 90 || comp.rotation === 270)

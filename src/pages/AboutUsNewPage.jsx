@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { Rocket, Share2, GraduationCap } from "lucide-react";
 
 import tinkeringImg from "../assets/about/tinkering-students.png";
-import prabhuImg from "../assets/about/prabhu.jpeg";
+import prabhuImg from "../assets/about/Prabhu.jpeg";
 import rajeshImg from "../assets/about/rajesh.jpeg";
 import pratikBImg from "../assets/about/pratik-b.jpeg";
 import pratikNImg from "../assets/about/pratik-n.jpeg";
@@ -164,12 +164,11 @@ const PAGE_CSS = `
 
   /* schematic / image panel */
   .about-schematic {
-    background: var(--ink); border-radius: 20px; padding: 12px;
     position: relative; overflow: hidden;
-    box-shadow: 0 24px 48px rgba(11, 18, 34, 0.16);
+    display: flex; align-items: center; justify-content: center;
   }
   .about-schematic img {
-    width: 100%; height: 100%; object-fit: cover; border-radius: 14px;
+    width: 100%; height: auto; object-fit: cover; border-radius: 14px;
   }
 
   /* ---------- SECTION HEAD ---------- */
