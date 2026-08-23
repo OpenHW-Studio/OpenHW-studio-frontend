@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { Rocket, Share2, GraduationCap } from "lucide-react";
 
 import tinkeringImg from "../assets/about/tinkering-students.png";
-import prabhuImg from "../assets/about/prabhu.jpeg";
+import prabhuImg from "../assets/about/Prabhu.jpeg";
 import rajeshImg from "../assets/about/rajesh.jpeg";
 import pratikBImg from "../assets/about/pratik-b.jpeg";
 import pratikNImg from "../assets/about/pratik-n.jpeg";
