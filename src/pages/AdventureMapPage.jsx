@@ -778,9 +778,9 @@ export default function AdventureMapPage() {
               width: '280px',
             }}>
               <Search size={14} style={{ color: 'var(--text3)', marginRight: 8 }} />
-              <input 
-                type="text" 
-                placeholder="Search projects or documentation" 
+              <input
+                type="text"
+                placeholder="Search projects or documentation"
                 style={{
                   border: 'none',
                   outline: 'none',
@@ -788,8 +788,8 @@ export default function AdventureMapPage() {
                   fontSize: '12px',
                   color: 'var(--text2)',
                   width: '100%',
-                }} 
-                disabled 
+                }}
+                disabled
               />
               <span style={{
                 display: 'flex',
@@ -907,8 +907,8 @@ export default function AdventureMapPage() {
               ].map((item, idx) => {
                 const Icon = item.icon
                 return (
-                  <button 
-                    key={idx} 
+                  <button
+                    key={idx}
                     className={item.active ? "sidebar-nav-link-active" : "sidebar-nav-link"}
                     onClick={() => item.path && navigate(item.path)}
                   >
@@ -978,7 +978,7 @@ export default function AdventureMapPage() {
               margin: '0 auto',
               width: '100%',
             }}>
-              
+
               {/* CARD 1: Arduino Uno */}
               <div className="campaign-card">
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -998,7 +998,7 @@ export default function AdventureMapPage() {
                 </div>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Arduino Uno</h3>
                 <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>8-BIT AVR RISC</p>
-                <button 
+                <button
                   className="card-btn-blue"
                   onClick={() => navigate(classId ? `/adventure?journey=arduino&classId=${encodeURIComponent(classId)}` : `/adventure?journey=arduino`)}
                 >
@@ -1025,7 +1025,7 @@ export default function AdventureMapPage() {
                 </div>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Raspberry Pi Pico</h3>
                 <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>DUAL-CORE ARM CORTEX-M0+</p>
-                <button 
+                <button
                   className="card-btn-light-blue"
                   onClick={() => showToast("Raspberry Pi Pico campaign is coming soon!")}
                 >
@@ -1052,7 +1052,7 @@ export default function AdventureMapPage() {
                 </div>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>ESP32</h3>
                 <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT XTENSA DUAL-CORE</p>
-                <button 
+                <button
                   className="card-btn-outline"
                   onClick={() => navigate(classId ? `/adventure?journey=esp32&classId=${encodeURIComponent(classId)}` : `/adventure?journey=esp32`)}
                 >
@@ -1086,8 +1086,8 @@ export default function AdventureMapPage() {
                 </div>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text3)', margin: '0 0 4px 0' }}>STM32</h3>
                 <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text3)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT ARM CORTEX-M4</p>
-                <button 
-                  className="card-btn-outline" 
+                <button
+                  className="card-btn-outline"
                   style={{ color: 'var(--text3)', borderColor: 'var(--border)', cursor: 'not-allowed' }}
                   disabled
                 >
@@ -1547,7 +1547,7 @@ export default function AdventureMapPage() {
 
               {/* Journey Switcher */}
               <div style={{ display: 'flex', background: 'rgba(15,23,42,0.06)', borderRadius: 10, padding: 2, gap: 1 }}>
-                {[{id: 'arduino', label: 'Arduino'}, {id: 'esp32', label: 'ESP32'}].map(j => (
+                {[{ id: 'arduino', label: 'Arduino' }, { id: 'esp32', label: 'ESP32' }].map(j => (
                   <button
                     key={j.id}
                     onClick={() => {
@@ -1767,7 +1767,7 @@ export default function AdventureMapPage() {
             </button>
 
             <div style={{ display: 'flex', background: 'rgba(15,23,42,0.06)', borderRadius: 12, padding: 3, gap: 2 }}>
-              {[{id: 'arduino', label: 'Arduino'}, {id: 'esp32', label: 'ESP32'}].map(j => (
+              {[{ id: 'arduino', label: 'Arduino' }, { id: 'esp32', label: 'ESP32' }].map(j => (
                 <button
                   key={j.id}
                   onClick={() => {

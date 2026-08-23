@@ -96,10 +96,10 @@ export const PROJECT_DATA = {
     ],
     // Components that unlock when this project is completed
 unlockComponents: [
-       { type: 'openhw-arduino-uno', name: 'Arduino Uno', icon: '🟩', color: '#22c55e', desc: 'Your project\'s BRAIN! It reads your code and follows every instruction.' },
-       { type: 'openhw-led', name: 'LED', icon: '💡', color: '#f59e0b', desc: 'A tiny light that turns ON when electricity flows through it. Works forever unlike old bulbs!' },
-       { type: 'openhw-resistor', name: '220Ω Resistor', icon: '🟤', color: '#92400e', desc: 'A speed-bump for electricity. Keeps the LED safe from getting too much power!' },
-       { type: 'openhw-wire', name: 'Wire', icon: '〰️', color: '#64748b', desc: 'Connects all your parts together — like roads for electricity!' },
+       { type: 'openhw-arduino-uno', name: 'Arduino Uno', icon: '/components_examples/UNO.png', color: '#22c55e', desc: 'Your project\'s BRAIN! It reads your code and follows every instruction.' },
+       { type: 'openhw-led', name: 'LED', icon: '/components_examples/LED.png', color: '#f59e0b', desc: 'A tiny light that turns ON when electricity flows through it. Works forever unlike old bulbs!' },
+       { type: 'openhw-resistor', name: '220Ω Resistor', icon: '/components_examples/Resistor.png', color: '#92400e', desc: 'A speed-bump for electricity. Keeps the LED safe from getting too much power!' },
+       { type: 'openhw-wire', name: 'Wire', icon: '/components_examples/BreadBoard_full.png', color: '#64748b', desc: 'Connects all your parts together — like roads for electricity!' },
      ]
   },
 
@@ -134,7 +134,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-rgb-led', name: 'RGB LED', icon: '🌈', color: '#a855f7', desc: 'Makes 16 million colors! Mix red, green, blue to create any color.' },
+       { type: 'openhw-rgb-led', name: 'RGB LED', icon: '/components_examples/RBG_LED_4pin.png', color: '#a855f7', desc: 'Makes 16 million colors! Mix red, green, blue to create any color.' },
      ]
   },
 
@@ -156,7 +156,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-buzzer', name: 'Buzzer', icon: '🔔', color: '#f97316', desc: 'Makes beeps and sounds! You can even play music with it.' },
+       { type: 'openhw-buzzer', name: 'Buzzer', icon: '/components_examples/Buzzer.png', color: '#f97316', desc: 'Makes beeps and sounds! You can even play music with it.' },
      ]
   },
 
@@ -178,7 +178,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', color: '#3b82f6', desc: 'Control things with a press! Make your projects interactive.' },
+       { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', color: '#3b82f6', desc: 'Control things with a press! Make your projects interactive.' },
      ]
   },
 
@@ -200,7 +200,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '🎚️', color: '#14b8a6', desc: 'A tunable knob — control values from 0 to max!' },
+       { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '/components_examples/Rotary_Potentiometer.png', color: '#14b8a6', desc: 'A tunable knob — control values from 0 to max!' },
      ]
   },
 
@@ -222,7 +222,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
+       { type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
      ]
   },
 
@@ -243,51 +243,59 @@ unlockComponents: [
         }
       }
     ],
-unlockComponents: [
-        { type: 'openhw-photoresistor', name: 'LDR Sensor', icon: '☀️', color: '#eab308', desc: 'A light sensor — lower resistance when brighter!' },
-      ]
+    unlockComponents: [
+      { type: 'openhw-photoresistor', name: 'LDR Sensor', icon: '/components_examples/Phtoresistor_LDR.png', color: '#eab308', desc: 'A light sensor — lower resistance when brighter!' },
+    ],
   },
 
   // ===== SERVO MOTOR (project: servo-motor) =====
   'servo-motor': {
     flashcards: [],
-unlockComponents: [
-       { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', color: '#ec4899', desc: 'Colorful LEDs you can control individually!' },
-     ]
+    unlockComponents: [
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
+    ],
   },
 
-  // ===== LED STRIP (project: led-strip) =====
-  'led-strip': {
+  // ===== LED STRIP (project: neopixel-effects) =====
+  'neopixel-effects': {
     flashcards: [],
-unlockComponents: [
-       { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', color: '#14b8a6', desc: 'Press it to trigger things!' },
-     ]
+    unlockComponents: [
+      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '/components_examples/MAX7219_Dot_Matrix.png', color: '#ec4899', desc: 'Colorful LEDs you can control individually!' },
+    ],
   },
 
   // ===== BUTTON DEBOUNCE (project: button-debounce) =====
   'button-debounce': {
     flashcards: [],
-unlockComponents: [
-       { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', color: '#ef4444', desc: 'Measures how hot or cold it is!' },
-     ]
+    unlockComponents: [
+      { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', color: '#14b8a6', desc: 'Press it to trigger things!' },
+    ],
   },
 
   // ===== TEMPERATURE SENSOR (project: temperature-sensor) =====
   'temperature-sensor': {
     flashcards: [],
-unlockComponents: [
-       { type: 'openhw-motor', name: 'DC Motor', icon: '🔩', color: '#f97316', desc: 'Spins at any speed you want!' },
-       { type: 'openhw-motor-driver', name: 'Motor Driver (L293D)', icon: '🔌', color: '#78716c', desc: 'Controls the motor — gives it power!' },
-     ]
+    unlockComponents: [
+      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '/components_examples/DHT22.png', color: '#ef4444', desc: 'Measures how hot or cold it is!' },
+    ],
   },
 
-// ===== DC MOTOR (project: dc-motor) =====
-   'dc-motor': {
-     flashcards: [],
-     unlockComponents: [
-       { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', color: '#fbbf24', desc: 'You completed every project! Build anything!' },
-     ]
-   }
+  // ===== DC MOTOR (project: dc-motor) =====
+  'dc-motor': {
+    flashcards: [],
+    unlockComponents: [
+      { type: 'openhw-motor', name: 'DC Motor', icon: '/components_examples/DC_Motor.png', color: '#f97316', desc: 'Spins at any speed you want!' },
+      { type: 'openhw-motor-driver', name: 'Motor Driver (L293D)', icon: '/components_examples/Motor_Driver_L293D.png', color: '#78716c', desc: 'Controls the motor — gives it power!' },
+    ],
+  },
+
+  // ===== ALL UNLOCKED =====
+  'all-unlocked': {
+    flashcards: [],
+    unlockComponents: [
+      { type: '*', name: 'ALL Components Unlocked!', icon: '/components_examples/UNO.png', color: '#fbbf24', desc: 'You completed every project! Build anything!' },
+    ],
+  },
 }
 
 // Default flashcards for projects not in the data
@@ -322,8 +330,8 @@ export const DEFAULT_FLASHCARDS = [
 
 // Default components for projects not in the data
 export const DEFAULT_UNLOCK_COMPONENTS = [
-  { id: 'arduino', name: 'Arduino Uno', icon: '🟩', color: '#22c55e', desc: 'Your project\'s brain!' },
-  { id: 'component', name: 'Component', icon: '🔧', color: '#3b82f6', desc: 'Essential for your project.' },
+  { id: 'arduino', name: 'Arduino Uno', icon: '/components_examples/UNO.png', color: '#22c55e', desc: 'Your project\'s brain!' },
+  { id: 'component', name: 'Component', icon: '/components_examples/LED.png', color: '#3b82f6', desc: 'Essential for your project.' },
 ]// Helper function to get flashcards for a project
 export function getProjectFlashcards(projectSlug) {
   let cards = PROJECT_DATA[projectSlug]?.flashcards;

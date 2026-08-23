@@ -7,13 +7,70 @@ const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
 
 const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  "https://raw.githubusercontent.com/OpenHW-Studio/openhw-studio-examples/main";
+  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
 
 // JSON slug → URL slug for projects where they differ
 const JSON_SLUG_TO_URL = {
   "rgb-led-blink": "rgb-led",
 };
+
+// Maps every project slug → { folder, file } in the examples repo
+// folder/file must match exactly what's served under EXAMPLES_BASE_URL
+const CIRCUIT_IMAGE_MAP = {
+  // exact matches (folder name === slug)
+  'led-blink':               { folder: 'led-blink',               file: 'circuit.png' },
+  'rgb-led':                 { folder: 'rgb-led',                 file: 'circuit.png' },
+  'rgb-led-blink':           { folder: 'rgb-led-blink',           file: 'circuit.png' },
+  'rgb-led-serial':          { folder: 'rgb-led-serial',          file: 'circuit.png' },
+  'rgb-led-3-buttons':       { folder: 'rgb-led-3-buttons',       file: 'circuit.png' },
+  'button-debounce':         { folder: 'button-debounce',         file: 'circuit.png' },
+  'button-led':              { folder: 'button-led',              file: 'circuit.png' },
+  'potentiometer-led':       { folder: 'potentiometer-led',       file: 'circuit.png' },
+  'servo-motor':             { folder: 'servo-motor',             file: 'circuit.png' },
+  'servo-potentiometer':     { folder: 'servo-potentiometer',     file: 'circuit.png' },
+  'temperature-sensor':      { folder: 'temperature-sensor',      file: 'circuit.png' },
+  'temperature-rgb-led':     { folder: 'temperature-rgb-led',     file: 'circuit.png' },
+  'dc-motor-l293d':          { folder: 'dc-motor-l293d',          file: 'circuit.png' },
+  'dc-motor-pwm':            { folder: 'dc-motor-pwm',            file: 'circuit.png' },
+  'led-strip':               { folder: 'led-strip',               file: 'circuit.png' },
+  'ldr-automatic-light':     { folder: 'ldr-automatic-light',     file: 'circuit.png' },
+  'gas-sensor-led':          { folder: 'gas-sensor-led',          file: 'circuit.png' },
+  'motion-sensor-alarm':     { folder: 'motion-sensor-alarm',     file: 'circuit.png' },
+  'obstacle-avoiding-robot': { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
+  'smart-dustbin':           { folder: 'smart-dustbin',           file: 'circuit.png' },
+  'smart-home-automation':   { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'smart-street-light':      { folder: 'smart-street-light',      file: 'circuit.png' },
+  'water-level-indicator':   { folder: 'water-level-indicator',   file: 'circuit.png' },
+  'auto-fan-speed':          { folder: 'auto-fan-speed',          file: 'circuit.png' },
+  'lcd-scrolling-text':      { folder: 'lcd-scrolling-text',      file: 'circuit.png' },
+  'ultrasonic-distance':     { folder: 'ultrasonic-distance',     file: 'circuit.png' },
+  'traffic-light':           { folder: 'traffic-light',           file: 'circuit.png' },
+  'up-counter':              { folder: 'up-counter',              file: 'circuit.png' },
+  'up-down-counter':         { folder: 'up-down-counter',         file: 'circuit.png' },
+  // slug differs from folder name
+  'buzzer':                  { folder: 'Turn_on_Buzzer',          file: 'Turn_on_Buzzer.png' },
+  'ldr':                     { folder: 'ldr-automatic-light',     file: 'circuit.png' },
+  '7-segment-display':       { folder: '7-segment-display',       file: 'circuit.png' },
+  '7-segment-counter':       { folder: '7-segment-display',       file: 'circuit.png' },
+  'ir-remote-control-system':{ folder: 'ir-remote-control-system',file: 'circuit.png' },
+  'ir-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
+  // no dedicated folder — use closest equivalent
+  'led-pwm':                 { folder: 'potentiometer-led',       file: 'circuit.png' },
+  'dht-lcd':                 { folder: 'temperature-rgb-led',     file: 'circuit.png' },
+  'line-following-robot':    { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
+  'bluetooth-hc05':          { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'rf-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
+  'wifi-led-control':        { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'communication-protocols': { folder: 'button-led',              file: 'circuit.png' },
+};
+
+// Resolve circuit image URL for a given slug
+function getCircuitImageUrl(slug, baseUrl) {
+  const entry = CIRCUIT_IMAGE_MAP[slug];
+  if (entry) return `${baseUrl}/${entry.folder}/${entry.file}`;
+  // fallback: try slug/circuit.png directly
+  return `${baseUrl}/${slug}/circuit.png`;
+}
 
 const PREFERRED_SLUGS = [
   "led-blink", "rgb-led", "buzzer", "potentiometer", "ldr",
@@ -231,9 +288,7 @@ export default function LandingPage() {
           <div className="features-grid">
             {allCards.map((p) => {
               const hasImageError = !!imageErrors[p.slug];
-              const imageUrl = p.slug === "buzzer"
-                ? `${EXAMPLES_BASE_URL}/Turn_on_Buzzer/Turn_on_Buzzer.png`
-                : `${EXAMPLES_BASE_URL}/${p.slug}/circuit.png`;
+              const imageUrl = getCircuitImageUrl(p.slug, EXAMPLES_BASE_URL);
 
               return (
                 <div
@@ -254,21 +309,18 @@ export default function LandingPage() {
                     justifyContent: "center",
                     border: "1px solid var(--border)"
                   }}>
-                    {!hasImageError ? (
-                      <img
-                        src={imageUrl}
-                        alt={p.title}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                        onError={() => {
-                          setImageErrors(prev => ({
-                            ...prev,
-                            [p.slug]: true
-                          }));
-                        }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 40 }}>{PROJECT_ICONS[p.slug] || "🔌"}</span>
-                    )}
+                    <img
+                      src={imageUrl}
+                      alt={p.title}
+                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        if (e.currentTarget.nextSibling) {
+                          e.currentTarget.nextSibling.style.display = 'inline-block';
+                        }
+                      }}
+                    />
+                    <span style={{ fontSize: 40, display: 'none' }}>{PROJECT_ICONS[p.slug] || "🔌"}</span>
                   </div>
                   <h3 style={{ marginBottom: 4, fontSize: 15 }}>{p.title}</h3>
                   <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.6 }}>

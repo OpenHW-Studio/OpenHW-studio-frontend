@@ -22,7 +22,7 @@ const ROOT = path.resolve(__dirname, '..');
 const GUIDED_JSON = path.join(ROOT, 'src', 'services', 'guidedProjects.json');
 const BINARIES_JS  = path.join(ROOT, 'src', 'services', 'precompiledBinaries.js');
 
-const COMPILER_URL = process.env.COMPILER_URL || 'http://localhost:5000/api';
+const COMPILER_URL = process.env.COMPILER_URL || 'http://localhost:5001/api';
 
 // ── Slug mapping (JSON slug → URL slug) ──────────────────────────────────────
 const JSON_SLUG_TO_URL = {

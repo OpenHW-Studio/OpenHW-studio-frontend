@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 
 const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? 'https://openhw-studio.fossee.in/api/examples' : '/api/examples');
+  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
 
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || 'https://openhw-studio.fossee.in/docs/';
@@ -64,6 +63,62 @@ const XP = {
 const ALL_CATEGORIES = ['All', 'Output', 'Input', 'Sensor', 'Motor'];
 const ALL_DIFFICULTIES = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
+// Maps every project slug → { folder, file } in the examples repo
+const CIRCUIT_IMAGE_MAP = {
+  'led-blink':               { folder: 'led-blink',               file: 'circuit.png' },
+  'rgb-led':                 { folder: 'rgb-led',                 file: 'circuit.png' },
+  'rgb-led-blink':           { folder: 'rgb-led-blink',           file: 'circuit.png' },
+  'rgb-led-serial':          { folder: 'rgb-led-serial',          file: 'circuit.png' },
+  'rgb-led-3-buttons':       { folder: 'rgb-led-3-buttons',       file: 'circuit.png' },
+  'button-debounce':         { folder: 'button-debounce',         file: 'circuit.png' },
+  'button-led':              { folder: 'button-led',              file: 'circuit.png' },
+  'potentiometer':           { folder: 'potentiometer-led',       file: 'circuit.png' },
+  'potentiometer-led':       { folder: 'potentiometer-led',       file: 'circuit.png' },
+  'servo-motor':             { folder: 'servo-motor',             file: 'circuit.png' },
+  'servo-potentiometer':     { folder: 'servo-potentiometer',     file: 'circuit.png' },
+  'temperature-sensor':      { folder: 'temperature-sensor',      file: 'circuit.png' },
+  'temperature-rgb-led':     { folder: 'temperature-rgb-led',     file: 'circuit.png' },
+  'dc-motor':                { folder: 'dc-motor-l293d',          file: 'circuit.png' },
+  'dc-motor-l293d':          { folder: 'dc-motor-l293d',          file: 'circuit.png' },
+  'dc-motor-pwm':            { folder: 'dc-motor-pwm',            file: 'circuit.png' },
+  'led-strip':               { folder: 'led-strip',               file: 'circuit.png' },
+  'ldr':                     { folder: 'ldr-automatic-light',     file: 'circuit.png' },
+  'ldr-automatic-light':     { folder: 'ldr-automatic-light',     file: 'circuit.png' },
+  'gas-sensor-led':          { folder: 'gas-sensor-led',          file: 'circuit.png' },
+  'motion-sensor-alarm':     { folder: 'motion-sensor-alarm',     file: 'circuit.png' },
+  'obstacle-avoiding-robot': { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
+  'smart-dustbin':           { folder: 'smart-dustbin',           file: 'circuit.png' },
+  'smart-home-automation':   { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'smart-street-light':      { folder: 'smart-street-light',      file: 'circuit.png' },
+  'water-level-indicator':   { folder: 'water-level-indicator',   file: 'circuit.png' },
+  'auto-fan-speed':          { folder: 'auto-fan-speed',          file: 'circuit.png' },
+  'lcd-scrolling-text':      { folder: 'lcd-scrolling-text',      file: 'circuit.png' },
+  'ultrasonic-distance':     { folder: 'ultrasonic-distance',     file: 'circuit.png' },
+  'traffic-light':           { folder: 'traffic-light',           file: 'circuit.png' },
+  'up-counter':              { folder: 'up-counter',              file: 'circuit.png' },
+  'up-down-counter':         { folder: 'up-down-counter',         file: 'circuit.png' },
+  // slug differs from folder name
+  'buzzer':                  { folder: 'Turn_on_Buzzer',          file: 'Turn_on_Buzzer.png' },
+  '7-segment-display':       { folder: '7-segment-display',       file: 'circuit.png' },
+  '7-segment-counter':       { folder: '7-segment-display',       file: 'circuit.png' },
+  'ir-remote-control-system':{ folder: 'ir-remote-control-system',file: 'circuit.png' },
+  'ir-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
+  // no dedicated folder — use closest equivalent
+  'led-pwm':                 { folder: 'potentiometer-led',       file: 'circuit.png' },
+  'dht-lcd':                 { folder: 'temperature-rgb-led',     file: 'circuit.png' },
+  'line-following-robot':    { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
+  'bluetooth-hc05':          { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'rf-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
+  'wifi-led-control':        { folder: 'smart-home-automation',   file: 'circuit.png' },
+  'communication-protocols': { folder: 'button-led',              file: 'circuit.png' },
+};
+
+function getCircuitImageUrl(slug, baseUrl) {
+  const entry = CIRCUIT_IMAGE_MAP[slug];
+  if (entry) return `${baseUrl}/${entry.folder}/${entry.file}`;
+  return `${baseUrl}/${slug}/circuit.png`;
+}
+
 function ExampleCard({ p }) {
   const navigate = useNavigate();
   const [imgErr, setImgErr] = useState(false);
@@ -90,7 +145,7 @@ function ExampleCard({ p }) {
       }}>
         {!imgErr && (
           <img
-            src={`${EXAMPLES_BASE_URL}/${p.slug}/circuit.png`}
+            src={getCircuitImageUrl(p.slug, EXAMPLES_BASE_URL)}
             alt={p.title}
             onLoad={() => setImgOk(true)}
             onError={() => setImgErr(true)}

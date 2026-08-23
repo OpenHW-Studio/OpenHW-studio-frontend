@@ -24,7 +24,7 @@ export const PROJECTS = [
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     // What you EARN when you finish this project
     rewardComponents: [
-      { type: 'openhw-rgb-led', name: 'RGB LED', icon: '🌈', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
+      { type: 'openhw-rgb-led', name: 'RGB LED', icon: '/components_examples/RBG_LED_4pin.png', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -113,7 +113,7 @@ void loop() {
     tags: ['PWM', 'RGB', 'color mixing'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     rewardComponents: [
-      { type: 'openhw-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
+      { type: 'openhw-buzzer', name: 'Buzzer', icon: '/components_examples/Buzzer.png', description: 'Makes sounds and tones — you can even play music with it!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -197,7 +197,7 @@ void loop() {
     tags: ['sound', 'buzzer', 'tone'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led', 'openhw-buzzer'],
     rewardComponents: [
-      { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '🎛️', description: 'A knob you can turn! It lets you control things by rotating it.' },
+      { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '/components_examples/Rotary_Potentiometer.png', description: 'A knob you can turn! It lets you control things by rotating it.' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -302,7 +302,7 @@ void loop() {
     tags: ['analog input', 'potentiometer', 'PWM'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led', 'openhw-buzzer', 'openhw-potentiometer'],
     rewardComponents: [
-      { type: 'openhw-photoresistor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
+      { type: 'openhw-photoresistor', name: 'Light Sensor (LDR)', icon: '/components_examples/Phtoresistor_LDR.png', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -411,7 +411,7 @@ void loop() {
     tags: ['LDR', 'light sensor', 'analog input'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-photoresistor'],
     rewardComponents: [
-      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', description: 'A motor that can turn to any angle you set — like a robot arm!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -507,7 +507,7 @@ void loop() {
     tags: ['servo', 'motor', 'PWM', 'robotics'],
     startingComponents: ['openhw-arduino-uno', 'openhw-servo', 'openhw-potentiometer'],
     rewardComponents: [
-      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', description: 'A strip of colorful LEDs you can control individually — make animations and patterns!' },
+      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '/components_examples/MAX7219_Dot_Matrix.png', description: 'A strip of colorful LEDs you can control individually — make animations and patterns!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -580,7 +580,7 @@ void loop() {
     tags: ['NeoPixel', 'LED strip', 'FastLED', 'animation'],
     startingComponents: ['openhw-arduino-uno', 'openhw-neopixel-matrix'],
     rewardComponents: [
-      { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', description: 'Press it to trigger things! Used in almost every electronic device.' },
+      { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', description: 'Press it to trigger things! Used in almost every electronic device.' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -653,7 +653,7 @@ void loop() {
     tags: ['button', 'debounce', 'millis', 'state machine'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-pushbutton'],
     rewardComponents: [
-      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', description: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' },
+      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '/components_examples/DHT22.png', description: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -740,8 +740,8 @@ void loop() {
     tags: ['temperature', 'NTC', 'sensor', 'Serial Monitor'],
     startingComponents: ['openhw-arduino-uno', 'openhw-ntc-temperature-sensor', 'openhw-resistor', 'openhw-led', 'openhw-buzzer'],
     rewardComponents: [
-      { type: 'openhw-motor', name: 'DC Motor', icon: '🔩', description: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
-      { type: 'openhw-l293d', name: 'Motor Driver (L293D)', icon: '🔌', description: 'Controls the motor — gives it the power it needs to spin fast.' },
+      { type: 'openhw-motor', name: 'DC Motor', icon: '/components_examples/DC_Motor.png', description: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
+      { type: 'openhw-l293d', name: 'Motor Driver (L293D)', icon: '/components_examples/Motor_Driver_L293D.png', description: 'Controls the motor — gives it the power it needs to spin fast.' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -829,8 +829,7 @@ void loop() {
     tags: ['motor', 'PWM', 'H-bridge', 'robotics'],
     startingComponents: ['openhw-arduino-uno', 'openhw-motor', 'openhw-l293d', 'openhw-potentiometer'],
     rewardComponents: [
-      // Completing this unlocks ALL remaining components — you're a Circuit Champion!
-      { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', description: 'You completed every project! You now have access to the full component library!' },
+      { type: '*', name: 'ALL Components Unlocked!', icon: '/components_examples/UNO.png', description: 'You completed every project! You now have access to the full component library!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -904,7 +903,7 @@ void loop() {
     tags: ['button', 'debounce', 'INPUT_PULLUP'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     rewardComponents: [
-      { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', description: 'Read button presses!' },
+      { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', description: 'Read button presses!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -943,7 +942,7 @@ void loop() {
     tags: ['ultrasonic', 'HC-SR04', 'distance'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     rewardComponents: [
-      { type: 'openhw-hc-sr04', name: 'HC-SR04 Ultrasonic', icon: '📡', description: 'Measure 2cm to 400cm using sound!' },
+      { type: 'openhw-hc-sr04', name: 'HC-SR04 Ultrasonic', icon: '/components_examples/Ultrasonic_Sensor.png', description: 'Measure 2cm to 400cm using sound!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -984,7 +983,7 @@ void loop() {
     tags: ['DHT11', 'temperature', 'humidity'],
     startingComponents: ['openhw-arduino-uno', 'openhw-resistor'],
     rewardComponents: [
-      { type: 'openhw-dht22', name: 'DHT11/DHT22 Sensor', icon: '🌡️', description: 'Measures temperature and humidity!' },
+      { type: 'openhw-dht22', name: 'DHT11/DHT22 Sensor', icon: '/components_examples/DHT22.png', description: 'Measures temperature and humidity!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -1019,7 +1018,7 @@ void loop() {
     tags: ['LCD', 'I2C', 'display'],
     startingComponents: ['openhw-arduino-uno', 'openhw-dht22', 'openhw-resistor'],
     rewardComponents: [
-      { type: 'openhw-lcd1602-i2c', name: 'I2C LCD Display', icon: '🖥️', description: '16x2 character display with just 2 wires!' },
+      { type: 'openhw-lcd1602-i2c', name: 'I2C LCD Display', icon: '/components_examples/LCD_16x2_I2C.png', description: '16x2 character display with just 2 wires!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -1057,7 +1056,7 @@ void loop() {
     difficulty: 'intermediate', difficultyLabel: 'Intermediate', estimatedTime: '25 min', xpReward: 200,
     color: '#ef4444', icon: '🔌', world: 5, tags: ['relay', 'switch', 'automation'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-relay-module', name: 'Relay Module', icon: '🔌', description: 'Control high-voltage devices safely!' }],
+    rewardComponents: [{ type: 'openhw-relay-module', name: 'Relay Module', icon: '/components_examples/Relay_Module.png', description: 'Control high-voltage devices safely!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-relay-module', label: 'Relay Module', qty: 1 },
@@ -1086,7 +1085,7 @@ void loop() {
     difficulty: 'intermediate', difficultyLabel: 'Intermediate', estimatedTime: '30 min', xpReward: 230,
     color: '#6366f1', icon: '🎨', world: 5, tags: ['OLED', 'SSD1306', 'I2C', 'graphics'],
     startingComponents: ['openhw-arduino-uno'],
-    rewardComponents: [{ type: 'openhw-ssd1306', name: 'OLED Display (SSD1306)', icon: '🎨', description: '128x64 pixel display with just 2 wires!' }],
+    rewardComponents: [{ type: 'openhw-ssd1306', name: 'OLED Display (SSD1306)', icon: '/components_examples/SSD1306_Oled_128x64.png', description: '128x64 pixel display with just 2 wires!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-ssd1306', label: 'SSD1306 OLED', qty: 1 },
@@ -1130,9 +1129,9 @@ void loop() {
     color: '#ec4899', icon: '🌈', world: 5, tags: ['neopixel', 'WS2812B', 'RGB'],
     startingComponents: ['openhw-arduino-uno'],
     rewardComponents: [
-      { type: 'openhw-neopixel-ring', name: 'NeoPixel Ring', icon: '🌈', description: 'Addressable RGB LEDs!' },
-      { type: 'openhw-neopixel-matrix', name: 'NeoPixel Matrix', icon: '🌈', description: 'WS2812B LED matrix!' },
-      { type: 'openhw-ws2812b', name: 'WS2812B Strip', icon: '🌈', description: 'WS2812B LED strip!' },
+      { type: 'openhw-neopixel-ring', name: 'NeoPixel Ring', icon: '/components_examples/NeoPixel_Ring.png', description: 'Addressable RGB LEDs!' },
+      { type: 'openhw-neopixel-matrix', name: 'NeoPixel Matrix', icon: '/components_examples/MAX7219_Dot_Matrix.png', description: 'WS2812B LED matrix!' },
+      { type: 'openhw-ws2812b', name: 'WS2812B Strip', icon: '/components_examples/WS2812B_RGB_LED.png', description: 'WS2812B LED strip!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -1164,7 +1163,7 @@ void loop() {
     difficulty: 'intermediate', difficultyLabel: 'Intermediate', estimatedTime: '35 min', xpReward: 260,
     color: '#0ea5e9', icon: '⌨️', world: 5, tags: ['keypad', 'matrix', 'PIN'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-membrane-keypad', name: 'Membrane Keypad', icon: '⌨️', description: '16 keys with just 8 wires!' }],
+    rewardComponents: [{ type: 'openhw-membrane-keypad', name: 'Membrane Keypad', icon: '/components_examples/Membrane_Keypad.png', description: '16 keys with just 8 wires!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-membrane-keypad', label: '4x4 Keypad', qty: 1 },
@@ -1206,7 +1205,7 @@ void loop(){
     difficulty: 'advanced', difficultyLabel: 'Advanced', estimatedTime: '40 min', xpReward: 300,
     color: '#8b5cf6', icon: '🎛️', world: 5, tags: ['rotary encoder', 'menu', 'OLED'],
     startingComponents: ['openhw-arduino-uno', 'openhw-ssd1306'],
-    rewardComponents: [{ type: 'openhw-rotary-encoder', name: 'Rotary Encoder', icon: '🎛️', description: 'Infinite-turn knob with click button!' }],
+    rewardComponents: [{ type: 'openhw-rotary-encoder', name: 'Rotary Encoder', icon: '/components_examples/Rotary_Encoder.png', description: 'Infinite-turn knob with click button!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-rotary-encoder', label: 'Rotary Encoder', qty: 1 },
@@ -1257,7 +1256,7 @@ void loop(){
     difficulty: 'intermediate', difficultyLabel: 'Intermediate', estimatedTime: '30 min', xpReward: 240,
     color: '#f97316', icon: '🔢', world: 5, tags: ['7segment', 'TM1637', 'stopwatch'],
     startingComponents: ['openhw-arduino-uno', 'openhw-pushbutton'],
-    rewardComponents: [{ type: 'openhw-tm1637-7segment', name: 'TM1637 7-Segment', icon: '🔢', description: '4-digit LED display with just 2 wires!' }],
+    rewardComponents: [{ type: 'openhw-tm1637-7segment', name: 'TM1637 7-Segment', icon: '/components_examples/Seven_Segment_Display_TM1637.png', description: '4-digit LED display with just 2 wires!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-tm1637-7segment', label: 'TM1637 Display', qty: 1 },
@@ -1291,8 +1290,8 @@ void loop(){
     color: '#64748b', icon: '⚙️', world: 5, tags: ['stepper', 'A4988', 'precise'],
     startingComponents: ['openhw-arduino-uno'],
     rewardComponents: [
-      { type: 'openhw-stepper-motor', name: 'Stepper Motor', icon: '⚙️', description: 'Precise angular control!' },
-      { type: 'openhw-a4988', name: 'A4988 Driver', icon: '⚙️', description: 'Stepper driver chip.' },
+      { type: 'openhw-stepper-motor', name: 'Stepper Motor', icon: '/components_examples/Biaxial_Stepper_Motor.png', description: 'Precise angular control!' },
+      { type: 'openhw-a4988', name: 'A4988 Driver', icon: '/components_examples/A4988_Stepper_Driver.png', description: 'Stepper driver chip.' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -1322,7 +1321,7 @@ void loop(){rotate(90);delay(500);rotate(90,false);delay(500);rotate(360);delay(
     difficulty: 'advanced', difficultyLabel: 'Advanced', estimatedTime: '45 min', xpReward: 360,
     color: '#14b8a6', icon: '🛸', world: 5, tags: ['MPU6050', 'gyroscope', 'accelerometer'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-mpu6050', name: 'MPU6050 IMU', icon: '🛸', description: '6-axis motion sensor used in drones!' }],
+    rewardComponents: [{ type: 'openhw-mpu6050', name: 'MPU6050 IMU', icon: '/components_examples/MPU6050_IMU_Sensor.png', description: '6-axis motion sensor used in drones!' }],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-mpu6050', label: 'MPU6050', qty: 1 },
@@ -1372,7 +1371,7 @@ void loop(){
     color: '#22c55e', icon: '🟢', world: 1,
     tags: ['ESP32', 'LED', 'GPIO', 'blink'],
     startingComponents: ['openhw-esp32', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-esp32', name: 'ESP32 DevKit', icon: '📡', description: 'WiFi+BT microcontroller — unlocks the whole ESP32 journey!' }],
+    rewardComponents: [{ type: 'openhw-esp32', name: 'ESP32 DevKit', icon: '/components_examples/ESP32.png', description: 'WiFi+BT microcontroller — unlocks the whole ESP32 journey!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
@@ -1429,7 +1428,7 @@ void loop() {
     color: '#22c55e', icon: '🎚️', world: 1,
     tags: ['ESP32', 'ADC', 'analog', 'potentiometer'],
     startingComponents: ['openhw-esp32', 'openhw-potentiometer'],
-    rewardComponents: [{ type: 'openhw-dht22', name: 'DHT22 Sensor', icon: '🌡️', description: 'Temperature & humidity sensor — great for IoT weather stations!' }],
+    rewardComponents: [{ type: 'openhw-dht22', name: 'DHT22 Sensor', icon: '/components_examples/DHT22.png', description: 'Temperature & humidity sensor — great for IoT weather stations!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-potentiometer', label: 'Potentiometer 10kΩ', qty: 1 },
@@ -1482,7 +1481,7 @@ void loop() {
     color: '#22c55e', icon: '💡', world: 1,
     tags: ['ESP32', 'PWM', 'LEDC', 'LED dimming'],
     startingComponents: ['openhw-esp32', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', description: 'Control servo position using ESP32 PWM channels!' }],
+    rewardComponents: [{ type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', description: 'Control servo position using ESP32 PWM channels!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
@@ -1544,7 +1543,7 @@ void loop() {
     color: '#3b82f6', icon: '📶', world: 2,
     tags: ['ESP32', 'WiFi', 'RSSI', 'scanning'],
     startingComponents: ['openhw-esp32'],
-    rewardComponents: [{ type: 'openhw-esp32', name: 'WiFi Unlocked', icon: '📶', description: 'Your ESP32 can now connect to the internet!' }],
+    rewardComponents: [{ type: 'openhw-esp32', name: 'WiFi Unlocked', icon: '/components_examples/ESP32.png', description: 'Your ESP32 can now connect to the internet!' }],
     components: [{ type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 }],
     wiring: [],
     starterCode: `#include <WiFi.h>
@@ -1602,7 +1601,7 @@ void loop() {
     color: '#3b82f6', icon: '🌐', world: 2,
     tags: ['ESP32', 'WiFi', 'WebServer', 'HTML', 'IoT'],
     startingComponents: ['openhw-esp32', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [{ type: 'openhw-esp32', name: 'Web Server Pro', icon: '🌐', description: 'Your ESP32 is now a web server!' }],
+    rewardComponents: [{ type: 'openhw-esp32', name: 'Web Server Pro', icon: '/components_examples/ESP32.png', description: 'Your ESP32 is now a web server!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
@@ -1677,7 +1676,7 @@ void loop() { server.handleClient(); }`,
     color: '#3b82f6', icon: '☁️', world: 2,
     tags: ['ESP32', 'HTTP', 'API', 'JSON', 'WiFi'],
     startingComponents: ['openhw-esp32'],
-    rewardComponents: [{ type: 'openhw-oled', name: 'OLED Display', icon: '🖥️', description: 'Show your API data on a tiny display!' }],
+    rewardComponents: [{ type: 'openhw-oled', name: 'OLED Display', icon: '/components_examples/SSD1306_Oled_128x64.png', description: 'Show your API data on a tiny display!' }],
     components: [{ type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 }],
     wiring: [],
     starterCode: `#include <WiFi.h>
@@ -1742,7 +1741,7 @@ void loop() {
     color: '#f97316', icon: '📨', world: 3,
     tags: ['ESP32', 'MQTT', 'IoT', 'pub/sub', 'broker'],
     startingComponents: ['openhw-esp32', 'openhw-led'],
-    rewardComponents: [{ type: 'openhw-esp32', name: 'IoT Connected', icon: '📨', description: 'Your device can talk to any MQTT broker!' }],
+    rewardComponents: [{ type: 'openhw-esp32', name: 'IoT Connected', icon: '/components_examples/ESP32.png', description: 'Your device can talk to any MQTT broker!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
@@ -1822,7 +1821,7 @@ void loop() {
     color: '#f97316', icon: '🔵', world: 3,
     tags: ['ESP32', 'BLE', 'Bluetooth', 'wireless', 'UART'],
     startingComponents: ['openhw-esp32', 'openhw-led'],
-    rewardComponents: [{ type: 'openhw-esp32', name: 'BLE Enabled', icon: '🔵', description: 'Control your project from any smartphone!' }],
+    rewardComponents: [{ type: 'openhw-esp32', name: 'BLE Enabled', icon: '/components_examples/ESP32.png', description: 'Control your project from any smartphone!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
@@ -1893,7 +1892,7 @@ void loop() { delay(1000); }`,
     color: '#f97316', icon: '😴', world: 3,
     tags: ['ESP32', 'deep sleep', 'ULP', 'battery', 'power saving'],
     startingComponents: ['openhw-esp32'],
-    rewardComponents: [{ type: 'openhw-dht22', name: 'DHT22', icon: '🌡️', description: 'Build a battery-powered weather sensor that lasts months!' }],
+    rewardComponents: [{ type: 'openhw-dht22', name: 'DHT22', icon: '/components_examples/DHT22.png', description: 'Build a battery-powered weather sensor that lasts months!' }],
     components: [{ type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 }],
     wiring: [],
     starterCode: `#include <Arduino.h>
@@ -1956,7 +1955,7 @@ void loop() {
     color: '#a855f7', icon: '🖥️', world: 4,
     tags: ['ESP32', 'OLED', 'SSD1306', 'I2C', 'WiFi', 'dashboard'],
     startingComponents: ['openhw-esp32', 'openhw-oled'],
-    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'ESP32-CAM', icon: '📷', description: 'The ultimate ESP32 module with built-in camera!' }],
+    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'ESP32-CAM', icon: '/components_examples/ESP32_CAM.png', description: 'The ultimate ESP32 module with built-in camera!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-oled', label: 'OLED 128x64 (SSD1306)', qty: 1 },
@@ -2034,7 +2033,7 @@ void loop() {
     color: '#a855f7', icon: '📊', world: 4,
     tags: ['ESP32', 'cloud', 'ThingSpeak', 'DHT22', 'IoT', 'data logging'],
     startingComponents: ['openhw-esp32', 'openhw-dht22'],
-    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'Final Badge', icon: '📊', description: 'You are now an IoT engineer!' }],
+    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'Final Badge', icon: '/components_examples/ESP32_CAM.png', description: 'You are now an IoT engineer!' }],
     components: [
       { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
       { type: 'openhw-dht22', label: 'DHT22 Sensor', qty: 1 },
@@ -2111,7 +2110,7 @@ void loop() {
     color: '#a855f7', icon: '📷', world: 4,
     tags: ['ESP32-CAM', 'camera', 'MJPEG', 'streaming', 'WiFi'],
     startingComponents: ['openhw-esp32-cam'],
-    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'Camera Master', icon: '📷', description: 'You completed the full ESP32 journey!' }],
+    rewardComponents: [{ type: 'openhw-esp32-cam', name: 'Camera Master', icon: '/components_examples/ESP32_CAM.png', description: 'You completed the full ESP32 journey!' }],
     components: [{ type: 'openhw-esp32-cam', label: 'ESP32-CAM', qty: 1 }],
     wiring: [
       { from: 'GPIO 0', to: 'GND (for programming mode)' },

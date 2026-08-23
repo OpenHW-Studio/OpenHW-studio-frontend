@@ -803,7 +803,7 @@ const GradingPage = () => {
         options,
         simulationSpeed: Number(simulationSpeed) || 1,
         config: {
-          compilerUrl: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "/api")}/compile`,
+          compilerUrl: `${import.meta.env.VITE_API_BASE_URL || "/api"}/compile`,
         },
       });
     } catch (err) {
@@ -879,7 +879,7 @@ const GradingPage = () => {
           options,
           simulationSpeed: Number(simulationSpeed) || 1,
           config: {
-            compilerUrl: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "/api")}/compile`,
+            compilerUrl: `${import.meta.env.VITE_API_BASE_URL || "/api"}/compile`,
           },
         },
         transferables,

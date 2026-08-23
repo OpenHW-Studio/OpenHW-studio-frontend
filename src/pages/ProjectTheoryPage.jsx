@@ -37,7 +37,7 @@ export default function ProjectTheoryPage() {
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { awardXP } = useGamification()
-  
+
   const baseProject = PROJECTS.find(p => p.slug === projectName)
   const [customProject, setCustomProject] = useState(null)
   const [loadingCustom, setLoadingCustom] = useState(() => !baseProject)
@@ -119,7 +119,7 @@ export default function ProjectTheoryPage() {
         projectSlug: projectName,
         stepKey: 'read',
         stepOrder: 1,
-      }).catch(() => {})
+      }).catch(() => { })
       awardXP?.(25, 'Briefing reviewed! 📖')
     }
   }, [doneCount, total, projectName, classId, awardXP])
@@ -175,8 +175,8 @@ export default function ProjectTheoryPage() {
       <div style={{
         height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        background: isDarkMode 
-          ? 'radial-gradient(circle at top, #0f172a 0%, #020617 100%)' 
+        background: isDarkMode
+          ? 'radial-gradient(circle at top, #0f172a 0%, #020617 100%)'
           : 'radial-gradient(circle at top, #f8fafc 0%, #e2e8f0 100%)',
         color: isDarkMode ? '#fff' : '#0f172a', padding: 24, textAlign: 'center', fontFamily: "'Inter', sans-serif"
       }}>
@@ -389,11 +389,11 @@ export default function ProjectTheoryPage() {
           <div style={{
             width: '100%', maxWidth: 360, aspectRatio: '1',
             borderRadius: 32,
-            background: isDarkMode 
+            background: isDarkMode
               ? `linear-gradient(135deg, ${color}20 0%, rgba(15, 23, 42, 0.6) 100%)`
               : `linear-gradient(135deg, ${color}12 0%, rgba(255, 255, 255, 0.85) 100%)`,
             border: isDarkMode ? `1.5px solid ${color}35` : `1.5px solid ${color}22`,
-            boxShadow: isDarkMode 
+            boxShadow: isDarkMode
               ? `0 24px 60px rgba(0,0,0,0.35), inset 0 4px 30px ${color}10`
               : `0 24px 60px rgba(15, 23, 42, 0.08), inset 0 4px 30px ${color}05`,
             display: 'flex', flexDirection: 'column',
@@ -410,12 +410,12 @@ export default function ProjectTheoryPage() {
             <div style={{ fontSize: 110, zIndex: 2, filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.15))' }}>
               {card.emoji || '💡'}
             </div>
-            
+
             <div style={{
               position: 'absolute', bottom: 24,
-              background: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15, 23, 42, 0.05)', 
+              background: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15, 23, 42, 0.05)',
               borderRadius: 12,
-              padding: '6px 14px', 
+              padding: '6px 14px',
               border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(15, 23, 42, 0.08)',
               fontSize: 11, fontWeight: 800, color: isDarkMode ? '#f8fafc' : '#0f172a',
               textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -472,11 +472,11 @@ export default function ProjectTheoryPage() {
               <div style={{ fontSize: 11, fontWeight: 900, color: isDarkMode ? '#38bdf8' : '#0284c7', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 🔧 HOW IT WORKS
               </div>
-              <div style={{ 
-                fontSize: 14, 
-                color: isDarkMode ? '#cbd5e1' : '#334155', 
-                lineHeight: 1.7, 
-                whiteSpace: 'pre-line', 
+              <div style={{
+                fontSize: 14,
+                color: isDarkMode ? '#cbd5e1' : '#334155',
+                lineHeight: 1.7,
+                whiteSpace: 'pre-line',
                 fontFamily: 'monospace',
                 transition: 'color 0.3s ease',
               }}>
@@ -486,7 +486,7 @@ export default function ProjectTheoryPage() {
 
             {/* Pro Tip/Fun Fact */}
             <div style={{
-              background: isDarkMode 
+              background: isDarkMode
                 ? 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(245,158,11,0.02))'
                 : 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(251,191,36,0.03))',
               border: isDarkMode ? '1px solid rgba(251,191,36,0.15)' : '1px solid rgba(251,191,36,0.25)',
@@ -496,10 +496,10 @@ export default function ProjectTheoryPage() {
               <div style={{ fontSize: 11, fontWeight: 900, color: isDarkMode ? '#fbbf24' : '#854d0e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Award size={14} /> PRO MISSION INTEL
               </div>
-              <div style={{ 
-                fontSize: 13.5, 
-                color: isDarkMode ? '#fef08a' : '#713f12', 
-                lineHeight: 1.65, 
+              <div style={{
+                fontSize: 13.5,
+                color: isDarkMode ? '#fef08a' : '#713f12',
+                lineHeight: 1.65,
                 fontWeight: 500,
                 transition: 'color 0.3s ease',
               }}>

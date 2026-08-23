@@ -32,6 +32,11 @@ const SEEDS = [
   "nu", "xi", "omicron", "pi", "rho", "sigma"
 ];
 
+// Helper for vibrant DiceBear avatars served same-origin via backend proxy
+export function getDiceBearAvatarUrl(style = "bottts", seed = "alpha") {
+  return `/api/avatar?style=${encodeURIComponent(style)}&seed=${encodeURIComponent(seed)}`;
+}
+
 export default function UserSignupPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -116,7 +121,7 @@ export default function UserSignupPage() {
     setError("");
 
     try {
-      const avatarUrl = `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${avatarSeed}`;
+      const avatarUrl = getDiceBearAvatarUrl(avatarStyle, avatarSeed);
 
       const signupData = {
         ...formData,
@@ -149,7 +154,7 @@ export default function UserSignupPage() {
             
             <div className="hardware-card__preview-area">
               <img
-                src={`https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${avatarSeed}`}
+                src={getDiceBearAvatarUrl(avatarStyle, avatarSeed)}
                 alt="Profile Preview"
                 className="hardware-card__avatar"
               />
@@ -234,7 +239,7 @@ export default function UserSignupPage() {
                   title={`Seed: ${seed}`}
                 >
                   <img
-                    src={`https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${seed}&size=40`}
+                    src={getDiceBearAvatarUrl(avatarStyle, seed, 40)}
                     alt={seed}
                     className="w-10 h-10 object-contain"
                   />

@@ -1121,8 +1121,9 @@ export class AVRRunner {
             // never pull the pin LOW because the pull-up voltage never reaches the button.
             // Floating INPUT pins should NOT propagate, as external components own the line.
             inputPins.forEach(pin => {
-                // Check if any connected component on this net is actively driving LOW
+                // Check if any connected component on this net is actively driving LOW or HIGH
                 let isDrivenLow = false;
+                let isDrivenHigh = false;
                 this.instances.forEach((inst, cId) => {
                     if (cId === this.boardId) return;
                     const lastV = (inst as any)._lastDrivenVoltage !== undefined
@@ -1130,12 +1131,20 @@ export class AVRRunner {
                         : ((inst as any).echoOutputVoltage !== undefined
                             ? (inst as any).echoOutputVoltage
                             : (inst.pins['OUT']?.voltage ?? inst.pins['SIG']?.voltage ?? inst.pins['DATA']?.voltage ?? inst.pins['SDA']?.voltage));
-                    if ((inst as any)._drivingBus && lastV !== undefined && lastV < 1.8) {
-                        const boardPin = (inst as any).getConnectedBoardPin
+                    if ((inst as any)._drivingBus && lastV !== undefined) {
+                        const rawBoardPin = (inst as any).getConnectedBoardPin
                             ? (inst as any).getConnectedBoardPin()
                             : ((inst as any).getBoardPin ? (inst as any).getBoardPin() : null);
-                        if (boardPin === pin) {
-                            isDrivenLow = true;
+                        if (rawBoardPin) {
+                            const bPinClean = String(rawBoardPin).replace(/^D/i, '');
+                            const pinClean = String(pin).replace(/^D/i, '');
+                            if (bPinClean === pinClean) {
+                                if (lastV < 1.8) {
+                                    isDrivenLow = true;
+                                } else {
+                                    isDrivenHigh = true;
+                                }
+                            }
                         }
                     }
                 });
@@ -1160,6 +1169,9 @@ export class AVRRunner {
                 if (isDrivenLow) {
                     this.pinStates[pin] = false;
                     if (port) port.setPin(bit, false);
+                } else if (isDrivenHigh) {
+                    this.pinStates[pin] = true;
+                    if (port) port.setPin(bit, true);
                 } else {
                     const { isDriven, isHigh } = getAvrPinModeState(pin);
                     if (isDriven) {
