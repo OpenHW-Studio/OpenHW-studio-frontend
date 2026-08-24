@@ -4,7 +4,7 @@ import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
 import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
-const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
+const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr }) => {
   const liveState = useSyncExternalStore(
     useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
     useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
@@ -15,7 +15,8 @@ const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponent
     state: liveState,
     attrs: getComponentStateAttrs(comp, liveState),
     isRunning: isRunning,
-    comp: comp
+    comp: comp,
+    updateComponentAttr: updateComponentAttr
   });
 });
 
@@ -357,10 +358,26 @@ function CanvasSceneLayerBase({
         const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
         if (isRunning && !showDuringRun) return null;
         if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
+
+        // Use BOUNDS to calculate the actual center dynamically (essential for text component)
+        let bW = comp.w || 60;
+        let bH = comp.h || 60;
+        if (typeof reg.BOUNDS === 'function') {
+            const attrs = getComponentStateAttrs(comp);
+            const b = reg.BOUNDS(attrs);
+            if (b) {
+                bW = b.w;
+                bH = b.h;
+            }
+        } else if (reg.BOUNDS) {
+            bW = reg.BOUNDS.w || bW;
+            bH = reg.BOUNDS.h || bH;
+        }
+
         return (
           <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
             position: 'absolute',
-            left: comp.x + comp.w / 2,
+            left: comp.x + bW / 2,
             top: comp.y - 14,
             transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
             transformOrigin: 'bottom center',
@@ -476,7 +493,9 @@ function CanvasSceneLayerBase({
               style={{
                 position: 'absolute',
                 left: comp.x, top: comp.y,
-                zIndex: (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
+                zIndex: comp.type === 'openhw-image'
+                  ? (isSelected ? 1 : 0)
+                  : (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
                   ? (isSelected ? 4 : 2)
                   : (isSelected ? 10 : 5),
                 opacity: comp.isGhost ? 0.4 : 1,
@@ -556,6 +575,7 @@ function CanvasSceneLayerBase({
                       isRunning={isRunning}
                       getLiveOopStateSnapshot={getLiveOopStateSnapshot}
                       subscribeLiveOopState={subscribeLiveOopState}
+                      updateComponentAttr={updateComponentAttr}
                     />
                   ) : (
                     <ReactiveFallbackComponentUI
@@ -689,20 +709,22 @@ function CanvasSceneLayerBase({
                 })}
               </div>
 
-              <div style={{
-                position: 'absolute',
-                top: (comp.rotation === 90 || comp.rotation === 270)
-                  ? comp.h / 2 + comp.w / 2 + 4
-                  : comp.h + 4,
-                left: comp.w / 2,
-                transform: 'translateX(-50%)',
-                fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                pointerEvents: 'none',
-                zIndex: 5,
-              }}>
-                {comp.label}
-              </div>
+              {comp.type !== 'openhw-text' && comp.type !== 'openhw-image' && (
+                <div style={{
+                  position: 'absolute',
+                  top: (comp.rotation === 90 || comp.rotation === 270)
+                    ? comp.h / 2 + comp.w / 2 + 4
+                    : comp.h + 4,
+                  left: comp.w / 2,
+                  transform: 'translateX(-50%)',
+                  fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                  whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}>
+                  {comp.label}
+                </div>
+              )}
             </div>
           );
         };

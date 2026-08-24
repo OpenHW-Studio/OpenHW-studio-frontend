@@ -74,7 +74,7 @@ jobs:
       - name: Run Vitest component tests
 
         working-directory: OpenHW-studio-frontend
-        run: npx vitest run --environment jsdom src/components/
+        run: npx vitest run --environment jsdom tests/unit/components/
 
       - name: Reference Platform Validation Summary
         if: github.event_name == 'pull_request'
