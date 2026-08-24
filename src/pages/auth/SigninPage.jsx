@@ -46,7 +46,8 @@ export default function SigninPage() {
     try {
       const data = await loginUser({ ...formData, role: selectedRole });
       login(data.token, data.user);
-      
+      localStorage.setItem("lastUsedLogin", "email");
+
       if (selectedRole === "teacher") navigate("/teacher/dashboard");
       else if (selectedRole === "student") navigate("/student/dashboard");
       else navigate("/user/dashboard");

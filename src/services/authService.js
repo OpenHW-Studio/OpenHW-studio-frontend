@@ -114,7 +114,7 @@ export const loginUser = async (credentials, isAdminPortal = false) => {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || 'Login failed');
+    throw new Error(data.error || data.message || 'Login failed');
   }
 
   // Save the JWT and user data returned by the backend
@@ -128,6 +128,59 @@ export const loginUser = async (credentials, isAdminPortal = false) => {
 
   return data; // Returns { message, token, user }
 };
+
+/**
+ * Step 1 of OTP email verification signup.
+ * Sends user's signup data to backend which validates it,
+ * generates an OTP and emails it to the provided address.
+ */
+export const sendOtp = async (userData) => {
+  const response = await fetch(`${BASE_URL}/user/send-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: userData.name,
+      email: userData.email,
+      password: userData.password,
+      role: userData.role,
+      college: userData.college,
+      semester: userData.semester,
+      bio: userData.bio,
+      image: userData.image,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || data.message || 'Failed to send verification code');
+  }
+  return data;
+};
+
+/**
+ * Step 2 of OTP email verification signup.
+ * Submits the OTP the user received. If correct, the backend creates
+ * the user account and returns a JWT token.
+ */
+export const verifyOtp = async (email, otp) => {
+  const response = await fetch(`${BASE_URL}/user/verify-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || data.message || 'Verification failed');
+  }
+
+  // On success, backend returns token + user — save them
+  if (data.token) saveToken(data.token);
+  if (data.user) saveUser(data.user);
+
+  return data; // Returns { message, token, user }
+};
+
 
 /**
  * Google OAuth Login
