@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { listProjects, deleteProject, subscribeToProjectStoreChanges } from '../../services/projectStore.js'
 import { getToken } from '../../services/authService.js'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 function getOwner(user) {
   if (!user) return 'guest'

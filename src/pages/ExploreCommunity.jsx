@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getToken } from '../services/authService'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const BOARD_ICONS = {
   arduino_uno: 'A',

@@ -96,10 +96,10 @@ export const PROJECT_DATA = {
     ],
     // Components that unlock when this project is completed
 unlockComponents: [
-       { type: 'openhw-arduino-uno', name: 'Arduino Uno', icon: '🟩', color: '#22c55e', desc: 'Your project\'s BRAIN! It reads your code and follows every instruction.' },
-       { type: 'openhw-led', name: 'LED', icon: '💡', color: '#f59e0b', desc: 'A tiny light that turns ON when electricity flows through it. Works forever unlike old bulbs!' },
-       { type: 'openhw-resistor', name: '220Ω Resistor', icon: '🟤', color: '#92400e', desc: 'A speed-bump for electricity. Keeps the LED safe from getting too much power!' },
-       { type: 'openhw-wire', name: 'Wire', icon: '〰️', color: '#64748b', desc: 'Connects all your parts together — like roads for electricity!' },
+       { type: 'openhw-arduino-uno', name: 'Arduino Uno', icon: '/components_examples/UNO.png', color: '#22c55e', desc: 'Your project\'s BRAIN! It reads your code and follows every instruction.' },
+       { type: 'openhw-led', name: 'LED', icon: '/components_examples/LED.png', color: '#f59e0b', desc: 'A tiny light that turns ON when electricity flows through it. Works forever unlike old bulbs!' },
+       { type: 'openhw-resistor', name: '220Ω Resistor', icon: '/components_examples/Resistor.png', color: '#92400e', desc: 'A speed-bump for electricity. Keeps the LED safe from getting too much power!' },
+       { type: 'openhw-wire', name: 'Wire', icon: '/components_examples/BreadBoard_full.png', color: '#64748b', desc: 'Connects all your parts together — like roads for electricity!' },
      ]
   },
 
@@ -134,7 +134,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-rgb-led', name: 'RGB LED', icon: '🌈', color: '#a855f7', desc: 'Makes 16 million colors! Mix red, green, blue to create any color.' },
+       { type: 'openhw-rgb-led', name: 'RGB LED', icon: '/components_examples/RBG_LED_4pin.png', color: '#a855f7', desc: 'Makes 16 million colors! Mix red, green, blue to create any color.' },
      ]
   },
 
@@ -156,7 +156,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-buzzer', name: 'Buzzer', icon: '🔔', color: '#f97316', desc: 'Makes beeps and sounds! You can even play music with it.' },
+       { type: 'openhw-buzzer', name: 'Buzzer', icon: '/components_examples/Buzzer.png', color: '#f97316', desc: 'Makes beeps and sounds! You can even play music with it.' },
      ]
   },
 
@@ -178,7 +178,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', color: '#3b82f6', desc: 'Control things with a press! Make your projects interactive.' },
+       { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', color: '#3b82f6', desc: 'Control things with a press! Make your projects interactive.' },
      ]
   },
 
@@ -200,7 +200,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '🎚️', color: '#14b8a6', desc: 'A tunable knob — control values from 0 to max!' },
+       { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '/components_examples/Rotary_Potentiometer.png', color: '#14b8a6', desc: 'A tunable knob — control values from 0 to max!' },
      ]
   },
 
@@ -222,7 +222,7 @@ unlockComponents: [
       }
     ],
 unlockComponents: [
-       { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
+       { type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
      ]
   },
 
@@ -243,276 +243,59 @@ unlockComponents: [
         }
       }
     ],
-unlockComponents: [
-        { type: 'openhw-photoresistor', name: 'LDR Sensor', icon: '☀️', color: '#eab308', desc: 'A light sensor — lower resistance when brighter!' },
-      ]
+    unlockComponents: [
+      { type: 'openhw-photoresistor', name: 'LDR Sensor', icon: '/components_examples/Phtoresistor_LDR.png', color: '#eab308', desc: 'A light sensor — lower resistance when brighter!' },
+    ],
   },
 
   // ===== SERVO MOTOR (project: servo-motor) =====
   'servo-motor': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '⚙️',
-        front: 'What is a Servo Motor?',
-        simple: 'A servo is a smart motor that can turn to a specific angle, usually between 0° and 180°, and hold that position!',
-        detail: 'Unlike DC motors that just spin continuously, servos have built-in gears and a control circuit to accurately position the motor shaft.',
-        funFact: '🤖 Robot arms and steering systems in RC cars rely heavily on servo motors!',
-        quiz: {
-          question: 'What makes a servo motor special compared to a regular DC motor?',
-          options: ['It spins faster', 'It can hold a specific angle', 'It uses less power', 'It never breaks'],
-          correctAnswer: 1
-        }
-      },
-      {
-        id: 2,
-        emoji: '📐',
-        front: 'How do you control a servo in code?',
-        simple: 'You use the Servo library! First you attach() it to a pin, then you use write(angle) to move it.',
-        detail: 'The Arduino sends a PWM signal to the servo. The width of the pulse tells the servo exactly what angle to turn to.',
-        funFact: '📚 The #include <Servo.h> line at the top of your code adds a whole library of pre-written code for you to use!',
-        quiz: {
-          question: 'Which command tells the servo to move to 90 degrees?',
-          options: ['servo.move(90);', 'analogWrite(90);', 'servo.write(90);', 'servo.turn(90);'],
-          correctAnswer: 2
-        }
-      }
-    ],
+    flashcards: [],
     unlockComponents: [
-      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', color: '#ec4899', desc: 'Colorful LEDs you can control individually!' },
-    ]
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '/components_examples/Servo_Motor.png', color: '#8b5cf6', desc: 'A motor that turns to exact positions!' },
+    ],
   },
 
-  // ===== LED STRIP (project: led-strip) =====
-  'led-strip': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '✨',
-        front: 'What is a NeoPixel?',
-        simple: 'NeoPixel is a popular brand name for "addressable LEDs" (WS2812). They let you control hundreds of LEDs using just ONE wire!',
-        detail: 'Inside every single NeoPixel is a tiny computer chip that listens for data. You can tell each individual LED exactly what color and brightness to be.',
-        funFact: '🌈 Because each NeoPixel has its own Red, Green, and Blue light, it can mix them to create over 16 million different colors!',
-        quiz: {
-          question: 'How many wires from the Arduino are needed to control the colors of 50 NeoPixels?',
-          options: ['50 wires', '3 wires (Power, Ground, Data)', '150 wires (3 for each)', '1 wire'],
-          correctAnswer: 1
-        }
-      },
-      {
-        id: 2,
-        emoji: '🚂',
-        front: 'How does data travel through NeoPixels?',
-        simple: 'Like a train! The Arduino sends a train of colors. The first LED takes the first carriage, and passes the rest of the train to the next LED!',
-        detail: 'This is why they have a "Data In" (DIN) and "Data Out" (DOUT) pin. Data goes into the first LED, which eats its color instruction, and pushes the remaining data out to the next one.',
-        funFact: '🚄 This happens incredibly fast — thousands of times per second, so they all seem to change color instantly!',
-        quiz: {
-          question: 'What happens if you connect the Arduino to the DOUT pin instead of DIN?',
-          options: ['It works normally', 'It only lights up half the LEDs', 'It will not work at all', 'It goes backwards'],
-          correctAnswer: 2
-        }
-      }
-    ],
+  // ===== LED STRIP (project: neopixel-effects) =====
+  'neopixel-effects': {
+    flashcards: [],
     unlockComponents: [
-       { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', color: '#6366f1', desc: 'Press it to trigger things! Used in almost every electronic device.' }
-     ]
+      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '/components_examples/MAX7219_Dot_Matrix.png', color: '#ec4899', desc: 'Colorful LEDs you can control individually!' },
+    ],
   },
 
   // ===== BUTTON DEBOUNCE (project: button-debounce) =====
   'button-debounce': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '🔘',
-        front: 'What is Button Bouncing?',
-        simple: 'When you press a button, the metal contacts inside physically smash together and "bounce" microscopically. This makes the Arduino think you pressed the button 10 times really fast!',
-        detail: 'Because the Arduino checks the pin millions of times per second, it sees every single bounce of the metal as a separate click. We call this "switch bounce".',
-        funFact: '⚡ Every mechanical switch in the world bounces — even the keys on your computer keyboard (though the keyboard has a chip to fix it!).',
-        quiz: {
-          question: 'Why does the Arduino sometimes register multiple clicks when you only pressed a button once?',
-          options: ['The Arduino is broken', 'The metal contacts bounce microscopically', 'The code is too slow', 'The voltage is too high'],
-          correctAnswer: 1
-        }
-      },
-      {
-        id: 2,
-        emoji: '⏱️',
-        front: 'How does Debouncing work?',
-        simple: 'Debouncing is telling the Arduino: "If the button state changes, wait a tiny bit (like 50ms) to let the bouncing stop before reading it again."',
-        detail: 'We use the millis() function to check how much time has passed since the first change. If 50 milliseconds have passed and the button is still pressed, we accept it as a real click.',
-        funFact: '⌚ millis() counts the number of milliseconds since the Arduino board started running your program.',
-        quiz: {
-          question: 'Which function is best for keeping track of time for debouncing without stopping the whole program?',
-          options: ['delay()', 'stop()', 'millis()', 'time()'],
-          correctAnswer: 2
-        }
-      }
-    ],
+    flashcards: [],
     unlockComponents: [
-      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', color: '#ef4444', desc: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' }
-    ]
+      { type: 'openhw-pushbutton', name: 'Push Button', icon: '/components_examples/Push_button.png', color: '#14b8a6', desc: 'Press it to trigger things!' },
+    ],
   },
 
   // ===== TEMPERATURE SENSOR (project: temperature-sensor) =====
   'temperature-sensor': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '🌡️',
-        front: 'What is a Thermistor?',
-        simple: 'A thermistor is a special resistor that changes its resistance based on the temperature!',
-        detail: 'Most Arduino kits use an NTC (Negative Temperature Coefficient) thermistor. "Negative" means that as the temperature goes UP, the resistance goes DOWN.',
-        funFact: '🔥 Thermistors are used in digital thermometers, car engines, and even your 3D printer to make sure it melts the plastic at the right temperature!',
-        quiz: {
-          question: 'In an NTC thermistor, what happens to the resistance when the temperature increases?',
-          options: ['It stays the same', 'It goes up', 'It goes down', 'It resets to zero'],
-          correctAnswer: 2
-        }
-      },
-      {
-        id: 2,
-        emoji: '🧮',
-        front: 'How do we calculate temperature?',
-        simple: 'We read the raw voltage using analogRead(), convert that to resistance, and then use a fancy math formula to get the temperature in Celsius.',
-        detail: 'The math formula is called the Steinhart-Hart equation. It uses logarithms (log()) to calculate the exact temperature because thermistors are not perfectly linear.',
-        funFact: '🤯 The Steinhart-Hart equation was invented in 1968 and is still the most accurate way to read thermistors today!',
-        quiz: {
-          question: 'What mathematical function is needed in the code to calculate the true temperature from a thermistor?',
-          options: ['sin()', 'log()', 'random()', 'map()'],
-          correctAnswer: 1
-        }
-      }
-    ],
+    flashcards: [],
     unlockComponents: [
-      { type: 'openhw-motor', name: 'DC Motor', icon: '🔩', color: '#64748b', desc: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
-      { type: 'openhw-l293d', name: 'Motor Driver (L293D)', icon: '🔌', color: '#334155', desc: 'Controls the motor — gives it the power it needs to spin fast.' }
-    ]
-  },
-
-  // ===== TRAFFIC LIGHT (project: traffic-light) =====
-  'traffic-light': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '🚦',
-        front: 'What makes a traffic light?',
-        simple: 'A traffic light uses 3 LEDs: Red, Yellow, and Green to tell cars what to do!',
-        detail: 'In electronics, you can control multiple LEDs by assigning each one to a different digital pin on the Arduino.',
-        funFact: '🚗 The first traffic light was invented in 1868 and used gas lamps!',
-        quiz: {
-          question: 'How many LEDs do you need for a basic traffic light?',
-          options: ['1', '2', '3', '4'],
-          correctAnswer: 2
-        }
-      },
-      {
-        id: 2,
-        emoji: '⏱️',
-        front: 'How do you control timing?',
-        simple: 'We use the delay() function to keep the light on for the right amount of time!',
-        detail: 'Red and Green lights stay on longer (e.g. 5000ms), while the Yellow light is just a short warning (e.g. 2000ms).',
-        funFact: '⏳ Traffic light engineers spend years perfecting the exact timing of lights to prevent traffic jams.',
-        quiz: {
-          question: 'Which light typically stays on for the shortest time?',
-          options: ['Red', 'Yellow', 'Green', 'Blue'],
-          correctAnswer: 1
-        }
-      }
+      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '/components_examples/DHT22.png', color: '#ef4444', desc: 'Measures how hot or cold it is!' },
     ],
-    unlockComponents: []
-  },
-
-  // ===== LED PWM (project: led-pwm) =====
-  'led-pwm': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '🔆',
-        front: 'What is PWM?',
-        simple: 'PWM stands for Pulse Width Modulation. It is a trick to make a digital pin act like an analog pin, so you can change brightness!',
-        detail: 'By turning the pin ON and OFF really fast (hundreds of times a second), the LED looks like it is at half brightness instead of blinking.',
-        funFact: '🌟 Arduino UNO pins with a tilde (~) next to them (like ~9, ~10, ~11) support PWM!',
-        quiz: {
-          question: 'What does PWM do to an LED?',
-          options: ['Changes its color', 'Makes it blink slowly', 'Allows you to change its brightness', 'Turns it off permanently'],
-          correctAnswer: 2
-        }
-      },
-      {
-        id: 2,
-        emoji: '🎛️',
-        front: 'How to use analogWrite()?',
-        simple: 'Instead of HIGH or LOW, analogWrite() uses numbers from 0 (OFF) to 255 (Fully ON).',
-        detail: 'analogWrite(9, 127) will turn the LED on at exactly 50% brightness.',
-        funFact: '⚡ The number 255 is the maximum value for an 8-bit number (2^8 - 1).',
-        quiz: {
-          question: 'What value in analogWrite() makes the LED half bright?',
-          options: ['0', '127', '255', '50'],
-          correctAnswer: 1
-        }
-      }
-    ],
-    unlockComponents: [
-      { type: 'openhw-lcd1602', name: 'LCD Display', icon: '📟', color: '#22c55e', desc: 'A tiny screen to display messages! Unlocked for your next projects.' }
-    ]
-  },
-
-  // ===== SCROLLING TEXT LCD (project: lcd-scrolling-text) =====
-  'lcd-scrolling-text': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '📟',
-        front: 'What is an LCD?',
-        simple: 'An LCD (Liquid Crystal Display) is a small screen that can show letters and numbers!',
-        detail: 'The 16x2 LCD can show 16 characters on the top row, and 16 on the bottom row. You can make text scroll across it using code.',
-        funFact: '📺 The screens on early calculators, digital watches, and Game Boys used the same technology!',
-        quiz: {
-          question: 'How many characters can a 16x2 LCD show at once?',
-          options: ['16', '32', '2', '64'],
-          correctAnswer: 1
-        }
-      }
-    ],
-    unlockComponents: [
-      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', color: '#f97316', desc: 'A motor that can turn exactly where you tell it to!' }
-    ]
   },
 
   // ===== DC MOTOR (project: dc-motor) =====
   'dc-motor': {
-    flashcards: [
-      {
-        id: 1,
-        emoji: '🔌',
-        front: 'Why do we need a Motor Driver (L293D)?',
-        simple: 'Motors are greedy! They need a LOT of electricity (current) to spin. The Arduino pins are too weak and would fry if you connected a motor directly to them.',
-        detail: 'The L293D acts as a "muscle" for the Arduino. The Arduino sends a weak control signal to the L293D, and the L293D connects the motor directly to the strong 5V power supply.',
-        funFact: '💪 The L293D can supply up to 600mA of current, which is 15 times more than a standard Arduino pin!',
-        quiz: {
-          question: 'What is the main purpose of the L293D motor driver chip?',
-          options: ['To make the motor spin slower', 'To protect the Arduino and provide enough current', 'To make the motor look cooler', 'To change the voltage of the battery'],
-          correctAnswer: 1
-        }
-      },
-      {
-        id: 2,
-        emoji: '🔄',
-        front: 'What is an H-Bridge?',
-        simple: 'An H-Bridge is a clever circuit inside the L293D that lets you reverse the flow of electricity to the motor, making it spin backwards!',
-        detail: 'By turning on different combinations of electronic switches inside the chip (using the IN1 and IN2 pins), you can push current from left-to-right (forwards) or right-to-left (backwards).',
-        funFact: '🌉 It is called an H-Bridge because if you draw the circuit diagram of the four switches around the motor, it looks exactly like the capital letter H!',
-        quiz: {
-          question: 'How do you make the motor spin in the opposite direction using the L293D?',
-          options: ['Swap the HIGH and LOW signals on IN1 and IN2', 'Turn the power off and on again', 'Change the PWM speed', 'Turn the Arduino upside down'],
-          correctAnswer: 0
-        }
-      }
-    ],
+    flashcards: [],
     unlockComponents: [
-      { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', color: '#fbbf24', desc: 'You completed every project! You now have access to the full component library!' }
-    ]
-  }
+      { type: 'openhw-motor', name: 'DC Motor', icon: '/components_examples/DC_Motor.png', color: '#f97316', desc: 'Spins at any speed you want!' },
+      { type: 'openhw-motor-driver', name: 'Motor Driver (L293D)', icon: '/components_examples/Motor_Driver_L293D.png', color: '#78716c', desc: 'Controls the motor — gives it power!' },
+    ],
+  },
+
+  // ===== ALL UNLOCKED =====
+  'all-unlocked': {
+    flashcards: [],
+    unlockComponents: [
+      { type: '*', name: 'ALL Components Unlocked!', icon: '/components_examples/UNO.png', color: '#fbbf24', desc: 'You completed every project! Build anything!' },
+    ],
+  },
 }
 
 // Default flashcards for projects not in the data
@@ -547,13 +330,15 @@ export const DEFAULT_FLASHCARDS = [
 
 // Default components for projects not in the data
 export const DEFAULT_UNLOCK_COMPONENTS = [
-  { id: 'arduino', name: 'Arduino Uno', icon: '🟩', color: '#22c55e', desc: 'Your project\'s brain!' },
-  { id: 'component', name: 'Component', icon: '🔧', color: '#3b82f6', desc: 'Essential for your project.' },
-]
-
-// Helper function to get flashcards for a project
+  { id: 'arduino', name: 'Arduino Uno', icon: '/components_examples/UNO.png', color: '#22c55e', desc: 'Your project\'s brain!' },
+  { id: 'component', name: 'Component', icon: '/components_examples/LED.png', color: '#3b82f6', desc: 'Essential for your project.' },
+]// Helper function to get flashcards for a project
 export function getProjectFlashcards(projectSlug) {
-  return PROJECT_DATA[projectSlug]?.flashcards || DEFAULT_FLASHCARDS
+  let cards = PROJECT_DATA[projectSlug]?.flashcards;
+  if ((!cards || cards.length === 0) && projectSlug === 'servo-motor') {
+    cards = PROJECT_DATA['servo']?.flashcards;
+  }
+  return (cards && cards.length > 0) ? cards : DEFAULT_FLASHCARDS;
 }
 
 // Helper function to get quiz questions for a project

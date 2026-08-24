@@ -207,8 +207,7 @@ import "prismjs/components/prism-cpp";
 import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/api/examples" : "/api/examples");
+  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -11465,7 +11464,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       );
       const canvasEl = canvasRef.current;
       const SCALE = 1.5; // High-res (Retina) but uses ~44% less RAM than 2.0
-      const PAD = 60; // padding around content in canvas-space pixels
+      const PAD = 40; // Exact 40px equal padding on all four sides
       const pinPosCache = new Map();
       const getCachedPinPos = (compId, pinId) => {
         const key = `${compId}:${pinId}`;
@@ -11474,28 +11473,43 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         return pinPosCache.get(key);
       };
 
+      const isValidPos = (pos) =>
+        pos &&
+        typeof pos.x === "number" &&
+        typeof pos.y === "number" &&
+        !pos.isFallback &&
+        (pos.x !== 0 || pos.y !== 0) &&
+        isFinite(pos.x) &&
+        isFinite(pos.y);
+
       // 1. Calculate bounding box of all components + wire waypoints (in canvas-space coords)
       let minX = Infinity,
         minY = Infinity,
         maxX = -Infinity,
         maxY = -Infinity;
+
       components.forEach((c) => {
         const reg = COMPONENT_REGISTRY[c.type];
         const b =
           typeof reg?.BOUNDS === "function"
             ? reg.BOUNDS(getComponentStateAttrs(c))
             : reg?.BOUNDS || { x: 0, y: 0, w: c.w, h: c.h };
-        // component body
-        minX = Math.min(minX, c.x + b.x);
-        minY = Math.min(minY, c.y + b.y);
-        maxX = Math.max(maxX, c.x + b.x + b.w);
-        maxY = Math.max(maxY, c.y + b.y + b.h);
-        // label below component adds ~20px
-        maxY = Math.max(maxY, c.y + b.y + b.h + 20);
+        const bw = b.w || c.w || 0;
+        const bh = b.h || c.h || 0;
+        const cx = typeof c.x === "number" ? c.x : 0;
+        const cy = typeof c.y === "number" ? c.y : 0;
+
+        if (bw > 0 || bh > 0 || cx > 0 || cy > 0) {
+          minX = Math.min(minX, cx + (b.x || 0));
+          minY = Math.min(minY, cy + (b.y || 0));
+          maxX = Math.max(maxX, cx + (b.x || 0) + bw);
+          maxY = Math.max(maxY, cy + (b.y || 0) + bh);
+        }
+
         // pins (they're positioned relative to component and can extend beyond its box)
         (PIN_DEFS[c.type] || []).forEach((pin) => {
           const pp = getCachedPinPos(c.id, pin.id);
-          if (pp) {
+          if (isValidPos(pp)) {
             minX = Math.min(minX, pp.x - 4);
             minY = Math.min(minY, pp.y - 4);
             maxX = Math.max(maxX, pp.x + 4);
@@ -11503,33 +11517,62 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
         });
       });
-      // wire waypoints
+
+      // wire waypoints & endpoints
       wires.forEach((w) => {
         (w.waypoints || []).forEach((wp) => {
-          minX = Math.min(minX, wp.x);
-          minY = Math.min(minY, wp.y);
-          maxX = Math.max(maxX, wp.x);
-          maxY = Math.max(maxY, wp.y);
+          if (isValidPos(wp)) {
+            minX = Math.min(minX, wp.x);
+            minY = Math.min(minY, wp.y);
+            maxX = Math.max(maxX, wp.x);
+            maxY = Math.max(maxY, wp.y);
+          }
         });
-        // wire endpoints (from/to pin positions)
         const [fComp, fPin] = (w.from || "").split(":");
         const [tComp, tPin] = (w.to || "").split(":");
         const fp = getCachedPinPos(fComp, fPin);
         const tp = getCachedPinPos(tComp, tPin);
-        if (fp) {
+        if (isValidPos(fp)) {
           minX = Math.min(minX, fp.x);
           minY = Math.min(minY, fp.y);
           maxX = Math.max(maxX, fp.x);
           maxY = Math.max(maxY, fp.y);
         }
-        if (tp) {
+        if (isValidPos(tp)) {
           minX = Math.min(minX, tp.x);
           minY = Math.min(minY, tp.y);
           maxX = Math.max(maxX, tp.x);
           maxY = Math.max(maxY, tp.y);
         }
       });
-      if (!isFinite(minX)) {
+
+      // Query live component DOM elements inside zoomWrapper for custom component DOM bounds
+      if (innerCanvasRef.current) {
+        const liveElements = innerCanvasRef.current.querySelectorAll(
+          '[data-comp-id], [id^="comp-"], .openhw-component-node',
+        );
+        liveElements.forEach((el) => {
+          const left = parseFloat(el.style.left);
+          const top = parseFloat(el.style.top);
+          const w = el.offsetWidth || parseFloat(el.style.width) || 0;
+          const h = el.offsetHeight || parseFloat(el.style.height) || 0;
+          if (
+            !isNaN(left) &&
+            !isNaN(top) &&
+            left > 0 &&
+            top > 0 &&
+            w > 0 &&
+            h > 0
+          ) {
+            minX = Math.min(minX, left);
+            minY = Math.min(minY, top);
+            maxX = Math.max(maxX, left + w);
+            maxY = Math.max(maxY, top + h);
+          }
+        });
+      }
+
+      if (!isFinite(minX) || !isFinite(minY)) {
         minX = 0;
         minY = 0;
         maxX = 800;
@@ -11648,7 +11691,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:transparent;"></body></html>',
         );
         idoc.close();
 
@@ -11769,6 +11812,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let wireCount = 0;
 
         clonedNodes.forEach((cloned) => {
+          if (cloned === circuitClone) return;
+
           const dataId = cloned.getAttribute("data-h2c-id");
           if (!dataId) return;
 
@@ -11856,16 +11901,17 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         idoc.body.style.overflow = "visible";
         circuitClone.style.overflow = "visible";
 
-        // 5. Adjust clone for capture
-        Object.assign(circuitClone.style, {
-          transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
-          transformOrigin: "0 0",
-          width: actualW + "px",
-          height: actualH + "px",
-          display: "block",
-          margin: "0",
-          padding: "0",
-        });
+        // 5. Adjust clone for capture with FORCED priority to override any live pan/zoom
+        circuitClone.style.setProperty("transform", `translate(${-minX}px, ${-minY}px) scale(1)`, "important");
+        circuitClone.style.setProperty("transform-origin", "0 0", "important");
+        circuitClone.style.setProperty("width", `${actualW}px`, "important");
+        circuitClone.style.setProperty("height", `${actualH}px`, "important");
+        circuitClone.style.setProperty("position", "absolute", "important");
+        circuitClone.style.setProperty("left", "0px", "important");
+        circuitClone.style.setProperty("top", "0px", "important");
+        circuitClone.style.setProperty("margin", "0px", "important");
+        circuitClone.style.setProperty("padding", "0px", "important");
+        circuitClone.style.setProperty("display", "block", "important");
 
         console.log(
           `[PNG Export] Isolation prep finished. Nodes in iframe: ${idoc.querySelectorAll("*").length}`,
@@ -11873,7 +11919,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: "#ffffff",
+          backgroundColor: null, // transparent background
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11894,7 +11940,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 if (stroke && stroke.includes("color("))
                   el.setAttribute("stroke", "#777");
               });
-            // Ensure labels are visible on white bg
+            // Ensure labels have proper color (transparent bg — let computed styles come through)
             clonedEl.querySelectorAll("text, span, div").forEach((el) => {
               if (el.style.color && el.style.color.includes("color("))
                 el.style.color = "#1e293b";
@@ -11931,8 +11977,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       out.height = CH;
       const ctx = out.getContext("2d");
 
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, CW, CH);
+      // No background fill — keep transparent so PNG has alpha channel
       ctx.drawImage(circuitCanvas, 0, 0);
 
       // Branding logo (bottom-right)

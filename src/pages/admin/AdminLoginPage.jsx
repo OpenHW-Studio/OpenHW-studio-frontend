@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
     const handleGoogleRedirect = () => {
         localStorage.setItem("lastUsedLogin", "google");
         localStorage.setItem("authRedirectPath", "/admin/dashboard");
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
         window.location.href = baseUrl.replace('/api', '') + '/auth/google?origin=' + encodeURIComponent(window.location.origin);
     }
 
@@ -29,7 +29,7 @@ export default function AdminLoginPage() {
         <div className="auth-page">
             <div className="auth-card">
                 <div className="auth-logo">
-                    <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--admin" />
+                    <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--admin" />
                 </div>
                 <h1 className="auth-title">Admin Login</h1>
                 <p className="auth-subtitle">Restricted Area. Authorized Access Only.</p>
