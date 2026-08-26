@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { signupUser } from "../../services/authService.js";
+import { sendOtp, verifyOtp } from "../../services/authService.js";
 import {
   Mail,
   Lock,
@@ -14,7 +14,8 @@ import {
   Award,
   Shuffle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from "lucide-react";
 
 // Presets for the Avatar Builder
@@ -45,6 +46,15 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  // ── OTP Verification State ───────────────────────────────────────────────
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpValue, setOtpValue] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [otpSuccess, setOtpSuccess] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef(null);
 
   // Avatar Builder State
   const [styleIndex, setStyleIndex] = useState(0);
@@ -128,17 +138,15 @@ export default function SignupPage() {
 
     try {
       const imageUrl = getDiceBearAvatarUrl(avatarStyle, avatarSeed);
-      const data = await signupUser({
+      await sendOtp({
         ...formData,
         image: imageUrl,
-        avatarSeed,
-        avatarStyle,
       });
-      login(data.token, data.user);
-      
-      if (data.user.role === "teacher") navigate("/teacher/dashboard");
-      else if (data.user.role === "student") navigate("/student/dashboard");
-      else navigate("/user/dashboard");
+      setOtpStep(true);
+      setOtpValue("");
+      setOtpError("");
+      setOtpSuccess("");
+      startResendCooldown(60);
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -146,8 +154,180 @@ export default function SignupPage() {
     }
   };
 
+  const startResendCooldown = (seconds) => {
+    setResendCooldown(seconds);
+    clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) { clearInterval(cooldownRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleResendOtp = async () => {
+    setOtpLoading(true);
+    setOtpError("");
+    setOtpSuccess("");
+    try {
+      const imageUrl = getDiceBearAvatarUrl(avatarStyle, avatarSeed);
+      await sendOtp({ ...formData, image: imageUrl });
+      setOtpSuccess("A new code has been sent to your email.");
+      startResendCooldown(60);
+    } catch (err) {
+      setOtpError(err.message || "Failed to resend. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (otpValue.trim().length !== 6) {
+      setOtpError("Please enter the full 6-digit code.");
+      return;
+    }
+    setOtpLoading(true);
+    setOtpError("");
+    try {
+      const data = await verifyOtp(formData.email, otpValue.trim());
+      login(data.token, data.user);
+      clearInterval(cooldownRef.current);
+      if (data.user.role === "teacher") navigate("/teacher/dashboard");
+      else if (data.user.role === "student") navigate("/student/dashboard");
+      else navigate("/user/dashboard");
+    } catch (err) {
+      setOtpError(err.message || "Invalid code. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleOtpInput = (e) => {
+    const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setOtpValue(v);
+    setOtpError("");
+  };
+
   return (
     <div className="auth-hardware-screen">
+      {/* ── OTP Verification Modal Overlay ───────────────────────────────── */}
+      {otpStep && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "16px"
+        }}>
+          <div style={{
+            background: "#0f172a", border: "1px solid #334155",
+            borderRadius: "16px", padding: "40px 36px",
+            maxWidth: "440px", width: "100%",
+            boxShadow: "0 25px 60px rgba(0,0,0,0.6)"
+          }}>
+            <div style={{ textAlign: "center", marginBottom: "28px" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "linear-gradient(135deg,#0ea5e9,#6366f1)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                margin: "0 auto 16px"
+              }}>
+                <ShieldCheck style={{ color: "#fff", width: "28px", height: "28px" }} />
+              </div>
+              <h2 style={{ color: "#f1f5f9", fontSize: "22px", fontWeight: 700, margin: "0 0 8px", fontFamily: "monospace" }}>
+                VERIFY EMAIL
+              </h2>
+              <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0, lineHeight: 1.6 }}>
+                A 6-digit verification code was sent to<br />
+                <strong style={{ color: "#38bdf8" }}>{formData.email}</strong>
+              </p>
+            </div>
+
+            <form onSubmit={handleVerifyOtp}>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{
+                  display: "block", fontSize: "11px", color: "#64748b",
+                  fontFamily: "monospace", letterSpacing: "2px",
+                  textTransform: "uppercase", marginBottom: "8px"
+                }}>
+                  [VERIFY_CODE // 6 DIGITS]
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpValue}
+                  onChange={handleOtpInput}
+                  placeholder="• • • • • •"
+                  autoFocus
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "#1e293b", border: "1px solid #334155",
+                    borderRadius: "8px", padding: "14px 16px",
+                    color: "#f1f5f9", fontSize: "28px", fontFamily: "monospace",
+                    letterSpacing: "16px", textAlign: "center",
+                    outline: "none"
+                  }}
+                />
+              </div>
+
+              {otpError && (
+                <div style={{ color: "#f87171", fontSize: "13px", marginBottom: "12px", textAlign: "center" }}>
+                  ⚠️ {otpError}
+                </div>
+              )}
+              {otpSuccess && (
+                <div style={{ color: "#34d399", fontSize: "13px", marginBottom: "12px", textAlign: "center" }}>
+                  ✓ {otpSuccess}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={otpLoading || otpValue.length !== 6}
+                style={{
+                  width: "100%", padding: "13px",
+                  background: otpValue.length === 6 ? "linear-gradient(135deg,#0ea5e9,#6366f1)" : "#1e293b",
+                  border: "1px solid #334155", borderRadius: "8px",
+                  color: "#f1f5f9", fontWeight: 700, fontSize: "14px",
+                  fontFamily: "monospace", letterSpacing: "1px",
+                  cursor: otpValue.length === 6 ? "pointer" : "not-allowed",
+                  marginBottom: "12px", transition: "all 0.2s"
+                }}
+              >
+                {otpLoading ? "Verifying..." : "⚡ VERIFY & CREATE ACCOUNT"}
+              </button>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => { setOtpStep(false); setOtpError(""); setOtpSuccess(""); }}
+                  style={{
+                    background: "none", border: "none", color: "#64748b",
+                    fontSize: "12px", fontFamily: "monospace", cursor: "pointer", padding: 0
+                  }}
+                >
+                  ← Edit details
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={resendCooldown > 0 || otpLoading}
+                  style={{
+                    background: "none", border: "none", padding: 0,
+                    cursor: resendCooldown > 0 ? "not-allowed" : "pointer",
+                    color: resendCooldown > 0 ? "#475569" : "#38bdf8",
+                    fontSize: "12px", fontFamily: "monospace"
+                  }}
+                >
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="auth-hardware-frame">
         
         {/* Left Panel: Avatar Customizer & Live Preview */}

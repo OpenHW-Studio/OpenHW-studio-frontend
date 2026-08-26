@@ -18,12 +18,15 @@ export default function UserLoginPage() {
 
   const from = location.state?.from || null;
 
-  const handleRedirect = () => {
+  const handleRedirect = (userRole) => {
     if (from) {
       navigate(from);
       return;
     }
-    navigate("/user/dashboard");
+    if (userRole === 'student') navigate('/student/dashboard');
+    else if (userRole === 'teacher') navigate('/teacher/dashboard');
+    else if (userRole === 'admin') navigate('/admin/dashboard');
+    else navigate('/user/dashboard');
   };
 
   useEffect(() => {
@@ -47,7 +50,7 @@ export default function UserLoginPage() {
       const data = await loginUser({ ...formData });
       login(data.token, data.user);
       localStorage.setItem("lastUsedLogin", "email");
-      handleRedirect();
+      handleRedirect(data.user?.role);
     } catch (err) {
       setError(err.message || "Invalid email or password.");
     } finally {
@@ -147,6 +150,19 @@ export default function UserLoginPage() {
                     )}
                   </button>
                 </div>
+                <div style={{ textAlign: "right", marginTop: "4px" }}>
+                  <Link
+                    to="/forgot-password"
+                    style={{
+                      fontSize: "11px",
+                      fontFamily: "monospace",
+                      color: "#2563eb",
+                      textDecoration: "none"
+                    }}
+                  >
+                    [ FORGOT CRYPT_KEY? ]
+                  </Link>
+                </div>
               </label>
 
               {error && <div className="auth-form__error">{error}</div>}
@@ -203,25 +219,14 @@ export default function UserLoginPage() {
               </button>
             </div>
 
-            <div style={{ marginTop: "16px" }}>
-              <button
-                type="button"
-                onClick={() => navigate("/classroom/signin")}
-                className="hardware-alt-btn"
-                style={{
-                  width: "100%",
-                  borderColor: "#0891b2",
-                  color: "#0891b2",
-                  background: "rgba(8, 145, 178, 0.05)",
-                  margin: 0
-                }}
-              >
-                [ GO TO CLASSROOM LOGIN ]
-              </button>
-            </div>
+
 
             <p className="hardware-panel__footer" style={{ marginTop: "20px" }}>
               Don't have a user account? <Link to="/signup">Create one</Link>
+            </p>
+            <p className="hardware-panel__footer" style={{ marginTop: "8px" }}>
+              Want a classroom account?{" "}
+              <Link to="/classroom/signin">Classroom Login</Link>
             </p>
           </div>
         </section>

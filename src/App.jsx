@@ -268,16 +268,20 @@ export default function App() {
                   <Route path="/contributors" element={<ContributorsPage />} />
                   <Route path="/examples" element={<ExamplesPage />} />
                   <Route path="/login" element={<UserLoginPage />} />
+                  <Route path="/signup" element={<UserSignupPage />} />
+                  <Route path="/user/signup" element={<UserSignupPage />} />
                   <Route
                     path="/signin"
                     element={<Navigate to="/classroom/signin" replace />}
                   />
                   <Route
-                    path="/signup"
-                    element={<Navigate to="/classroom/signup" replace />}
+                    path="/classroom/signin"
+                    element={<SigninPage />}
                   />
-                  <Route path="/classroom/signin" element={<SigninPage />} />
-                  <Route path="/classroom/signup" element={<SignupPage />} />
+                  <Route
+                    path="/classroom/signup"
+                    element={<SignupPage />}
+                  />
                   <Route
                     path="/forgot-password"
                     element={<ForgotPasswordPage />}

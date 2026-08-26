@@ -298,7 +298,7 @@ The frontend uses Vite environment variables. Create a `.env` file in the projec
 |---|---|---|
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID | — |
 | `VITE_API_BASE_URL` | Base URL for the Backend API | `http://localhost:5001/api` |
-| `VITE_EXAMPLES_BASE_URL` | Base URL for example assets served by the backend `EXAMPLES_PATH` route | `http://localhost:5001/examples` |
+| `VITE_EXAMPLES_BASE_URL` | Base URL for example assets served by the backend `EXAMPLES_PATH` route | `/api/examples` (or `http://localhost:5000/api/examples`) |
 | `VITE_EMULATOR_PATH` | Local path to the emulator repository root used by Vite aliasing | `../path-to-openhw-studio-emulator` |
 | `VITE_ADMIN_EMAILS` | Comma-separated list of admin emails | — |
 
@@ -306,8 +306,8 @@ The frontend uses Vite environment variables. Create a `.env` file in the projec
 
 ```env
 VITE_GOOGLE_CLIENT_ID=your_id.apps.googleusercontent.com
-VITE_API_BASE_URL=http://localhost:5001/api
-VITE_EXAMPLES_BASE_URL=http://localhost:5001/examples
+VITE_API_BASE_URL=http://localhost:5000/api
+VITE_EXAMPLES_BASE_URL=http://localhost:5000/api/examples
 VITE_ADMIN_EMAILS=admin@example.com,user@example.com
 VITE_EMULATOR_PATH=../path-to-openhw-studio-emulator
 ```
