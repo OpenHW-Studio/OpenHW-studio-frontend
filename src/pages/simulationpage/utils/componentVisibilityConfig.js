@@ -21,27 +21,20 @@
  */
 
 export const COMPONENT_STATUS_CONFIG = {
-  // Hide ESP32 (openhw-esp32, wokwi-esp32, esp32)
-  'openhw-esp32': {
-    hide: true,
-  },
-  'wokwi-esp32': {
-    hide: true,
-  },
-  'esp32': {
-    hide: true,
-  },
+  // Boards
+  'openhw-esp32': { hide: true },
+  'openhw-esp32-cam': { hide: true },
+  'openhw-arduino-nano': { hide: true },
+  'openhw-arduino-mega': { hide: true },
+  'openhw-attiny85': { hide: true },
+  'openhw-stm32-blue-pill (frontend)': { hide: true },
 
-  // Warn ESP32-CAM (openhw-esp32-cam, wokwi-esp32-cam, esp32-cam)
-  'openhw-esp32-cam': {
-    warning: 'ESP32-CAM simulation is currently not working.',
-  },
-  'wokwi-esp32-cam': {
-    warning: 'ESP32-CAM simulation is currently not working.',
-  },
-  'esp32-cam': {
-    warning: 'ESP32-CAM simulation is currently not working.',
-  },
+  // Audio Components
+  'openhw-sph0645': { hide: true },
+  'openhw-pcm5102': { hide: true },
+  'openhw-max98357': { hide: true },
+  'openhw-inmp441': { hide: true },
+  'openhw-5w-speaker': { hide: true },
 };
 
 /**
