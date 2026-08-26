@@ -75,23 +75,18 @@ const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
   const isMobile = useIsMobile();
   const location = useLocation();
 
-  const isMobilePath = location.pathname.startsWith("/mobile-simulator");
-
-  // If we're on mobile but NOT on a mobile path, redirect to mobile
-  if (isMobile && !isMobilePath) {
-    const newPath = location.pathname.startsWith("/simulator")
-      ? location.pathname.replace("/simulator", "/mobile-simulator")
-      : `/mobile-simulator${location.pathname}`;
-    return <Navigate to={newPath} replace />;
+  // If embedded in an iframe (e.g. Project Guide canvas), always render desktopElement without redirect
+  const searchParams = new URLSearchParams(location.search);
+  if (searchParams.get("canvas-only") === "1") {
+    return desktopElement;
   }
 
-  // If we're on desktop but ON a mobile path, redirect to desktop
-  if (!isMobile && isMobilePath) {
-    const newPath = location.pathname.replace(
-      "/mobile-simulator",
-      "/simulator",
-    );
-    return <Navigate to={newPath === "" ? "/simulator" : newPath} replace />;
+  // Only handle explicit root simulator path redirects
+  if (location.pathname === "/simulator" && isMobile) {
+    return <Navigate to={`/mobile-simulator${location.search}`} replace />;
+  }
+  if (location.pathname === "/mobile-simulator" && !isMobile) {
+    return <Navigate to={`/simulator${location.search}`} replace />;
   }
 
   return isMobile ? mobileElement : desktopElement;

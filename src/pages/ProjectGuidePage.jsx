@@ -46,7 +46,7 @@ const SLUG_MAP = {
 };
 
 import { markAdventureStepComplete } from "../services/adventureService";
-
+import { findGuidedProjectBySlug } from "../services/exampleLoaderService.js";
 import PROJECT_INDEX from "../services/guideProjectsIndex.json";
 
 export default function ProjectGuidePage() {
@@ -65,8 +65,8 @@ export default function ProjectGuidePage() {
     }
   }, [projectName, classId]);
 
-  const jsonSlug = SLUG_MAP[projectName]
-  const project = jsonSlug ? PROJECT_INDEX[jsonSlug] : null
+  const jsonSlug = SLUG_MAP[projectName] || projectName;
+  const project = (jsonSlug ? PROJECT_INDEX[jsonSlug] : null) || findGuidedProjectBySlug(projectName);
 
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
@@ -136,14 +136,24 @@ export default function ProjectGuidePage() {
     const handler = (e) => {
       if (e.data?.type === 'serial-entry') {
         setSerialEntries(prev => {
-          const next = [...prev, ...e.data.entries]
-          return next.length > 1000 ? next.slice(next.length - 800) : next
-        })
+          const next = [...prev, ...e.data.entries];
+          return next.length > 1000 ? next.slice(next.length - 800) : next;
+        });
       }
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [])
+      if (e.data?.type === 'circuit-ready') {
+        setIframeLoading(false);
+      }
+    };
+    window.addEventListener('message', handler);
+    // Fast safety fallback: dismiss loading overlay after 1.2s max so user never waits for idle document state
+    const safetyTimer = setTimeout(() => {
+      setIframeLoading(false);
+    }, 1200);
+    return () => {
+      window.removeEventListener('message', handler);
+      clearTimeout(safetyTimer);
+    };
+  }, []);
 
   useEffect(() => {
     if (autoscroll && !serialPaused && serialOutputRef.current) {

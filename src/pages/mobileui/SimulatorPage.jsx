@@ -507,7 +507,10 @@ function syncNextIds(_comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
+import {
+  EXAMPLES_BASE_URL,
+  loadExampleProjectData,
+} from '../../services/exampleLoaderService.js';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
@@ -2501,14 +2504,10 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       }
 
       try {
-        const pngName = 'circuit.png';
-        const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
-        const pngRes = await fetch(pngUrl);
-        if (!pngRes.ok || cancelled) return;
-        const blob = await pngRes.blob();
-        if (cancelled) return;
-        const file = new File([blob], pngName, { type: blob.type || 'image/png' });
-        importPng(file);
+        const result = await loadExampleProjectData(projectName, EXAMPLES_BASE_URL);
+        if (result && result.meta && !cancelled) {
+          applyImportedProjectMeta(result.meta, `Demo Project (${result.source})`);
+        }
       } catch (err) {
         console.error(`Failed to load demo project "${projectName}"`, err);
       } finally {
