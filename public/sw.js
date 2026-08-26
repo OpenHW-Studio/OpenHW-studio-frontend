@@ -49,12 +49,16 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Bypass non-GET requests and dynamic API / auth / websocket calls
+  // Bypass non-GET requests, development modules, and dynamic API / auth / websocket calls
   if (
     req.method !== 'GET' ||
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
     url.pathname.startsWith('/api') ||
     url.pathname.startsWith('/auth') ||
     url.pathname.startsWith('/ws') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.includes('node_modules') ||
     url.protocol === 'ws:' ||
     url.protocol === 'wss:'
   ) {
@@ -86,12 +90,17 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(req, responseToCache));
           return networkResponse;
         })
-        .catch(() => {
+        .catch(async () => {
           // If offline and requesting navigation (HTML page), return cached index.html
           if (req.mode === 'navigate') {
-            return caches.match('/index.html') || caches.match('/');
+            const cachedHtml = (await caches.match('/index.html')) || (await caches.match('/'));
+            if (cachedHtml) return cachedHtml;
           }
-          return null;
+          return new Response('Network error occurred', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/plain' },
+          });
         });
     })
   );

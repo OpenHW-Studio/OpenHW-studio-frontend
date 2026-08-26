@@ -206,8 +206,12 @@ import "prismjs/components/prism-c";
 import "prismjs/components/prism-cpp";
 import "prismjs/themes/prism-tomorrow.css";
 
-const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
+import {
+  EXAMPLES_BASE_URL,
+  getDemoCircuitUrl,
+  loadExampleProjectData,
+} from "../../services/exampleLoaderService.js";
+
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -754,12 +758,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     }
 
     const tryLoadFromPng = async () => {
-      const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
-      const res = await fetch(pngUrl)
-      if (!res.ok) throw new Error('PNG not found')
-      const buf = await res.arrayBuffer()
-      const meta = extractProjectMetaFromPng(new Uint8Array(buf))
-      applyImportedProjectMeta(meta, 'Guided Project')
+      const result = await loadExampleProjectData(slug, EXAMPLES_BASE_URL);
+      if (!result?.meta) throw new Error('Could not load example circuit data');
+      applyImportedProjectMeta(result.meta, `Guided Project (${result.source})`);
     }
 
     setShowComingSoon(false)
@@ -2211,16 +2212,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }
 
       try {
-        const pngName = "circuit.png";
-        const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
-        const pngRes = await fetch(pngUrl);
-        if (!pngRes.ok || cancelled) return;
-        const blob = await pngRes.blob();
-        if (cancelled) return;
-        const file = new File([blob], pngName, {
-          type: blob.type || "image/png",
-        });
-        importPng(file);
+        const result = await loadExampleProjectData(projectName, EXAMPLES_BASE_URL);
+        if (result && result.meta && !cancelled) {
+          applyImportedProjectMeta(result.meta, `Demo Project (${result.source})`);
+        }
       } catch (err) {
         console.error(`Failed to load demo project "${projectName}"`, err);
       } finally {
@@ -13252,6 +13247,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setSelected(null);
     setWireStart(null);
     lastCompiledRef.current = null;
+    if (canvasOnly) {
+      window.parent?.postMessage({ type: 'circuit-ready' }, '*');
+    }
     appendConsoleEntry(
       "info",
       `${sourceLabel} imported: ${normalizedComponents.length} components, ${normalizedConnections.length} connections.`,
