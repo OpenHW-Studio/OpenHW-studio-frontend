@@ -1,4 +1,4 @@
-# OpenHW Studio — React Frontend
+# OpenHW Studio — React Frontend whhwhwhw
 
 > The interactive web-based UI for the OpenHW Studio electronics simulation platform. Built with React + Vite, it renders a drag-and-drop circuit editor, streams live simulation state from the emulator, and drives Wokwi web components in real time.
 

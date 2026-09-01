@@ -749,50 +749,57 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     if (!slug || lastLoadedSlugRef.current === slug) return
     lastLoadedSlugRef.current = slug
 
-    const loadFromSchema = () => {
-      if (project?.schemas?.arduino) {
-        doLoadGuidedSchema(project.schemas.arduino, 'Guided Project')
-      } else {
-        setIsLoadingGuidedSchema(false)
+    const loadFromSchema = (proj) => {
+      const s = proj?.schemas?.arduino;
+      if (s) {
+        doLoadGuidedSchema({
+          ...s,
+          blocklyXml: s.blocklyXml || proj.blocklyXml || '',
+          blocklyGeneratedCode: s.blocklyGeneratedCode || proj.blocklyGeneratedCode || '',
+          useBlocklyCode: s.useBlocklyCode !== undefined ? s.useBlocklyCode : (proj.useBlocklyCode !== undefined ? proj.useBlocklyCode : true),
+          code: s.code || proj.code || '',
+        }, 'Guided Project');
+        return true;
       }
+      return false;
+    };
+
+    setShowComingSoon(false);
+    setIsLoadingGuidedSchema(true);
+
+    if (project?.schemas?.arduino && loadFromSchema(project)) {
+      setTimeout(() => { setIsLoadingGuidedSchema(false); fitToView("fit"); }, 600);
+      return;
     }
 
-    const tryLoadFromPng = async () => {
-      const result = await loadExampleProjectData(slug, EXAMPLES_BASE_URL);
-      if (!result?.meta) throw new Error('Could not load example circuit data');
-      applyImportedProjectMeta(result.meta, `Guided Project (${result.source})`);
-    }
-
-    setShowComingSoon(false)
-    setIsLoadingGuidedSchema(true)
-    tryLoadFromPng()
-      .then(() => setTimeout(() => { setIsLoadingGuidedSchema(false); fitToView("fit") }, 800))
-      .catch(async () => {
-        if (project?.schemas?.arduino) {
-          loadFromSchema()
-        } else if ((canvasOnly || gamificationMode) && slug) {
-          try {
-            const data = await import("../../services/guidedProjects.json")
-            const root = data.default || data
-            for (const level of Object.values(root)) {
-              for (const cat of Object.values(level.categories || {})) {
-                const found = cat.projects.find(p => p.slug === slug)
-                if (found?.schemas?.arduino) {
-                  setGuidedProjectState({ project: found, levelColor: '#22c55e' })
-                  doLoadGuidedSchema(found.schemas.arduino, 'Guided Project')
-                  return
-                }
-              }
-            }
-          } catch { }
-          setIsLoadingGuidedSchema(false)
-          setShowComingSoon(true)
+    loadExampleProjectData(slug, EXAMPLES_BASE_URL)
+      .then((result) => {
+        if (result?.meta) {
+          applyImportedProjectMeta(result.meta, `Guided Project (${result.source})`);
+          setTimeout(() => { setIsLoadingGuidedSchema(false); fitToView("fit"); }, 600);
         } else {
-          setIsLoadingGuidedSchema(false)
-          setShowComingSoon(true)
+          throw new Error('No meta');
         }
       })
-  }, [guidedProjectState, gamificationMode, projectName, canvasOnly])
+      .catch(async () => {
+        try {
+          const data = await import("../../services/guidedProjects.json");
+          const root = data.default || data;
+          for (const level of Object.values(root)) {
+            for (const cat of Object.values(level.categories || {})) {
+              const found = cat.projects?.find(p => p.slug === slug);
+              if (found && loadFromSchema(found)) {
+                setGuidedProjectState({ project: found, levelColor: '#22c55e' });
+                setTimeout(() => { setIsLoadingGuidedSchema(false); fitToView("fit"); }, 600);
+                return;
+              }
+            }
+          }
+        } catch { }
+        setIsLoadingGuidedSchema(false);
+        setShowComingSoon(true);
+      });
+  }, [guidedProjectState, gamificationMode, projectName, canvasOnly]);
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id

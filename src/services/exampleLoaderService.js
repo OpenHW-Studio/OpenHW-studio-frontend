@@ -162,10 +162,14 @@ export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) 
   // 1. Structured Schema Check (Instant 0ms in-memory resolution from guidedProjects.json)
   const project = findGuidedProjectBySlug(slug);
   if (project?.schemas?.arduino) {
+    const schema = project.schemas.arduino;
     return {
       meta: {
-        ...project.schemas.arduino,
-        code: project.code || project.schemas.arduino.code || '',
+        ...schema,
+        blocklyXml: schema.blocklyXml || project.blocklyXml || '',
+        blocklyGeneratedCode: schema.blocklyGeneratedCode || project.blocklyGeneratedCode || '',
+        useBlocklyCode: schema.useBlocklyCode !== undefined ? schema.useBlocklyCode : (project.useBlocklyCode !== undefined ? project.useBlocklyCode : true),
+        code: schema.code || project.code || '',
         projectName: project.title || slug,
       },
       source: 'schema',
