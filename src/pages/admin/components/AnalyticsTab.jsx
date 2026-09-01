@@ -1,71 +1,54 @@
 import React, { useState, useMemo } from 'react';
 import { 
-    Activity, 
-    TrendingUp, 
-    Users, 
-    Zap, 
-    Clock, 
-    Globe, 
-    Smartphone, 
-    Monitor, 
-    Cpu, 
-    PieChart as PieIcon, 
-    Layers,
-    CheckCircle,
-    XCircle,
-    BarChart3,
-    GraduationCap,
-    BookOpen,
-    UserCheck,
-    Shield,
-    Calendar,
-    Award
+    Activity, TrendingUp, Users, Monitor, Cpu, BarChart3,
+    GraduationCap, BookOpen, UserCheck, Award, Smartphone
 } from 'lucide-react';
 import AdminCard from './AdminCard';
 import { 
-    AreaChart, 
-    Area, 
-    BarChart, 
-    Bar, 
-    PieChart, 
-    Pie, 
-    Cell, 
-    XAxis, 
-    YAxis, 
-    CartesianGrid, 
-    Tooltip, 
-    ResponsiveContainer,
-    Legend
+    AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 
-const ROLE_COLORS = {
-    student: '#06b6d4', // Cyan
-    teacher: '#a855f7', // Purple
-    user: '#3b82f6',    // Blue
-    admin: '#f59e0b'    // Amber
+const ROLE_COLORS = { student: '#06b6d4', teacher: '#a855f7', user: '#3b82f6', admin: '#f59e0b' };
+const DEVICE_COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6'];
+
+const ChartTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="ad-chart-tooltip">
+            <p style={{ fontWeight: 700, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--ad-border)', color: 'var(--ad-text)' }}>{label}</p>
+            {payload.map((entry, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 4 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ad-text-2)' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
+                        {entry.name}
+                    </span>
+                    <span style={{ fontWeight: 700, color: 'var(--ad-text)', fontFamily: 'monospace' }}>{entry.value}</span>
+                </div>
+            ))}
+        </div>
+    );
 };
 
-const DEVICE_COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b'];
-
-const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-        return (
-            <div className="p-3 bg-[#0a0f1d] border border-white/20 rounded-xl shadow-2xl text-xs">
-                <p className="font-black text-slate-300 mb-1">{label}</p>
-                {payload.map((entry, index) => (
-                    <p key={index} style={{ color: entry.color }} className="font-bold flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}></span>
-                        {entry.name}: <span className="font-mono text-white">{entry.value}</span>
-                    </p>
-                ))}
-            </div>
-        );
-    }
-    return null;
-};
+const StatCard = ({ label, value, sub, color = '', icon: Icon }) => (
+    <div className={`ad-stat-card ${color}`}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span className="ad-stat-label">{label}</span>
+            {Icon && (
+                <div className={`ad-stat-icon ${color}`}>
+                    <Icon />
+                </div>
+            )}
+        </div>
+        <div>
+            <div className="ad-stat-value" style={{ color: color ? `var(--ad-${color === 'blue' ? 'accent' : color})` : 'var(--ad-text)' }}>{value ?? 0}</div>
+            {sub && <div className="ad-stat-sub" style={{ marginTop: 4 }}>{sub}</div>}
+        </div>
+    </div>
+);
 
 const AnalyticsTab = ({ stats }) => {
-    const [userTimeframe, setUserTimeframe] = useState('allTime'); // 'allTime', 'month', 'week', 'today'
+    const [userTimeframe, setUserTimeframe] = useState('allTime');
 
     const rawTimeline = useMemo(() => stats?.visitorTimeline || [], [stats]);
     const compilationHistory = useMemo(() => stats?.compilationHistory || [], [stats]);
@@ -79,108 +62,75 @@ const AnalyticsTab = ({ stats }) => {
         timeline: []
     }, [stats]);
 
-    // Current timeframe user data
     const activeUserData = registeredUsers[userTimeframe] || registeredUsers.allTime;
 
-    // Role Pie Chart Data
     const rolePieData = useMemo(() => {
         const roles = [
             { name: 'Students', value: activeUserData.student || 0, color: ROLE_COLORS.student },
             { name: 'Teachers', value: activeUserData.teacher || 0, color: ROLE_COLORS.teacher },
             { name: 'General Users', value: activeUserData.user || 0, color: ROLE_COLORS.user },
-            { name: 'Admins', value: activeUserData.admin || 0, color: ROLE_COLORS.admin }
         ].filter(r => r.value > 0);
-
-        if (roles.length === 0) {
-            return [{ name: 'No registered users', value: 1, color: '#334155' }];
-        }
-        return roles;
+        return roles.length ? roles : [{ name: 'No data', value: 1, color: '#334155' }];
     }, [activeUserData]);
 
-    // Registration Timeline Data
-    const regTimelineData = useMemo(() => {
-        if (registeredUsers.timeline && registeredUsers.timeline.length > 0) {
-            return registeredUsers.timeline.map(item => ({
-                date: item.date ? item.date.slice(5) : '', // "MM-DD"
-                Students: item.student || 0,
-                Teachers: item.teacher || 0,
-                Users: item.user || 0,
-                Total: item.total || 0
-            }));
-        }
-        return [];
-    }, [registeredUsers]);
+    const regTimelineData = useMemo(() =>
+        (registeredUsers.timeline || []).map(item => ({
+            date: item.date ? item.date.slice(5) : '',
+            Students: item.student || 0,
+            Teachers: item.teacher || 0,
+            Users: item.user || 0,
+        })), [registeredUsers]);
 
-    // Traffic timeline
-    const trafficTimelineData = useMemo(() => {
-        if (rawTimeline.length > 0) {
-            return rawTimeline.map(item => ({
-                date: item.date ? item.date.slice(5) : '',
-                visitors: item.visitors || 0,
-                hits: item.hits || 0
-            }));
-        }
-        return [];
-    }, [rawTimeline]);
+    const trafficData = useMemo(() =>
+        rawTimeline.map(item => ({
+            date: item.date ? item.date.slice(5) : '',
+            visitors: item.visitors || 0,
+            hits: item.hits || 0
+        })), [rawTimeline]);
 
-    // Compilation history
-    const compileData = useMemo(() => {
-        if (compilationHistory.length > 0) {
-            return compilationHistory.map(item => ({
-                date: item.date ? item.date.slice(5) : '',
-                success: item.success || 0,
-                fail: item.fail || 0
-            }));
-        }
-        return [];
-    }, [compilationHistory]);
+    const compileData = useMemo(() =>
+        compilationHistory.map(item => ({
+            date: item.date ? item.date.slice(5) : '',
+            success: item.success || 0,
+            fail: item.fail || 0
+        })), [compilationHistory]);
 
-    // Device breakdown
     const deviceData = useMemo(() => {
-        const total = (deviceStats.desktop + deviceStats.mobile + deviceStats.tablet) || 1;
-        return [
-            { name: 'Desktop', value: deviceStats.desktop || (total === 1 ? 85 : 0) },
-            { name: 'Mobile', value: deviceStats.mobile || (total === 1 ? 12 : 0) },
-            { name: 'Tablet', value: deviceStats.tablet || (total === 1 ? 3 : 0) }
+        const list = [
+            { name: 'Desktop', value: deviceStats.desktop || 0 },
+            { name: 'Mobile', value: deviceStats.mobile || 0 },
+            { name: 'Tablet', value: deviceStats.tablet || 0 },
         ].filter(d => d.value > 0);
+        return list.length ? list : [{ name: 'No data', value: 1 }];
     }, [deviceStats]);
 
-    const activeSessions = stats?.activeSessions || 0;
-    const totalSimulations = stats?.totalSimulations ?? 0;
-    const avgCompileTime = stats?.avgCompileTime ?? '1.2s';
+    const pct = (n) => activeUserData.total > 0 ? `${Math.round(((n || 0) / activeUserData.total) * 100)}%` : '—';
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500 text-slate-100 w-full">
-            {/* ─── 1. USER REGISTRATION & ROLE ANALYTICS ─────────────────────── */}
-            <AdminCard className="bg-[#0b101e] border-white/10 p-6 md:p-8 shadow-2xl">
-                {/* Header with Timeframe Filter */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-white/10 mb-6">
+        <div className="ad-space-y-6 ad-fade-in">
+            {/* ── SECTION 1: User Registration & Roles ─────────────────────── */}
+            <div className="ad-section">
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
                     <div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2.5">
-                            <UserCheck className="w-6 h-6 text-cyan-400" />
-                            Registered User Analytics & Roles
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                            Breakdown of student, teacher, and general user registrations
-                        </p>
+                        <h2 className="ad-section-title">
+                            <UserCheck style={{ color: 'var(--ad-cyan)' }} />
+                            Registered Community & Roles
+                        </h2>
+                        <p className="ad-section-subtitle">Account signups broken down by role</p>
                     </div>
 
-                    {/* Timeframe Buttons */}
-                    <div className="flex items-center bg-black/60 p-1.5 rounded-xl border border-white/15 gap-1">
+                    {/* Segmented timeframe */}
+                    <div className="ad-segmented">
                         {[
                             { id: 'allTime', label: 'All Time' },
-                            { id: 'month', label: 'This Month' },
-                            { id: 'week', label: 'This Week' },
-                            { id: 'today', label: 'Today (24h)' },
-                        ].map((t) => (
+                            { id: 'month', label: 'Month' },
+                            { id: 'week', label: 'Week' },
+                            { id: 'today', label: 'Today' },
+                        ].map(t => (
                             <button
                                 key={t.id}
+                                className={`ad-segment-btn ${userTimeframe === t.id ? 'active' : ''}`}
                                 onClick={() => setUserTimeframe(t.id)}
-                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                    userTimeframe === t.id
-                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`}
                             >
                                 {t.label}
                             </button>
@@ -188,297 +138,237 @@ const AnalyticsTab = ({ stats }) => {
                     </div>
                 </div>
 
-                {/* Role Metric Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    {/* Total Users */}
-                    <div className="p-5 rounded-2xl bg-[#111728] border border-white/10 shadow-lg">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Users</span>
-                            <Users className="w-5 h-5 text-slate-300" />
-                        </div>
-                        <div className="text-3xl font-black text-white">{activeUserData.total || 0}</div>
-                        <p className="text-[11px] text-slate-400 font-medium mt-1">
-                            {userTimeframe === 'allTime' ? 'All-time registered' : `New ${userTimeframe} accounts`}
-                        </p>
-                    </div>
-
-                    {/* Students */}
-                    <div className="p-5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 shadow-lg">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Students</span>
-                            <GraduationCap className="w-5 h-5 text-cyan-400" />
-                        </div>
-                        <div className="text-3xl font-black text-cyan-300">{activeUserData.student || 0}</div>
-                        <p className="text-[11px] text-slate-400 font-medium mt-1">
-                            {activeUserData.total > 0 ? `${Math.round(((activeUserData.student || 0) / activeUserData.total) * 100)}% of total` : '0%'}
-                        </p>
-                    </div>
-
-                    {/* Teachers */}
-                    <div className="p-5 rounded-2xl bg-purple-950/30 border border-purple-500/30 shadow-lg">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Teachers</span>
-                            <BookOpen className="w-5 h-5 text-purple-400" />
-                        </div>
-                        <div className="text-3xl font-black text-purple-300">{activeUserData.teacher || 0}</div>
-                        <p className="text-[11px] text-slate-400 font-medium mt-1">
-                            {activeUserData.total > 0 ? `${Math.round(((activeUserData.teacher || 0) / activeUserData.total) * 100)}% of total` : '0%'}
-                        </p>
-                    </div>
-
-                    {/* General Users / Hobbyists */}
-                    <div className="p-5 rounded-2xl bg-blue-950/30 border border-blue-500/30 shadow-lg">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-bold uppercase tracking-wider text-blue-400">General Users</span>
-                            <Award className="w-5 h-5 text-blue-400" />
-                        </div>
-                        <div className="text-3xl font-black text-blue-300">{activeUserData.user || 0}</div>
-                        <p className="text-[11px] text-slate-400 font-medium mt-1">
-                            {activeUserData.total > 0 ? `${Math.round(((activeUserData.user || 0) / activeUserData.total) * 100)}% of total` : '0%'}
-                        </p>
-                    </div>
+                {/* 4 Role metric cards */}
+                <div className="ad-grid-4" style={{ marginBottom: 16 }}>
+                    <StatCard label="Total Accounts" value={activeUserData.total || 0} sub={userTimeframe === 'allTime' ? 'All-time registered' : `New this ${userTimeframe}`} icon={Users} />
+                    <StatCard label="Students" value={activeUserData.student || 0} sub={`${pct(activeUserData.student)} of total`} icon={GraduationCap} color="cyan" />
+                    <StatCard label="Teachers" value={activeUserData.teacher || 0} sub={`${pct(activeUserData.teacher)} of total`} icon={BookOpen} color="purple" />
+                    <StatCard label="General Users" value={activeUserData.user || 0} sub={`${pct(activeUserData.user)} of total`} icon={Award} color="blue" />
                 </div>
 
-                {/* Registration Graphs Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-                    {/* 14-Day Registration Trend Chart */}
-                    <div className="lg:col-span-2">
-                        <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                            <TrendingUp className="w-4 h-4 text-cyan-400" />
-                            Daily Registration Timeline (Last 14 Days)
-                        </h4>
-                        <div className="h-[260px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={regTimelineData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                                    <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                    <Bar dataKey="Students" stackId="a" fill={ROLE_COLORS.student} radius={[0, 0, 0, 0]} />
-                                    <Bar dataKey="Teachers" stackId="a" fill={ROLE_COLORS.teacher} radius={[0, 0, 0, 0]} />
-                                    <Bar dataKey="Users" stackId="a" fill={ROLE_COLORS.user} radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-
-                    {/* Role Distribution Donut Chart */}
-                    <div className="flex flex-col items-center justify-center p-4 bg-[#111728] rounded-2xl border border-white/5">
-                        <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-2">
-                            Role Ratio ({userTimeframe === 'allTime' ? 'All Time' : userTimeframe})
-                        </h4>
-                        <div className="h-[180px] w-full relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={rolePieData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={45}
-                                        outerRadius={70}
-                                        paddingAngle={4}
-                                        dataKey="value"
-                                    >
-                                        {rolePieData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip content={<CustomTooltip />} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <span className="text-xl font-black text-white">{activeUserData.total || 0}</span>
-                                <span className="text-[9px] font-black uppercase text-slate-400">Users</span>
+                {/* Timeline + donut row */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
+                    {/* Stacked bar chart */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div>
+                                <div className="ad-card-title"><TrendingUp style={{ color: 'var(--ad-cyan)' }} /> Daily Account Signups (14 Days)</div>
+                                <div className="ad-card-subtitle">Stacked breakdown by student, teacher and general users</div>
                             </div>
                         </div>
-
-                        {/* Legend Chips */}
-                        <div className="flex flex-wrap justify-center gap-2 mt-2">
-                            <span className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ROLE_COLORS.student }}></span>
-                                Students ({activeUserData.student || 0})
-                            </span>
-                            <span className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ROLE_COLORS.teacher }}></span>
-                                Teachers ({activeUserData.teacher || 0})
-                            </span>
-                            <span className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ROLE_COLORS.user }}></span>
-                                Users ({activeUserData.user || 0})
-                            </span>
+                        <div className="ad-card-body" style={{ paddingTop: 16 }}>
+                            <div style={{ height: 240 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={regTimelineData}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--ad-border)" vertical={false} />
+                                        <XAxis dataKey="date" stroke="var(--ad-text-3)" fontSize={11} tickLine={false} />
+                                        <YAxis stroke="var(--ad-text-3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--ad-surface-2)' }} />
+                                        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                                        <Bar dataKey="Students" stackId="a" fill={ROLE_COLORS.student} />
+                                        <Bar dataKey="Teachers" stackId="a" fill={ROLE_COLORS.teacher} />
+                                        <Bar dataKey="Users" stackId="a" fill={ROLE_COLORS.user} radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
-                    </div>
+                    </AdminCard>
+
+                    {/* Role donut */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div className="ad-card-title">Role Distribution</div>
+                        </div>
+                        <div className="ad-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ height: 180, position: 'relative' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={rolePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={72} paddingAngle={4} dataKey="value">
+                                            {rolePieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                                        </Pie>
+                                        <Tooltip content={<ChartTooltip />} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                    <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ad-text)' }}>{activeUserData.total || 0}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ad-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Users</span>
+                                </div>
+                            </div>
+
+                            {/* Legend chips */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, borderTop: '1px solid var(--ad-border)', paddingTop: 12 }}>
+                                {[
+                                    { label: 'Students', val: activeUserData.student || 0, color: ROLE_COLORS.student },
+                                    { label: 'Teachers', val: activeUserData.teacher || 0, color: ROLE_COLORS.teacher },
+                                    { label: 'Users', val: activeUserData.user || 0, color: ROLE_COLORS.user },
+                                ].map(item => (
+                                    <div key={item.label} style={{ textAlign: 'center', padding: '6px 4px', borderRadius: 8, backgroundColor: 'var(--ad-surface-2)', border: '1px solid var(--ad-border)' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: item.color, marginBottom: 2 }}>{item.label}</div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ad-text)' }}>{item.val}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </AdminCard>
                 </div>
-            </AdminCard>
-
-            {/* ─── 2. VISITOR TRAFFIC & PLATFORM TELEMETRY ────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Traffic Trend Over Time */}
-                <AdminCard className="lg:col-span-2 bg-[#0b101e] border-white/10 p-6 shadow-2xl">
-                    <div className="flex items-center justify-between mb-6 pb-3 border-b border-white/10">
-                        <div>
-                            <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-cyan-400" />
-                                Visitor Traffic & Session Growth
-                            </h3>
-                            <p className="text-xs text-slate-400 mt-0.5">Daily visitor footprint and interactive simulation requests</p>
-                        </div>
-                    </div>
-
-                    <div className="h-[280px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={trafficTimelineData}>
-                                <defs>
-                                    <linearGradient id="visitorGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4}/>
-                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0}/>
-                                    </linearGradient>
-                                    <linearGradient id="hitsGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                                <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
-                                <Area type="monotone" dataKey="visitors" name="Unique Visitors" stroke="#06b6d4" strokeWidth={2.5} fillOpacity={1} fill="url(#visitorGradient)" />
-                                <Area type="monotone" dataKey="hits" name="Session Hits" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#hitsGradient)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </AdminCard>
-
-                {/* Device & Client Platforms */}
-                <AdminCard className="bg-[#0b101e] border-white/10 p-6 shadow-2xl flex flex-col justify-between">
-                    <div>
-                        <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2 mb-1">
-                            <Monitor className="w-5 h-5 text-purple-400" />
-                            Client Devices & Hardware
-                        </h3>
-                        <p className="text-xs text-slate-400 mb-4 pb-3 border-b border-white/10">Device footprint based on user agents</p>
-                    </div>
-
-                    <div className="h-[180px] w-full relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={deviceData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={45}
-                                    outerRadius={68}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {deviceData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={DEVICE_COLORS[index % DEVICE_COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip content={<CustomTooltip />} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <Smartphone className="w-5 h-5 text-slate-400 mb-0.5" />
-                            <span className="text-[10px] font-black uppercase text-slate-400">Devices</span>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-white/10 text-center">
-                        <div className="p-2 bg-white/5 rounded-xl">
-                            <span className="text-[10px] uppercase font-bold text-blue-400">Desktop</span>
-                            <div className="text-sm font-black text-white mt-0.5">{deviceStats.desktop || 0}</div>
-                        </div>
-                        <div className="p-2 bg-white/5 rounded-xl">
-                            <span className="text-[10px] uppercase font-bold text-cyan-400">Mobile</span>
-                            <div className="text-sm font-black text-white mt-0.5">{deviceStats.mobile || 0}</div>
-                        </div>
-                        <div className="p-2 bg-white/5 rounded-xl">
-                            <span className="text-[10px] uppercase font-bold text-purple-400">Tablet</span>
-                            <div className="text-sm font-black text-white mt-0.5">{deviceStats.tablet || 0}</div>
-                        </div>
-                    </div>
-                </AdminCard>
             </div>
 
-            {/* ─── 3. HARDWARE & COMPILATION TELEMETRY ───────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Microcontroller Hardware Usage */}
-                <AdminCard className="bg-[#0b101e] border-white/10 p-6 shadow-2xl">
-                    <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
-                        <div>
-                            <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                                <Cpu className="w-5 h-5 text-blue-400" />
-                                Hardware Board Popularity
-                            </h3>
-                            <p className="text-xs text-slate-400 mt-0.5">Most simulated boards in projects</p>
-                        </div>
-                    </div>
+            {/* ── SECTION 2: Visitor Traffic ───────────────────────────────── */}
+            <div className="ad-section">
+                <h2 className="ad-section-title" style={{ marginBottom: 12 }}>
+                    <TrendingUp style={{ color: 'var(--ad-cyan)' }} />
+                    Visitor Traffic & Platform Telemetry
+                </h2>
 
-                    <div className="space-y-4">
-                        {topLibraries.length > 0 ? (
-                            topLibraries.map((lib, i) => (
-                                <div key={i} className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-xs font-bold">
-                                        <span className="text-slate-200 flex items-center gap-2">
-                                            <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-400 flex items-center justify-center font-mono text-[10px] border border-blue-500/20">
-                                                #{i + 1}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+                    {/* Area chart */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div>
+                                <div className="ad-card-title"><TrendingUp style={{ color: 'var(--ad-cyan)' }} /> Visitor Traffic Growth (14 Days)</div>
+                                <div className="ad-card-subtitle">Daily unique visitors and session simulation requests</div>
+                            </div>
+                        </div>
+                        <div className="ad-card-body" style={{ paddingTop: 16 }}>
+                            <div style={{ height: 250 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={trafficData}>
+                                        <defs>
+                                            <linearGradient id="vGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="var(--ad-cyan)" stopOpacity={0.35} />
+                                                <stop offset="95%" stopColor="var(--ad-cyan)" stopOpacity={0} />
+                                            </linearGradient>
+                                            <linearGradient id="hGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="var(--ad-accent)" stopOpacity={0.35} />
+                                                <stop offset="95%" stopColor="var(--ad-accent)" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--ad-border)" vertical={false} />
+                                        <XAxis dataKey="date" stroke="var(--ad-text-3)" fontSize={11} tickLine={false} />
+                                        <YAxis stroke="var(--ad-text-3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                        <Tooltip content={<ChartTooltip />} />
+                                        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                                        <Area type="monotone" dataKey="visitors" name="Unique Visitors" stroke="var(--ad-cyan)" strokeWidth={2.5} fill="url(#vGrad)" />
+                                        <Area type="monotone" dataKey="hits" name="Session Hits" stroke="var(--ad-accent)" strokeWidth={2} fill="url(#hGrad)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </AdminCard>
+
+                    {/* Device donut */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div>
+                                <div className="ad-card-title"><Monitor style={{ color: 'var(--ad-purple)' }} /> Client Devices</div>
+                                <div className="ad-card-subtitle">User agent device breakdown</div>
+                            </div>
+                        </div>
+                        <div className="ad-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ height: 180, position: 'relative' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={deviceData} cx="50%" cy="50%" innerRadius={48} outerRadius={70} paddingAngle={5} dataKey="value">
+                                            {deviceData.map((_, i) => <Cell key={i} fill={DEVICE_COLORS[i % DEVICE_COLORS.length]} />)}
+                                        </Pie>
+                                        <Tooltip content={<ChartTooltip />} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                    <Smartphone style={{ width: 16, height: 16, color: 'var(--ad-text-3)', marginBottom: 2 }} />
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ad-text-3)', textTransform: 'uppercase' }}>Devices</span>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, borderTop: '1px solid var(--ad-border)', paddingTop: 12 }}>
+                                {[
+                                    { label: 'Desktop', val: deviceStats.desktop || 0, color: DEVICE_COLORS[0] },
+                                    { label: 'Mobile', val: deviceStats.mobile || 0, color: DEVICE_COLORS[1] },
+                                    { label: 'Tablet', val: deviceStats.tablet || 0, color: DEVICE_COLORS[2] },
+                                ].map(item => (
+                                    <div key={item.label} style={{ textAlign: 'center', padding: '6px 4px', borderRadius: 8, backgroundColor: 'var(--ad-surface-2)', border: '1px solid var(--ad-border)' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: item.color, marginBottom: 2 }}>{item.label}</div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ad-text)' }}>{item.val}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </AdminCard>
+                </div>
+            </div>
+
+            {/* ── SECTION 3: Hardware & Compilation ───────────────────────── */}
+            <div className="ad-section">
+                <h2 className="ad-section-title" style={{ marginBottom: 12 }}>
+                    <Cpu style={{ color: 'var(--ad-accent)' }} />
+                    Hardware & Compilation Telemetry
+                </h2>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    {/* Board popularity */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div>
+                                <div className="ad-card-title"><Cpu style={{ color: 'var(--ad-accent)' }} /> Board Popularity</div>
+                                <div className="ad-card-subtitle">Most simulated microcontroller boards</div>
+                            </div>
+                        </div>
+                        <div className="ad-card-body ad-space-y-3">
+                            {topLibraries.length > 0 ? topLibraries.map((lib, i) => (
+                                <div key={i}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                                        <span style={{ color: 'var(--ad-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: 'var(--ad-surface-3)', border: '1px solid var(--ad-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--ad-accent)', flexShrink: 0 }}>
+                                                {i + 1}
                                             </span>
                                             {lib.name}
                                         </span>
-                                        <span className="text-white font-mono">{lib.count} projects</span>
+                                        <span style={{ color: 'var(--ad-text-2)', fontFamily: 'monospace', fontWeight: 600 }}>{lib.count}</span>
                                     </div>
-                                    <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full"
-                                            style={{ width: `${Math.min((lib.count / (topLibraries[0]?.count || 1)) * 100, 100)}%` }}
-                                        />
+                                    <div className="ad-progress">
+                                        <div className="ad-progress-bar" style={{ width: `${Math.min((lib.count / (topLibraries[0]?.count || 1)) * 100, 100)}%` }} />
                                     </div>
                                 </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-10 text-slate-500 text-xs">
-                                No board simulation telemetry recorded yet.
-                            </div>
-                        )}
-                    </div>
-                </AdminCard>
-
-                {/* Compilation Reliability Telemetry */}
-                <AdminCard className="bg-[#0b101e] border-white/10 p-6 shadow-2xl">
-                    <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
-                        <div>
-                            <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                                <Activity className="w-5 h-5 text-emerald-400" />
-                                Compilation Reliability & Latency
-                            </h3>
-                            <p className="text-xs text-slate-400 mt-0.5">7-day build reliability metrics (Avg: {avgCompileTime})</p>
+                            )) : (
+                                <p className="ad-text-muted" style={{ textAlign: 'center', padding: '24px 0', fontSize: 12 }}>
+                                    No board telemetry recorded yet.
+                                </p>
+                            )}
                         </div>
-                    </div>
+                    </AdminCard>
 
-                    <div className="h-[220px] w-full">
-                        {compileData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={compileData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                                    <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                    <Bar dataKey="success" name="Successful Compiles" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="fail" name="Failed Compiles" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
-                                <Activity className="w-8 h-8 text-slate-700 mb-2 opacity-50" />
-                                No compilation events recorded in the last 7 days.
+                    {/* Compilation reliability */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div>
+                                <div className="ad-card-title"><Activity style={{ color: 'var(--ad-emerald)' }} /> Compilation Reliability</div>
+                                <div className="ad-card-subtitle">7-day success vs. fail rates (Avg: {stats?.avgCompileTime ?? '—'})</div>
                             </div>
-                        )}
-                    </div>
-                </AdminCard>
+                        </div>
+                        <div className="ad-card-body" style={{ paddingTop: 16 }}>
+                            <div style={{ height: 210 }}>
+                                {compileData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={compileData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--ad-border)" vertical={false} />
+                                            <XAxis dataKey="date" stroke="var(--ad-text-3)" fontSize={11} tickLine={false} />
+                                            <YAxis stroke="var(--ad-text-3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                            <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--ad-surface-2)' }} />
+                                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                                            <Bar dataKey="success" name="Success" fill="var(--ad-emerald)" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="fail" name="Failed" fill="var(--ad-red)" radius={[4, 4, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                        <Activity style={{ width: 32, height: 32, color: 'var(--ad-border)' }} />
+                                        <span className="ad-text-muted" style={{ fontSize: 12 }}>No compilation data in the last 7 days</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </AdminCard>
+                </div>
             </div>
         </div>
     );
