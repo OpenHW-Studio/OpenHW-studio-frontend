@@ -1,108 +1,76 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Search, Filter, Calendar, User, Activity, Clock, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, Search, Calendar, User, Activity, ShieldAlert } from 'lucide-react';
 import AdminCard from './AdminCard';
+
+const getActionBadgeClass = (action) => {
+    if (action.includes('login'))  return 'success';
+    if (action.includes('restart') || action.includes('delete')) return 'warning';
+    if (action.includes('error'))  return 'error';
+    return 'blue';
+};
+
+const getActionIcon = (action) => {
+    if (action.includes('login'))  return User;
+    if (action.includes('restart')) return Activity;
+    if (action.includes('delete') || action.includes('reject')) return ShieldAlert;
+    return ShieldCheck;
+};
 
 const HistoryTab = ({ logs }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('all');
 
     const filteredLogs = logs.filter(log => {
-        const matchesSearch = 
+        const matchesSearch =
             log.adminEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
             log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
             (log.details && log.details.toLowerCase().includes(searchQuery.toLowerCase()));
-        
         const matchesType = filterType === 'all' || log.action.includes(filterType);
-        
         return matchesSearch && matchesType;
     });
 
-    const getActionColor = (action) => {
-        if (action.includes('login')) return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-        if (action.includes('restart') || action.includes('delete')) return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
-        if (action.includes('error')) return 'text-red-400 bg-red-400/10 border-red-400/20';
-        return 'text-blue-400 bg-blue-400/10 border-blue-400/20';
-    };
-
-    const getActionIcon = (action) => {
-        if (action.includes('login')) return User;
-        if (action.includes('restart')) return Activity;
-        if (action.includes('delete') || action.includes('reject')) return ShieldAlert;
-        return ShieldCheck;
-    };
-
     const today = new Date().toLocaleDateString();
-    const loginsToday = logs.filter(l => 
-        l.action.toLowerCase().includes('login') && 
-        new Date(l.timestamp).toLocaleDateString() === today
-    ).length;
-
-    const securityAlerts = logs.filter(l => 
-        l.action.toLowerCase().includes('error') || 
-        l.action.toLowerCase().includes('failed')
-    ).length;
+    const loginsToday    = logs.filter(l => l.action.toLowerCase().includes('login') && new Date(l.timestamp).toLocaleDateString() === today).length;
+    const securityAlerts = logs.filter(l => l.action.toLowerCase().includes('error') || l.action.toLowerCase().includes('failed')).length;
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Header / Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <AdminCard className="bg-emerald-600/10 border-emerald-500/20">
-                    <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/60">Logins Today</p>
-                            <p className="text-4xl font-black text-white italic tracking-tighter">{loginsToday}</p>
+        <div className="ad-space-y-6 ad-fade-in">
+            {/* ── Summary Cards ─────────────────────────────────────────── */}
+            <div className="ad-grid-3">
+                {[
+                    { label: 'Logins Today',      value: loginsToday,    icon: User,       color: 'emerald' },
+                    { label: 'Actions Executed',  value: logs.length,    icon: Activity,   color: 'blue' },
+                    { label: 'Security Alerts',   value: securityAlerts, icon: ShieldAlert, color: 'amber' },
+                ].map((s, i) => (
+                    <div key={i} className={`ad-stat-card ${s.color}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span className="ad-stat-label">{s.label}</span>
+                            <div className={`ad-stat-icon ${s.color}`}><s.icon /></div>
                         </div>
-                        <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400">
-                            <User className="w-6 h-6" />
-                        </div>
+                        <div className="ad-stat-value">{s.value}</div>
                     </div>
-                </AdminCard>
-                <AdminCard className="bg-blue-600/10 border-blue-500/20">
-                    <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500/60">Actions Executed</p>
-                            <p className="text-4xl font-black text-white italic tracking-tighter">{logs.length}</p>
-                        </div>
-                        <div className="p-3 bg-blue-500/20 rounded-2xl text-blue-400">
-                            <Activity className="w-6 h-6" />
-                        </div>
-                    </div>
-                </AdminCard>
-                <AdminCard className="bg-amber-600/10 border-amber-500/20">
-                    <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500/60">Security Alerts</p>
-                            <p className="text-4xl font-black text-white italic tracking-tighter">{securityAlerts}</p>
-                        </div>
-                        <div className="p-3 bg-amber-500/20 rounded-2xl text-amber-400">
-                            <ShieldCheck className="w-6 h-6" />
-                        </div>
-                    </div>
-                </AdminCard>
+                ))}
             </div>
 
-            {/* Controls */}
-            <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
-                    <input 
-                        type="text" 
+            {/* ── Search + Filter ───────────────────────────────────────── */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div className="ad-input-icon" style={{ flex: 1, minWidth: 240 }}>
+                    <Search />
+                    <input
+                        type="text"
+                        className="ad-input"
                         placeholder="Search audit logs (email, action, details)..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-[#0a0f1a] border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white font-bold placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 transition-all shadow-2xl"
+                        onChange={e => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-2 bg-[#0a0f1a] p-1.5 rounded-2xl border border-white/5 shadow-2xl">
+
+                <div className="ad-segmented">
                     {['all', 'login', 'approve', 'restart'].map(type => (
                         <button
                             key={type}
+                            className={`ad-segment-btn ${filterType === type ? 'active' : ''}`}
                             onClick={() => setFilterType(type)}
-                            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                filterType === type 
-                                ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
                         >
                             {type}
                         </button>
@@ -110,75 +78,74 @@ const HistoryTab = ({ logs }) => {
                 </div>
             </div>
 
-            {/* Log Table */}
-            <AdminCard className="overflow-hidden border-white/5 p-0 bg-[#0a0f1a]/50">
-                <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
+            {/* ── Log Table ─────────────────────────────────────────────── */}
+            <AdminCard className="p-0">
+                <div className="ad-table-wrap">
+                    <table className="ad-table">
                         <thead>
-                            <tr className="border-b border-white/5 bg-white/[0.02]">
-                                <th className="text-left px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Timestamp</th>
-                                <th className="text-left px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Admin Entity</th>
-                                <th className="text-left px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Action Type</th>
-                                <th className="text-left px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Log Details</th>
-                                <th className="text-right px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Network IP</th>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Admin Entity</th>
+                                <th>Action Type</th>
+                                <th>Log Details</th>
+                                <th style={{ textAlign: 'right' }}>Network IP</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody>
                             {filteredLogs.map((log, i) => {
                                 const Icon = getActionIcon(log.action);
                                 return (
-                                    <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
-                                        <td className="px-8 py-6">
-                                            <div className="flex items-center gap-3">
-                                                <Calendar className="w-4 h-4 text-slate-500" />
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-slate-200">
+                                    <tr key={i}>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <Calendar style={{ width: 13, height: 13, color: 'var(--ad-text-3)', flexShrink: 0 }} />
+                                                <div>
+                                                    <div style={{ fontWeight: 600, color: 'var(--ad-text)', fontSize: 12 }}>
                                                         {new Date(log.timestamp).toLocaleDateString()}
-                                                    </span>
-                                                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-tighter">
+                                                    </div>
+                                                    <div style={{ fontSize: 10, color: 'var(--ad-text-3)' }}>
                                                         {new Date(log.timestamp).toLocaleTimeString()}
-                                                    </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-8 py-6">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 font-black text-xs">
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <div style={{
+                                                    width: 28, height: 28, borderRadius: '50%', background: 'var(--ad-accent-glow)',
+                                                    border: '1px solid var(--ad-border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 11, fontWeight: 800, color: 'var(--ad-accent)', flexShrink: 0,
+                                                }}>
                                                     {log.adminEmail[0].toUpperCase()}
                                                 </div>
-                                                <span className="text-sm font-black text-slate-300">{log.adminEmail}</span>
+                                                <span className="primary" style={{ fontSize: 12 }}>{log.adminEmail}</span>
                                             </div>
                                         </td>
-                                        <td className="px-8 py-6">
-                                            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${getActionColor(log.action)}`}>
-                                                <Icon className="w-3.5 h-3.5" />
+                                        <td>
+                                            <span className={`ad-badge ${getActionBadgeClass(log.action)}`}>
+                                                <Icon style={{ width: 10, height: 10 }} />
                                                 {log.action}
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6">
-                                            <p className="text-sm font-medium text-slate-400 group-hover:text-slate-200 transition-colors italic">
-                                                {log.details}
-                                            </p>
-                                        </td>
-                                        <td className="px-8 py-6 text-right">
-                                            <span className="text-xs font-mono font-bold text-slate-600 group-hover:text-slate-400 transition-colors">
-                                                {log.ip || '127.0.0.1'}
                                             </span>
+                                        </td>
+                                        <td style={{ color: 'var(--ad-text-2)', fontSize: 12 }}>{log.details}</td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <span className="ad-mono">{log.ip || '127.0.0.1'}</span>
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
+
+                    {filteredLogs.length === 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: 12, opacity: 0.35 }}>
+                            <ShieldCheck style={{ width: 40, height: 40, color: 'var(--ad-text-3)' }} />
+                            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em', color: 'var(--ad-text-3)' }}>
+                                No logs matching criteria
+                            </p>
+                        </div>
+                    )}
                 </div>
-                {filteredLogs.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-24 space-y-4 opacity-30">
-                        <ShieldCheck className="w-16 h-16 text-slate-500" />
-                        <p className="text-slate-500 font-black uppercase tracking-widest text-xs italic">
-                            No security logs found matching criteria
-                        </p>
-                    </div>
-                )}
             </AdminCard>
         </div>
     );

@@ -1,33 +1,82 @@
 import React from 'react';
-import { RefreshCw, Menu } from 'lucide-react';
+import { RefreshCw, Sun, Moon, Menu } from 'lucide-react';
 
-const AdminHeader = ({ activeTab, onRefresh, onToggleSidebar }) => {
+const TAB_LABELS = {
+    overview: 'Overview',
+    map: 'User Map',
+    analytics: 'Analytics',
+    libraries: 'Libraries',
+    'adventure-content': 'Adventure Content',
+    approval: 'Approvals',
+    components: 'Custom Components',
+    deployments: 'CI/CD Workflow',
+    docker: 'Docker Monitoring',
+    resources: 'Resource Budget',
+    history: 'Security History',
+    logs: 'System Logs',
+};
+
+const AdminHeader = ({ activeTab, onRefresh, onToggleSidebar, theme, onToggleTheme }) => {
+    const [refreshing, setRefreshing] = React.useState(false);
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            if (onRefresh) await onRefresh();
+        } finally {
+            setTimeout(() => setRefreshing(false), 600);
+        }
+    };
+
     return (
-        <header className="flex justify-between items-center lg:items-end mb-8 md:mb-12 lg:mb-16 gap-4">
-            <div className="flex items-center gap-4">
-                {/* Mobile Hamburger */}
-                <button 
+        <header className="ad-header">
+            <div className="ad-header-left">
+                {/* Mobile hamburger */}
+                <button
+                    className="ad-btn-icon lg:hidden"
                     onClick={onToggleSidebar}
-                    className="p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl lg:hidden text-slate-300 border border-white/5"
+                    aria-label="Open sidebar"
                 >
-                    <Menu className="w-6 h-6" />
+                    <Menu />
                 </button>
-                
+
                 <div>
-                    <h1 className="text-2xl md:text-3xl lg:text-4xl font-black capitalize tracking-tight text-white mb-1 md:mb-2">
-                        {activeTab.replace('-', ' ')}
-                    </h1>
-                    <p className="text-slate-400 text-sm md:text-base lg:text-lg font-medium line-clamp-1">Management Portal</p>
+                    <h1 className="ad-header-title">{TAB_LABELS[activeTab] ?? activeTab}</h1>
+                    <p className="ad-header-subtitle">OpenHW Admin Console</p>
                 </div>
             </div>
-            
-            <button 
-                onClick={onRefresh}
-                className="p-3 md:p-4 bg-slate-800/50 hover:bg-slate-800 rounded-xl md:rounded-2xl transition-all text-slate-300 border border-white/5 shrink-0"
-                title="Refresh Data"
-            >
-                <RefreshCw className="w-5 h-5 md:w-6 h-6" />
-            </button>
+
+            <div className="ad-header-right">
+                {/* Day / Night mode toggle */}
+                <div className="ad-theme-toggle" role="group" aria-label="Theme">
+                    <button
+                        className={`ad-theme-btn ${theme === 'dark' ? 'active' : ''}`}
+                        onClick={() => onToggleTheme('dark')}
+                        title="Dark mode"
+                    >
+                        <Moon />
+                        <span className="hidden sm:inline">Dark</span>
+                    </button>
+                    <button
+                        className={`ad-theme-btn ${theme === 'light' ? 'active' : ''}`}
+                        onClick={() => onToggleTheme('light')}
+                        title="Light mode"
+                    >
+                        <Sun />
+                        <span className="hidden sm:inline">Light</span>
+                    </button>
+                </div>
+
+                {/* Refresh */}
+                <button
+                    className="ad-btn ad-btn-ghost"
+                    onClick={handleRefresh}
+                    title="Refresh data"
+                >
+                    <RefreshCw className={refreshing ? 'ad-spin' : ''} style={{ width: 13, height: 13 }} />
+                    <span className="hidden sm:inline">Refresh</span>
+                </button>
+            </div>
         </header>
     );
 };

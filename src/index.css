@@ -9939,27 +9939,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.universal-admin-card {
-  background: rgba(13, 21, 37, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  padding: 1.5rem;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.4);
-}
-
-.universal-admin-card:hover {
-  background: rgba(13, 21, 37, 0.8);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-}
+/* .universal-admin-card removed — replaced by .ad-card in admin.css */
 
 .admin-status-chip {
   @apply flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300;

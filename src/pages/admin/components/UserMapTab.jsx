@@ -1,20 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-    Globe, 
-    Users, 
-    Activity, 
-    MapPin, 
-    Search, 
-    Clock, 
-    Calendar, 
-    TrendingUp, 
-    Copy, 
-    Check, 
-    Compass, 
-    Radio, 
-    Sparkles,
-    Shield,
-    Crosshair
+    Globe, Users, Activity, MapPin, Search, Clock, Calendar,
+    TrendingUp, Copy, Check, Compass, Radio, Sparkles, Shield, Crosshair, X
 } from 'lucide-react';
 import AdminCard from './AdminCard';
 import L from 'leaflet';
@@ -33,33 +20,27 @@ const UserMapTab = ({ stats }) => {
     const mapInstanceRef = useRef(null);
     const markersLayerRef = useRef(null);
 
-    const [selectedTimeRange, setSelectedTimeRange] = useState('all'); // 'live', '24h', '7d', '30d', 'all'
+    const [selectedTimeRange, setSelectedTimeRange] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [copiedIp, setCopiedIp] = useState(null);
-    const [selectedVisitor, setSelectedVisitor] = useState(null);
     const [loading, setLoading] = useState(!stats);
 
-    // Extract metrics from stats
-    const activeSessions = stats?.activeSessions || 0;
-    const todayVisitors = stats?.todayVisitors ?? (stats?.activeSessions || 0);
-    const weekVisitors = stats?.weekVisitors ?? (stats?.activeSessions || 0);
-    const monthVisitors = stats?.monthVisitors ?? (stats?.activeSessions || 0);
-    const allTimeVisitors = stats?.allTimeVisitors ?? (stats?.visitorList?.length || 0);
+    const activeSessions   = stats?.activeSessions   || 0;
+    const todayVisitors    = stats?.todayVisitors     ?? (stats?.activeSessions || 0);
+    const weekVisitors     = stats?.weekVisitors      ?? (stats?.activeSessions || 0);
+    const monthVisitors    = stats?.monthVisitors     ?? (stats?.activeSessions || 0);
+    const allTimeVisitors  = stats?.allTimeVisitors   ?? (stats?.visitorList?.length || 0);
 
-    const rawVisitors = useMemo(() => stats?.visitorList || [], [stats]);
+    const rawVisitors  = useMemo(() => stats?.visitorList  || [], [stats]);
     const topCountries = useMemo(() => stats?.topCountries || [], [stats]);
-    const topCities = useMemo(() => stats?.topCities || [], [stats]);
+    const topCities    = useMemo(() => stats?.topCities    || [], [stats]);
 
-    useEffect(() => {
-        if (stats) setLoading(false);
-    }, [stats]);
+    useEffect(() => { if (stats) setLoading(false); }, [stats]);
 
-    // Helpers to clean up IP & Location
     const formatIp = (ip) => {
         if (!ip) return '127.0.0.1';
         const trimmed = String(ip).trim();
-        const isIp = /^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[a-fA-F0-9:]+$/.test(trimmed);
-        return isIp ? trimmed : '127.0.0.1';
+        return /^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[a-fA-F0-9:]+$/.test(trimmed) ? trimmed : '127.0.0.1';
     };
 
     const formatLocation = (v) => {
@@ -69,433 +50,307 @@ const UserMapTab = ({ stats }) => {
         return 'Local Node';
     };
 
-    // Format relative time helper
     const getRelativeTime = (dateStr) => {
         if (!dateStr) return 'N/A';
-        const now = Date.now();
-        const diffMs = now - new Date(dateStr).getTime();
-        const diffMins = Math.floor(diffMs / 60000);
+        const diffMins  = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
         const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
+        const diffDays  = Math.floor(diffHours / 24);
+        if (diffMins  < 1)  return 'Just now';
+        if (diffMins  < 60) return `${diffMins}m ago`;
         if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 30) return `${diffDays}d ago`;
+        if (diffDays  === 1)return 'Yesterday';
+        if (diffDays  < 30) return `${diffDays}d ago`;
         return new Date(dateStr).toLocaleDateString();
     };
 
-    // Filter visitors based on timeframe and search query
     const filteredVisitors = useMemo(() => {
         const now = Date.now();
-        const fifteenMinAgo = now - 15 * 60 * 1000;
-        const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-        const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-        const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
-
         return rawVisitors.filter(v => {
             const time = v.lastSeen ? new Date(v.lastSeen).getTime() : 0;
-
-            // Time filter
-            if (selectedTimeRange === 'live' && time < fifteenMinAgo) return false;
-            if (selectedTimeRange === '24h' && time < twentyFourHoursAgo) return false;
-            if (selectedTimeRange === '7d' && time < sevenDaysAgo) return false;
-            if (selectedTimeRange === '30d' && time < thirtyDaysAgo) return false;
-
-            // Search query filter
-            if (searchQuery.trim()) {
-                const query = searchQuery.toLowerCase().trim();
-                const ipStr = formatIp(v.ip).toLowerCase();
-                const locStr = formatLocation(v).toLowerCase();
-                return ipStr.includes(query) || locStr.includes(query);
-            }
-
-            return true;
+            if (selectedTimeRange === 'live' && time < now - 15 * 60 * 1000)      return false;
+            if (selectedTimeRange === '24h'  && time < now - 24 * 60 * 60 * 1000) return false;
+            if (selectedTimeRange === '7d'   && time < now - 7  * 24 * 60 * 60 * 1000) return false;
+            if (selectedTimeRange === '30d'  && time < now - 30 * 24 * 60 * 60 * 1000) return false;
+            if (!searchQuery.trim()) return true;
+            const q = searchQuery.toLowerCase();
+            return String(v.ip || '').toLowerCase().includes(q)
+                || String(v.city || '').toLowerCase().includes(q)
+                || String(v.country || '').toLowerCase().includes(q)
+                || String(v.locationStr || '').toLowerCase().includes(q);
         });
     }, [rawVisitors, selectedTimeRange, searchQuery]);
 
-    // Initialize Leaflet Map with ESRI Dark Gray Canvas (Completely Free, No Watermark, No API Key)
+    // Initialize Leaflet map
     useEffect(() => {
-        if (!mapContainerRef.current) return;
+        if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-        if (!mapInstanceRef.current) {
-            const map = L.map(mapContainerRef.current, {
-                center: [22, 10],
-                zoom: 2,
-                minZoom: 1.5,
-                maxZoom: 16,
-                zoomControl: false,
-                worldCopyJump: true,
-                attributionControl: false
-            });
+        const map = L.map(mapContainerRef.current, {
+            center: [20, 0], zoom: 2, minZoom: 1.5, maxZoom: 18,
+            zoomControl: false, worldCopyJump: true, attributionControl: false
+        });
 
-            // ESRI World Dark Gray Canvas - Clean, dark, watermark-free
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 16,
-                attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
-            }).addTo(map);
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 16, noWrap: false }
+        ).addTo(map);
 
-            // Zoom control
-            L.control.zoom({ position: 'topright' }).addTo(map);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-            const markersLayer = L.layerGroup().addTo(map);
-            markersLayerRef.current = markersLayer;
-            mapInstanceRef.current = map;
-        }
+        const markersLayer = L.layerGroup().addTo(map);
+        markersLayerRef.current = markersLayer;
+        mapInstanceRef.current = map;
+
+        const handleResize = () => map.invalidateSize();
+        window.addEventListener('resize', handleResize);
+        const timer = setTimeout(handleResize, 400);
 
         return () => {
-            if (mapInstanceRef.current) {
-                mapInstanceRef.current.remove();
-                mapInstanceRef.current = null;
-            }
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(timer);
+            if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
         };
     }, []);
 
-    // Update map markers when filtered visitors change
+    // Update map markers
     useEffect(() => {
-        if (!mapInstanceRef.current || !markersLayerRef.current) return;
-
+        if (!markersLayerRef.current || !mapInstanceRef.current) return;
         const markersLayer = markersLayerRef.current;
         markersLayer.clearLayers();
 
         const coordsMap = new Map();
-
         filteredVisitors.forEach(v => {
-            if (v.lat != null && v.lng != null && !isNaN(v.lat) && !isNaN(v.lng)) {
-                const key = `${Number(v.lat).toFixed(2)},${Number(v.lng).toFixed(2)}`;
-                const cleanIp = formatIp(v.ip);
-                const cleanLoc = formatLocation(v);
-
+            const lat = Number(v.lat), lng = Number(v.lng);
+            if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+                const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
                 if (!coordsMap.has(key)) {
-                    coordsMap.set(key, {
-                        lat: Number(v.lat),
-                        lng: Number(v.lng),
-                        location: cleanLoc,
-                        ips: [cleanIp],
-                        count: 1,
-                        isLive: v.isLive,
-                        lastSeen: v.lastSeen
-                    });
+                    coordsMap.set(key, { lat, lng, location: formatLocation(v), ips: [formatIp(v.ip)], count: v.hitCount || 1, isLive: v.isLive, lastSeen: v.lastSeen });
                 } else {
                     const item = coordsMap.get(key);
-                    item.count += 1;
+                    item.count += (v.hitCount || 1);
+                    const cleanIp = formatIp(v.ip);
                     if (!item.ips.includes(cleanIp)) item.ips.push(cleanIp);
                     if (v.isLive) item.isLive = true;
-                    if (new Date(v.lastSeen) > new Date(item.lastSeen)) {
-                        item.lastSeen = v.lastSeen;
-                    }
+                    if (new Date(v.lastSeen) > new Date(item.lastSeen)) item.lastSeen = v.lastSeen;
                 }
             }
         });
 
-        coordsMap.forEach((point) => {
+        coordsMap.forEach(point => {
             const isLive = point.isLive;
-            
+            const color  = isLive ? '#06b6d4' : '#3b82f6';
+            const glow   = isLive ? '#06b6d4' : '#3b82f6';
+
             const customIcon = L.divIcon({
                 className: 'custom-map-pin',
                 html: `
-                    <div class="relative flex items-center justify-center w-8 h-8 -translate-x-1/2 -translate-y-1/2 cursor-pointer group">
-                        <div class="absolute inset-0 rounded-full ${isLive ? 'bg-cyan-500/40 animate-ping' : 'bg-blue-500/25'}"></div>
-                        <div class="relative w-4 h-4 rounded-full ${isLive ? 'bg-cyan-400 ring-4 ring-cyan-500/50 shadow-[0_0_14px_#22d3ee]' : 'bg-blue-500 ring-2 ring-blue-400/40 shadow-[0_0_8px_#3b82f6]'} flex items-center justify-center text-[8px] font-black text-white">
+                    <div style="position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;transform:translate(-50%,-50%);cursor:pointer;">
+                        <div style="position:absolute;inset:0;border-radius:50%;background:${color}25;${isLive ? 'animation:adPulse 2s infinite;' : ''}"></div>
+                        <div style="position:relative;width:14px;height:14px;border-radius:50%;background:${color};box-shadow:0 0 10px ${glow};border:2px solid rgba(255,255,255,0.3);">
                         </div>
                     </div>
                 `,
                 iconSize: [32, 32],
-                iconAnchor: [16, 16]
+                iconAnchor: [16, 16],
             });
 
             const marker = L.marker([point.lat, point.lng], { icon: customIcon });
 
             const popupContent = `
-                <div class="p-4 bg-[#0a0f1d] text-white rounded-2xl border border-white/15 shadow-2xl min-w-[220px] font-sans">
-                    <div class="flex items-center justify-between pb-2 border-b border-white/10 mb-2.5">
-                        <span class="text-[10px] font-black uppercase tracking-wider ${isLive ? 'text-cyan-400' : 'text-slate-400'} flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full ${isLive ? 'bg-cyan-400 animate-pulse' : 'bg-slate-500'}"></span>
-                            ${isLive ? 'Live Active Node' : 'Node History'}
+                <div style="padding:12px 14px;min-width:200px;font-family:Inter,system-ui,sans-serif;background:var(--ad-surface);color:var(--ad-text);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--ad-border);margin-bottom:8px;">
+                        <span style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:${isLive ? '#06b6d4' : '#64748b'};">
+                            <span style="width:6px;height:6px;border-radius:50%;background:${isLive ? '#06b6d4' : '#64748b'};"></span>
+                            ${isLive ? 'LIVE' : 'Offline'}
                         </span>
-                        <span class="text-[10px] px-2 py-0.5 rounded-md bg-white/10 font-bold text-slate-300">
+                        <span style="font-size:10px;padding:2px 6px;border-radius:5px;background:var(--ad-surface-2);color:var(--ad-text-2);font-weight:600;border:1px solid var(--ad-border);">
                             ${point.count} ${point.count === 1 ? 'Session' : 'Sessions'}
                         </span>
                     </div>
-                    <div class="text-sm font-bold text-white mb-1.5">
-                        📍 ${point.location}
+                    <div style="font-size:12px;font-weight:600;color:var(--ad-text);margin-bottom:6px;">📍 ${point.location}</div>
+                    <div style="font-family:monospace;font-size:11px;color:#06b6d4;background:var(--ad-surface-2);padding:4px 8px;border-radius:6px;border:1px solid var(--ad-border);margin-bottom:6px;">
+                        ${point.ips[0]}${point.ips.length > 1 ? ` <span style="color:var(--ad-text-3);">(+${point.ips.length - 1})</span>` : ''}
                     </div>
-                    <div class="text-xs font-mono text-slate-300 mb-2.5 bg-black/50 px-2.5 py-1.5 rounded-lg border border-white/10">
-                        IP: <strong class="text-cyan-300">${point.ips[0]}</strong>
-                        ${point.ips.length > 1 ? ` <span class="text-slate-400">(+${point.ips.length - 1} more)</span>` : ''}
-                    </div>
-                    <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-white/5">
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ad-text-3);">
                         <span>${point.lat.toFixed(2)}, ${point.lng.toFixed(2)}</span>
-                        <span class="text-slate-300 font-medium">${getRelativeTime(point.lastSeen)}</span>
+                        <span>${getRelativeTime(point.lastSeen)}</span>
                     </div>
                 </div>
             `;
 
-            marker.bindPopup(popupContent, {
-                className: 'custom-dark-leaflet-popup',
-                closeButton: true,
-                offset: [0, -10]
-            });
-
+            marker.bindPopup(popupContent, { closeButton: true, offset: [0, -8] });
             marker.addTo(markersLayer);
         });
     }, [filteredVisitors]);
 
-    // Fly to specific visitor
     const handleFlyToVisitor = (visitor) => {
-        if (!mapInstanceRef.current || visitor.lat == null || visitor.lng == null) return;
-
-        setSelectedVisitor(visitor);
-        mapInstanceRef.current.flyTo([Number(visitor.lat), Number(visitor.lng)], 7, {
-            duration: 1.5
-        });
-
+        if (!mapInstanceRef.current || visitor.lat == null) return;
+        mapInstanceRef.current.flyTo([Number(visitor.lat), Number(visitor.lng)], 7, { animate: true, duration: 1.5 });
         mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
 
-    // Reset Map View
     const handleResetMap = () => {
-        setSelectedVisitor(null);
-        if (mapInstanceRef.current) {
-            mapInstanceRef.current.flyTo([22, 10], 2, { duration: 1.2 });
-        }
+        if (mapInstanceRef.current) mapInstanceRef.current.setView([20, 0], 2);
     };
 
-    // Copy IP with feedback
     const handleCopyIp = (ip) => {
-        const clean = formatIp(ip);
-        navigator.clipboard.writeText(clean);
-        setCopiedIp(clean);
+        navigator.clipboard.writeText(ip);
+        setCopiedIp(ip);
         setTimeout(() => setCopiedIp(null), 2000);
     };
 
+    const STATS = [
+        { label: 'Live Now',    value: activeSessions,  sub: 'Active in last 15 min', color: 'cyan',    icon: Radio,      live: true },
+        { label: 'Today (24h)', value: todayVisitors,   sub: 'Unique visitors today',  color: 'blue',    icon: Clock },
+        { label: '7-Day',       value: weekVisitors,    sub: 'Weekly active users',    color: 'indigo',  icon: Calendar },
+        { label: '30-Day',      value: monthVisitors,   sub: 'Monthly total',          color: 'purple',  icon: TrendingUp },
+        { label: 'Global Reach',value: topCountries.length > 0 ? `${topCountries.length}` : '—',
+            sub: `${allTimeVisitors} total recorded`, color: 'emerald', icon: Globe,
+            unit: topCountries.length > 0 ? 'Countries' : '' },
+    ];
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 text-slate-100 w-full">
-            {/* Scoped CSS for Leaflet & Popups */}
-            <style>{`
-                .custom-dark-leaflet-popup .leaflet-popup-content-wrapper {
-                    background: #0a0f1d !important;
-                    color: #fff !important;
-                    border: 1px solid rgba(255, 255, 255, 0.18) !important;
-                    border-radius: 16px !important;
-                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
-                    padding: 0 !important;
-                }
-                .custom-dark-leaflet-popup .leaflet-popup-content {
-                    margin: 0 !important;
-                    line-height: 1.4 !important;
-                }
-                .custom-dark-leaflet-popup .leaflet-popup-tip {
-                    background: #0a0f1d !important;
-                    border: 1px solid rgba(255, 255, 255, 0.18) !important;
-                }
-                .custom-dark-leaflet-popup .leaflet-popup-close-button {
-                    color: #94a3b8 !important;
-                    top: 10px !important;
-                    right: 10px !important;
-                }
-                .leaflet-container {
-                    background: #0a0e17 !important;
-                    font-family: inherit !important;
-                }
-            `}</style>
-
-            {/* ─── 1. TOP STATS CARDS ────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                {/* Live Online */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-[#0c162d] to-[#070d1a] border border-cyan-500/30 flex flex-col justify-between shadow-lg">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
-                            <span className="relative flex h-2.5 w-2.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
+        <div className="ad-space-y-6 ad-fade-in">
+            {/* ── 1. STAT CARDS ────────────────────────────────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+                {STATS.map((s, i) => (
+                    <div key={i} className={`ad-stat-card ${s.color === 'indigo' ? '' : s.color}`}
+                        style={s.color === 'indigo' ? { borderColor: 'color-mix(in srgb, var(--ad-indigo) 30%, transparent)' } : {}}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span className="ad-stat-label" style={{ color: `var(--ad-${s.color === 'blue' ? 'accent' : s.color === 'indigo' ? 'indigo' : s.color})` }}>
+                                {s.live && (
+                                    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--ad-cyan)', marginRight: 5, animation: 'adPulse 2s infinite', verticalAlign: 'middle' }} />
+                                )}
+                                {s.label}
                             </span>
-                            Live Now
-                        </span>
-                        <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-3xl font-black text-white tracking-tight">{activeSessions}</div>
-                        <p className="text-xs text-slate-400 font-medium mt-1">Active in last 15 min</p>
-                    </div>
-                </div>
-
-                {/* Today 24h */}
-                <div className="p-5 rounded-xl bg-[#0b101e] border border-white/10 flex flex-col justify-between shadow-lg">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Today (24h)</span>
-                        <Clock className="w-4 h-4 text-blue-400" />
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-3xl font-black text-white tracking-tight">{todayVisitors}</div>
-                        <p className="text-xs text-slate-400 font-medium mt-1">Unique visitors today</p>
-                    </div>
-                </div>
-
-                {/* 7 Days */}
-                <div className="p-5 rounded-xl bg-[#0b101e] border border-white/10 flex flex-col justify-between shadow-lg">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">7-Day Traffic</span>
-                        <Calendar className="w-4 h-4 text-indigo-400" />
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-3xl font-black text-white tracking-tight">{weekVisitors}</div>
-                        <p className="text-xs text-slate-400 font-medium mt-1">Weekly active users</p>
-                    </div>
-                </div>
-
-                {/* 30 Days */}
-                <div className="p-5 rounded-xl bg-[#0b101e] border border-white/10 flex flex-col justify-between shadow-lg">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-purple-400">30-Day Reach</span>
-                        <TrendingUp className="w-4 h-4 text-purple-400" />
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-3xl font-black text-white tracking-tight">{monthVisitors}</div>
-                        <p className="text-xs text-slate-400 font-medium mt-1">Monthly total visitors</p>
-                    </div>
-                </div>
-
-                {/* Global Reach */}
-                <div className="p-5 rounded-xl bg-[#0b101e] border border-white/10 flex flex-col justify-between shadow-lg">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Global Reach</span>
-                        <Globe className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-3xl font-black text-white tracking-tight">
-                            {topCountries.length > 0 ? `${topCountries.length} Countries` : 'Global'}
+                            <div className={`ad-stat-icon ${s.color === 'indigo' ? 'indigo' : s.color}`}>
+                                <s.icon />
+                            </div>
                         </div>
-                        <p className="text-xs text-slate-400 font-medium mt-1">{allTimeVisitors} total recorded</p>
+                        <div>
+                            <div className="ad-stat-value" style={{ fontSize: 24 }}>{s.value}{s.unit ? ` ${s.unit}` : ''}</div>
+                            <div className="ad-stat-sub" style={{ marginTop: 4 }}>{s.sub}</div>
+                        </div>
                     </div>
-                </div>
+                ))}
             </div>
 
-            {/* ─── 2. MAP & HOTSPOTS GRID ───────────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                {/* World Map Section */}
-                <AdminCard className="lg:col-span-2 bg-[#0b101e] border-white/10 p-0 overflow-hidden min-h-[500px] flex flex-col shadow-xl">
-                    {/* Header */}
-                    <div className="p-5 border-b border-white/10 flex flex-wrap gap-3 justify-between items-center bg-white/[0.02]">
+            {/* ── 2. MAP + HOTSPOTS ─────────────────────────────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 288px', gap: 16, alignItems: 'start' }}>
+                {/* MAP */}
+                <AdminCard className="p-0" style={{ overflow: 'hidden', minHeight: 500, display: 'flex', flexDirection: 'column' }}>
+                    {/* Map header */}
+                    <div className="ad-card-header" style={{ flexWrap: 'wrap', gap: 8 }}>
                         <div>
-                            <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-cyan-400" />
+                            <div className="ad-card-title">
+                                <Globe style={{ color: 'var(--ad-cyan)' }} />
                                 Interactive World Telemetry Map
-                            </h3>
-                            <p className="text-xs text-slate-400">Live coordinates, IP distribution & global node activity</p>
+                            </div>
+                            <div className="ad-card-subtitle">Live coordinates, IP distribution & global node activity</div>
                         </div>
 
-                        {/* Controls */}
-                        <div className="flex items-center gap-2">
-                            <div className="flex items-center bg-black/60 p-1 rounded-lg border border-white/15 gap-1">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {/* Timeframe */}
+                            <div className="ad-segmented">
                                 {[
                                     { id: 'all', label: 'All' },
                                     { id: 'live', label: 'Live' },
                                     { id: '24h', label: '24h' },
                                     { id: '7d', label: '7d' },
                                     { id: '30d', label: '30d' },
-                                ].map((t) => (
+                                ].map(t => (
                                     <button
                                         key={t.id}
+                                        className={`ad-segment-btn ${selectedTimeRange === t.id ? 'active' : ''}`}
                                         onClick={() => setSelectedTimeRange(t.id)}
-                                        className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                                            selectedTimeRange === t.id
-                                                ? 'bg-blue-600 text-white shadow-md'
-                                                : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                        }`}
                                     >
                                         {t.label}
                                     </button>
                                 ))}
                             </div>
 
-                            <button
-                                onClick={handleResetMap}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg border border-white/15 transition-all cursor-pointer"
-                            >
-                                <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                            <button className="ad-btn ad-btn-ghost" onClick={handleResetMap} title="Reset view">
+                                <Compass style={{ width: 13, height: 13, color: 'var(--ad-cyan)' }} />
                                 Reset
                             </button>
                         </div>
                     </div>
 
-                    {/* Map Area */}
-                    <div className="flex-1 relative min-h-[440px] w-full isolate">
-                        <div 
-                            ref={mapContainerRef} 
-                            className="absolute inset-0 w-full h-full z-0" 
-                            style={{ minHeight: '440px' }}
-                        />
+                    {/* Map canvas */}
+                    <div style={{ flex: 1, position: 'relative', minHeight: 440 }}>
+                        <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
 
-                        <div className="absolute top-4 left-4 z-10 pointer-events-none">
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-black/85 backdrop-blur-md rounded-lg border border-white/20 shadow-xl text-xs font-bold text-slate-200">
-                                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                                <span>{filteredVisitors.length} Active Node Records</span>
-                            </div>
+                        {/* Node counter badge */}
+                        <div style={{
+                            position: 'absolute', top: 12, left: 12, zIndex: 10, pointerEvents: 'none',
+                            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                            backgroundColor: 'var(--ad-surface)', border: '1px solid var(--ad-border-2)',
+                            borderRadius: 8, boxShadow: 'var(--ad-shadow)', fontSize: 11, fontWeight: 700,
+                            color: 'var(--ad-text)'
+                        }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: 'var(--ad-cyan)', flexShrink: 0 }} />
+                            {filteredVisitors.length} Active Node Records
                         </div>
 
                         {loading && (
-                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm">
-                                <Activity className="w-8 h-8 text-cyan-400 animate-spin mb-3" />
-                                <p className="text-xs font-black uppercase tracking-widest text-slate-300">Synchronizing Telemetry Nodes...</p>
+                            <div style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                                <Activity style={{ width: 28, height: 28, color: 'var(--ad-cyan)', marginBottom: 10 }} className="ad-spin" />
+                                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ad-text-2)' }}>
+                                    Synchronizing Telemetry Nodes...
+                                </p>
                             </div>
                         )}
                     </div>
                 </AdminCard>
 
-                {/* Hotspots Section */}
-                <div className="space-y-6">
-                    <AdminCard className="border-white/10 bg-[#0b101e] p-5 shadow-xl">
-                        <h4 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2 pb-2.5 border-b border-white/10">
-                            <MapPin className="w-4 h-4 text-cyan-400" />
-                            Top Geographic Hotspots
-                        </h4>
-
-                        <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                            {topCountries.length > 0 ? (
-                                topCountries.map((c, i) => (
-                                    <div key={i} className="space-y-1.5">
-                                        <div className="flex items-center justify-between text-xs font-bold">
-                                            <span className="text-slate-200 flex items-center gap-2">
-                                                <span className="w-4 h-4 rounded bg-white/10 border border-white/10 flex items-center justify-center text-[10px] text-cyan-400 font-black">
-                                                    {i + 1}
-                                                </span>
-                                                {c.name || 'Unknown Location'}
+                {/* HOTSPOTS */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {/* Countries */}
+                    <AdminCard className="p-0">
+                        <div className="ad-card-header">
+                            <div className="ad-card-title">
+                                <MapPin style={{ color: 'var(--ad-cyan)' }} />
+                                Geographic Hotspots
+                            </div>
+                        </div>
+                        <div className="ad-card-body ad-space-y-3" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                            {topCountries.length > 0 ? topCountries.map((c, i) => (
+                                <div key={i}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 5 }}>
+                                        <span style={{ color: 'var(--ad-text)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                            <span style={{ width: 18, height: 18, borderRadius: 5, background: 'var(--ad-accent-glow)', border: '1px solid var(--ad-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: 'var(--ad-accent)', flexShrink: 0 }}>
+                                                {i + 1}
                                             </span>
-                                            <span className="text-white font-mono">{c.count} sessions</span>
-                                        </div>
-                                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-700"
-                                                style={{ width: `${Math.max(c.percentage || (c.count / (allTimeVisitors || 1)) * 100, 8)}%` }}
-                                            />
-                                        </div>
+                                            {c.name || 'Unknown'}
+                                        </span>
+                                        <span style={{ color: 'var(--ad-text-2)', fontFamily: 'monospace', fontWeight: 600 }}>{c.count}</span>
                                     </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-10 text-slate-500 text-xs italic">
-                                    No country traffic aggregated yet.
+                                    <div className="ad-progress">
+                                        <div className="ad-progress-bar" style={{ width: `${Math.max((c.count / (allTimeVisitors || 1)) * 100, 8)}%` }} />
+                                    </div>
                                 </div>
+                            )) : (
+                                <p className="ad-text-muted" style={{ fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
+                                    No country data yet.
+                                </p>
                             )}
                         </div>
                     </AdminCard>
 
+                    {/* City chips */}
                     {topCities.length > 0 && (
-                        <AdminCard className="border-white/10 bg-[#0b101e] p-5 shadow-xl">
-                            <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                                Active Hubs & Cities
-                            </h4>
-                            <div className="flex flex-wrap gap-2">
-                                {topCities.slice(0, 6).map((city, idx) => (
-                                    <span 
-                                        key={idx}
-                                        className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-colors"
-                                    >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        <AdminCard className="p-0">
+                            <div className="ad-card-header">
+                                <div className="ad-card-title">
+                                    <Sparkles style={{ color: 'var(--ad-accent)' }} />
+                                    Active Cities
+                                </div>
+                            </div>
+                            <div className="ad-card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {topCities.slice(0, 8).map((city, idx) => (
+                                    <span key={idx} className="ad-badge blue" style={{ gap: 5 }}>
+                                        <span className="ad-badge-dot" />
                                         {city.name}
-                                        <strong className="text-white font-mono text-xs">({city.count})</strong>
+                                        <strong style={{ fontFamily: 'monospace' }}>({city.count})</strong>
                                     </span>
                                 ))}
                             </div>
@@ -504,158 +359,122 @@ const UserMapTab = ({ stats }) => {
                 </div>
             </div>
 
-            {/* ─── 3. VISITOR INTELLIGENCE & IP LOGS TABLE ─────────────────────── */}
-            <AdminCard className="bg-[#0b101e] border-white/10 p-0 overflow-hidden shadow-xl">
-                {/* Header */}
-                <div className="p-5 md:p-6 border-b border-white/10 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-white/[0.02]">
+            {/* ── 3. VISITOR TABLE ─────────────────────────────────────────── */}
+            <AdminCard className="p-0">
+                <div className="ad-card-header">
                     <div>
-                        <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-blue-400" />
+                        <div className="ad-card-title">
+                            <Shield style={{ color: 'var(--ad-accent)' }} />
                             Visitor Intelligence & IP Logs
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                            Real-time session records, geographic tracking, and IP history
-                        </p>
+                        </div>
+                        <div className="ad-card-subtitle">Real-time session records, geographic tracking, and IP history</div>
                     </div>
 
-                    {/* Search Toolbar */}
-                    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-72">
-                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {/* Search */}
+                        <div className="ad-input-icon" style={{ width: 240 }}>
+                            <Search style={{ width: 14, height: 14 }} />
                             <input
                                 type="text"
-                                placeholder="Search by IP, city, or country..."
+                                className="ad-input"
+                                placeholder="Search IP, city, country..."
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-8 py-2 bg-[#121829] border border-white/15 rounded-lg text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-all shadow-inner"
+                                onChange={e => setSearchQuery(e.target.value)}
                             />
                             {searchQuery && (
                                 <button
                                     onClick={() => setSearchQuery('')}
-                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ad-text-3)', display: 'flex', alignItems: 'center' }}
                                 >
-                                    ✕
+                                    <X style={{ width: 12, height: 12 }} />
                                 </button>
                             )}
                         </div>
 
-                        <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-bold text-slate-300 shrink-0">
-                            {filteredVisitors.length} of {rawVisitors.length} Visitors
-                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ad-text-3)', background: 'var(--ad-surface-2)', border: '1px solid var(--ad-border)', padding: '5px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>
+                            {filteredVisitors.length} / {rawVisitors.length}
+                        </span>
                     </div>
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                <div className="ad-table-wrap">
+                    <table className="ad-table" style={{ minWidth: 800 }}>
                         <thead>
-                            <tr className="border-b border-white/10 bg-white/[0.02] text-xs font-bold uppercase tracking-wider text-slate-400">
-                                <th className="py-3.5 px-5">Status</th>
-                                <th className="py-3.5 px-5">IP Address</th>
-                                <th className="py-3.5 px-5">Location</th>
-                                <th className="py-3.5 px-5">Coordinates</th>
-                                <th className="py-3.5 px-5 text-center">Hits</th>
-                                <th className="py-3.5 px-5">First Seen</th>
-                                <th className="py-3.5 px-5">Last Active</th>
-                                <th className="py-3.5 px-5 text-right">Actions</th>
+                            <tr>
+                                <th>Status</th>
+                                <th>IP Address</th>
+                                <th>Location</th>
+                                <th>Coordinates</th>
+                                <th style={{ textAlign: 'center' }}>Hits</th>
+                                <th>First Seen</th>
+                                <th>Last Active</th>
+                                <th style={{ textAlign: 'right' }}>Action</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5 text-xs">
+                        <tbody>
                             {filteredVisitors.length > 0 ? (
                                 filteredVisitors.map((v, i) => {
-                                    const cleanIp = formatIp(v.ip);
-                                    const cleanLocation = formatLocation(v);
-
+                                    const cleanIp  = formatIp(v.ip);
+                                    const cleanLoc = formatLocation(v);
                                     return (
-                                        <tr 
-                                            key={v.id || v.sessionId || i}
-                                            className="hover:bg-white/[0.04] transition-colors"
-                                        >
-                                            {/* Status */}
-                                            <td className="py-3.5 px-5">
+                                        <tr key={v.id || v.sessionId || i}>
+                                            <td>
                                                 {v.isLive ? (
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                                                    <span className="ad-badge live">
+                                                        <span className="ad-badge-dot pulse" />
                                                         LIVE
                                                     </span>
                                                 ) : (
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-white/5 text-slate-400 border border-white/10">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                                    <span className="ad-badge offline">
+                                                        <span className="ad-badge-dot" />
                                                         Offline
                                                     </span>
                                                 )}
                                             </td>
-
-                                            {/* IP Address */}
-                                            <td className="py-3.5 px-5">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="font-mono text-white font-bold bg-[#141b2d] px-2 py-0.5 rounded border border-white/10 text-xs">
-                                                        {cleanIp}
-                                                    </span>
+                                            <td>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <span className="ad-mono">{cleanIp}</span>
                                                     <button
                                                         onClick={() => handleCopyIp(cleanIp)}
-                                                        title="Copy IP Address"
-                                                        className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                                                        className="ad-btn-icon"
+                                                        style={{ width: 26, height: 26, padding: 4 }}
+                                                        title="Copy IP"
                                                     >
-                                                        {copiedIp === cleanIp ? (
-                                                            <Check className="w-3 h-3 text-emerald-400" />
-                                                        ) : (
-                                                            <Copy className="w-3 h-3" />
-                                                        )}
+                                                        {copiedIp === cleanIp
+                                                            ? <Check style={{ width: 11, height: 11, color: 'var(--ad-emerald)' }} />
+                                                            : <Copy style={{ width: 11, height: 11 }} />}
                                                     </button>
                                                 </div>
                                             </td>
-
-                                            {/* Location */}
-                                            <td className="py-3.5 px-5">
-                                                <div className="flex items-center gap-1.5">
-                                                    <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                                                    <span className="font-medium text-slate-200">
-                                                        {cleanLocation}
-                                                    </span>
-                                                </div>
-                                            </td>
-
-                                            {/* Coordinates */}
-                                            <td className="py-3.5 px-5 font-mono text-slate-300 text-xs">
-                                                {v.lat != null && v.lng != null ? (
-                                                    <span>{Number(v.lat).toFixed(2)}, {Number(v.lng).toFixed(2)}</span>
-                                                ) : (
-                                                    <span className="text-slate-500 italic">—</span>
-                                                )}
-                                            </td>
-
-                                            {/* Hits */}
-                                            <td className="py-3.5 px-5 text-center">
-                                                <span className="px-2.5 py-0.5 rounded bg-blue-600/15 text-blue-400 font-mono font-bold border border-blue-500/25 text-xs">
-                                                    {v.hitCount || 1}
+                                            <td className="primary">
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <MapPin style={{ width: 13, height: 13, color: 'var(--ad-cyan)', flexShrink: 0 }} />
+                                                    {cleanLoc}
                                                 </span>
                                             </td>
-
-                                            {/* First Seen */}
-                                            <td className="py-3.5 px-5 text-slate-300">
-                                                {v.firstSeen ? new Date(v.firstSeen).toLocaleDateString() : 'N/A'}
+                                            <td>
+                                                {v.lat != null && v.lng != null
+                                                    ? <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--ad-text-2)' }}>{Number(v.lat).toFixed(2)}, {Number(v.lng).toFixed(2)}</span>
+                                                    : <span style={{ color: 'var(--ad-text-3)' }}>—</span>}
                                             </td>
-
-                                            {/* Last Active */}
-                                            <td className="py-3.5 px-5">
-                                                <span className="text-slate-200 font-medium">
-                                                    {getRelativeTime(v.lastSeen)}
-                                                </span>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <span className="ad-badge blue" style={{ fontFamily: 'monospace', fontWeight: 700 }}>{v.hitCount || 1}</span>
                                             </td>
-
-                                            {/* Action */}
-                                            <td className="py-3.5 px-5 text-right">
+                                            <td>{v.firstSeen ? new Date(v.firstSeen).toLocaleDateString() : 'N/A'}</td>
+                                            <td className="primary">{getRelativeTime(v.lastSeen)}</td>
+                                            <td style={{ textAlign: 'right' }}>
                                                 {v.lat != null && v.lng != null ? (
                                                     <button
                                                         onClick={() => handleFlyToVisitor(v)}
-                                                        className="inline-flex items-center gap-1 px-3 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded-lg border border-blue-500/30 transition-all text-xs font-bold cursor-pointer"
+                                                        className="ad-btn ad-btn-ghost"
+                                                        style={{ fontSize: 11 }}
                                                     >
-                                                        <Crosshair className="w-3 h-3" />
+                                                        <Crosshair style={{ width: 12, height: 12, color: 'var(--ad-accent)' }} />
                                                         Locate
                                                     </button>
                                                 ) : (
-                                                    <span className="text-slate-500 text-xs italic">—</span>
+                                                    <span style={{ color: 'var(--ad-text-3)', fontSize: 11 }}>—</span>
                                                 )}
                                             </td>
                                         </tr>
@@ -663,14 +482,14 @@ const UserMapTab = ({ stats }) => {
                                 })
                             ) : (
                                 <tr>
-                                    <td colSpan={8} className="py-12 text-center text-slate-500">
-                                        <div className="flex flex-col items-center justify-center">
-                                            <Globe className="w-10 h-10 text-slate-700 mb-2 opacity-40" />
-                                            <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '40px 0' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                            <Globe style={{ width: 36, height: 36, color: 'var(--ad-border)' }} />
+                                            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ad-text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                                 No visitors matching current filters
                                             </p>
-                                            <p className="text-[11px] text-slate-500 mt-0.5">
-                                                Try changing the timeframe or clearing your search query.
+                                            <p style={{ fontSize: 11, color: 'var(--ad-text-3)' }}>
+                                                Try changing the timeframe or clearing the search.
                                             </p>
                                         </div>
                                     </td>

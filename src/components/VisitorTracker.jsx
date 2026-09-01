@@ -8,54 +8,37 @@ export default function VisitorTracker({ children }) {
   const sessionIdRef = useRef(`sess_${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
+    // 1. Ignore localhost / 127.0.0.1 during local development
+    const isLocalhost = Boolean(
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '[::1]' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.endsWith('.local')
+    );
+
+    if (isLocalhost) {
+      // Skip tracking local development sessions
+      return;
+    }
+
     let intervalId;
-    let locationData = { lat: null, lng: null, locationStr: null, city: '', country: '', countryCode: '' };
 
-    const startPinging = async () => {
+    const ping = async () => {
       try {
-        // Fetch approximate location using free IP Geo API
-        const res = await axios.get('https://get.geojs.io/v1/ip/geo.json');
-        if (res.data) {
-          if (res.data.latitude && res.data.longitude) {
-            locationData.lat = parseFloat(res.data.latitude);
-            locationData.lng = parseFloat(res.data.longitude);
-          }
-          
-          locationData.city = res.data.city || '';
-          locationData.country = res.data.country || '';
-          locationData.countryCode = res.data.country_code || '';
-          if (locationData.city || locationData.country) {
-            locationData.locationStr = [locationData.city, locationData.country].filter(Boolean).join(', ');
-          }
-        }
+        // Send lightweight ping. The server resolves IP and geolocation server-side.
+        await axios.post(`${COMPILER_URL}/public/ping`, {
+          sessionId: sessionIdRef.current
+        });
       } catch (err) {
-        console.warn('Could not fetch geolocation for visitor tracker:', err.message);
+        // Silently fail if backend is unreachable
       }
-
-      const ping = async () => {
-        try {
-          await axios.post(`${COMPILER_URL}/public/ping`, {
-            sessionId: sessionIdRef.current,
-            lat: locationData.lat,
-            lng: locationData.lng,
-            locationStr: locationData.locationStr,
-            city: locationData.city,
-            country: locationData.country,
-            countryCode: locationData.countryCode
-          });
-        } catch (err) {
-          // Silently fail if backend is down to not pollute console during dev
-        }
-      };
-
-      // Initial ping
-      ping();
-
-      // Ping every 5 minutes (300,000 ms)
-      intervalId = setInterval(ping, 300000);
     };
 
-    startPinging();
+    // Initial ping
+    ping();
+
+    // Ping every 5 minutes (300,000 ms)
+    intervalId = setInterval(ping, 300000);
 
     return () => {
       if (intervalId) clearInterval(intervalId);

@@ -1,101 +1,134 @@
 import React from 'react';
-import { 
-    LayoutDashboard, 
+import {
+    LayoutDashboard,
     Globe,
-    Library, 
-    Clock, 
-    Puzzle, 
-    UploadCloud, 
-    Terminal, 
-    LogOut, 
-    Activity,
-    Box,
-    X,
+    Library,
+    Clock,
     Package,
     PlayCircle,
+    Terminal,
+    LogOut,
+    Activity,
+    Box,
+    Cpu,
+    BarChart3,
     ShieldCheck,
     AlertTriangle,
-    Cpu
+    X,
 } from 'lucide-react';
 
-const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenanceMode, onToggleMaintenance }) => {
-    const menuItems = [
-        { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
-        { id: 'map', icon: Globe, label: 'User Map' },
-        { id: 'libraries', icon: Library, label: 'Libraries' },
-        { id: 'adventure-content', icon: Activity, label: 'Adventure Content' },
-        { id: 'approval', icon: Clock, label: 'Approvals' },
-        { id: 'components', label: 'Custom Components', icon: Package },
-        { id: 'deployments', label: 'CI/CD Workflow', icon: PlayCircle },
-        { id: 'docker', label: 'Docker Monitoring', icon: Box },
-        { id: 'resources', label: 'Resource Budget', icon: Cpu },
-        { id: 'history', label: 'Security History', icon: ShieldCheck },
-        { id: 'logs', label: 'System Logs', icon: Terminal },
-    ];
+const MENU_ITEMS = [
+    { id: 'overview',           icon: LayoutDashboard, label: 'Overview' },
+    { id: 'map',                icon: Globe,           label: 'User Map' },
+    { id: 'analytics',          icon: BarChart3,        label: 'Analytics' },
+    { id: 'libraries',          icon: Library,         label: 'Libraries' },
+    { id: 'adventure-content',  icon: Activity,        label: 'Adventure Content' },
+    { id: 'approval',           icon: Clock,           label: 'Approvals' },
+    { id: 'components',         icon: Package,         label: 'Custom Components' },
+    { id: 'deployments',        icon: PlayCircle,      label: 'CI/CD Workflow' },
+    { id: 'docker',             icon: Box,             label: 'Docker Monitoring' },
+    { id: 'resources',          icon: Cpu,             label: 'Resource Budget' },
+    { id: 'history',            icon: ShieldCheck,     label: 'Security History' },
+    { id: 'logs',               icon: Terminal,        label: 'System Logs' },
+];
 
+const Sidebar = ({
+    isOpen,
+    onClose,
+    activeTab,
+    setActiveTab,
+    onLogout,
+    maintenanceMode,
+    onToggleMaintenance,
+    pendingCount = 0,
+}) => {
     return (
-        <aside className={`
-            fixed inset-y-0 left-0 z-50 w-80 bg-[#0d1525] border-r border-white/10 flex flex-col p-10 transition-transform duration-300 ease-in-out
-            lg:relative lg:translate-x-0
-            ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}>
-            <div className="flex items-center justify-between gap-4 px-2 mb-16 mt-6">
-                <div className="flex items-center gap-5">
-                    <span className="text-3xl font-black tracking-tighter uppercase text-white">
-                        Admin<span className="text-blue-500">Hub</span>
-                    </span>
-                </div>
-                <button 
+        <aside className={`ad-sidebar ${isOpen ? 'open' : 'closed'}`}>
+            {/* Logo */}
+            <div className="ad-sidebar-logo">
+                <div className="ad-sidebar-logo-icon">OH</div>
+                <span className="ad-sidebar-logo-text">
+                    Admin<span>Hub</span>
+                </span>
+
+                {/* Close button (mobile only) */}
+                <button
+                    className="ad-btn-icon lg:hidden ml-auto"
                     onClick={onClose}
-                    className="p-2 text-slate-500 hover:text-white lg:hidden"
+                    aria-label="Close sidebar"
                 >
-                    <X className="w-6 h-6" />
+                    <X />
                 </button>
             </div>
 
-            <nav className="flex-1 space-y-5">
-                {menuItems.map((item) => (
+            {/* Navigation */}
+            <nav className="ad-sidebar-nav" role="navigation" aria-label="Admin navigation">
+                {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
                     <button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id)}
-                        className={`w-full flex items-center gap-6 px-10 py-6 rounded-xl transition-all font-black text-xl group ${
-                            activeTab === item.id 
-                            ? 'bg-blue-600 text-white shadow-2xl shadow-blue-600/40' 
-                            : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
-                        }`}
+                        key={id}
+                        className={`ad-nav-item ${activeTab === id ? 'active' : ''}`}
+                        onClick={() => {
+                            setActiveTab(id);
+                            onClose();
+                        }}
+                        aria-current={activeTab === id ? 'page' : undefined}
                     >
-                        <item.icon className={`w-7 h-7 transition-colors ${activeTab === item.id ? 'text-white' : 'text-slate-500 group-hover:text-slate-200'}`} />
-                        <span className="truncate">{item.label}</span>
+                        <Icon className="ad-nav-icon" />
+                        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {label}
+                        </span>
+                        {id === 'approval' && pendingCount > 0 && (
+                            <span className="ad-nav-badge">{pendingCount}</span>
+                        )}
                     </button>
                 ))}
             </nav>
 
-            <div className="mt-auto space-y-4 pt-8 border-t border-white/10 mb-6">
-                <div className={`p-6 rounded-2xl border transition-all ${maintenanceMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-white/5 border-white/5'}`}>
-                    <div className="flex items-center justify-between gap-4 mb-4">
-                        <div className="flex items-center gap-3">
-                            <AlertTriangle className={`w-4 h-4 ${maintenanceMode ? 'text-amber-500' : 'text-slate-500'}`} />
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${maintenanceMode ? 'text-amber-500' : 'text-slate-500'}`}>
+            {/* Footer */}
+            <div className="ad-sidebar-footer">
+                {/* Maintenance Mode */}
+                <div className={`ad-maintenance-card ${maintenanceMode ? 'active' : ''}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <AlertTriangle style={{ width: 13, height: 13, color: maintenanceMode ? 'var(--ad-amber)' : 'var(--ad-text-3)' }} />
+                            <span style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.07em',
+                                color: maintenanceMode ? 'var(--ad-amber)' : 'var(--ad-text-3)',
+                            }}>
                                 Maintenance
                             </span>
                         </div>
-                        <button 
+                        <button
+                            className={`ad-toggle ${maintenanceMode ? 'on' : ''}`}
                             onClick={() => onToggleMaintenance(!maintenanceMode)}
-                            className={`w-10 h-5 rounded-full relative transition-all ${maintenanceMode ? 'bg-amber-500' : 'bg-slate-700'}`}
+                            aria-label="Toggle maintenance mode"
                         >
-                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${maintenanceMode ? 'left-6' : 'left-1'}`}></div>
+                            <div className="ad-toggle-knob" />
                         </button>
                     </div>
-                    <p className="text-[9px] text-slate-500 font-bold leading-tight">
-                        {maintenanceMode ? 'System is currently restricted to admins.' : 'System is live for all users.'}
+                    <p style={{ fontSize: 10, color: 'var(--ad-text-3)', lineHeight: 1.4 }}>
+                        {maintenanceMode ? 'Site restricted to admins only.' : 'Live for all public users.'}
                     </p>
                 </div>
 
-                <button 
+                {/* Sign Out */}
+                <button
+                    className="ad-nav-item"
                     onClick={onLogout}
-                    className="w-full flex items-center gap-6 px-10 py-6 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all font-black text-xl"
+                    style={{ color: 'var(--ad-text-3)' }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.color = 'var(--ad-red)';
+                        e.currentTarget.style.backgroundColor = 'var(--ad-red-glow)';
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.color = 'var(--ad-text-3)';
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                 >
-                    <LogOut className="w-7 h-7" />
+                    <LogOut className="ad-nav-icon" />
                     Sign Out
                 </button>
             </div>
