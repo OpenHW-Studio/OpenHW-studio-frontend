@@ -7,6 +7,7 @@ import {
   GraduationCap,
   Folder,
   Layers,
+  BookOpen,
   FileText,
   HelpCircle,
   Users,
