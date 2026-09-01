@@ -22,6 +22,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getAvatarLetters } from '../../components/common/test.js'
 import { updateProfile } from '../../services/authService.js'
+import DeleteAccountModal from '../../components/DeleteAccountModal.jsx'
 
 const STYLE_PRESETS = [
   { id: "bottts", label: "Robot" },
@@ -73,6 +74,7 @@ export default function UserProfilePage() {
   const [avatarStyle, setAvatarStyle] = useState('bottts')
   const [avatarSeed, setAvatarSeed] = useState('alpha')
   const [avatarPage, setAvatarPage] = useState(0)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   const getAdjacentIndex = (offset) => (styleIndex + offset + STYLE_PRESETS.length) % STYLE_PRESETS.length
 
@@ -144,6 +146,14 @@ export default function UserProfilePage() {
 
   return (
     <div className="student-db-layout">
+      {showDeleteModal && (
+        <DeleteAccountModal
+          userRole={user?.role || 'user'}
+          userEmail={user?.email || ''}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => { logout(); navigate('/login'); }}
+        />
+      )}
       <header className="student-db-header">
         <div className="student-db-header__left">
           <Link to="/" className="student-db-header__brand">
@@ -328,6 +338,43 @@ export default function UserProfilePage() {
           </section>
         </div>
       ) : null}
+
+      {/* ── Danger Zone ──────────────────────────────────────────────────── */}
+      <div style={{
+        margin: '32px auto', maxWidth: '800px', padding: '0 16px',
+        boxSizing: 'border-box',
+      }}>
+        <div style={{
+          background: 'rgba(127,29,29,0.1)', border: '1px solid #7f1d1d',
+          borderRadius: '12px', padding: '20px 24px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: '16px', flexWrap: 'wrap',
+        }}>
+          <div>
+            <p style={{ color: '#f87171', fontWeight: 700, margin: '0 0 4px', fontSize: '14px', fontFamily: 'monospace', letterSpacing: '1px' }}>
+              DANGER ZONE
+            </p>
+            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
+              Permanently delete your account and all personal data after a 30-day grace period.
+            </p>
+          </div>
+          <button
+            id="delete-account-btn"
+            onClick={() => setShowDeleteModal(true)}
+            style={{
+              padding: '10px 20px', background: 'none',
+              border: '1px solid #7f1d1d', borderRadius: '8px',
+              color: '#f87171', fontWeight: 600, fontSize: '13px',
+              fontFamily: 'monospace', cursor: 'pointer',
+              whiteSpace: 'nowrap', transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#7f1d1d'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#f87171'; }}
+          >
+            Delete Account
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

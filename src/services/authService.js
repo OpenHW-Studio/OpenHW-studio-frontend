@@ -301,3 +301,48 @@ export const resetPassword = async (token, password) => {
   if (!response.ok) throw new Error(data.error || data.message || 'Failed to reset password');
   return data;
 };
+
+// ─── Account Deletion ─────────────────────────────────────────────────────────
+
+/** Step 1: Request an OTP to confirm account deletion */
+export const requestDeletionOtp = async (token) => {
+  const response = await fetch(`${BASE_URL}/user/delete-account/request-otp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to send confirmation code');
+  return data;
+};
+
+/** Step 2: Confirm deletion with the 6-digit OTP */
+export const confirmDeletion = async (token, otp) => {
+  const response = await fetch(`${BASE_URL}/user/delete-account/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ otp }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to confirm deletion');
+  return data;
+};
+
+/** Cancel deletion during the 30-day grace period */
+export const cancelDeletion = async (token) => {
+  const response = await fetch(`${BASE_URL}/user/delete-account/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to cancel deletion');
+  return data;
+};

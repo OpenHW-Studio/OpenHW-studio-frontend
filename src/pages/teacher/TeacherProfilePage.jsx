@@ -7,6 +7,7 @@ import { getAvatarLetters } from '../../components/common/test.js'
 import { updateProfile } from '../../services/authService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import { getMyClassrooms } from '../../services/classroomService.js'
+import DeleteAccountModal from '../../components/DeleteAccountModal.jsx'
 
 const buildFormState = (user) => ({
   name: user?.name || '',
@@ -26,6 +27,7 @@ export default function TeacherProfilePage() {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [recentClasses, setRecentClasses] = useState([])
   const [loadingRecentClasses, setLoadingRecentClasses] = useState(true)
 
@@ -456,6 +458,53 @@ export default function TeacherProfilePage() {
           </section>
         </div>
       ) : null}
+
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <DeleteAccountModal
+          userRole="teacher"
+          userEmail={user?.email || ''}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => { logout(); navigate('/login'); }}
+        />
+      )}
+
+      {/* ── Danger Zone ──────────────────────────────────────────────────── */}
+      <div style={{
+        margin: '32px auto', maxWidth: '960px', padding: '0 16px',
+        boxSizing: 'border-box',
+      }}>
+        <div style={{
+          background: 'rgba(127,29,29,0.1)', border: '1px solid #7f1d1d',
+          borderRadius: '12px', padding: '20px 24px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: '16px', flexWrap: 'wrap',
+        }}>
+          <div>
+            <p style={{ color: '#f87171', fontWeight: 700, margin: '0 0 4px', fontSize: '14px', fontFamily: 'monospace', letterSpacing: '1px' }}>
+              DANGER ZONE
+            </p>
+            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
+              Permanently delete your account and all personal data. Please read the instructor notice before proceeding.
+            </p>
+          </div>
+          <button
+            id="teacher-delete-account-btn"
+            onClick={() => setShowDeleteModal(true)}
+            style={{
+              padding: '10px 20px', background: 'none',
+              border: '1px solid #7f1d1d', borderRadius: '8px',
+              color: '#f87171', fontWeight: 600, fontSize: '13px',
+              fontFamily: 'monospace', cursor: 'pointer',
+              whiteSpace: 'nowrap', transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#7f1d1d'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#f87171'; }}
+          >
+            Delete Account
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
