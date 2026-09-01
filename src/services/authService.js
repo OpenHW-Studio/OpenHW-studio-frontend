@@ -248,7 +248,18 @@ export const fetchProfile = async () => {
   });
 
   const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
+  if (!response.ok) {
+    if (data && data.status === 'pending_deletion') {
+      const pendingUser = {
+        ...data,
+        role: data.role || 'user',
+        status: 'pending_deletion',
+      };
+      saveUser(pendingUser);
+      return { success: true, user: pendingUser };
+    }
+    throw new Error(data.message || 'Failed to fetch profile');
+  }
   
   if (data.user) saveUser(data.user); // normalizeUser is called inside saveUser
   
@@ -318,29 +329,44 @@ export const requestDeletionOtp = async (token) => {
   return data;
 };
 
-/** Step 2: Confirm deletion with the 6-digit OTP */
-export const confirmDeletion = async (token, otp) => {
+/** Step 2: Confirm deletion with the 6-digit OTP (and optional exit reason) */
+export const confirmDeletion = async (token, otp, reason = '', feedback = '') => {
   const response = await fetch(`${BASE_URL}/user/delete-account/confirm`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ otp }),
+    body: JSON.stringify({ otp, reason, feedback }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || data.message || 'Failed to confirm deletion');
   return data;
 };
 
-/** Cancel deletion during the 30-day grace period */
-export const cancelDeletion = async (token) => {
+/** Request OTP for account reactivation */
+export const requestReactivationOtp = async (token) => {
+  const response = await fetch(`${BASE_URL}/user/delete-account/request-reactivate-otp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to send reactivation code');
+  return data;
+};
+
+/** Cancel deletion (Confirm reactivation with OTP) */
+export const cancelDeletion = async (token, otp) => {
   const response = await fetch(`${BASE_URL}/user/delete-account/cancel`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
+    body: JSON.stringify({ otp }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || data.message || 'Failed to cancel deletion');

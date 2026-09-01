@@ -88,9 +88,20 @@ const btnGhost = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DELETION_REASONS = [
+  "Completed coursework / No longer need the simulator",
+  "Created a duplicate or alternate account",
+  "Encountered technical issues or bugs",
+  "Privacy or data preferences",
+  "Found or switched to another platform",
+  "Other reason",
+];
+
 export default function DeleteAccountModal({ userRole = "user", userEmail = "", onClose, onDeleted }) {
   const [step, setStep] = useState(1); // 1 = disclosure, 2 = otp, 3 = success
   const [agreed, setAgreed] = useState(false);
+  const [reason, setReason] = useState("");
+  const [feedback, setFeedback] = useState("");
   const [otpValue, setOtpValue] = useState("");
   const [otpError, setOtpError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -134,7 +145,7 @@ export default function DeleteAccountModal({ userRole = "user", userEmail = "", 
     setLoading(true);
     setOtpError("");
     try {
-      const data = await confirmDeletion(getToken(), otpValue.trim());
+      const data = await confirmDeletion(getToken(), otpValue.trim(), reason, feedback);
       // Format the date nicely
       const dateStr = data.permanentDeleteAt
         ? new Date(data.permanentDeleteAt).toLocaleDateString("en-GB", {
@@ -212,6 +223,45 @@ export default function DeleteAccountModal({ userRole = "user", userEmail = "", 
             permanently wiped after <strong style={{ color: "#f1f5f9" }}>30 days</strong>.
             You can <strong style={{ color: "#34d399" }}>cancel anytime within 30 days</strong> by logging back in.
           </p>
+        </div>
+
+        {/* Optional Reason for Deletion */}
+        <div style={{ marginBottom: "20px", background: "#0f172a", border: "1px solid #334155", borderRadius: "8px", padding: "14px 16px" }}>
+          <label style={{ display: "block", color: "#cbd5e1", fontSize: "12px", fontFamily: "monospace", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>
+            Reason for Leaving (Optional)
+          </label>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            style={{
+              width: "100%", boxSizing: "border-box",
+              background: "#1e293b", border: "1px solid #475569",
+              borderRadius: "6px", padding: "10px 12px",
+              color: "#f1f5f9", fontSize: "13px", outline: "none",
+              cursor: "pointer", marginBottom: reason ? "10px" : "0",
+            }}
+          >
+            <option value="">Select a reason (optional)</option>
+            {DELETION_REASONS.map((r, i) => (
+              <option key={i} value={r}>{r}</option>
+            ))}
+          </select>
+
+          {reason && (
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Additional feedback or comments (optional)"
+              rows={2}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: "#1e293b", border: "1px solid #475569",
+                borderRadius: "6px", padding: "10px 12px",
+                color: "#f1f5f9", fontSize: "13px", outline: "none",
+                resize: "none", fontFamily: "inherit",
+              }}
+            />
+          )}
         </div>
 
         {/* Acknowledgement checkbox */}

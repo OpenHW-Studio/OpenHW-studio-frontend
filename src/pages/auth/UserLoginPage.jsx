@@ -10,7 +10,7 @@ const lastUsedLogin = localStorage.getItem("lastUsedLogin");
 export default function UserLoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -18,7 +18,11 @@ export default function UserLoginPage() {
 
   const from = location.state?.from || null;
 
-  const handleRedirect = (userRole) => {
+  const handleRedirect = (userRole, userStatus) => {
+    if (userStatus === 'pending_deletion' || user?.status === 'pending_deletion') {
+      navigate('/reactivate');
+      return;
+    }
     if (from) {
       navigate(from);
       return;
@@ -31,9 +35,9 @@ export default function UserLoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      handleRedirect();
+      handleRedirect(user?.role, user?.status);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user]);
 
   const handleInputChange = (e) => {
     const value =
@@ -50,7 +54,7 @@ export default function UserLoginPage() {
       const data = await loginUser({ ...formData });
       login(data.token, data.user);
       localStorage.setItem("lastUsedLogin", "email");
-      handleRedirect(data.user?.role);
+      handleRedirect(data.user?.role, data.user?.status);
     } catch (err) {
       setError(err.message || "Invalid email or password.");
     } finally {

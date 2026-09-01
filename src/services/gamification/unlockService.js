@@ -22,11 +22,11 @@ export const fetchUserUnlocks = async (userId) => {
     // If no unlocks found, return empty array (will be combined with level unlocks)
     return { unlockedComponentTypes: response.data.unlockedComponentTypes || [] };
   } catch (error) {
-    console.error('Error fetching user unlocks:', error);
-    // If user has no unlocks recorded yet, return empty array
-    if (error.response && error.response.status === 404) {
+    // If user has no unlocks recorded yet or is in pending deletion (403), return empty array gracefully
+    if (error.response && (error.response.status === 404 || error.response.status === 403)) {
       return { unlockedComponentTypes: [] };
     }
+    console.error('Error fetching user unlocks:', error);
     throw error;
   }
 };
@@ -35,7 +35,6 @@ export const saveUserUnlocks = async (userId, unlocks) => {
   const token = getToken();
   if (!token) {
     // No auth token - skip API call, user may not be logged in
-    console.warn('No auth token available, skipping unlock save to MongoDB');
     return { unlockedComponentTypes: unlocks };
   }
   try {
@@ -47,9 +46,8 @@ export const saveUserUnlocks = async (userId, unlocks) => {
 
     return response.data;
   } catch (error) {
-    // Handle 404 (not found) gracefully - return local data
-    if (error.response && error.response.status === 404) {
-      console.log('No unlocks record found yet, will be created on next save');
+    // Handle 404 or 403 gracefully - return local data
+    if (error.response && (error.response.status === 404 || error.response.status === 403)) {
       return { unlockedComponentTypes: unlocks };
     }
     console.error('Error saving user unlocks:', error);
@@ -65,10 +63,10 @@ export const fetchUserGamificationState = async (userId) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error fetching user gamification state:', error);
-    if (error.response && error.response.status === 404) {
+    if (error.response && (error.response.status === 404 || error.response.status === 403)) {
       return { state: {} };
     }
+    console.error('Error fetching user gamification state:', error);
     throw error;
   }
 };
@@ -76,7 +74,6 @@ export const fetchUserGamificationState = async (userId) => {
 export const saveUserGamificationState = async (userId, state) => {
   const token = getToken();
   if (!token) {
-    console.warn('No auth token available, skipping state save to MongoDB');
     return { state };
   }
   try {
@@ -87,6 +84,9 @@ export const saveUserGamificationState = async (userId, state) => {
     );
     return response.data;
   } catch (error) {
+    if (error.response && (error.response.status === 404 || error.response.status === 403)) {
+      return { state };
+    }
     console.error('Error saving user gamification state:', error);
     throw error;
   }
