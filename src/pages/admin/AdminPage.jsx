@@ -529,7 +529,7 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="flex h-screen bg-[#070b14] text-slate-100 font-sans overflow-hidden relative gap-8 lg:gap-12">
+        <div className="flex h-screen bg-[#070b14] text-slate-100 font-sans overflow-hidden relative">
             {/* Sidebar with overlay for mobile */}
             <Sidebar 
                 isOpen={isSidebarOpen}
@@ -552,7 +552,7 @@ export default function AdminPage() {
                 ></div>
             )}
 
-            <main className="flex-1 overflow-y-auto p-12 md:p-20 lg:p-32 xl:p-40 custom-scrollbar relative">
+            <main className="flex-1 overflow-y-auto p-6 md:p-8 lg:p-10 custom-scrollbar relative w-full">
                 <AdminHeader 
                     activeTab={activeTab} 
                     onRefresh={loadData} 

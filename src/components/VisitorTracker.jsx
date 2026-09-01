@@ -9,20 +9,23 @@ export default function VisitorTracker({ children }) {
 
   useEffect(() => {
     let intervalId;
-    let locationData = { lat: null, lng: null, locationStr: null };
+    let locationData = { lat: null, lng: null, locationStr: null, city: '', country: '', countryCode: '' };
 
     const startPinging = async () => {
       try {
         // Fetch approximate location using free IP Geo API
         const res = await axios.get('https://get.geojs.io/v1/ip/geo.json');
-        if (res.data && res.data.latitude && res.data.longitude) {
-          locationData.lat = parseFloat(res.data.latitude);
-          locationData.lng = parseFloat(res.data.longitude);
+        if (res.data) {
+          if (res.data.latitude && res.data.longitude) {
+            locationData.lat = parseFloat(res.data.latitude);
+            locationData.lng = parseFloat(res.data.longitude);
+          }
           
-          const city = res.data.city || '';
-          const country = res.data.country || '';
-          if (city || country) {
-              locationData.locationStr = [city, country].filter(Boolean).join(', ');
+          locationData.city = res.data.city || '';
+          locationData.country = res.data.country || '';
+          locationData.countryCode = res.data.country_code || '';
+          if (locationData.city || locationData.country) {
+            locationData.locationStr = [locationData.city, locationData.country].filter(Boolean).join(', ');
           }
         }
       } catch (err) {
@@ -35,10 +38,13 @@ export default function VisitorTracker({ children }) {
             sessionId: sessionIdRef.current,
             lat: locationData.lat,
             lng: locationData.lng,
-            locationStr: locationData.locationStr
+            locationStr: locationData.locationStr,
+            city: locationData.city,
+            country: locationData.country,
+            countryCode: locationData.countryCode
           });
         } catch (err) {
-            // Silently fail if backend is down to not pollute console during dev
+          // Silently fail if backend is down to not pollute console during dev
         }
       };
 

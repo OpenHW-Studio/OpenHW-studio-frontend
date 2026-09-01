@@ -9945,11 +9945,8 @@ body {
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 1rem;
-  /* sharper but modern */
   padding: 1.5rem;
-  /* Increased slightly for better balance */
-  margin: 1rem;
-  /* Guaranteed space in every direction */
+  margin: 0;
   display: flex;
   flex-direction: column;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -9961,7 +9958,7 @@ body {
 .universal-admin-card:hover {
   background: rgba(13, 21, 37, 0.8);
   border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-4px);
+  transform: translateY(-2px);
 }
 
 .admin-status-chip {
