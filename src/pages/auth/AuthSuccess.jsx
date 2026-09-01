@@ -34,6 +34,12 @@ export default function AuthSuccess() {
         }
         
         if (data && data.user) {
+          if (data.user.status === 'pending_deletion') {
+            login(token, data.user, false);
+            navigate('/reactivate', { replace: true });
+            return;
+          }
+
           // Check if there was a saved redirect destination
           const redirectPath = localStorage.getItem("authRedirectPath") || defaultRedirect;
           // Delay removal so StrictMode's second execution can still read it

@@ -17,6 +17,7 @@ import { GamificationToasts } from "./services/gamification/Gamificationpanel.js
 import LandingPage from "./pages/LandingPage.jsx";
 import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
 import UserSignupPage from "./pages/auth/UserSignupPage.jsx";
+import ReactivationPage from "./pages/auth/ReactivationPage.jsx";
 
 import RoleSelectPage from "./pages/RoleSelectPage.jsx";
 import ProjectTheoryPage from "./pages/ProjectTheoryPage.jsx";
@@ -265,6 +266,7 @@ export default function App() {
                   <Route path="/login" element={<UserLoginPage />} />
                   <Route path="/signup" element={<UserSignupPage />} />
                   <Route path="/user/signup" element={<UserSignupPage />} />
+                  <Route path="/reactivate" element={<ReactivationPage />} />
                   <Route
                     path="/signin"
                     element={<Navigate to="/classroom/signin" replace />}

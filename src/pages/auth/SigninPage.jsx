@@ -8,7 +8,7 @@ import AuthLeftShowcase from "./AuthLeftShowcase.jsx";
 export default function SigninPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const [selectedRole, setSelectedRole] = useState(
     searchParams.get("role") || "student"
   );
@@ -23,11 +23,17 @@ export default function SigninPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      if (selectedRole === "teacher") navigate("/teacher/dashboard");
-      else if (selectedRole === "student") navigate("/student/dashboard");
-      else navigate("/user/dashboard");
+      if (user?.status === "pending_deletion") {
+        navigate("/reactivate");
+      } else if (selectedRole === "teacher") {
+        navigate("/teacher/dashboard");
+      } else if (selectedRole === "student") {
+        navigate("/student/dashboard");
+      } else {
+        navigate("/user/dashboard");
+      }
     }
-  }, [isAuthenticated, navigate, selectedRole]);
+  }, [isAuthenticated, user, navigate, selectedRole]);
 
   const handleInputChange = (e) => {
     const value =
@@ -48,9 +54,15 @@ export default function SigninPage() {
       login(data.token, data.user);
       localStorage.setItem("lastUsedLogin", "email");
 
-      if (selectedRole === "teacher") navigate("/teacher/dashboard");
-      else if (selectedRole === "student") navigate("/student/dashboard");
-      else navigate("/user/dashboard");
+      if (data.user?.status === "pending_deletion") {
+        navigate("/reactivate");
+      } else if (selectedRole === "teacher") {
+        navigate("/teacher/dashboard");
+      } else if (selectedRole === "student") {
+        navigate("/student/dashboard");
+      } else {
+        navigate("/user/dashboard");
+      }
     } catch (err) {
       setError(err.message || "Invalid email or password.");
     } finally {
