@@ -1087,161 +1087,115 @@
             "id": "uno1",
             "type": "openhw-arduino-uno",
             "label": "Arduino Uno",
-            "x": 645.3,
-            "y": 195.5,
-            "w": 425,
-            "h": 320,
+            "x": 120,
+            "y": 160,
+            "w": 311,
+            "h": 228,
             "rotation": 0,
             "attrs": {}
           },
           {
-            "id": "rgb_led_1",
+            "id": "r_r",
+            "type": "openhw-resistor",
+            "label": "Resistor R",
+            "x": 480,
+            "y": 110,
+            "w": 60,
+            "h": 12,
+            "rotation": 0,
+            "attrs": {
+              "value": "220"
+            }
+          },
+          {
+            "id": "r_g",
+            "type": "openhw-resistor",
+            "label": "Resistor G",
+            "x": 480,
+            "y": 160,
+            "w": 60,
+            "h": 12,
+            "rotation": 0,
+            "attrs": {
+              "value": "220"
+            }
+          },
+          {
+            "id": "r_b",
+            "type": "openhw-resistor",
+            "label": "Resistor B",
+            "x": 480,
+            "y": 210,
+            "w": 60,
+            "h": 12,
+            "rotation": 0,
+            "attrs": {
+              "value": "220"
+            }
+          },
+          {
+            "id": "rgb1",
             "type": "openhw-rgb-led",
-            "label": "RGB LED (4-pin)",
-            "x": 1155,
-            "y": 225,
-            "w": 75,
-            "h": 105,
+            "label": "RGB LED",
+            "x": 580,
+            "y": 160,
+            "w": 40,
+            "h": 40,
             "rotation": 0,
             "attrs": {
-              "common": "cathode",
-              "breadboard": {
-                "anchorPin": "R"
-              },
-              "targetBoard": "uno1"
-            }
-          },
-          {
-            "id": "via_R_rgb_led_1_0",
-            "type": "openhw-resistor",
-            "label": "Resistor",
-            "x": 1230,
-            "y": 255,
-            "w": 70,
-            "h": 32,
-            "rotation": 0,
-            "attrs": {
-              "value": "220"
-            }
-          },
-          {
-            "id": "via_G_rgb_led_1_1",
-            "type": "openhw-resistor",
-            "label": "Resistor",
-            "x": 1230,
-            "y": 255,
-            "w": 70,
-            "h": 32,
-            "rotation": 0,
-            "attrs": {
-              "value": "220"
-            }
-          },
-          {
-            "id": "via_B_rgb_led_1_2",
-            "type": "openhw-resistor",
-            "label": "Resistor",
-            "x": 1230,
-            "y": 255,
-            "w": 70,
-            "h": 32,
-            "rotation": 0,
-            "attrs": {
-              "value": "220"
+              "color": "red"
             }
           }
         ],
         "connections": [
           {
-            "id": "w_via_in_rgb_led_1_0",
-            "from": "rgb_led_1:R",
-            "to": "via_R_rgb_led_1_0:p1",
-            "color": "orange",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "R",
-            "toLabel": "p1"
+            "id": "w_r1",
+            "from": "uno1:9",
+            "to": "r_r:p1",
+            "color": "red",
+            "waypoints": []
           },
           {
-            "id": "w_via_out_rgb_led_1_0",
-            "from": "via_R_rgb_led_1_0:p2",
-            "to": "uno1:9",
+            "id": "w_r2",
+            "from": "r_r:p2",
+            "to": "rgb1:R",
+            "color": "red",
+            "waypoints": []
+          },
+          {
+            "id": "w_g1",
+            "from": "uno1:10",
+            "to": "r_g:p1",
             "color": "green",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "p2",
-            "toLabel": "9"
+            "waypoints": []
           },
           {
-            "id": "w_via_in_rgb_led_1_1",
-            "from": "rgb_led_1:G",
-            "to": "via_G_rgb_led_1_1:p1",
-            "color": "orange",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "G",
-            "toLabel": "p1"
-          },
-          {
-            "id": "w_via_out_rgb_led_1_1",
-            "from": "via_G_rgb_led_1_1:p2",
-            "to": "uno1:10",
+            "id": "w_g2",
+            "from": "r_g:p2",
+            "to": "rgb1:G",
             "color": "green",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "p2",
-            "toLabel": "10"
+            "waypoints": []
           },
           {
-            "id": "w_via_in_rgb_led_1_2",
-            "from": "rgb_led_1:B",
-            "to": "via_B_rgb_led_1_2:p1",
-            "color": "orange",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "B",
-            "toLabel": "p1"
+            "id": "w_b1",
+            "from": "uno1:11",
+            "to": "r_b:p1",
+            "color": "blue",
+            "waypoints": []
           },
           {
-            "id": "w_via_out_rgb_led_1_2",
-            "from": "via_B_rgb_led_1_2:p2",
-            "to": "uno1:11",
-            "color": "green",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "p2",
-            "toLabel": "11"
+            "id": "w_b2",
+            "from": "r_b:p2",
+            "to": "rgb1:B",
+            "color": "blue",
+            "waypoints": []
           },
           {
-            "id": "w_auto_rgb_led_1_3",
-            "from": "rgb_led_1:COM",
+            "id": "w_com",
+            "from": "rgb1:COM",
             "to": "uno1:gnd_1",
             "color": "black",
-            "waypoints": [],
-            "isBelow": false,
-            "isSocket": false,
-            "isHidden": false,
-            "isHelp": false,
-            "fromLabel": "COM",
-            "toLabel": "gnd_1"
+            "waypoints": []
           }
         ],
         "blocklyXml": "<xml xmlns=\"https://developers.google.com/blockly/xml\"><block type=\"forever\" x=\"20\" y=\"20\"><statement name=\"DO\"><block type=\"rgb_led_set\"><field name=\"PIN_R\">9</field><field name=\"PIN_G\">10</field><field name=\"PIN_B\">11</field><value name=\"RED\"><block type=\"math_number\"><field name=\"NUM\">255</field></block></value><value name=\"GREEN\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><value name=\"BLUE\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><next><block type=\"wait_secs\"><field name=\"VAL\">1</field><field name=\"UNIT\">SEC</field><next><block type=\"rgb_led_set\"><field name=\"PIN_R\">9</field><field name=\"PIN_G\">10</field><field name=\"PIN_B\">11</field><value name=\"RED\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><value name=\"GREEN\"><block type=\"math_number\"><field name=\"NUM\">255</field></block></value><value name=\"BLUE\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><next><block type=\"wait_secs\"><field name=\"VAL\">1</field><field name=\"UNIT\">SEC</field><next><block type=\"rgb_led_set\"><field name=\"PIN_R\">9</field><field name=\"PIN_G\">10</field><field name=\"PIN_B\">11</field><value name=\"RED\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><value name=\"GREEN\"><block type=\"math_number\"><field name=\"NUM\">0</field></block></value><value name=\"BLUE\"><block type=\"math_number\"><field name=\"NUM\">255</field></block></value><next><block type=\"wait_secs\"><field name=\"VAL\">1</field><field name=\"UNIT\">SEC</field></block></block></next></block></next></block></next></block></next></block></next></statement></block></xml>",
