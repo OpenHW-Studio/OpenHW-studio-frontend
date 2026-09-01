@@ -27,10 +27,7 @@ export default function UserLoginPage() {
       navigate(from);
       return;
     }
-    if (userRole === 'student') navigate('/student/dashboard');
-    else if (userRole === 'teacher') navigate('/teacher/dashboard');
-    else if (userRole === 'admin') navigate('/admin/dashboard');
-    else navigate('/user/dashboard');
+    navigate('/user/dashboard');
   };
 
   useEffect(() => {
@@ -64,9 +61,7 @@ export default function UserLoginPage() {
 
   const handleGoogleRedirect = () => {
     localStorage.setItem("lastUsedLogin", "google");
-    if (from) {
-      localStorage.setItem("authRedirectPath", from);
-    }
+    localStorage.setItem("authRedirectPath", from || "/user/dashboard");
     const baseUrl =
       import.meta.env.VITE_API_BASE_URL || "/api";
     window.location.href =
