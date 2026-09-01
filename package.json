@@ -51,6 +51,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
     "react-simple-code-editor": "^0.14.1",
+    "recharts": "^3.10.1",
     "rp2040js": "^0.15.0",
     "zustand": "^5.0.11"
   },

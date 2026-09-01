@@ -48,6 +48,7 @@ import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
 import UserMapTab from './components/UserMapTab';
+import AnalyticsTab from './components/AnalyticsTab';
 import ResourcesTab from './components/ResourcesTab';
 import AdminAdventureContentTab from './components/AdminAdventureContentTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
@@ -447,6 +448,8 @@ export default function AdminPage() {
                 return <OverviewTab stats={analytics} />;
             case 'map':
                 return <UserMapTab stats={analytics} />;
+            case 'analytics':
+                return <AnalyticsTab stats={analytics} />;
             case 'libraries':
                 return <LibrariesTab 
                     libraries={libraries}

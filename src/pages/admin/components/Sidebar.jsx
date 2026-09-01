@@ -15,13 +15,15 @@ import {
     PlayCircle,
     ShieldCheck,
     AlertTriangle,
-    Cpu
+    Cpu,
+    BarChart3
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenanceMode, onToggleMaintenance }) => {
     const menuItems = [
         { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
         { id: 'map', icon: Globe, label: 'User Map' },
+        { id: 'analytics', icon: BarChart3, label: 'Analytics' },
         { id: 'libraries', icon: Library, label: 'Libraries' },
         { id: 'adventure-content', icon: Activity, label: 'Adventure Content' },
         { id: 'approval', icon: Clock, label: 'Approvals' },

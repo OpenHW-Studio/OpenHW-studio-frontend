@@ -68,10 +68,12 @@ const overlay = {
 };
 const card = {
   background: "#0f172a", border: "1px solid #7f1d1d",
-  borderRadius: "16px", padding: "36px",
+  borderRadius: "16px", padding: "32px",
   maxWidth: "520px", width: "100%",
   boxShadow: "0 25px 60px rgba(0,0,0,0.7)",
-  maxHeight: "90vh", overflowY: "auto",
+  maxHeight: "88vh", overflowY: "auto",
+  scrollbarWidth: "thin",
+  scrollbarColor: "#7f1d1d #0f172a",
 };
 const btnRed = (disabled) => ({
   width: "100%", padding: "13px",
@@ -96,6 +98,28 @@ const DELETION_REASONS = [
   "Found or switched to another platform",
   "Other reason",
 ];
+
+const scrollbarStyles = `
+  .delete-modal-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #7f1d1d #0f172a;
+  }
+  .delete-modal-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .delete-modal-scroll::-webkit-scrollbar-track {
+    background: #0f172a;
+    border-radius: 8px;
+  }
+  .delete-modal-scroll::-webkit-scrollbar-thumb {
+    background: #7f1d1d;
+    border-radius: 8px;
+  }
+  .delete-modal-scroll::-webkit-scrollbar-thumb:hover {
+    background: #b91c1c;
+  }
+`;
 
 export default function DeleteAccountModal({ userRole = "user", userEmail = "", onClose, onDeleted }) {
   const [step, setStep] = useState(1); // 1 = disclosure, 2 = otp, 3 = success
@@ -173,7 +197,8 @@ export default function DeleteAccountModal({ userRole = "user", userEmail = "", 
   // ── Step 1: Disclosure ─────────────────────────────────────────────────────
   if (step === 1) return (
     <div style={overlay}>
-      <div style={card}>
+      <style>{scrollbarStyles}</style>
+      <div style={card} className="delete-modal-scroll">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <ShieldAlert style={{ color: "#ef4444", width: "28px", height: "28px", flexShrink: 0 }} />
@@ -294,7 +319,8 @@ export default function DeleteAccountModal({ userRole = "user", userEmail = "", 
   // ── Step 2: OTP Verification ───────────────────────────────────────────────
   if (step === 2) return (
     <div style={overlay}>
-      <div style={{ ...card, maxWidth: "440px" }}>
+      <style>{scrollbarStyles}</style>
+      <div style={{ ...card, maxWidth: "440px" }} className="delete-modal-scroll">
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{
             width: "56px", height: "56px", borderRadius: "50%",
@@ -375,7 +401,8 @@ export default function DeleteAccountModal({ userRole = "user", userEmail = "", 
   // ── Step 3: Success ────────────────────────────────────────────────────────
   return (
     <div style={overlay}>
-      <div style={{ ...card, maxWidth: "440px", textAlign: "center", border: "1px solid #334155" }}>
+      <style>{scrollbarStyles}</style>
+      <div style={{ ...card, maxWidth: "440px", textAlign: "center", border: "1px solid #334155" }} className="delete-modal-scroll">
         <div style={{
           width: "56px", height: "56px", borderRadius: "50%",
           background: "#1e293b", border: "1px solid #334155",
