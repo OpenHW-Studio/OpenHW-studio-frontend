@@ -234,6 +234,10 @@ export default function UserSignupPage() {
                 A 6-digit verification code was sent to<br />
                 <strong style={{ color: "#38bdf8" }}>{formData.email}</strong>
               </p>
+              <p style={{ color: "#64748b", fontSize: "12px", margin: "8px 0 0", lineHeight: 1.4 }}>
+                Sent from <span style={{ color: "#94a3b8" }}>openhwservice@gmail.com</span><br />
+                <span style={{ fontSize: "11px", color: "#64748b" }}>(Please check your <strong>Spam / Junk</strong> folder if not in inbox)</span>
+              </p>
             </div>
 
             <form onSubmit={handleVerifyOtp}>
