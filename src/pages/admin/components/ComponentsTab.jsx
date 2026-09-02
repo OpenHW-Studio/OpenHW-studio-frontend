@@ -1,64 +1,72 @@
 import React from 'react';
 import AdminCard from './AdminCard';
+import { Upload, Download, Trash2, Package, PlusCircle, Box, Database } from 'lucide-react';
 
 const ComponentsTab = ({ installedComponents, onImport, onBackup, onDelete }) => {
     return (
-        <div className="space-y-8">
-            <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                <button 
-                    onClick={onImport}
-                    className="flex-1 px-6 py-4 bg-blue-600 hover:bg-blue-500 rounded-lg text-base font-black transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-900/20 text-white"
-                >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 3v12" /><path d="m8 11 4 4 4-4" /><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4" />
-                    </svg> Import components
+        <div className="ad-space-y-6 ad-fade-in">
+            {/* Action Bar */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button onClick={onImport} className="ad-btn ad-btn-primary" style={{ fontSize: 13 }}>
+                    <Upload style={{ width: 14, height: 14 }} />
+                    Import Components
                 </button>
-                <button 
-                    onClick={onBackup}
-                    className="flex-1 px-6 py-4 bg-slate-800 hover:bg-slate-700 rounded-lg text-base font-black transition-all border border-white/10 flex items-center justify-center gap-2 text-slate-200"
-                >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                    </svg> Backup Repository
+                <button onClick={onBackup} className="ad-btn ad-btn-ghost" style={{ fontSize: 13 }}>
+                    <Download style={{ width: 14, height: 14 }} />
+                    Backup Repository
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/* Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
                 {installedComponents.map((comp) => (
-                    <AdminCard key={comp.id} className="hover:bg-white/[0.04]">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="flex items-center gap-4 min-w-0 flex-1">
-                                <div className="p-3 bg-blue-600/10 rounded-lg shrink-0">
-                                    <svg className="w-5 h-5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M16 16h.01" /><path d="M12 16h.01" /><path d="M8 16h.01" /><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z" /><polyline points="9 22 9 12 15 12 15 22" />
-                                    </svg>
+                    <AdminCard key={comp.id} className="p-0">
+                        <div className="ad-card-header">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                                <div className="ad-stat-icon blue">
+                                    <Package />
                                 </div>
-                                <div className="min-w-0">
-                                    <h3 className="font-black text-lg text-white truncate mb-0.5">{comp.manifest?.label || comp.id}</h3>
-                                    <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest truncate">{comp.manifest?.type || 'Component'}</p>
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 700, color: 'var(--ad-text)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {comp.manifest?.label || comp.id}
+                                    </div>
+                                    <div style={{ fontSize: 9, color: 'var(--ad-text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginTop: 1 }}>
+                                        {comp.manifest?.type || 'Component'}
+                                    </div>
                                 </div>
                             </div>
-                            <button 
+                            <button
                                 onClick={() => onDelete(comp.id)}
-                                className="p-2 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all ml-2"
+                                className="ad-btn-icon"
+                                style={{ width: 28, height: 28, flexShrink: 0 }}
+                                title="Delete component"
                             >
-                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                                </svg>
+                                <Trash2 style={{ width: 12, height: 12, color: 'var(--ad-red)' }} />
                             </button>
                         </div>
-                        
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                <span className="text-slate-600">Build</span>
-                                <span className="text-slate-300">v{comp.manifest?.version || '1.0.0'}</span>
+                        <div className="ad-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                                <span style={{ color: 'var(--ad-text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: 10 }}>Build</span>
+                                <span style={{ color: 'var(--ad-text-2)', fontWeight: 700 }}>v{comp.manifest?.version || '1.0.0'}</span>
                             </div>
-                            <div className="text-[9px] bg-slate-900/80 p-2 rounded border border-white/5 font-mono text-blue-400 truncate">
+                            <div className="ad-mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ad-accent)', display: 'block' }}>
                                 {comp.id}
                             </div>
                         </div>
                     </AdminCard>
                 ))}
+
+                {installedComponents.length === 0 && (
+                    <div style={{
+                        gridColumn: '1/-1', padding: '48px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                        border: '2px dashed var(--ad-border)', borderRadius: 14, backgroundColor: 'var(--ad-surface-2)',
+                    }}>
+                        <Box style={{ width: 40, height: 40, color: 'var(--ad-border)' }} />
+                        <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ad-text-3)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+                            No components installed
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
     );
