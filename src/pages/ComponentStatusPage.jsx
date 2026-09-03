@@ -22,10 +22,12 @@ import {
   Radio,
   Boxes,
   EyeOff,
+  Bug,
 } from "lucide-react";
 import { COMPONENT_REGISTRY } from "./simulationpage/utils/componentRegistry.js";
 import { resolveComponentDetails } from "./simulationpage/utils/componentVisibilityConfig.js";
-import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+import PublicNavbar from "../components/PublicNavbar.jsx";
+import ReportBugModal from "../components/ReportBugModal.jsx";
 
 // Build clean doc URL guaranteeing proper slash formatting
 function getComponentDocUrl(slug) {
@@ -151,6 +153,8 @@ export default function ComponentStatusPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [activeComponent, setActiveComponent] = useState(null);
+  const [bugModalOpen, setBugModalOpen] = useState(false);
+  const [targetBugComponent, setTargetBugComponent] = useState(null);
 
   // Close drawer on ESC
   useEffect(() => {
@@ -255,73 +259,13 @@ export default function ComponentStatusPage() {
   return (
     <div className="status-page-root">
       {/* ── TOP NAVIGATION ────────────────────────────────────────────────── */}
-      <nav className="nav">
-        <div
-          className="nav-brand about-brand"
-          onClick={() => navigate("/")}
-          style={{ cursor: "pointer" }}
-        >
-          <img
-            src="/logo-Photoroom.png"
-            alt="OpenHW-Studio"
-            className="brand-logo brand-logo--nav"
-          />
-          <div className="about-brand-text">
-            <div className="name">OpenHW-Studio</div>
-            <div className="sub">By FOSSEE, IIT Bombay</div>
-          </div>
-        </div>
-
-        <div className="nav-actions" style={{ alignItems: "center" }}>
-          <button className="btn btn-ghost" onClick={() => navigate("/")}>
-            Home
-          </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
-            About Us
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() => navigate("/contributors")}
-          >
-            Contributors
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() => navigate("/examples")}
-          >
-            Examples
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate("/simulator")}
-          >
-            Launch Simulator →
-          </button>
-
-          {/* Divider + Theme toggle */}
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              marginLeft: "22px",
-              marginRight: "-24px",
-              gap: "14px",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                width: "1px",
-                height: "20px",
-                background: "var(--line)",
-                opacity: 0.7,
-                flexShrink: 0,
-              }}
-            />
-            <ThemeToggleSlider size="sm" />
-          </span>
-        </div>
-      </nav>
+      <PublicNavbar
+        links={[
+          { label: "Home",               path: "/" },
+          { label: "Bug Tracker",        path: "/bugs" },
+          { label: "Feedback & Reviews", path: "/feedback" },
+        ]}
+      />
 
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
       <header className="status-hero">
@@ -534,10 +478,25 @@ export default function ComponentStatusPage() {
                       {comp.pinCount} {comp.pinCount === 1 ? "Pin" : "Pins"}
                     </span>
 
-                    <span className="card-view-link">
-                      <span>Details</span>
-                      <ArrowRight size={14} />
-                    </span>
+                    <div className="card-footer-actions">
+                      <button
+                        type="button"
+                        className="card-bug-btn"
+                        title={`Report a bug or issue with ${comp.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTargetBugComponent(comp);
+                          setBugModalOpen(true);
+                        }}
+                      >
+                        <Bug size={13} />
+                      </button>
+
+                      <span className="card-view-link">
+                        <span>Details</span>
+                        <ArrowRight size={14} />
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -707,15 +666,14 @@ export default function ComponentStatusPage() {
               </a>
 
               <div className="drawer-footer-row">
-                <a
-                  href={getReportBugUrl(activeComponent)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => setBugModalOpen(true)}
                   className="drawer-btn drawer-btn-ghost"
                 >
-                  <Github size={14} />
+                  <Bug size={14} />
                   <span>Report Bug</span>
-                </a>
+                </button>
 
                 <a
                   href="https://github.com/OpenHW-Studio/openhw-studio-emulator"
@@ -731,6 +689,16 @@ export default function ComponentStatusPage() {
           </div>
         </div>
       )}
+
+      {/* In-app Bug Report Modal */}
+      <ReportBugModal
+        isOpen={bugModalOpen}
+        onClose={() => {
+          setBugModalOpen(false);
+          setTargetBugComponent(null);
+        }}
+        initialComponent={targetBugComponent || activeComponent}
+      />
 
       {/* ── STYLES ───────────────────────────────────────────────────────── */}
       <style>{STATUS_PAGE_CSS}</style>
@@ -1106,6 +1074,32 @@ const STATUS_PAGE_CSS = `
     height: 6px;
     border-radius: 50%;
     background: var(--accent, #38bdf8);
+  }
+
+  .card-footer-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card-bug-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .card-bug-btn:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #ef4444;
+    transform: scale(1.08);
   }
 
   .card-view-link {

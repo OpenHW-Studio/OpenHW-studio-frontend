@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Github, ExternalLink } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
-import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+import PublicNavbar from "../components/PublicNavbar.jsx";
 
 import fosseeLogoImg from "../assets/about/fossee-logo.jpeg";
 
@@ -434,22 +434,13 @@ export default function ContributorsPage() {
       <style>{PAGE_CSS}</style>
 
       {/* NAV */}
-      <nav className="nav">
-        <div className="nav-brand contrib-brand" onClick={() => navigate("/")}>
-          <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="contrib-brand-logo-img" />
-          <div className="contrib-brand-text">
-            <div className="name">OpenHW-Studio</div>
-            <div className="sub">By FOSSEE, IIT Bombay</div>
-          </div>
-        </div>
-        <div className="nav-actions" style={{ alignItems: "center" }}>
-          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
-            About Us
-          </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
-            Examples
-          </button>
-          {isAuthenticated ? (
+      <PublicNavbar
+        links={[
+          { label: "About Us",  path: "/about" },
+          { label: "Examples",  path: "/examples" },
+        ]}
+        actions={
+          isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
               Dashboard →
             </button>
@@ -462,27 +453,9 @@ export default function ContributorsPage() {
                 Get Started
               </button>
             </>
-          )}
-          {/* Divider + Theme toggle — separated from nav actions */}
-          <span style={{
-            display: "flex",
-            alignItems: "center",
-            marginLeft: "22px",
-            marginRight: "-24px",
-            gap: "14px",
-          }}>
-            <span style={{
-              display: "inline-block",
-              width: "1px",
-              height: "20px",
-              background: "var(--line)",
-              opacity: 0.7,
-              flexShrink: 0,
-            }} />
-            <ThemeToggleSlider size="sm" />
-          </span>
-        </div>
-      </nav>
+          )
+        }
+      />
 
       {/* HERO & HEADER */}
       <main className="contrib-wrap">
@@ -585,6 +558,7 @@ export default function ContributorsPage() {
                 <li><Link to="/explore">Explore</Link></li>
                 <li><a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Learn</a></li>
                 <li><Link to="/components-status">Component Status</Link></li>
+                <li><Link to="/bugs">Bug Tracker</Link></li>
                 <li><Link to="/simulator">Simulate</Link></li>
                 <li><Link to="/examples">Projects</Link></li>
               </ul>
@@ -594,6 +568,7 @@ export default function ContributorsPage() {
               <ul>
                 <li><Link to="/about">About Us</Link></li>
                 <li><Link to="/contributors">Contributors</Link></li>
+                <li><Link to="/feedback">Reviews & Feedback</Link></li>
                 <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Organization</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE IIT Bombay</a></li>
               </ul>

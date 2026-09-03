@@ -68,6 +68,8 @@ import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import ContributorsPage from "./pages/ContributorsPage.jsx";
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
+const BugTrackerPage = React.lazy(() => import("./pages/BugTrackerPage.jsx"));
+const FeedbackReviewsPage = React.lazy(() => import("./pages/FeedbackReviewsPage.jsx"));
 import VisitorTracker from "./components/VisitorTracker.jsx";
 import BetaBanner from "./components/BetaBanner.jsx";
 import VersionWatcher from "./components/VersionWatcher.jsx";
@@ -186,6 +188,10 @@ function ThemeToggleButton() {
     location.pathname === '/contributors' ||
     location.pathname === '/components-status' ||
     location.pathname === '/status' ||
+    location.pathname === '/bugs' ||
+    location.pathname === '/feedback' ||
+    location.pathname === '/review' ||
+    location.pathname === '/reviews' ||
     location.pathname === '/examples';
 
   const isSimulator =
@@ -246,6 +252,10 @@ export default function App() {
                   <Route path="/contributors" element={<ContributorsPage />} />
                   <Route path="/components-status" element={<ComponentStatusPage />} />
                   <Route path="/status" element={<Navigate to="/components-status" replace />} />
+                  <Route path="/bugs" element={<BugTrackerPage />} />
+                  <Route path="/feedback" element={<FeedbackReviewsPage />} />
+                  <Route path="/review" element={<Navigate to="/feedback" replace />} />
+                  <Route path="/reviews" element={<Navigate to="/feedback" replace />} />
                   <Route path="/examples" element={<ExamplesPage />} />
                   <Route path="/login" element={<UserLoginPage />} />
                   <Route path="/signup" element={<UserSignupPage />} />
