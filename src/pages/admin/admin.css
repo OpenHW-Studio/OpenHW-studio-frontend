@@ -1013,3 +1013,78 @@
 .ad-bg-surface { background-color: var(--ad-surface); }
 .ad-bg-surface-2 { background-color: var(--ad-surface-2); }
 .ad-border-default { border-color: var(--ad-border); }
+
+/* ─── ADVENTURE CONTENT TAB THEME BRIDGE ────────────────────────────
+   Overrides the hardcoded Tailwind slate/white colors in
+   AdminAdventureContentTab.jsx to use the admin design token system.
+   Uses high-specificity selectors to win over Tailwind utilities.
+──────────────────────────────────────────────────────────────────── */
+
+/* Card / panel backgrounds */
+.ad-adventure-wrap [class*="bg-slate-950"],
+.ad-adventure-wrap [class*="bg-slate-900"] {
+  background-color: var(--ad-surface) !important;
+}
+.ad-adventure-wrap [class*="bg-white\/5"],
+.ad-adventure-wrap [class*="bg-white\/\[0.04\]"],
+.ad-adventure-wrap [class*="bg-white\/\[0.03\]"] {
+  background-color: var(--ad-surface-2) !important;
+}
+
+/* Borders */
+.ad-adventure-wrap [class*="border-white\/10"],
+.ad-adventure-wrap [class*="border-white\/\[0.1\]"] {
+  border-color: var(--ad-border) !important;
+}
+.ad-adventure-wrap [class*="border-dashed"][class*="border-white"] {
+  border-color: var(--ad-border) !important;
+}
+
+/* Text colors */
+.ad-adventure-wrap [class*="text-slate-50"],
+.ad-adventure-wrap [class*="text-slate-100"] {
+  color: var(--ad-text) !important;
+}
+.ad-adventure-wrap [class*="text-slate-200"],
+.ad-adventure-wrap [class*="text-slate-300"] {
+  color: var(--ad-text-2) !important;
+}
+.ad-adventure-wrap [class*="text-slate-400"],
+.ad-adventure-wrap [class*="text-slate-500"],
+.ad-adventure-wrap [class*="text-slate-600"] {
+  color: var(--ad-text-3) !important;
+}
+
+/* Inputs inside adventure tab */
+.ad-adventure-wrap input[class*="bg-slate-950"],
+.ad-adventure-wrap textarea[class*="bg-slate-950"],
+.ad-adventure-wrap select[class*="bg-slate-950"] {
+  background-color: var(--ad-surface) !important;
+  color: var(--ad-text) !important;
+  border-color: var(--ad-border) !important;
+}
+.ad-adventure-wrap input:focus,
+.ad-adventure-wrap textarea:focus,
+.ad-adventure-wrap select:focus {
+  border-color: var(--ad-accent) !important;
+  outline: none;
+}
+
+/* Ghost buttons */
+.ad-adventure-wrap [class*="bg-white\/5"][class*="rounded"],
+.ad-adventure-wrap [class*="bg-white\/\[0.04\]"][class*="rounded"] {
+  background-color: var(--ad-surface-2) !important;
+  color: var(--ad-text-2) !important;
+  border-color: var(--ad-border) !important;
+}
+.ad-adventure-wrap [class*="bg-white\/5"]:hover,
+.ad-adventure-wrap [class*="bg-white\/\[0.04\]"]:hover {
+  background-color: var(--ad-surface-3) !important;
+}
+
+/* Cyan accents — keep them, they're intentional brand color */
+.ad-adventure-wrap [class*="text-cyan-300"],
+.ad-adventure-wrap [class*="text-cyan-400"],
+.ad-adventure-wrap [class*="bg-cyan-600"] {
+  /* preserve cyan as-is for adventure brand identity */
+}

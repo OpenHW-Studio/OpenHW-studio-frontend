@@ -1,6 +1,7 @@
 import { useState, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
 import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
 import GUIDED_JSON from "../services/guidedProjects.json";
 const DOCS_URL =
@@ -142,20 +143,13 @@ export default function LandingPage() {
             className="brand-logo brand-logo--nav"
           />
         </div>
-        <div className="nav-actions">
-          {/* ABOUT US BUTTON ADDED HERE */}
+        <div className="nav-actions" style={{ alignItems: "center" }}>
+          {/* ABOUT US BUTTON */}
           <button className="btn btn-ghost" onClick={() => navigate("/about")}>
             About Us
           </button>
-<button className="btn btn-ghost" onClick={() => navigate("/examples")}>
+          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
             Examples
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={toggleTheme}
-            title="Toggle Dark/Light Mode"
-          >
-            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
@@ -177,6 +171,24 @@ export default function LandingPage() {
               </button>
             </>
           )}
+          {/* Divider + Theme toggle — separated from nav actions */}
+          <span style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: "22px",
+            marginRight: "-24px",
+            gap: "14px",
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: "1px",
+              height: "20px",
+              background: "var(--line)",
+              opacity: 0.7,
+              flexShrink: 0,
+            }} />
+            <ThemeToggleSlider size="sm" />
+          </span>
         </div>
       </nav>
 

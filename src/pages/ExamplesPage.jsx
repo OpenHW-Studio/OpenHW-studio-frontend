@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ThemeToggleSlider from '../components/ThemeToggleSlider.jsx';
 import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 import {
   EXAMPLES_BASE_URL,
@@ -190,13 +191,28 @@ const toggleTheme = () => {
         <div className="nav-brand">
           <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--nav" />
         </div>
-        <div className="nav-actions">
+        <div className="nav-actions" style={{ alignItems: "center" }}>
           <button className="btn btn-ghost" onClick={() => navigate('/')}>← Home</button>
           <button className="btn btn-ghost" onClick={() => navigate('/about')}>About Us</button>
-          <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
-  {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-</button>
           <button className="btn btn-primary" onClick={() => navigate('/simulator')}>▶ Try Simulator</button>
+          {/* Divider + Theme toggle — separated from nav actions */}
+          <span style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: "22px",
+            marginRight: "-24px",
+            gap: "14px",
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: "1px",
+              height: "20px",
+              background: "var(--line)",
+              opacity: 0.7,
+              flexShrink: 0,
+            }} />
+            <ThemeToggleSlider size="sm" />
+          </span>
         </div>
       </nav>
 

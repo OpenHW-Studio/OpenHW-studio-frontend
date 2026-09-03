@@ -2,6 +2,8 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Github, ExternalLink } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+
 import fosseeLogoImg from "../assets/about/fossee-logo.jpeg";
 
 const DOCS_URL =
@@ -50,29 +52,63 @@ const CARD_COLORS = [
 ];
 
 const PAGE_CSS = `
-  :root {
+  :root, [data-theme="light"] {
     --ink: #0B1222;
     --ink-700: #1B2740;
     --ink-500: #4B5875;
     --paper: #F5F6F3;
     --panel: #FFFFFF;
+    --panel-hover: #FFFFFF;
+    --nav-bg: rgba(245, 246, 243, 0.88);
+    --footer-bg: #0B1222;
     --trace-blue: #2F6FED;
     --trace-blue-dim: #DCE7FE;
     --copper: #B9713E;
     --copper-dim: #F3E1D0;
     --signal-green: #1F9D63;
-    --line: #E2E8F0;
+    --line: #DEE2E6;
+    --grid-line: rgba(222, 226, 230, 0.35);
+    --radial-tint: rgba(47, 111, 237, 0.06);
+    --match-card-bg: rgba(255, 255, 255, 0.75);
+    --match-card-hover-bg: #FFFFFF;
+    --avatar-bg: #E2E8F0;
+    --handle-color: #64748B;
+    --card-shadow: 0 16px 32px rgba(11, 18, 34, 0.09);
     --radius: 14px;
     --maxw: 1320px;
+  }
+
+  [data-theme="dark"] {
+    --ink: #F1F5F9;
+    --ink-700: #CBD5E1;
+    --ink-500: #94A3B8;
+    --paper: #070B14;
+    --panel: #0E1626;
+    --panel-hover: #131E35;
+    --nav-bg: rgba(7, 11, 20, 0.92);
+    --footer-bg: #04070D;
+    --trace-blue: #38BDF8;
+    --trace-blue-dim: rgba(56, 189, 248, 0.16);
+    --copper: #F59E0B;
+    --copper-dim: rgba(245, 158, 11, 0.16);
+    --signal-green: #10B981;
+    --line: #1E2D47;
+    --grid-line: rgba(30, 45, 71, 0.45);
+    --radial-tint: rgba(56, 189, 248, 0.08);
+    --match-card-bg: rgba(14, 22, 38, 0.75);
+    --match-card-hover-bg: #131E35;
+    --avatar-bg: #1A263D;
+    --handle-color: #94A3B8;
+    --card-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
   }
 
   .contrib-page-root {
     margin: 0;
     background-color: var(--paper);
     background-image: 
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(47, 111, 237, 0.06), transparent),
-      linear-gradient(rgba(222, 226, 230, 0.3) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(222, 226, 230, 0.3) 1px, transparent 1px);
+      radial-gradient(ellipse 80% 50% at 50% -10%, var(--radial-tint), transparent),
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 100% 100%, 56px 56px, 56px 56px;
     color: var(--ink);
     font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -82,6 +118,7 @@ const PAGE_CSS = `
     flex-direction: column;
     position: relative;
     overflow-x: hidden;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   .contrib-page-root h1, 
@@ -90,6 +127,7 @@ const PAGE_CSS = `
   .contrib-page-root h4 {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     margin: 0;
+    color: var(--ink);
     letter-spacing: -0.01em;
   }
   .contrib-page-root p { margin: 0; }
@@ -99,11 +137,12 @@ const PAGE_CSS = `
   .contrib-wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; width: 100%; position: relative; z-index: 2; }
 
   /* ---------- NAV ---------- */
-  .contrib-nav {
+  .contrib-page-root .nav, .contrib-nav {
     position: sticky; top: 0; z-index: 50;
-    background: rgba(245, 246, 243, 0.88);
-    backdrop-filter: blur(10px);
+    background: var(--nav-bg);
+    backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
   .contrib-nav-inner {
     display: flex; align-items: center; justify-content: space-between;
@@ -119,19 +158,21 @@ const PAGE_CSS = `
   .contrib-links a {
     font-size: 14.5px; font-weight: 500; color: var(--ink-700);
     position: relative; padding: 4px 0;
+    transition: color 0.2s ease;
   }
+  .contrib-links a:hover { color: var(--trace-blue); }
   .contrib-links a.active { color: var(--trace-blue); }
   .contrib-links a.active::after {
     content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 2px;
     background: var(--trace-blue); border-radius: 2px;
   }
   .contrib-nav-cta {
-    background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;
+    background: var(--ink); color: var(--paper); font-size: 14px; font-weight: 600;
     padding: 10px 20px; border-radius: 8px;
     display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background 0.2s ease, opacity 0.2s ease;
   }
-  .contrib-nav-cta:hover { background: var(--trace-blue); }
+  .contrib-nav-cta:hover { background: var(--trace-blue); color: #FFFFFF; }
 
   /* ---------- HERO HEADER ---------- */
   .contrib-hero { padding: 48px 0 40px; text-align: center; }
@@ -159,7 +200,7 @@ const PAGE_CSS = `
   }
 
   .match-card {
-    background: rgba(255, 255, 255, 0.7);
+    background: var(--match-card-bg);
     border: 1px solid var(--line); border-radius: 16px;
     padding: 24px 14px 18px; text-align: center;
     display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
@@ -169,23 +210,50 @@ const PAGE_CSS = `
   }
   .match-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 16px 32px rgba(11, 18, 34, 0.09);
+    box-shadow: var(--card-shadow);
     border-color: var(--accent-color);
-    background: #FFFFFF;
+    background: var(--match-card-hover-bg);
+  }
+
+  /* Contributor Avatar / Logo */
+  .match-avatar-container {
+    width: 48px; height: 48px; border-radius: 50%;
+    margin-bottom: 12px; flex-shrink: 0;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--avatar-bg);
+    border: 2px solid transparent;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    overflow: hidden;
+  }
+  .match-card:hover .match-avatar-container {
+    transform: scale(1.08);
+    border-color: var(--accent-color);
+    box-shadow: 0 4px 12px rgba(11, 18, 34, 0.12);
+  }
+  .match-avatar-img {
+    width: 100%; height: 100%; border-radius: 50%;
+    object-fit: cover; display: block;
+    transition: opacity 0.2s ease;
+  }
+  .match-avatar-img.loading {
+    opacity: 0;
+    position: absolute;
+  }
+  .match-avatar-img.loaded {
+    opacity: 1;
   }
 
   /* Initial Badge */
   .match-initial-badge {
-    width: 46px; height: 46px; border-radius: 12px;
+    width: 100%; height: 100%; border-radius: 50%;
     background: #94A3B8; color: #FFFFFF;
     display: flex; align-items: center; justify-content: center;
     font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px;
-    margin-bottom: 14px; flex-shrink: 0;
-    transition: background 0.25s ease, transform 0.25s ease;
+    transition: background 0.25s ease;
   }
   .match-card:hover .match-initial-badge {
     background: var(--accent-color);
-    transform: scale(1.05);
   }
 
   /* Contributor Name */
@@ -200,14 +268,24 @@ const PAGE_CSS = `
     color: var(--accent-color);
   }
 
-  /* Monospace Handle */
+  /* Monospace Handle with GitHub Icon */
   .match-handle {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 11.5px; color: #64748B; font-weight: 500;
+    font-size: 11.5px; color: var(--handle-color); font-weight: 500;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     text-align: center; word-break: break-all; margin-bottom: 8px;
     transition: color 0.25s ease;
   }
   .match-card:hover .match-handle {
+    color: var(--accent-color);
+  }
+  .match-github-icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .match-card:hover .match-github-icon {
+    opacity: 1;
     color: var(--accent-color);
   }
 
@@ -230,11 +308,12 @@ const PAGE_CSS = `
 
   /* ---------- JOIN CTA BANNER ---------- */
   .contrib-join {
-    background: #FFFFFF;
+    background: var(--panel);
     border: 1px solid var(--line); border-radius: 20px;
     padding: 48px 52px; display: flex; flex-direction: column; align-items: center; text-align: center;
     margin-top: 20px; margin-bottom: 60px; position: relative; overflow: hidden;
-    box-shadow: 0 10px 30px rgba(11, 18, 34, 0.04);
+    box-shadow: var(--card-shadow);
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
   .contrib-join h3 { font-size: 28px; font-weight: 700; margin-bottom: 12px; color: var(--ink); }
   .contrib-join p { color: var(--ink-500); font-size: 15.5px; line-height: 1.65; max-width: 720px; margin: 0 auto 12px; }
@@ -248,7 +327,7 @@ const PAGE_CSS = `
   .contrib-join-cta:hover { background: #2358c4; transform: translateY(-2px); }
 
   /* ---------- FOOTER ---------- */
-  .contrib-footer { background: var(--ink); color: #AEB8CF; margin-top: auto; padding: 56px 0 26px; }
+  .contrib-footer { background: var(--footer-bg); color: #AEB8CF; margin-top: auto; padding: 56px 0 26px; border-top: 1px solid var(--line); }
   .contrib-foot-grid {
     display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 32px;
     padding-bottom: 38px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -275,7 +354,7 @@ const PAGE_CSS = `
     border-radius: 8px; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
     display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s ease;
   }
-  .contrib-top-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); } }
+  .contrib-top-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
 
   /* ---------- RESPONSIVE ---------- */
   @media (max-width: 1200px) {
@@ -295,19 +374,53 @@ const PAGE_CSS = `
   }
 `;
 
+function ContributorAvatar({ username, initials, name }) {
+  const [imgError, setImgError] = React.useState(false);
+  const [imgLoaded, setImgLoaded] = React.useState(false);
+
+  return (
+    <div className="match-avatar-container">
+      {!imgError && (
+        <img
+          src={`https://github.com/${username}.png?size=100`}
+          alt={name}
+          className={`match-avatar-img ${imgLoaded ? "loaded" : "loading"}`}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgError(true)}
+          loading="lazy"
+        />
+      )}
+      {(!imgLoaded || imgError) && (
+        <div
+          className="match-initial-badge"
+          style={{ display: imgLoaded && !imgError ? "none" : "flex" }}
+        >
+          {initials}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ContributorsPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
 
   const [theme, setTheme] = React.useState(() => {
-    return localStorage.getItem("theme") || "dark";
+    return (
+      document.documentElement.getAttribute("data-theme") ||
+      localStorage.getItem("theme") ||
+      "dark"
+    );
   });
 
+  React.useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
   const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
   const handleDashboard = () => {
@@ -329,19 +442,12 @@ export default function ContributorsPage() {
             <div className="sub">By FOSSEE, IIT Bombay</div>
           </div>
         </div>
-        <div className="nav-actions">
+        <div className="nav-actions" style={{ alignItems: "center" }}>
           <button className="btn btn-ghost" onClick={() => navigate("/about")}>
             About Us
           </button>
           <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
             Examples
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={toggleTheme}
-            title="Toggle Dark/Light Mode"
-          >
-            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
@@ -357,6 +463,24 @@ export default function ContributorsPage() {
               </button>
             </>
           )}
+          {/* Divider + Theme toggle — separated from nav actions */}
+          <span style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: "22px",
+            marginRight: "-24px",
+            gap: "14px",
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: "1px",
+              height: "20px",
+              background: "var(--line)",
+              opacity: 0.7,
+              flexShrink: 0,
+            }} />
+            <ThemeToggleSlider size="sm" />
+          </span>
         </div>
       </nav>
 
@@ -374,6 +498,7 @@ export default function ContributorsPage() {
           <div className="match-grid">
             {CONTRIBUTORS.map((c, index) => {
               const accent = CARD_COLORS[index % CARD_COLORS.length];
+              const username = c.handle.replace(/^\//, "");
               return (
                 <a 
                   key={index}
@@ -383,11 +508,16 @@ export default function ContributorsPage() {
                   className="match-card"
                   style={{ "--accent-color": accent }}
                 >
-                  <div className="match-initial-badge">
-                    {c.initials}
-                  </div>
+                  <ContributorAvatar
+                    username={username}
+                    initials={c.initials}
+                    name={c.name}
+                  />
                   <div className="match-name">{c.name}</div>
-                  <div className="match-handle">{c.handle}</div>
+                  <div className="match-handle">
+                    <Github size={12} className="match-github-icon" />
+                    <span>@{username}</span>
+                  </div>
                   <div className="match-profile-btn">
                     <ExternalLink size={10} /> PROFILE
                   </div>
@@ -407,7 +537,7 @@ export default function ContributorsPage() {
             Together, we can create an open platform that empowers the next generation of innovators.
           </p>
           <a 
-            href="https://github.com/FOSSEE/OpenHW-Studio" 
+            href="https://github.com/OpenHW-Studio" 
             target="_blank" 
             rel="noopener noreferrer" 
             className="contrib-join-cta"
@@ -463,7 +593,7 @@ export default function ContributorsPage() {
               <ul>
                 <li><Link to="/about">About Us</Link></li>
                 <li><Link to="/contributors">Contributors</Link></li>
-                <li><a href="https://github.com/FOSSEE/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Repo</a></li>
+                <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Organization</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE IIT Bombay</a></li>
               </ul>
             </div>
@@ -478,7 +608,7 @@ export default function ContributorsPage() {
             <div>
               <h5>Connect</h5>
               <ul>
-                <li><a href="https://github.com/FOSSEE/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE Website</a></li>
                 <li><a href="https://www.youtube.com/@FOSSEE" target="_blank" rel="noopener noreferrer">YouTube Channel</a></li>
                 <li><a href="mailto:support@fossee.in">Support Email</a></li>

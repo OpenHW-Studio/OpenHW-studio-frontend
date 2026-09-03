@@ -468,7 +468,7 @@ export default function AdminAdventureContentTab() {
     }
   };
   return (
-    <div className="space-y-8 pb-8">
+    <div className="ad-adventure-wrap space-y-8 pb-8">
       <div className="rounded-[28px] border border-white/10 bg-slate-950/70 p-8 md:p-10 shadow-2xl shadow-black/25">
         <div className="flex flex-wrap items-start gap-5">
           <div className="min-w-0">

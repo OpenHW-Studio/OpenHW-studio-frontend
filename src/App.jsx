@@ -68,6 +68,8 @@ import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import ContributorsPage from "./pages/ContributorsPage.jsx";
 import VisitorTracker from "./components/VisitorTracker.jsx";
+import BetaBanner from "./components/BetaBanner.jsx";
+import ThemeToggleSlider from "./components/ThemeToggleSlider.jsx";
 
 import { fetchMaintenanceStatus } from "./services/simulatorService.js";
 import axios from "axios";
@@ -167,7 +169,6 @@ const MaintenanceGuard = ({ children }) => {
 
 function ThemeToggleButton() {
   const location = useLocation();
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'dark');
   const [isMobile, setIsMobile] = React.useState(() => window.innerWidth <= 768);
 
   React.useEffect(() => {
@@ -176,59 +177,24 @@ function ThemeToggleButton() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  React.useEffect(() => {
-    const observer = new MutationObserver(() => {
-      const nt = document.documentElement.getAttribute('data-theme') || 'dark';
-      if (nt !== theme) {
-        setTheme(nt);
-      }
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, [theme]);
-
-  // Hide on simulator or demo/guided pages to prevent overlay with simulation controls
+  // Hide on simulator or demo/guided pages
   const isSimulator = location.pathname.includes('/simulator') ||
     location.pathname.includes('/demo') ||
     location.pathname.includes('/guided');
   if (isSimulator) return null;
 
   return (
-    <button
-      onClick={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
+    <div
       style={{
         position: 'fixed',
         bottom: isMobile ? '84px' : '24px',
         right: '24px',
         zIndex: 9999,
-        width: '46px',
-        height: '46px',
-        borderRadius: '50%',
-        background: theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        color: theme === 'dark' ? '#fbbf24' : '#4f46e5',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.05)',
+        filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.28))',
       }}
-      title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
-      {theme === 'dark' ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="M4.93 4.93l1.41 1.41" /><path d="M17.66 17.66l1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="M6.34 17.66l-1.41 1.41" /><path d="M19.07 4.93l-1.41 1.41" /></svg>
-      ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
-      )}
-    </button>
+      <ThemeToggleSlider size="md" />
+    </div>
   );
 }
 
@@ -239,6 +205,8 @@ export default function App() {
         <AuthProvider>
           <GamificationProvider>
             <MaintenanceGuard>
+              {/* Beta development notice banner */}
+              <BetaBanner />
               {/* Global toast notifications (level-up, badge earned, XP) */}
               <GamificationToasts />
               <ThemeToggleButton />
