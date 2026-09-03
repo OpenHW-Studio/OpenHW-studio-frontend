@@ -68,6 +68,7 @@ import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import ContributorsPage from "./pages/ContributorsPage.jsx";
 import VisitorTracker from "./components/VisitorTracker.jsx";
+import BetaBanner from "./components/BetaBanner.jsx";
 
 import { fetchMaintenanceStatus } from "./services/simulatorService.js";
 import axios from "axios";
@@ -239,6 +240,8 @@ export default function App() {
         <AuthProvider>
           <GamificationProvider>
             <MaintenanceGuard>
+              {/* Beta development notice banner */}
+              <BetaBanner />
               {/* Global toast notifications (level-up, badge earned, XP) */}
               <GamificationToasts />
               <ThemeToggleButton />
