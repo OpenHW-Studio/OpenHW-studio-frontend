@@ -10,6 +10,8 @@ import {
   Send,
   Loader2,
   ExternalLink,
+  Paperclip,
+  Image,
 } from "lucide-react";
 import { submitBugReport } from "../services/bugService.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -33,10 +35,30 @@ export default function ReportBugModal({
   const [stepsToReproduce, setStepsToReproduce] = useState("");
   const [reporterName, setReporterName] = useState("");
   const [reporterEmail, setReporterEmail] = useState("");
+  const [attachmentUrl, setAttachmentUrl] = useState("");
+  const [attachmentName, setAttachmentName] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2.5 * 1024 * 1024) {
+      setErrorMessage("Attachment exceeds 2.5 MB. Please upload a smaller image or paste an external image link.");
+      return;
+    }
+
+    setAttachmentName(file.name);
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      setAttachmentUrl(loadEvt.target.result);
+      setErrorMessage("");
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Populate from initialComponent if provided
   useEffect(() => {
@@ -91,6 +113,7 @@ export default function ReportBugModal({
         failingFeatures: selectedFeatures,
         codeSnippet,
         stepsToReproduce,
+        attachmentUrl,
         browserInfo: typeof navigator !== "undefined" ? navigator.userAgent : "",
         osInfo: typeof navigator !== "undefined" ? navigator.platform : "",
         reporterName: reporterName.trim() || (user ? user.name : "Anonymous"),
@@ -115,21 +138,69 @@ export default function ReportBugModal({
     }
   };
 
-  // Build GitHub fallback URL for developers
+  // Build GitHub fallback URL for developers with all filled fields pre-populated
   const getGitHubFallbackUrl = () => {
     const isComponent = Boolean(componentType);
     const repo = isComponent
       ? "https://github.com/OpenHW-Studio/openhw-studio-emulator"
       : "https://github.com/OpenHW-Studio/OpenHW-studio-frontend";
 
-    const issueTitle = encodeURIComponent(title || `[${type.toUpperCase()}] New Report`);
-    const issueBody = encodeURIComponent(`### Description\n${description}\n\n### Component\n${componentLabel || componentType || 'General'}\n\n### Environment\n${typeof navigator !== 'undefined' ? navigator.userAgent : ''}`);
+    const issueTitle = encodeURIComponent(
+      title.trim() || `[${type === "bug" ? "BUG" : "FEATURE"}] ${componentLabel || "Simulation Feedback"}`
+    );
+
+    let markdownBody = "";
+
+    // 1. Description
+    if (description.trim()) {
+      markdownBody += `### Description\n${description.trim()}\n\n`;
+    }
+
+    // 2. Component details
+    if (componentLabel || componentType) {
+      markdownBody += `### Component Context\n- **Label:** ${componentLabel || "N/A"}\n- **Type / ID:** \`${componentType || "N/A"}\`\n\n`;
+    }
+
+    // 3. Failing features
+    if (selectedFeatures.length > 0) {
+      markdownBody += `### Failing or Affected Features\n${selectedFeatures.map((f) => `- [x] ${f}`).join("\n")}\n\n`;
+    }
+
+    // 4. Steps to reproduce
+    if (stepsToReproduce.trim()) {
+      markdownBody += `### Steps to Reproduce\n${stepsToReproduce.trim()}\n\n`;
+    }
+
+    // 5. Code snippet
+    if (codeSnippet.trim()) {
+      markdownBody += `### Code Snippet (Arduino / C++ / MicroPython)\n\`\`\`cpp\n${codeSnippet.trim()}\n\`\`\`\n\n`;
+    }
+
+    // 6. Attachment note (if uploaded in browser)
+    if (attachmentName) {
+      markdownBody += `### Attached Screenshot / Media\n- File attached in form: **${attachmentName}**\n*(Tip: You can also directly drag & drop the image file into this GitHub issue box)*\n\n`;
+    }
+
+    // 7. Submitter & Environment
+    markdownBody += `### Submitter & Environment Info\n`;
+    markdownBody += `- **Reported By:** ${reporterName.trim() || "Community Member"}\n`;
+    if (reporterEmail.trim()) {
+      markdownBody += `- **Contact Email:** ${reporterEmail.trim()}\n`;
+    }
+    if (typeof navigator !== "undefined") {
+      markdownBody += `- **Browser:** \`${navigator.userAgent}\`\n`;
+      markdownBody += `- **Platform / OS:** \`${navigator.platform || "Unknown"}\`\n`;
+    }
+    markdownBody += `- **Source:** OpenHW-Studio Web Simulator Form\n`;
+
+    const issueBody = encodeURIComponent(markdownBody);
     return `${repo}/issues/new?title=${issueTitle}&body=${issueBody}`;
   };
 
   return (
     <div className="report-modal-backdrop" onClick={onClose}>
       <div className="report-modal-card" onClick={(e) => e.stopPropagation()}>
+        {/* ── HEADER ────────────────────────────────────────────────────────── */}
         <div className="report-modal-header">
           <div className="report-header-title-wrap">
             <h3 className="report-modal-title">
@@ -144,26 +215,6 @@ export default function ReportBugModal({
           </button>
         </div>
 
-        {/* Type Toggle: Bug vs Feature */}
-        <div className="report-type-toggle">
-          <button
-            type="button"
-            className={`type-btn ${type === "bug" ? "type-btn-active type-btn-bug" : ""}`}
-            onClick={() => setType("bug")}
-          >
-            <Bug size={15} />
-            <span>Bug Report</span>
-          </button>
-          <button
-            type="button"
-            className={`type-btn ${type === "feature" ? "type-btn-active type-btn-feature" : ""}`}
-            onClick={() => setType("feature")}
-          >
-            <Lightbulb size={15} />
-            <span>Feature Request</span>
-          </button>
-        </div>
-
         {submitted ? (
           <div className="report-success-state">
             <CheckCircle2 size={46} className="success-icon" />
@@ -171,132 +222,224 @@ export default function ReportBugModal({
             <p>Our engineering team has received your report. Thank you for helping improve OpenHW-Studio!</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="report-modal-body">
+          <form onSubmit={handleSubmit} className="report-modal-form">
             {errorMessage && <div className="report-error-banner">{errorMessage}</div>}
 
-            {/* Context Badge if from component */}
-            {componentLabel && (
-              <div className="report-component-context">
-                <Cpu size={14} />
-                <span>
-                  Attached Component: <strong>{componentLabel}</strong> (<code>{componentType}</code>)
-                </span>
-              </div>
-            )}
+            <div className="report-studio-grid">
+              {/* ── COLUMN 1: Meta & Identity (~290px) ─────────────────────── */}
+              <div className="report-col-meta">
+                {/* Vertical Stacked Type Switcher */}
+                <div className="report-field">
+                  <label className="report-label">Submission Type</label>
+                  <div className="report-type-vertical">
+                    <button
+                      type="button"
+                      className={`type-v-btn ${type === "bug" ? "type-v-btn-active v-bug" : ""}`}
+                      onClick={() => setType("bug")}
+                    >
+                      <Bug size={16} />
+                      <div className="type-v-text">
+                        <span className="type-v-title">Bug Report</span>
+                        <span className="type-v-desc">Glitch, broken pin, or unexpected behavior</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`type-v-btn ${type === "feature" ? "type-v-btn-active v-feature" : ""}`}
+                      onClick={() => setType("feature")}
+                    >
+                      <Lightbulb size={16} />
+                      <div className="type-v-text">
+                        <span className="type-v-title">Feature Request</span>
+                        <span className="type-v-desc">New hardware board, sensor, or enhancement</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
 
-            {/* Title */}
-            <div className="report-field">
-              <label className="report-label">
-                Title <span className="req">*</span>
-              </label>
-              <input
-                type="text"
-                className="report-input"
-                placeholder={type === "bug" ? "e.g. Servo motor jittering when using PWM pin 9" : "e.g. Add support for I2C OLED display driver"}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
-            </div>
+                {/* Title */}
+                <div className="report-field">
+                  <label className="report-label">
+                    {type === "bug" ? "Issue Title" : "Feature Title"} <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="report-input"
+                    placeholder={type === "bug" ? "e.g. Servo jitter on PWM pin 9" : "e.g. Support Raspberry Pi Pico W WiFi"}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    required
+                  />
+                </div>
 
-            {/* Component Feature Checkboxes (if features available) */}
-            {initialComponent && (initialComponent.working?.length > 0 || initialComponent.inProgress?.length > 0) && (
-              <div className="report-field">
-                <label className="report-label">
-                  Failing or Misbehaving Features
-                  <span className="field-hint">(Select any that failed during your simulation)</span>
-                </label>
-                <div className="features-checklist-box">
-                  {[...(initialComponent.working || []), ...(initialComponent.inProgress || [])].map((f, i) => (
-                    <label key={i} className="feature-check-label">
-                      <input
-                        type="checkbox"
-                        checked={selectedFeatures.includes(f)}
-                        onChange={() => handleFeatureToggle(f)}
-                      />
-                      <span>{f}</span>
-                    </label>
-                  ))}
+                {/* Reporter Name */}
+                <div className="report-field">
+                  <label className="report-label">Your Name</label>
+                  <input
+                    type="text"
+                    className="report-input"
+                    placeholder="Anonymous or your name"
+                    value={reporterName}
+                    onChange={(e) => setReporterName(e.target.value)}
+                  />
+                </div>
+
+                {/* Reporter Email */}
+                <div className="report-field">
+                  <label className="report-label">
+                    Email <span className="field-hint">(Optional)</span>
+                  </label>
+                  <input
+                    type="email"
+                    className="report-input"
+                    placeholder="name@example.com"
+                    value={reporterEmail}
+                    onChange={(e) => setReporterEmail(e.target.value)}
+                  />
+                </div>
+
+                {/* Tip Box */}
+                <div className="report-guide-box">
+                  <strong>Tip:</strong> Including a minimal Arduino sketch or reproduction steps helps our maintainers diagnose and release fixes much faster.
                 </div>
               </div>
-            )}
 
-            {/* Description */}
-            <div className="report-field">
-              <label className="report-label">
-                Description <span className="req">*</span>
-              </label>
-              <textarea
-                className="report-textarea"
-                rows={3}
-                placeholder={type === "bug" ? "Describe clearly what happened versus what you expected to happen..." : "Describe the feature and how it would help your hardware projects..."}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                required
-              />
+              {/* ── COLUMN 2: Content & Technical Details (Expanded) ────────── */}
+              <div className="report-col-content">
+                {/* Context Badge if attached to a component */}
+                {componentLabel && (
+                  <div className="report-component-context">
+                    <Cpu size={14} />
+                    <span>
+                      Attached Component: <strong>{componentLabel}</strong> (<code>{componentType}</code>)
+                    </span>
+                  </div>
+                )}
+
+                {/* Component Feature Checkboxes (Bug Specific) */}
+                {initialComponent && (initialComponent.working?.length > 0 || initialComponent.inProgress?.length > 0) && (
+                  <div className="report-field">
+                    <label className="report-label">
+                      Failing or Misbehaving Features
+                      <span className="field-hint">(Select any that failed during simulation)</span>
+                    </label>
+                    <div className="features-checklist-box">
+                      {[...(initialComponent.working || []), ...(initialComponent.inProgress || [])].map((f, i) => (
+                        <label key={i} className="feature-check-label">
+                          <input
+                            type="checkbox"
+                            checked={selectedFeatures.includes(f)}
+                            onChange={() => handleFeatureToggle(f)}
+                          />
+                          <span>{f}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Description */}
+                <div className="report-field">
+                  <label className="report-label">
+                    {type === "bug" ? "Detailed Description" : "Proposal Details & Use Case"} <span className="req">*</span>
+                  </label>
+                  <textarea
+                    className="report-textarea"
+                    rows={4}
+                    placeholder={type === "bug" ? "Describe clearly what happened versus what you expected to happen..." : "Describe the feature, why it is needed, and how it would improve simulation projects..."}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Steps to Reproduce */}
+                {type === "bug" ? (
+                  <div className="report-field">
+                    <label className="report-label">
+                      Steps to Reproduce <span className="field-hint">(Optional)</span>
+                    </label>
+                    <textarea
+                      className="report-textarea"
+                      rows={3}
+                      placeholder="1. Connected Pin 9 to Servo&#10;2. Ran Arduino sweep sketch&#10;3. Noticed motor does not rotate..."
+                      value={stepsToReproduce}
+                      onChange={(e) => setStepsToReproduce(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div className="report-field">
+                    <label className="report-label">
+                      Target Board / Hardware Ecosystem <span className="field-hint">(Optional)</span>
+                    </label>
+                    <textarea
+                      className="report-textarea"
+                      rows={3}
+                      placeholder="e.g. Raspberry Pi Pico, ESP32-S3, Arduino UNO R4 WiFi, MicroPython, or specific sensor models..."
+                      value={stepsToReproduce}
+                      onChange={(e) => setStepsToReproduce(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Code Snippet */}
+                <div className="report-field">
+                  <label className="report-label">
+                    <Code size={13} style={{ display: 'inline', marginRight: 4 }} />
+                    Arduino / C++ / MicroPython Code Snippet <span className="field-hint">(Optional)</span>
+                  </label>
+                  <textarea
+                    className="report-textarea report-code-textarea"
+                    rows={4}
+                    placeholder="// Paste minimal Arduino / MicroPython sketch here..."
+                    value={codeSnippet}
+                    onChange={(e) => setCodeSnippet(e.target.value)}
+                  />
+                </div>
+
+                {/* Screenshot / File Attachment */}
+                <div className="report-field">
+                  <label className="report-label">
+                    <Paperclip size={13} style={{ display: 'inline', marginRight: 4 }} />
+                    Screenshot or Circuit Attachment <span className="field-hint">(Optional &bull; PNG, JPG, or PDF up to 2.5 MB)</span>
+                  </label>
+                  <div className="attachment-upload-zone">
+                    <input
+                      type="file"
+                      id="bug-attachment-input"
+                      className="attachment-file-input"
+                      accept="image/png,image/jpeg,image/webp,application/pdf"
+                      onChange={handleFileUpload}
+                    />
+                    <label htmlFor="bug-attachment-input" className="attachment-upload-label">
+                      <Image size={18} className="attachment-icon" />
+                      {attachmentName ? (
+                        <div className="attachment-file-info">
+                          <span className="attachment-filename">{attachmentName}</span>
+                          <button
+                            type="button"
+                            className="attachment-clear-btn"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setAttachmentUrl("");
+                              setAttachmentName("");
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="attachment-placeholder-text">
+                          <strong>Click to upload</strong> or drag and drop circuit screenshot
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Steps to reproduce (only for bugs) */}
-            {type === "bug" && (
-              <div className="report-field">
-                <label className="report-label">
-                  Steps to Reproduce
-                  <span className="field-hint">(Optional)</span>
-                </label>
-                <textarea
-                  className="report-textarea"
-                  rows={2}
-                  placeholder="1. Connected Pin 9 to Servo&#10;2. Ran Arduino sweep sketch&#10;3. Noticed motor does not rotate..."
-                  value={stepsToReproduce}
-                  onChange={(e) => setStepsToReproduce(e.target.value)}
-                />
-              </div>
-            )}
-
-            {/* Code Snippet */}
-            <div className="report-field">
-              <label className="report-label">
-                <Code size={13} style={{ display: 'inline', marginRight: 4 }} />
-                Arduino / C++ Code Snippet
-                <span className="field-hint">(Optional)</span>
-              </label>
-              <textarea
-                className="report-textarea report-code-textarea"
-                rows={3}
-                placeholder="// Paste minimal Arduino / MicroPython sketch here..."
-                value={codeSnippet}
-                onChange={(e) => setCodeSnippet(e.target.value)}
-              />
-            </div>
-
-            {/* Reporter Contact Info */}
-            <div className="report-row">
-              <div className="report-field flex-1">
-                <label className="report-label">Your Name</label>
-                <input
-                  type="text"
-                  className="report-input"
-                  placeholder="Anonymous or your name"
-                  value={reporterName}
-                  onChange={(e) => setReporterName(e.target.value)}
-                />
-              </div>
-              <div className="report-field flex-1">
-                <label className="report-label">
-                  Email
-                  <span className="field-hint">(Optional, for notification when fixed)</span>
-                </label>
-                <input
-                  type="email"
-                  className="report-input"
-                  placeholder="name@example.com"
-                  value={reporterEmail}
-                  onChange={(e) => setReporterEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
+            {/* ── FOOTER ──────────────────────────────────────────────────────── */}
             <div className="report-modal-footer">
               <div className="github-alt-link">
                 <a
@@ -370,11 +513,12 @@ const REPORT_MODAL_CSS = `
     border: 1px solid var(--border);
     border-radius: 16px;
     width: 100%;
-    max-width: 580px;
-    max-height: 90vh;
+    max-width: 1020px;
+    height: 88vh;
+    max-height: 820px;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6);
     animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
   }
@@ -384,31 +528,32 @@ const REPORT_MODAL_CSS = `
   }
 
   .report-modal-header {
-    padding: 18px 24px;
+    padding: 11px 24px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-shrink: 0;
   }
   .report-modal-title {
-    margin: 0 0 4px;
-    font-size: 18px;
+    margin: 0 0 2px;
+    font-size: 16.5px;
     font-weight: 700;
     font-family: 'Space Grotesk', sans-serif;
     color: var(--text);
   }
   .report-modal-sub {
     margin: 0;
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--text2);
   }
   .report-close-btn {
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 8px;
-    width: 32px;
-    height: 32px;
+    border-radius: 7px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -421,58 +566,137 @@ const REPORT_MODAL_CSS = `
     border-color: var(--border2);
   }
 
-  .report-type-toggle {
+  .report-modal-form {
     display: flex;
-    padding: 12px 24px 0;
-    gap: 10px;
-  }
-  .type-btn {
+    flex-direction: column;
     flex: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ── Studio 2-Column Grid Layout ──────────────────────────────────── */
+  .report-studio-grid {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  @media (max-width: 768px) {
+    .report-studio-grid {
+      flex-direction: column;
+      overflow-y: auto;
+    }
+  }
+
+  /* Left Column: Meta & Identity (~300px) */
+  .report-col-meta {
+    width: 300px;
+    flex-shrink: 0;
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+  }
+  @media (max-width: 768px) {
+    .report-col-meta {
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+  }
+
+  /* Right Column: Technical Core (Expanded) */
+  .report-col-content {
+    flex: 1;
+    min-width: 0;
+    padding: 20px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+  .report-col-content::-webkit-scrollbar {
+    width: 6px;
+  }
+  .report-col-content::-webkit-scrollbar-thumb {
+    background: var(--border2);
+    border-radius: 99px;
+  }
+
+  /* ── Vertical Type Switcher in Column 1 ────────────────────────────── */
+  .report-type-vertical {
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    padding: 9px 14px;
+  }
+  .type-v-btn {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
     border-radius: 10px;
     background: var(--card);
     border: 1px solid var(--border);
     color: var(--text2);
-    font-size: 13px;
-    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    text-align: left;
+    width: 100%;
   }
-  .type-btn:hover {
+  .type-v-btn:hover {
     color: var(--text);
     border-color: var(--border2);
   }
-  .type-btn-active.type-btn-bug {
+  .type-v-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .type-v-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .type-v-desc {
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.3;
+  }
+  .type-v-btn-active.v-bug {
     background: rgba(239, 68, 68, 0.12);
-    border-color: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.4);
     color: #ef4444;
   }
-  .type-btn-active.type-btn-feature {
+  .type-v-btn-active.v-bug .type-v-title {
+    color: #ef4444;
+  }
+  .type-v-btn-active.v-feature {
     background: rgba(56, 189, 248, 0.12);
-    border-color: rgba(56, 189, 248, 0.35);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+  }
+  .type-v-btn-active.v-feature .type-v-title {
     color: #38bdf8;
   }
 
-  .report-modal-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px 24px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border2) transparent;
+  /* Help Guide Box in Col 1 */
+  .report-guide-box {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text2);
+    margin-top: auto;
   }
-  .report-modal-body::-webkit-scrollbar {
-    width: 6px;
-  }
-  .report-modal-body::-webkit-scrollbar-thumb {
-    background: var(--border2);
-    border-radius: 99px;
+  .report-guide-box strong {
+    color: var(--accent, #38bdf8);
   }
 
   .report-field {
@@ -482,7 +706,7 @@ const REPORT_MODAL_CSS = `
   }
   .report-row {
     display: flex;
-    gap: 12px;
+    gap: 14px;
   }
   .flex-1 { flex: 1; }
 
@@ -518,6 +742,78 @@ const REPORT_MODAL_CSS = `
     font-family: monospace;
     font-size: 12.5px;
     background: rgba(0, 0, 0, 0.25);
+  }
+
+  /* ── Attachment Upload Box ─────────────────────────────────────────── */
+  .attachment-upload-zone {
+    position: relative;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    transition: all 0.2s ease;
+  }
+  .attachment-upload-zone:hover {
+    border-color: var(--accent, #38bdf8);
+    background: rgba(56, 189, 248, 0.04);
+  }
+  .attachment-file-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .attachment-upload-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    color: var(--text2);
+    font-size: 13px;
+  }
+  .attachment-icon {
+    color: var(--accent, #38bdf8);
+    flex-shrink: 0;
+  }
+  .attachment-placeholder-text {
+    flex: 1;
+  }
+  .attachment-placeholder-text strong {
+    color: var(--text);
+  }
+  .attachment-file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .attachment-filename {
+    color: #10b981;
+    font-weight: 600;
+    font-family: monospace;
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 400px;
+  }
+  .attachment-clear-btn {
+    margin-left: auto;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    position: relative;
+    z-index: 3;
+  }
+  .attachment-clear-btn:hover {
+    background: rgba(239, 68, 68, 0.25);
   }
 
   .report-component-context {
@@ -564,15 +860,16 @@ const REPORT_MODAL_CSS = `
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-top: 10px;
+    padding: 9px 24px;
     border-top: 1px solid var(--border);
-    flex-wrap: wrap;
+    background: rgba(10, 16, 28, 0.9);
+    flex-shrink: 0;
   }
   .github-alt-link a {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--text2);
     text-decoration: none;
     transition: color 0.2s;
@@ -590,10 +887,10 @@ const REPORT_MODAL_CSS = `
   .modal-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;

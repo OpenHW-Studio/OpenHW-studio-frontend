@@ -6,6 +6,7 @@ import {
   Clock,
   AlertTriangle,
   ThumbsUp,
+  ThumbsDown,
   Search,
   Plus,
   X,
@@ -20,11 +21,16 @@ import {
   Calendar,
   User,
   ArrowRight,
+  MessageSquare,
+  Send,
+  Paperclip,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   fetchPublicBugReports,
   toggleBugUpvote,
+  toggleBugDownvote,
+  addBugCommentAdmin,
   updateBugStatusAdmin,
   deleteBugReportAdmin,
 } from "../services/bugService.js";
@@ -66,6 +72,8 @@ export default function BugTrackerPage() {
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
   const [selectedBug, setSelectedBug] = useState(null);
   const [savingAdmin, setSavingAdmin] = useState(false);
+  const [newAdminComment, setNewAdminComment] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   const loadBugs = async () => {
     setLoading(true);
@@ -119,7 +127,13 @@ export default function BugTrackerPage() {
         setBugs((prev) =>
           prev.map((it) =>
             it._id === id
-              ? { ...it, upvotes: res.upvotes, hasUpvoted: res.hasUpvoted }
+              ? {
+                  ...it,
+                  upvotes: res.upvotes,
+                  hasUpvoted: res.hasUpvoted,
+                  downvotes: res.downvotes ?? it.downvotes,
+                  hasDownvoted: res.hasDownvoted ?? it.hasDownvoted,
+                }
               : it
           )
         );
@@ -128,11 +142,71 @@ export default function BugTrackerPage() {
             ...prev,
             upvotes: res.upvotes,
             hasUpvoted: res.hasUpvoted,
+            downvotes: res.downvotes ?? prev.downvotes,
+            hasDownvoted: res.hasDownvoted ?? prev.hasDownvoted,
           }));
         }
       }
     } catch (err) {
       console.error("Upvote failed:", err);
+    }
+  };
+
+  const handleDownvote = async (id, e) => {
+    e.stopPropagation();
+    try {
+      const res = await toggleBugDownvote(id);
+      if (res.success) {
+        setBugs((prev) =>
+          prev.map((it) =>
+            it._id === id
+              ? {
+                  ...it,
+                  downvotes: res.downvotes,
+                  hasDownvoted: res.hasDownvoted,
+                  upvotes: res.upvotes ?? it.upvotes,
+                  hasUpvoted: res.hasUpvoted ?? it.hasUpvoted,
+                }
+              : it
+          )
+        );
+        if (selectedBug && selectedBug._id === id) {
+          setSelectedBug((prev) => ({
+            ...prev,
+            downvotes: res.downvotes,
+            hasDownvoted: res.hasDownvoted,
+            upvotes: res.upvotes ?? prev.upvotes,
+            hasUpvoted: res.hasUpvoted ?? prev.hasUpvoted,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Downvote failed:", err);
+    }
+  };
+
+  const handleAddAdminComment = async (e) => {
+    e.preventDefault();
+    if (!newAdminComment.trim() || !selectedBug) return;
+    setCommentSubmitting(true);
+    try {
+      const tokenToUse = adminToken || token;
+      const res = await addBugCommentAdmin(selectedBug._id, newAdminComment.trim(), tokenToUse);
+      if (res.success) {
+        const updatedComments = res.comments || [...(selectedBug.comments || []), res.comment];
+        setBugs((prev) =>
+          prev.map((it) =>
+            it._id === selectedBug._id ? { ...it, comments: updatedComments } : it
+          )
+        );
+        setSelectedBug((prev) => ({ ...prev, comments: updatedComments }));
+        setNewAdminComment("");
+      }
+    } catch (err) {
+      console.error("Failed to add admin comment:", err);
+      alert("Failed to submit reply. Please ensure you are logged in as admin.");
+    } finally {
+      setCommentSubmitting(false);
     }
   };
 
@@ -266,11 +340,6 @@ export default function BugTrackerPage() {
           { label: "Components Status",  path: "/components-status" },
           { label: "Feedback & Reviews", path: "/feedback" },
         ]}
-        actions={
-          <button className="btn btn-primary" onClick={() => navigate("/simulator")}>
-            Launch Simulator →
-          </button>
-        }
       />
 
       {/* ── ADMIN BANNER ──────────────────────────────────────────────────── */}
@@ -473,13 +542,30 @@ export default function BugTrackerPage() {
                     <div className="bt-card-actions">
                       <button
                         type="button"
-                        className={`bt-upvote-btn ${bug.hasUpvoted ? "upvoted" : ""}`}
+                        className={`bt-vote-btn bt-upvote-btn ${bug.hasUpvoted ? "upvoted" : ""}`}
                         onClick={(e) => handleUpvote(bug._id, e)}
                         title="Confirm you experienced this bug"
                       >
                         <ThumbsUp size={13} />
                         <span>{bug.upvotes || 0}</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className={`bt-vote-btn bt-downvote-btn ${bug.hasDownvoted ? "downvoted" : ""}`}
+                        onClick={(e) => handleDownvote(bug._id, e)}
+                        title="Downvote"
+                      >
+                        <ThumbsDown size={13} />
+                        <span>{bug.downvotes || 0}</span>
+                      </button>
+
+                      {bug.comments?.length > 0 && (
+                        <span className="bt-comments-pill" title={`${bug.comments.length} team comment(s)`}>
+                          <MessageSquare size={12} />
+                          <span>{bug.comments.length}</span>
+                        </span>
+                      )}
 
                       {adminModeActive && (
                         <span className="bt-admin-tag">
@@ -658,6 +744,80 @@ export default function BugTrackerPage() {
                 </div>
               )}
 
+              {/* Attached Screenshot / Circuit Image */}
+              {selectedBug.attachmentUrl && (
+                <div className="bt-section">
+                  <h4 className="bt-sec-title">
+                    <Paperclip size={14} />
+                    <span>Attachment / Screenshot</span>
+                  </h4>
+                  <div className="bt-attachment-view">
+                    {selectedBug.attachmentUrl.startsWith("data:image/") || selectedBug.attachmentUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
+                      <a href={selectedBug.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={selectedBug.attachmentUrl} alt="Circuit bug attachment" className="bt-attachment-img" />
+                      </a>
+                    ) : (
+                      <a href={selectedBug.attachmentUrl} target="_blank" rel="noopener noreferrer" className="bt-attachment-file-btn">
+                        <ExternalLink size={14} />
+                        <span>Open Document Attachment</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Maintainer / Staff Comments Section */}
+              <div className="bt-section">
+                <h4 className="bt-sec-title">
+                  <MessageSquare size={14} />
+                  <span>Engineering & Triage Updates ({selectedBug.comments?.length || 0})</span>
+                </h4>
+
+                {selectedBug.comments?.length > 0 ? (
+                  <div className="bt-comments-list">
+                    {selectedBug.comments.map((cm, idx) => (
+                      <div key={idx} className="bt-comment-card">
+                        <div className="bt-comment-header">
+                          <div className="bt-comment-author">
+                            <ShieldCheck size={13} className="text-emerald" />
+                            <strong>{cm.authorName || "OpenHW Team"}</strong>
+                            <span className="bt-staff-badge">Staff</span>
+                          </div>
+                          <span className="bt-comment-time">
+                            {new Date(cm.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="bt-comment-text">{cm.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="bt-no-comments">No triage notes from engineering yet.</p>
+                )}
+
+                {/* Admin-only comment input */}
+                {adminModeActive && (
+                  <form onSubmit={handleAddAdminComment} className="bt-comment-form">
+                    <textarea
+                      className="bt-comment-input"
+                      rows={3}
+                      placeholder="Add an official engineering comment or workaround..."
+                      value={newAdminComment}
+                      onChange={(e) => setNewAdminComment(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="bt-comment-submit-btn"
+                      disabled={commentSubmitting || !newAdminComment.trim()}
+                    >
+                      <Send size={13} />
+                      <span>{commentSubmitting ? "Posting..." : "Post Official Update"}</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+
               {/* Diagnostics */}
               {adminModeActive && (
                 <div className="bt-section">
@@ -675,14 +835,28 @@ export default function BugTrackerPage() {
             </div>
 
             <div className="bt-drawer-footer">
-              <button
-                type="button"
-                className={`bt-footer-upvote ${selectedBug.hasUpvoted ? "upvoted" : ""}`}
-                onClick={(e) => handleUpvote(selectedBug._id, e)}
-              >
-                <ThumbsUp size={14} />
-                <span>{selectedBug.upvotes || 0} Confirmations</span>
-              </button>
+              <div className="bt-footer-votes">
+                <button
+                  type="button"
+                  className={`bt-footer-vote-btn ${selectedBug.hasUpvoted ? "upvoted" : ""}`}
+                  onClick={(e) => handleUpvote(selectedBug._id, e)}
+                  title="Confirm bug"
+                >
+                  <ThumbsUp size={14} />
+                  <span>{selectedBug.upvotes || 0} Confirmations</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`bt-footer-vote-btn ${selectedBug.hasDownvoted ? "downvoted" : ""}`}
+                  onClick={(e) => handleDownvote(selectedBug._id, e)}
+                  title="Downvote"
+                >
+                  <ThumbsDown size={14} />
+                  <span>{selectedBug.downvotes || 0} Downvotes</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -1333,29 +1507,214 @@ const BUG_TRACKER_CSS = `
     justify-content: space-between;
     gap: 12px;
   }
-  .bt-footer-upvote {
+  .bt-footer-votes {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bt-footer-vote-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-radius: 8px;
     background: var(--card);
     border: 1px solid var(--border);
     color: var(--text);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s;
   }
-  .bt-footer-upvote.upvoted {
+  .bt-footer-vote-btn:hover {
+    border-color: var(--border2);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .bt-footer-vote-btn.upvoted {
     background: rgba(239, 68, 68, 0.15);
     border-color: #ef4444;
     color: #ef4444;
   }
+  .bt-footer-vote-btn.downvoted {
+    background: rgba(148, 163, 184, 0.15);
+    border-color: #94a3b8;
+    color: var(--text2);
+  }
+
+  .bt-vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .bt-vote-btn:hover {
+    border-color: var(--border2);
+    color: var(--text);
+  }
+  .bt-upvote-btn.upvoted {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+  .bt-downvote-btn.downvoted {
+    background: rgba(148, 163, 184, 0.15);
+    border-color: #94a3b8;
+    color: var(--text2);
+  }
+
+  .bt-comments-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #38bdf8;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* Drawer Attachments */
+  .bt-attachment-view {
+    margin-top: 6px;
+  }
+  .bt-attachment-img {
+    max-width: 100%;
+    max-height: 240px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    transition: transform 0.2s;
+  }
+  .bt-attachment-img:hover {
+    transform: scale(1.02);
+  }
+  .bt-attachment-file-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #38bdf8;
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  /* Drawer Comments */
+  .bt-comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .bt-comment-card {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .bt-comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .bt-comment-author {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .bt-staff-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .bt-comment-time {
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .bt-comment-text {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.5;
+    margin: 0;
+  }
+  .bt-no-comments {
+    font-size: 12.5px;
+    color: var(--text3);
+    margin: 4px 0 10px;
+  }
+  .bt-comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .bt-comment-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    resize: vertical;
+    outline: none;
+    font-family: inherit;
+  }
+  .bt-comment-input:focus {
+    border-color: #ef4444;
+  }
+  .bt-comment-submit-btn {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.2s;
+  }
+  .bt-comment-submit-btn:hover {
+    filter: brightness(1.1);
+  }
+  .bt-comment-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
   /* States */
   .bt-state-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
-    padding: 60px 20px;
+    padding: 64px 24px;
     background: var(--card);
     border: 1px dashed var(--border);
     border-radius: 16px;
@@ -1368,11 +1727,24 @@ const BUG_TRACKER_CSS = `
     border-top-color: #ef4444;
     border-radius: 50%;
     animation: btSpin 0.8s linear infinite;
-    margin: 0 auto 12px;
+    margin-bottom: 14px;
   }
-  .empty-bug-icon { color: var(--text2); margin-bottom: 12px; opacity: 0.7; }
-  .text-rose { color: #ef4444; }
-  .text-amber { color: #f59e0b; }
-  .text-emerald { color: #10b981; }
-  @keyframes btSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .empty-bug-icon {
+    display: block;
+    color: var(--text2);
+    margin: 0 auto 16px;
+    opacity: 0.65;
+  }
+  .bt-state-box h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .bt-state-box p {
+    margin: 0 0 20px;
+    font-size: 14px;
+    color: var(--text2);
+    max-width: 480px;
+  }
 `;

@@ -154,6 +154,7 @@ export default function ComponentStatusPage() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [activeComponent, setActiveComponent] = useState(null);
   const [bugModalOpen, setBugModalOpen] = useState(false);
+  const [targetBugComponent, setTargetBugComponent] = useState(null);
 
   // Close drawer on ESC
   useEffect(() => {
@@ -264,11 +265,6 @@ export default function ComponentStatusPage() {
           { label: "Bug Tracker",        path: "/bugs" },
           { label: "Feedback & Reviews", path: "/feedback" },
         ]}
-        actions={
-          <button className="btn btn-primary" onClick={() => navigate("/simulator")}>
-            Launch Simulator →
-          </button>
-        }
       />
 
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
@@ -482,10 +478,25 @@ export default function ComponentStatusPage() {
                       {comp.pinCount} {comp.pinCount === 1 ? "Pin" : "Pins"}
                     </span>
 
-                    <span className="card-view-link">
-                      <span>Details</span>
-                      <ArrowRight size={14} />
-                    </span>
+                    <div className="card-footer-actions">
+                      <button
+                        type="button"
+                        className="card-bug-btn"
+                        title={`Report a bug or issue with ${comp.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTargetBugComponent(comp);
+                          setBugModalOpen(true);
+                        }}
+                      >
+                        <Bug size={13} />
+                      </button>
+
+                      <span className="card-view-link">
+                        <span>Details</span>
+                        <ArrowRight size={14} />
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -682,8 +693,11 @@ export default function ComponentStatusPage() {
       {/* In-app Bug Report Modal */}
       <ReportBugModal
         isOpen={bugModalOpen}
-        onClose={() => setBugModalOpen(false)}
-        initialComponent={activeComponent}
+        onClose={() => {
+          setBugModalOpen(false);
+          setTargetBugComponent(null);
+        }}
+        initialComponent={targetBugComponent || activeComponent}
       />
 
       {/* ── STYLES ───────────────────────────────────────────────────────── */}
@@ -1060,6 +1074,32 @@ const STATUS_PAGE_CSS = `
     height: 6px;
     border-radius: 50%;
     background: var(--accent, #38bdf8);
+  }
+
+  .card-footer-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card-bug-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .card-bug-btn:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #ef4444;
+    transform: scale(1.08);
   }
 
   .card-view-link {

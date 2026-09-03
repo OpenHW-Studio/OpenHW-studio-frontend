@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   ThumbsUp,
+  ThumbsDown,
   Search,
   Plus,
   X,
@@ -17,11 +18,16 @@ import {
   ArrowRight,
   MessageSquare,
   Sparkles,
+  Send,
+  Paperclip,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   fetchPublicBugReports,
   toggleBugUpvote,
+  toggleBugDownvote,
+  addBugCommentAdmin,
   updateBugStatusAdmin,
   deleteBugReportAdmin,
 } from "../services/bugService.js";
@@ -31,6 +37,7 @@ import PublicNavbar from "../components/PublicNavbar.jsx";
 export default function FeedbackReviewsPage() {
   const navigate = useNavigate();
   const {
+    isAuthenticated,
     isAdminAuthenticated,
     adminRole,
     user,
@@ -54,16 +61,18 @@ export default function FeedbackReviewsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Tabs: 'features' | 'reviews' | 'completed'
-  const [activeTab, setActiveTab] = useState("features");
+  // Tabs: 'reviews' | 'features' | 'completed' (User reviews first by default)
+  const [activeTab, setActiveTab] = useState("reviews");
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
   // Modals & Drawer
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalInitialType, setModalInitialType] = useState("feature");
+  const [modalInitialType, setModalInitialType] = useState("review");
   const [selectedItem, setSelectedItem] = useState(null);
   const [savingAdmin, setSavingAdmin] = useState(false);
+  const [newAdminComment, setNewAdminComment] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   const loadFeedback = async () => {
     setLoading(true);
@@ -126,13 +135,25 @@ export default function FeedbackReviewsPage() {
 
   const handleUpvote = async (id, e) => {
     e.stopPropagation();
+    if (!isAuthenticated) {
+      if (window.confirm("Please log in to vote for community features. Go to login page?")) {
+        navigate("/login");
+      }
+      return;
+    }
     try {
       const res = await toggleBugUpvote(id);
       if (res.success) {
         setItems((prev) =>
           prev.map((it) =>
             it._id === id
-              ? { ...it, upvotes: res.upvotes, hasUpvoted: res.hasUpvoted }
+              ? {
+                  ...it,
+                  upvotes: res.upvotes,
+                  hasUpvoted: res.hasUpvoted,
+                  downvotes: res.downvotes ?? it.downvotes,
+                  hasDownvoted: res.hasDownvoted ?? it.hasDownvoted,
+                }
               : it
           )
         );
@@ -141,11 +162,77 @@ export default function FeedbackReviewsPage() {
             ...prev,
             upvotes: res.upvotes,
             hasUpvoted: res.hasUpvoted,
+            downvotes: res.downvotes ?? prev.downvotes,
+            hasDownvoted: res.hasDownvoted ?? prev.hasDownvoted,
           }));
         }
       }
     } catch (err) {
       console.error("Upvote failed:", err);
+    }
+  };
+
+  const handleDownvote = async (id, e) => {
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      if (window.confirm("You need to sign in to vote. Go to login?")) {
+        navigate("/login");
+      }
+      return;
+    }
+    try {
+      const res = await toggleBugDownvote(id);
+      if (res.success) {
+        setItems((prev) =>
+          prev.map((it) =>
+            it._id === id
+              ? {
+                  ...it,
+                  downvotes: res.downvotes,
+                  hasDownvoted: res.hasDownvoted,
+                  upvotes: res.upvotes ?? it.upvotes,
+                  hasUpvoted: res.hasUpvoted ?? it.hasUpvoted,
+                }
+              : it
+          )
+        );
+        if (selectedItem && selectedItem._id === id) {
+          setSelectedItem((prev) => ({
+            ...prev,
+            downvotes: res.downvotes,
+            hasDownvoted: res.hasDownvoted,
+            upvotes: res.upvotes ?? prev.upvotes,
+            hasUpvoted: res.hasUpvoted ?? prev.hasUpvoted,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Downvote failed:", err);
+    }
+  };
+
+  const handleAddAdminComment = async (e) => {
+    e.preventDefault();
+    if (!newAdminComment.trim() || !selectedItem) return;
+    setCommentSubmitting(true);
+    try {
+      const tokenToUse = adminToken || token;
+      const res = await addBugCommentAdmin(selectedItem._id, newAdminComment.trim(), tokenToUse);
+      if (res.success) {
+        const updatedComments = res.comments || [...(selectedItem.comments || []), res.comment];
+        setItems((prev) =>
+          prev.map((it) =>
+            it._id === selectedItem._id ? { ...it, comments: updatedComments } : it
+          )
+        );
+        setSelectedItem((prev) => ({ ...prev, comments: updatedComments }));
+        setNewAdminComment("");
+      }
+    } catch (err) {
+      console.error("Failed to add admin comment:", err);
+      alert("Failed to submit comment. Please ensure you are logged in as admin.");
+    } finally {
+      setCommentSubmitting(false);
     }
   };
 
@@ -243,11 +330,6 @@ export default function FeedbackReviewsPage() {
           { label: "Components Status", path: "/components-status" },
           { label: "Bug Tracker",       path: "/bugs" },
         ]}
-        actions={
-          <button className="btn btn-primary" onClick={() => navigate("/simulator")}>
-            Launch Simulator →
-          </button>
-        }
       />
 
       {/* ── ADMIN BANNER ──────────────────────────────────────────────────── */}
@@ -329,18 +411,18 @@ export default function FeedbackReviewsPage() {
           <div className="fr-toolbar">
             <div className="fr-tabs">
               <button
-                className={`fr-tab-btn ${activeTab === "features" ? "fr-tab-active" : ""}`}
-                onClick={() => setActiveTab("features")}
-              >
-                <Lightbulb size={14} />
-                <span>Feature Requests ({metrics.features})</span>
-              </button>
-              <button
                 className={`fr-tab-btn ${activeTab === "reviews" ? "fr-tab-active" : ""}`}
                 onClick={() => setActiveTab("reviews")}
               >
                 <Star size={14} />
                 <span>User Reviews ({metrics.reviewsCount})</span>
+              </button>
+              <button
+                className={`fr-tab-btn ${activeTab === "features" ? "fr-tab-active" : ""}`}
+                onClick={() => setActiveTab("features")}
+              >
+                <Lightbulb size={14} />
+                <span>Feature Requests ({metrics.features})</span>
               </button>
               <button
                 className={`fr-tab-btn ${activeTab === "completed" ? "fr-tab-active" : ""}`}
@@ -506,16 +588,31 @@ export default function FeedbackReviewsPage() {
                     </div>
 
                     <div className="fr-card-actions">
-                      {item.type === "feature" && (
-                        <button
-                          type="button"
-                          className={`fr-upvote-btn ${item.hasUpvoted ? "upvoted" : ""}`}
-                          onClick={(e) => handleUpvote(item._id, e)}
-                          title="Vote for this feature"
-                        >
-                          <ThumbsUp size={13} />
-                          <span>{item.upvotes || 0}</span>
-                        </button>
+                      <button
+                        type="button"
+                        className={`fr-vote-btn fr-upvote-btn ${item.hasUpvoted ? "upvoted" : ""}`}
+                        onClick={(e) => handleUpvote(item._id, e)}
+                        title="Upvote"
+                      >
+                        <ThumbsUp size={13} />
+                        <span>{item.upvotes || 0}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`fr-vote-btn fr-downvote-btn ${item.hasDownvoted ? "downvoted" : ""}`}
+                        onClick={(e) => handleDownvote(item._id, e)}
+                        title="Downvote"
+                      >
+                        <ThumbsDown size={13} />
+                        <span>{item.downvotes || 0}</span>
+                      </button>
+
+                      {item.comments?.length > 0 && (
+                        <span className="fr-comments-pill" title={`${item.comments.length} staff comment(s)`}>
+                          <MessageSquare size={12} />
+                          <span>{item.comments.length}</span>
+                        </span>
                       )}
 
                       {adminModeActive && (
@@ -621,6 +718,80 @@ export default function FeedbackReviewsPage() {
                 </div>
               </div>
 
+              {/* Attached Screenshot / Circuit Spec */}
+              {selectedItem.attachmentUrl && (
+                <div className="fr-drawer-section">
+                  <h4 className="fr-sec-title">
+                    <Paperclip size={14} />
+                    <span>Attachment / Screenshot</span>
+                  </h4>
+                  <div className="fr-attachment-view">
+                    {selectedItem.attachmentUrl.startsWith("data:image/") || selectedItem.attachmentUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
+                      <a href={selectedItem.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={selectedItem.attachmentUrl} alt="Submission attachment" className="fr-attachment-img" />
+                      </a>
+                    ) : (
+                      <a href={selectedItem.attachmentUrl} target="_blank" rel="noopener noreferrer" className="fr-attachment-file-btn">
+                        <ExternalLink size={14} />
+                        <span>Open Document Attachment</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Staff / Admin Comments Section */}
+              <div className="fr-drawer-section">
+                <h4 className="fr-sec-title">
+                  <MessageSquare size={14} />
+                  <span>Maintainer & Staff Responses ({selectedItem.comments?.length || 0})</span>
+                </h4>
+                
+                {selectedItem.comments?.length > 0 ? (
+                  <div className="fr-comments-list">
+                    {selectedItem.comments.map((cm, idx) => (
+                      <div key={idx} className="fr-comment-card">
+                        <div className="fr-comment-header">
+                          <div className="fr-comment-author">
+                            <ShieldCheck size={13} className="text-emerald" />
+                            <strong>{cm.authorName || "OpenHW Team"}</strong>
+                            <span className="fr-staff-badge">Staff</span>
+                          </div>
+                          <span className="fr-comment-time">
+                            {new Date(cm.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="fr-comment-text">{cm.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="fr-no-comments">No official team responses yet.</p>
+                )}
+
+                {/* Admin-only comment input */}
+                {adminModeActive && (
+                  <form onSubmit={handleAddAdminComment} className="fr-comment-form">
+                    <textarea
+                      className="fr-comment-input"
+                      rows={3}
+                      placeholder="Add an official staff reply or status update..."
+                      value={newAdminComment}
+                      onChange={(e) => setNewAdminComment(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="fr-comment-submit-btn"
+                      disabled={commentSubmitting || !newAdminComment.trim()}
+                    >
+                      <Send size={13} />
+                      <span>{commentSubmitting ? "Posting..." : "Post Official Reply"}</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+
               {adminModeActive && selectedItem.reporterEmail && (
                 <div className="fr-drawer-section">
                   <h4 className="fr-sec-title">Private Submitter Info (Admin Only)</h4>
@@ -632,16 +803,28 @@ export default function FeedbackReviewsPage() {
             </div>
 
             <div className="fr-drawer-footer">
-              {selectedItem.type === "feature" && (
+              <div className="fr-footer-votes">
                 <button
                   type="button"
-                  className={`fr-footer-upvote ${selectedItem.hasUpvoted ? "upvoted" : ""}`}
+                  className={`fr-footer-vote-btn ${selectedItem.hasUpvoted ? "upvoted" : ""}`}
                   onClick={(e) => handleUpvote(selectedItem._id, e)}
+                  title="Upvote"
                 >
                   <ThumbsUp size={14} />
-                  <span>{selectedItem.upvotes || 0} Votes</span>
+                  <span>{selectedItem.upvotes || 0} Upvotes</span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  className={`fr-footer-vote-btn ${selectedItem.hasDownvoted ? "downvoted" : ""}`}
+                  onClick={(e) => handleDownvote(selectedItem._id, e)}
+                  title="Downvote"
+                >
+                  <ThumbsDown size={14} />
+                  <span>{selectedItem.downvotes || 0} Downvotes</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -1201,29 +1384,214 @@ const FEEDBACK_REVIEWS_CSS = `
     justify-content: space-between;
     gap: 12px;
   }
-  .fr-footer-upvote {
+  .fr-footer-votes {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .fr-footer-vote-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-radius: 8px;
     background: var(--card);
     border: 1px solid var(--border);
     color: var(--text);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s;
   }
-  .fr-footer-upvote.upvoted {
+  .fr-footer-vote-btn:hover {
+    border-color: var(--border2);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .fr-footer-vote-btn.upvoted {
     background: rgba(245, 158, 11, 0.15);
     border-color: #f59e0b;
     color: #f59e0b;
   }
+  .fr-footer-vote-btn.downvoted {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+
+  .fr-vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .fr-vote-btn:hover {
+    border-color: var(--border2);
+    color: var(--text);
+  }
+  .fr-upvote-btn.upvoted {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: #f59e0b;
+    color: #f59e0b;
+  }
+  .fr-downvote-btn.downvoted {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+
+  .fr-comments-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #10b981;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* Drawer Attachments */
+  .fr-attachment-view {
+    margin-top: 6px;
+  }
+  .fr-attachment-img {
+    max-width: 100%;
+    max-height: 240px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    transition: transform 0.2s;
+  }
+  .fr-attachment-img:hover {
+    transform: scale(1.02);
+  }
+  .fr-attachment-file-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #38bdf8;
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  /* Drawer Comments */
+  .fr-comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .fr-comment-card {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .fr-comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .fr-comment-author {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .fr-staff-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .fr-comment-time {
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .fr-comment-text {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.5;
+    margin: 0;
+  }
+  .fr-no-comments {
+    font-size: 12.5px;
+    color: var(--text3);
+    margin: 4px 0 10px;
+  }
+  .fr-comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .fr-comment-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    resize: vertical;
+    outline: none;
+    font-family: inherit;
+  }
+  .fr-comment-input:focus {
+    border-color: #10b981;
+  }
+  .fr-comment-submit-btn {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    background: #10b981;
+    color: #070b14;
+    border: none;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.2s;
+  }
+  .fr-comment-submit-btn:hover {
+    filter: brightness(1.1);
+  }
+  .fr-comment-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
   /* States */
   .fr-state-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
-    padding: 60px 20px;
+    padding: 64px 24px;
     background: var(--card);
     border: 1px dashed var(--border);
     border-radius: 16px;
@@ -1236,9 +1604,25 @@ const FEEDBACK_REVIEWS_CSS = `
     border-top-color: #f59e0b;
     border-radius: 50%;
     animation: frSpin 0.8s linear infinite;
-    margin: 0 auto 12px;
+    margin-bottom: 14px;
   }
-  .empty-icon { margin-bottom: 12px; }
+  .empty-icon {
+    display: block;
+    margin: 0 auto 16px;
+    opacity: 0.85;
+  }
+  .fr-state-box h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .fr-state-box p {
+    margin: 0 0 20px;
+    font-size: 14px;
+    color: var(--text2);
+    max-width: 480px;
+  }
   .text-gold { color: #f59e0b; }
   .text-sky { color: #38bdf8; }
   .text-purple { color: #a855f7; }

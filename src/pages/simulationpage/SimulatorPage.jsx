@@ -40,7 +40,7 @@ import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
-import { isComponentHidden, getComponentWarning } from "./utils/componentVisibilityConfig";
+import { isComponentHidden, getComponentWarning, resolveComponentDetails } from "./utils/componentVisibilityConfig";
 import {
   calculateProjectPlanApplication,
   getRotatedPoint,
@@ -101,6 +101,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import ReportBugModal from "../../components/ReportBugModal.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -811,6 +812,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [webGpuSupported, setWebGpuSupported] = useState(false);
   const [blocklyXml, setBlocklyXml] = useState("");
   const [compContextMenu, setCompContextMenu] = useState(null); // { x, y, compId }
+  const [bugReportComponent, setBugReportComponent] = useState(null); // component targeted for bug reporting
+  const [frontendBugModalOpen, setFrontendBugModalOpen] = useState(false); // frontend general bug modal
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
@@ -13613,6 +13616,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               localStorage.removeItem("openhw-tour-completed");
               setShowTour(true);
             }}
+            onReportFrontendBug={() => setFrontendBugModalOpen(true)}
             returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
             code={code}
           />
@@ -14827,11 +14831,29 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                   const comp = components.find(
                     (c) => c.id === compContextMenu.compId,
                   );
+                  if (!comp) return;
                   const reg = COMPONENT_REGISTRY[comp?.type];
-                  const helpUrl = reg?.manifest?.helpUrl || reg?.helpUrl;
-                  if (helpUrl) window.open(helpUrl, "_blank");
+                  const manifest = reg?.manifest || {};
+                  const resolved = resolveComponentDetails(comp.type, manifest);
+                  const docSlug = resolved?.docSlug || manifest?.docSlug || comp.type;
+                  
+                  const rawDocsBase = import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs";
+                  const cleanBase = String(rawDocsBase).trim().replace(/\/+$/, "");
+                  const docUrl = manifest.helpUrl || `${cleanBase}/components/${docSlug}`;
+                  window.open(docUrl, "_blank");
                 }}
                 updateComponentAttr={updateComponentAttr}
+                onReportBug={(targetComp) => {
+                  const reg = COMPONENT_REGISTRY[targetComp?.type];
+                  const manifest = reg?.manifest || {};
+                  setBugReportComponent({
+                    type: targetComp?.type,
+                    title: manifest.title || manifest.label || targetComp?.type,
+                    label: manifest.title || manifest.label || targetComp?.type,
+                    working: manifest.working || [],
+                    inProgress: manifest.inProgress || [],
+                  });
+                }}
                 onValueEdit={(id, key = "value") => {
                   const comp = components.find((c) => c.id === id);
                   if (comp && canvasRef.current) {
@@ -14990,6 +15012,20 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             </div>
           </div>
         )}
+
+        {/* Global Component Bug Report Modal */}
+        <ReportBugModal
+          isOpen={!!bugReportComponent}
+          onClose={() => setBugReportComponent(null)}
+          initialComponent={bugReportComponent}
+        />
+
+        {/* Global Frontend Simulator Bug Report Modal */}
+        <ReportBugModal
+          isOpen={frontendBugModalOpen}
+          onClose={() => setFrontendBugModalOpen(false)}
+          initialComponent={null}
+        />
       </div>
     );
   }
