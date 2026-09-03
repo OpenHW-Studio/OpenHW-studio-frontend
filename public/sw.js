@@ -49,9 +49,12 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Bypass non-GET requests, development modules, and dynamic API / auth / websocket calls
+  // Bypass non-GET requests, development modules, dynamic API, version checks, and page navigations
   if (
     req.method !== 'GET' ||
+    req.mode === 'navigate' ||
+    url.pathname === '/version.json' ||
+    url.pathname === '/index.html' ||
     url.hostname === 'localhost' ||
     url.hostname === '127.0.0.1' ||
     url.pathname.startsWith('/api') ||

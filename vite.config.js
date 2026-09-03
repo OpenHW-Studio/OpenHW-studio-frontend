@@ -18,17 +18,57 @@ export default defineConfig(({ mode }) => {
   } else if (fs.existsSync(path.resolve(__dirname, defaultEmulatorPath))) {
     resolvedEmulatorPath = path.resolve(__dirname, defaultEmulatorPath)
   } else if (fs.existsSync(dockerEmulatorPath)) {
-    resolvedEmulatorPath = dockerEmulatorPath
+    resolvedEmulatorPath = dockerEmulatorPath;
   }
 
-  const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath)
+  const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
   return {
     plugins: [
       react({
         exclude: [/src[\\\/]worker[\\\/].*/, /openhw-studio-emulator[\\\/].*/],
-      })
+      }),
+      {
+        name: 'version-generator',
+        buildStart() {
+          let appVer = '0.1.0';
+          try {
+            const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+            if (pkg.version) appVer = pkg.version;
+          } catch (e) {}
+
+          const versionData = {
+            version: appVer,
+            buildTime: Date.now()
+          };
+          const publicVersionPath = path.resolve(__dirname, 'public/version.json');
+          try {
+            fs.writeFileSync(publicVersionPath, JSON.stringify(versionData, null, 2));
+          } catch (e) {
+            // Non-fatal if read-only
+          }
+        },
+        generateBundle() {
+          let appVer = '0.1.0';
+          try {
+            const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+            if (pkg.version) appVer = pkg.version;
+          } catch (e) {}
+
+          this.emitFile({
+            type: 'asset',
+            fileName: 'version.json',
+            source: JSON.stringify({
+              version: appVer,
+              buildTime: Date.now()
+            }, null, 2)
+          });
+        }
+      }
     ],
+    define: {
+      __APP_BUILD_TIME__: JSON.stringify(Date.now()),
+    },
     worker: {
       format: 'es',
     },
