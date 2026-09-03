@@ -179,11 +179,21 @@ function ThemeToggleButton() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Hide on simulator or demo/guided pages
-  const isSimulator = location.pathname.includes('/simulator') ||
+  // Hide on simulator or pages that already have the top navbar theme toggle
+  const hasNavbarToggle =
+    location.pathname === '/' ||
+    location.pathname === '/about' ||
+    location.pathname === '/contributors' ||
+    location.pathname === '/components-status' ||
+    location.pathname === '/status' ||
+    location.pathname === '/examples';
+
+  const isSimulator =
+    location.pathname.includes('/simulator') ||
     location.pathname.includes('/demo') ||
     location.pathname.includes('/guided');
-  if (isSimulator) return null;
+
+  if (isSimulator || hasNavbarToggle) return null;
 
   return (
     <div

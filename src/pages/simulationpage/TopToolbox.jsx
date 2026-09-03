@@ -549,6 +549,7 @@ function TopToolboxInternal(props) {
   const helpMenuItems = [
     { label: "Start Tour", onClick: onStartTour },
     { label: "Documentation", onClick: () => window.open(DOCS_URL, "_blank") },
+    { label: "Component Status", onClick: () => window.open("/components-status", "_blank") },
     {
       label: "Keyboard Shortcuts",
       shortcut: "Alt+H",
