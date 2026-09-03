@@ -1431,6 +1431,14 @@ const STATUS_PAGE_CSS = `
     align-items: center;
     gap: 10px;
   }
+  @media (max-width: 480px) {
+    .drawer-footer-row {
+      flex-direction: column;
+    }
+    .drawer-btn-ghost {
+      width: 100%;
+    }
+  }
 
   .drawer-btn {
     display: inline-flex;
