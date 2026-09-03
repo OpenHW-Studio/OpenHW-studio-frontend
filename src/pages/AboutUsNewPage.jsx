@@ -777,6 +777,7 @@ export default function AboutUsNewPage() {
                 <li><Link to="/">Home</Link></li>
                 <li><Link to="/explore">Explore</Link></li>
                 <li><a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Learn</a></li>
+                <li><Link to="/components-status">Component Status</Link></li>
                 <li><Link to="/simulator">Simulate</Link></li>
                 <li><Link to="/examples">Projects</Link></li>
               </ul>

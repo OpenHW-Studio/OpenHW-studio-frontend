@@ -67,6 +67,7 @@ const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
 import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import ContributorsPage from "./pages/ContributorsPage.jsx";
+const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 import VisitorTracker from "./components/VisitorTracker.jsx";
 import BetaBanner from "./components/BetaBanner.jsx";
 import ThemeToggleSlider from "./components/ThemeToggleSlider.jsx";
@@ -230,6 +231,8 @@ export default function App() {
                   <Route path="/" element={<LandingPage />} />
                   <Route path="/about" element={<AboutUsNew />} />
                   <Route path="/contributors" element={<ContributorsPage />} />
+                  <Route path="/components-status" element={<ComponentStatusPage />} />
+                  <Route path="/status" element={<Navigate to="/components-status" replace />} />
                   <Route path="/examples" element={<ExamplesPage />} />
                   <Route path="/login" element={<UserLoginPage />} />
                   <Route path="/signup" element={<UserSignupPage />} />
