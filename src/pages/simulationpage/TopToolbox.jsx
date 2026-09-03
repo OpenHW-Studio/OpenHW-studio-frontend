@@ -550,6 +550,8 @@ function TopToolboxInternal(props) {
     { label: "Start Tour", onClick: onStartTour },
     { label: "Documentation", onClick: () => window.open(DOCS_URL, "_blank") },
     { label: "Component Status", onClick: () => window.open("/components-status", "_blank") },
+    { label: "Bug Tracker", onClick: () => window.open("/bugs", "_blank") },
+    { label: "Feedback & Reviews", onClick: () => window.open("/feedback", "_blank") },
     {
       label: "Keyboard Shortcuts",
       shortcut: "Alt+H",

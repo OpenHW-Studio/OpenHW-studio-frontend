@@ -15,6 +15,9 @@ import {
     ShieldCheck,
     AlertTriangle,
     X,
+    Bug,
+    MessageSquare,
+    ExternalLink,
 } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -25,6 +28,8 @@ const MENU_ITEMS = [
     { id: 'adventure-content',  icon: Activity,        label: 'Adventure Content' },
     { id: 'approval',           icon: Clock,           label: 'Approvals' },
     { id: 'components',         icon: Package,         label: 'Custom Components' },
+    { id: 'bugs-tracker',       icon: Bug,             label: 'Bug Tracker', isExternalLink: '/bugs' },
+    { id: 'feedback-hub',       icon: MessageSquare,   label: 'Reviews & Feedback', isExternalLink: '/feedback' },
     { id: 'deployments',        icon: PlayCircle,      label: 'CI/CD Workflow' },
     { id: 'docker',             icon: Box,             label: 'Docker Monitoring' },
     { id: 'resources',          icon: Cpu,             label: 'Resource Budget' },
@@ -63,11 +68,15 @@ const Sidebar = ({
 
             {/* Navigation */}
             <nav className="ad-sidebar-nav" role="navigation" aria-label="Admin navigation">
-                {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
+                {MENU_ITEMS.map(({ id, icon: Icon, label, isExternalLink }) => (
                     <button
                         key={id}
                         className={`ad-nav-item ${activeTab === id ? 'active' : ''}`}
                         onClick={() => {
+                            if (isExternalLink) {
+                                window.open(isExternalLink, '_blank');
+                                return;
+                            }
                             setActiveTab(id);
                             onClose();
                         }}
@@ -77,6 +86,9 @@ const Sidebar = ({
                         <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {label}
                         </span>
+                        {isExternalLink && (
+                            <ExternalLink style={{ width: 12, height: 12, opacity: 0.6 }} />
+                        )}
                         {id === 'approval' && pendingCount > 0 && (
                             <span className="ad-nav-badge">{pendingCount}</span>
                         )}

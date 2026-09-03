@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Rocket, Share2, GraduationCap } from "lucide-react";
-import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+import PublicNavbar from "../components/PublicNavbar.jsx";
 
 
 import tinkeringImg from "../assets/about/tinkering-students.png";
@@ -460,22 +460,13 @@ export default function AboutUsNewPage() {
       <style>{PAGE_CSS}</style>
 
       {/* NAV */}
-      <nav className="nav">
-        <div className="nav-brand about-brand" onClick={() => navigate("/")}>
-          <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="about-brand-logo-img" />
-          <div className="about-brand-text">
-            <div className="name">OpenHW-Studio</div>
-            <div className="sub">By FOSSEE, IIT Bombay</div>
-          </div>
-        </div>
-        <div className="nav-actions" style={{ alignItems: "center" }}>
-          <button className="btn btn-ghost" onClick={() => navigate("/contributors")}>
-            Contributors
-          </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
-            Examples
-          </button>
-          {isAuthenticated ? (
+      <PublicNavbar
+        links={[
+          { label: "Contributors", path: "/contributors" },
+          { label: "Examples",     path: "/examples" },
+        ]}
+        actions={
+          isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
               Dashboard →
             </button>
@@ -488,27 +479,9 @@ export default function AboutUsNewPage() {
                 Get Started
               </button>
             </>
-          )}
-          {/* Divider + Theme toggle — separated from nav actions */}
-          <span style={{
-            display: "flex",
-            alignItems: "center",
-            marginLeft: "22px",
-            marginRight: "-24px",
-            gap: "14px",
-          }}>
-            <span style={{
-              display: "inline-block",
-              width: "1px",
-              height: "20px",
-              background: "var(--line)",
-              opacity: 0.7,
-              flexShrink: 0,
-            }} />
-            <ThemeToggleSlider size="sm" />
-          </span>
-        </div>
-      </nav>
+          )
+        }
+      />
 
       <main style={{ position: "relative" }}>
         {/* SLEEK CIRCUIT TRACES ON LEFT MARGIN */}
@@ -778,6 +751,7 @@ export default function AboutUsNewPage() {
                 <li><Link to="/explore">Explore</Link></li>
                 <li><a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Learn</a></li>
                 <li><Link to="/components-status">Component Status</Link></li>
+                <li><Link to="/bugs">Bug Tracker</Link></li>
                 <li><Link to="/simulator">Simulate</Link></li>
                 <li><Link to="/examples">Projects</Link></li>
               </ul>
@@ -787,6 +761,7 @@ export default function AboutUsNewPage() {
               <ul>
                 <li><Link to="/about">About Us</Link></li>
                 <li><Link to="/contributors">Contributors</Link></li>
+                <li><Link to="/feedback">Reviews & Feedback</Link></li>
                 <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Organization</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE IIT Bombay</a></li>
               </ul>

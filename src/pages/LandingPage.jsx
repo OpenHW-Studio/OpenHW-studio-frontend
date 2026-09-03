@@ -1,7 +1,7 @@
 import { useState, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+import PublicNavbar from "../components/PublicNavbar.jsx";
 import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
 import GUIDED_JSON from "../services/guidedProjects.json";
 const DOCS_URL =
@@ -134,63 +134,28 @@ export default function LandingPage() {
 
   return (
     <div className="landing">
-      {/* NAV */}
-      <nav className="nav">
-        <div className="nav-brand">
-          <img
-            src="/logo-Photoroom.png"
-            alt="OpenHW-Studio"
-            className="brand-logo brand-logo--nav"
-          />
-        </div>
-        <div className="nav-actions" style={{ alignItems: "center" }}>
-          {/* ABOUT US BUTTON */}
-          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
-            About Us
-          </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
-            Examples
-          </button>
-          {isAuthenticated ? (
+      <PublicNavbar
+        links={[
+          { label: "About Us",  path: "/about" },
+          { label: "Examples",  path: "/examples" },
+        ]}
+        actions={
+          isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
               Dashboard →
             </button>
           ) : (
             <>
-              <button
-                className="btn btn-ghost"
-                onClick={() => handleNavigate("/login")}
-              >
+              <button className="btn btn-ghost" onClick={() => handleNavigate("/login")}>
                 Log In
               </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => handleNavigate("/signup")}
-              >
+              <button className="btn btn-primary" onClick={() => handleNavigate("/signup")}>
                 Get Started
               </button>
             </>
-          )}
-          {/* Divider + Theme toggle — separated from nav actions */}
-          <span style={{
-            display: "flex",
-            alignItems: "center",
-            marginLeft: "22px",
-            marginRight: "-24px",
-            gap: "14px",
-          }}>
-            <span style={{
-              display: "inline-block",
-              width: "1px",
-              height: "20px",
-              background: "var(--line)",
-              opacity: 0.7,
-              flexShrink: 0,
-            }} />
-            <ThemeToggleSlider size="sm" />
-          </span>
-        </div>
-      </nav>
+          )
+        }
+      />
 
       {/* HERO */}
       <section className="hero">
@@ -425,6 +390,8 @@ export default function LandingPage() {
             Documentation
           </a>
           <a href="/components-status">Component Status</a>
+          <a href="/bugs">Bug Tracker</a>
+          <a href="/feedback">Reviews & Feedback</a>
           <a href="/examples">Examples</a>
         </div>
       </footer>

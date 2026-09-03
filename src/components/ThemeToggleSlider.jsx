@@ -44,7 +44,7 @@ export default function ThemeToggleSlider({ size = "md" }) {
   // ── Responsive size presets ─────────────────────────────────────────────────
   const presets = {
     sm: { trackW: 50, trackH: 26, knob: 20, icon: 11, padding: 3 },
-    md: { trackW: 62, trackH: 32, knob: 25, icon: 14, padding: 3.5 },
+    md: { trackW: 58, trackH: 30, knob: 23, icon: 13, padding: 3.5 },
     lg: { trackW: 76, trackH: 40, knob: 32, icon: 18, padding: 4 },
   };
   const p = presets[size] || presets.md;

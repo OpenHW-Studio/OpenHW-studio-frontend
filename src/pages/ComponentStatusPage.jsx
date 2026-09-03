@@ -22,10 +22,12 @@ import {
   Radio,
   Boxes,
   EyeOff,
+  Bug,
 } from "lucide-react";
 import { COMPONENT_REGISTRY } from "./simulationpage/utils/componentRegistry.js";
 import { resolveComponentDetails } from "./simulationpage/utils/componentVisibilityConfig.js";
-import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+import PublicNavbar from "../components/PublicNavbar.jsx";
+import ReportBugModal from "../components/ReportBugModal.jsx";
 
 // Build clean doc URL guaranteeing proper slash formatting
 function getComponentDocUrl(slug) {
@@ -151,6 +153,7 @@ export default function ComponentStatusPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [activeComponent, setActiveComponent] = useState(null);
+  const [bugModalOpen, setBugModalOpen] = useState(false);
 
   // Close drawer on ESC
   useEffect(() => {
@@ -255,73 +258,18 @@ export default function ComponentStatusPage() {
   return (
     <div className="status-page-root">
       {/* ── TOP NAVIGATION ────────────────────────────────────────────────── */}
-      <nav className="nav">
-        <div
-          className="nav-brand about-brand"
-          onClick={() => navigate("/")}
-          style={{ cursor: "pointer" }}
-        >
-          <img
-            src="/logo-Photoroom.png"
-            alt="OpenHW-Studio"
-            className="brand-logo brand-logo--nav"
-          />
-          <div className="about-brand-text">
-            <div className="name">OpenHW-Studio</div>
-            <div className="sub">By FOSSEE, IIT Bombay</div>
-          </div>
-        </div>
-
-        <div className="nav-actions" style={{ alignItems: "center" }}>
-          <button className="btn btn-ghost" onClick={() => navigate("/")}>
-            Home
-          </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
-            About Us
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() => navigate("/contributors")}
-          >
-            Contributors
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() => navigate("/examples")}
-          >
-            Examples
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate("/simulator")}
-          >
+      <PublicNavbar
+        links={[
+          { label: "Home",               path: "/" },
+          { label: "Bug Tracker",        path: "/bugs" },
+          { label: "Feedback & Reviews", path: "/feedback" },
+        ]}
+        actions={
+          <button className="btn btn-primary" onClick={() => navigate("/simulator")}>
             Launch Simulator →
           </button>
-
-          {/* Divider + Theme toggle */}
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              marginLeft: "22px",
-              marginRight: "-24px",
-              gap: "14px",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                width: "1px",
-                height: "20px",
-                background: "var(--line)",
-                opacity: 0.7,
-                flexShrink: 0,
-              }}
-            />
-            <ThemeToggleSlider size="sm" />
-          </span>
-        </div>
-      </nav>
+        }
+      />
 
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
       <header className="status-hero">
@@ -707,15 +655,14 @@ export default function ComponentStatusPage() {
               </a>
 
               <div className="drawer-footer-row">
-                <a
-                  href={getReportBugUrl(activeComponent)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => setBugModalOpen(true)}
                   className="drawer-btn drawer-btn-ghost"
                 >
-                  <Github size={14} />
+                  <Bug size={14} />
                   <span>Report Bug</span>
-                </a>
+                </button>
 
                 <a
                   href="https://github.com/OpenHW-Studio/openhw-studio-emulator"
@@ -731,6 +678,13 @@ export default function ComponentStatusPage() {
           </div>
         </div>
       )}
+
+      {/* In-app Bug Report Modal */}
+      <ReportBugModal
+        isOpen={bugModalOpen}
+        onClose={() => setBugModalOpen(false)}
+        initialComponent={activeComponent}
+      />
 
       {/* ── STYLES ───────────────────────────────────────────────────────── */}
       <style>{STATUS_PAGE_CSS}</style>
