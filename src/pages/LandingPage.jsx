@@ -424,6 +424,7 @@ export default function LandingPage() {
           <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
             Documentation
           </a>
+          <a href="/components-status">Component Status</a>
           <a href="/examples">Examples</a>
         </div>
       </footer>
