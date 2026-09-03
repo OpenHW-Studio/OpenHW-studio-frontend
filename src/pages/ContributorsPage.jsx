@@ -2,6 +2,8 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Github, ExternalLink } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+
 import fosseeLogoImg from "../assets/about/fossee-logo.jpeg";
 
 const DOCS_URL =
@@ -440,19 +442,12 @@ export default function ContributorsPage() {
             <div className="sub">By FOSSEE, IIT Bombay</div>
           </div>
         </div>
-        <div className="nav-actions">
+        <div className="nav-actions" style={{ alignItems: "center" }}>
           <button className="btn btn-ghost" onClick={() => navigate("/about")}>
             About Us
           </button>
           <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
             Examples
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={toggleTheme}
-            title="Toggle Dark/Light Mode"
-          >
-            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
@@ -468,6 +463,24 @@ export default function ContributorsPage() {
               </button>
             </>
           )}
+          {/* Divider + Theme toggle — separated from nav actions */}
+          <span style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: "22px",
+            marginRight: "-24px",
+            gap: "14px",
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: "1px",
+              height: "20px",
+              background: "var(--line)",
+              opacity: 0.7,
+              flexShrink: 0,
+            }} />
+            <ThemeToggleSlider size="sm" />
+          </span>
         </div>
       </nav>
 

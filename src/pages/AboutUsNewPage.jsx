@@ -2,6 +2,8 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Rocket, Share2, GraduationCap } from "lucide-react";
+import ThemeToggleSlider from "../components/ThemeToggleSlider.jsx";
+
 
 import tinkeringImg from "../assets/about/tinkering-students.png";
 import prabhuImg from "../assets/about/Prabhu.jpeg";
@@ -466,19 +468,12 @@ export default function AboutUsNewPage() {
             <div className="sub">By FOSSEE, IIT Bombay</div>
           </div>
         </div>
-        <div className="nav-actions">
-          <button className="btn btn-ghost" onClick={() => navigate("/about")}>
-            About Us
+        <div className="nav-actions" style={{ alignItems: "center" }}>
+          <button className="btn btn-ghost" onClick={() => navigate("/contributors")}>
+            Contributors
           </button>
           <button className="btn btn-ghost" onClick={() => navigate("/examples")}>
             Examples
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={toggleTheme}
-            title="Toggle Dark/Light Mode"
-          >
-            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>
@@ -494,48 +489,66 @@ export default function AboutUsNewPage() {
               </button>
             </>
           )}
+          {/* Divider + Theme toggle — separated from nav actions */}
+          <span style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: "22px",
+            marginRight: "-24px",
+            gap: "14px",
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: "1px",
+              height: "20px",
+              background: "var(--line)",
+              opacity: 0.7,
+              flexShrink: 0,
+            }} />
+            <ThemeToggleSlider size="sm" />
+          </span>
         </div>
       </nav>
 
       <main style={{ position: "relative" }}>
         {/* SLEEK CIRCUIT TRACES ON LEFT MARGIN */}
         <svg className="circuit-accent-left" viewBox="0 0 220 1600" fill="none">
-          <path d="M-20 40 H110 V160 H180 V320 H70 V480 H140 V680 H40 V890 H160 V1100 H60 V1340 H180 V1550" stroke="#2F6FED" strokeWidth="1.8" strokeDasharray="5 5" opacity="0.4"/>
-          <path d="M-20 120 H60 V260 H130 V420 H30 V600 H180 V780 H80 V980 H130 V1220 H30 V1450" stroke="#B9713E" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.35"/>
-          <path d="M-20 220 H150 V380 H90 V540 H160 V820 H50 V1050 H170 V1390 H60" stroke="#1F9D63" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.3"/>
+          <path d="M-20 40 H110 V160 H180 V320 H70 V480 H140 V680 H40 V890 H160 V1100 H60 V1340 H180 V1550" stroke="#2F6FED" strokeWidth="1.8" strokeDasharray="5 5" opacity="0.4" />
+          <path d="M-20 120 H60 V260 H130 V420 H30 V600 H180 V780 H80 V980 H130 V1220 H30 V1450" stroke="#B9713E" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.35" />
+          <path d="M-20 220 H150 V380 H90 V540 H160 V820 H50 V1050 H170 V1390 H60" stroke="#1F9D63" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.3" />
 
           {/* Test Pads & Via Rings */}
-          <circle cx="110" cy="40" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="180" cy="160" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="70" cy="320" r="5" fill="none" stroke="#B9713E" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="140" cy="680" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="160" cy="1100" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7"/>
+          <circle cx="110" cy="40" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="180" cy="160" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="70" cy="320" r="5" fill="none" stroke="#B9713E" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="140" cy="680" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="160" cy="1100" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7" />
 
           {/* Animated Glowing Signal Dots */}
-          <circle className="pulse-dot-blue" cx="180" cy="320" r="4.5" fill="#2F6FED"/>
-          <circle className="pulse-dot-copper" cx="70" cy="480" r="4.5" fill="#B9713E"/>
-          <circle className="pulse-dot-blue" cx="160" cy="1100" r="4.5" fill="#2F6FED"/>
-          <circle className="pulse-dot-copper" cx="180" cy="1550" r="4.5" fill="#B9713E"/>
+          <circle className="pulse-dot-blue" cx="180" cy="320" r="4.5" fill="#2F6FED" />
+          <circle className="pulse-dot-copper" cx="70" cy="480" r="4.5" fill="#B9713E" />
+          <circle className="pulse-dot-blue" cx="160" cy="1100" r="4.5" fill="#2F6FED" />
+          <circle className="pulse-dot-copper" cx="180" cy="1550" r="4.5" fill="#B9713E" />
         </svg>
 
         {/* SLEEK CIRCUIT TRACES ON RIGHT MARGIN */}
         <svg className="circuit-accent-right" viewBox="0 0 220 1600" fill="none">
-          <path d="M240 60 H120 V200 H40 V360 H150 V540 H60 V760 H170 V990 H50 V1240 H160 V1520" stroke="#2F6FED" strokeWidth="1.8" strokeDasharray="5 5" opacity="0.4"/>
-          <path d="M240 140 H160 V290 H80 V480 H180 V690 H30 V910 H140 V1150 H70 V1420" stroke="#1F9D63" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.35"/>
-          <path d="M240 240 H90 V410 H170 V610 H70 V840 H160 V1060 H40 V1320 H180" stroke="#B9713E" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.3"/>
+          <path d="M240 60 H120 V200 H40 V360 H150 V540 H60 V760 H170 V990 H50 V1240 H160 V1520" stroke="#2F6FED" strokeWidth="1.8" strokeDasharray="5 5" opacity="0.4" />
+          <path d="M240 140 H160 V290 H80 V480 H180 V690 H30 V910 H140 V1150 H70 V1420" stroke="#1F9D63" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.35" />
+          <path d="M240 240 H90 V410 H170 V610 H70 V840 H160 V1060 H40 V1320 H180" stroke="#B9713E" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.3" />
 
           {/* Test Pads & Via Rings */}
-          <circle cx="120" cy="60" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="40" cy="200" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="150" cy="540" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="60" cy="760" r="5" fill="none" stroke="#B9713E" strokeWidth="1.5" opacity="0.7"/>
-          <circle cx="170" cy="990" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7"/>
+          <circle cx="120" cy="60" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="40" cy="200" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="150" cy="540" r="5" fill="none" stroke="#2F6FED" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="60" cy="760" r="5" fill="none" stroke="#B9713E" strokeWidth="1.5" opacity="0.7" />
+          <circle cx="170" cy="990" r="5" fill="none" stroke="#1F9D63" strokeWidth="1.5" opacity="0.7" />
 
           {/* Animated Glowing Signal Dots */}
-          <circle className="pulse-dot-copper" cx="40" cy="200" r="4.5" fill="#B9713E"/>
-          <circle className="pulse-dot-blue" cx="150" cy="540" r="4.5" fill="#2F6FED"/>
-          <circle className="pulse-dot-copper" cx="60" cy="760" r="4.5" fill="#B9713E"/>
-          <circle className="pulse-dot-blue" cx="160" cy="1520" r="4.5" fill="#2F6FED"/>
+          <circle className="pulse-dot-copper" cx="40" cy="200" r="4.5" fill="#B9713E" />
+          <circle className="pulse-dot-blue" cx="150" cy="540" r="4.5" fill="#2F6FED" />
+          <circle className="pulse-dot-copper" cx="60" cy="760" r="4.5" fill="#B9713E" />
+          <circle className="pulse-dot-blue" cx="160" cy="1520" r="4.5" fill="#2F6FED" />
         </svg>
 
         {/* HERO */}
@@ -714,10 +727,10 @@ export default function AboutUsNewPage() {
               <p className="bold-line">
                 Together, we can create an open platform that empowers the next generation of innovators.
               </p>
-              <a 
-                href="https://github.com/OpenHW-Studio" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://github.com/OpenHW-Studio"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="about-join-cta"
               >
                 Contribute Now ↗
@@ -745,15 +758,15 @@ export default function AboutUsNewPage() {
               </div>
               <div style={{ marginTop: "16px" }}>
                 <a href="https://fossee.in" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block" }}>
-                  <img 
-                    src={fosseeLogoImg} 
-                    alt="FOSSEE Logo" 
-                    style={{ 
-                      height: "64px", 
-                      width: "auto", 
-                      borderRadius: "8px", 
+                  <img
+                    src={fosseeLogoImg}
+                    alt="FOSSEE Logo"
+                    style={{
+                      height: "64px",
+                      width: "auto",
+                      borderRadius: "8px",
                       display: "block"
-                    }} 
+                    }}
                   />
                 </a>
               </div>
