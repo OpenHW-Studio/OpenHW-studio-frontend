@@ -14,29 +14,55 @@ const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
 
 const PAGE_CSS = `
-  :root {
+  :root, [data-theme="light"] {
     --ink: #0B1222;
     --ink-700: #1B2740;
     --ink-500: #4B5875;
     --paper: #F5F6F3;
     --panel: #FFFFFF;
+    --panel-hover: #FFFFFF;
+    --nav-bg: rgba(245, 246, 243, 0.88);
+    --footer-bg: #0B1222;
     --trace-blue: #2F6FED;
     --trace-blue-dim: #DCE7FE;
     --copper: #B9713E;
     --copper-dim: #F3E1D0;
     --signal-green: #1F9D63;
     --line: #DEE2E6;
+    --grid-line: rgba(222, 226, 230, 0.35);
+    --radial-tint: rgba(47, 111, 237, 0.06);
+    --card-shadow: 0 12px 24px rgba(11, 18, 34, 0.06);
     --radius: 14px;
     --maxw: 1320px;
+  }
+
+  [data-theme="dark"] {
+    --ink: #F1F5F9;
+    --ink-700: #CBD5E1;
+    --ink-500: #94A3B8;
+    --paper: #070B14;
+    --panel: #0E1626;
+    --panel-hover: #131E35;
+    --nav-bg: rgba(7, 11, 20, 0.92);
+    --footer-bg: #04070D;
+    --trace-blue: #38BDF8;
+    --trace-blue-dim: rgba(56, 189, 248, 0.16);
+    --copper: #F59E0B;
+    --copper-dim: rgba(245, 158, 11, 0.16);
+    --signal-green: #10B981;
+    --line: #1E2D47;
+    --grid-line: rgba(30, 45, 71, 0.45);
+    --radial-tint: rgba(56, 189, 248, 0.08);
+    --card-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
   }
 
   .about-page-root {
     margin: 0;
     background-color: var(--paper);
     background-image: 
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(47, 111, 237, 0.06), transparent),
-      linear-gradient(rgba(222, 226, 230, 0.3) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(222, 226, 230, 0.3) 1px, transparent 1px);
+      radial-gradient(ellipse 80% 50% at 50% -10%, var(--radial-tint), transparent),
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 100% 100%, 56px 56px, 56px 56px;
     color: var(--ink);
     font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -46,6 +72,7 @@ const PAGE_CSS = `
     flex-direction: column;
     position: relative;
     overflow-x: hidden;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   .about-page-root h1, 
@@ -55,6 +82,7 @@ const PAGE_CSS = `
   .about-page-root h5 {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     margin: 0;
+    color: var(--ink);
     letter-spacing: -0.01em;
   }
   .about-page-root p { margin: 0; }
@@ -106,11 +134,12 @@ const PAGE_CSS = `
   }
 
   /* ---------- NAV ---------- */
-  .about-nav {
+  .about-page-root .nav, .about-nav {
     position: sticky; top: 0; z-index: 50;
-    background: rgba(245, 246, 243, 0.88);
-    backdrop-filter: blur(10px);
+    background: var(--nav-bg);
+    backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
   .about-nav-inner {
     display: flex; align-items: center; justify-content: space-between;
@@ -129,19 +158,21 @@ const PAGE_CSS = `
   .about-links a, .about-links button {
     font-size: 14.5px; font-weight: 500; color: var(--ink-700);
     position: relative; padding: 4px 0; background: none; border: none; cursor: pointer;
+    transition: color 0.2s ease;
   }
+  .about-links a:hover, .about-links button:hover { color: var(--trace-blue); }
   .about-links a.active { color: var(--trace-blue); }
   .about-links a.active::after {
     content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 2px;
     background: var(--trace-blue); border-radius: 2px;
   }
   .about-nav-cta {
-    background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;
+    background: var(--ink); color: var(--paper); font-size: 14px; font-weight: 600;
     padding: 10px 20px; border-radius: 8px;
     display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background 0.2s ease, opacity 0.2s ease;
   }
-  .about-nav-cta:hover { background: var(--trace-blue); }
+  .about-nav-cta:hover { background: var(--trace-blue); color: #FFFFFF; }
 
   /* ---------- HERO ---------- */
   .about-hero { padding: 76px 0 60px; position: relative; }
@@ -166,6 +197,9 @@ const PAGE_CSS = `
   .about-schematic {
     position: relative; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--panel);
   }
   .about-schematic img {
     width: 100%; height: auto; object-fit: cover; border-radius: 14px;
@@ -184,10 +218,11 @@ const PAGE_CSS = `
   .about-card {
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     padding: 32px 28px; position: relative;
-    transition: transform .25s ease, box-shadow .25s ease;
+    transition: transform .25s ease, box-shadow .25s ease, background 0.25s ease, border-color 0.25s ease;
   }
   .about-card:hover {
-    transform: translateY(-3px); box-shadow: 0 12px 24px rgba(11, 18, 34, 0.06);
+    transform: translateY(-3px); box-shadow: var(--card-shadow);
+    background: var(--panel-hover);
   }
   .about-card::before {
     content: ""; position: absolute; top: 0; left: 22px; width: 14px; height: 6px;
@@ -198,36 +233,72 @@ const PAGE_CSS = `
     display: flex; align-items: center; justify-content: center;
     margin-bottom: 20px; transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
-  .about-pin.blue { background: var(--trace-blue-dim); color: var(--trace-blue); border: 1px solid rgba(47, 111, 237, 0.15); }
-  .about-pin.copper { background: var(--copper-dim); color: var(--copper); border: 1px solid rgba(185, 113, 62, 0.15); }
-  .about-pin.green { background: #DCF3E7; color: var(--signal-green); border: 1px solid rgba(31, 157, 99, 0.15); }
+  .about-pin.blue { background: var(--trace-blue-dim); color: var(--trace-blue); border: 1px solid rgba(47, 111, 237, 0.2); }
+  .about-pin.copper { background: var(--copper-dim); color: var(--copper); border: 1px solid rgba(185, 113, 62, 0.2); }
+  .about-pin.green { background: rgba(31, 157, 99, 0.15); color: var(--signal-green); border: 1px solid rgba(31, 157, 99, 0.2); }
   .about-card h3 { font-size: 18.5px; font-weight: 600; margin-bottom: 11px; color: var(--ink); }
   .about-card p { font-size: 14.5px; line-height: 1.65; color: var(--ink-500); }
 
   /* ---------- CONTRIBUTOR STRIP ---------- */
   .about-strip {
-    background: var(--ink); border-radius: 20px;
+    background: var(--panel);
+    border-radius: 20px;
+    border: 1px solid var(--line);
     padding: 44px 48px;
     display: flex; align-items: center; justify-content: space-between; gap: 40px;
-    color: #fff;
+    color: var(--ink);
     position: relative; overflow: hidden;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+  }
+  .about-strip:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 32px rgba(11, 18, 34, 0.08);
+  }
+  [data-theme="dark"] .about-strip:hover {
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
   }
   .about-strip::after {
     content: ""; position: absolute; right: -40px; top: -40px; width: 240px; height: 240px;
-    border: 1px dashed rgba(255, 255, 255, 0.14); border-radius: 50%; pointer-events: none;
+    border: 1px dashed var(--line); border-radius: 50%; pointer-events: none;
+    opacity: 0.6;
   }
-  .about-strip-num { font-family: 'Space Grotesk', sans-serif; font-size: 56px; font-weight: 700; color: var(--trace-blue); line-height: 1; }
+  .about-strip-num { 
+    font-family: 'Space Grotesk', sans-serif; 
+    font-size: 56px; 
+    font-weight: 700; 
+    color: var(--trace-blue); 
+    line-height: 1; 
+  }
   .about-strip-copy { max-width: 520px; }
-  .about-strip-copy h3 { font-size: 22px; font-weight: 600; margin-bottom: 8px; color: #fff; }
-  .about-strip-copy p { font-size: 15px; color: #AEB8CF; line-height: 1.6; }
+  .about-strip-copy h3 { 
+    font-size: 22px; 
+    font-weight: 600; 
+    margin-bottom: 8px; 
+    color: var(--ink); 
+  }
+  .about-strip-copy p { 
+    font-size: 15px; 
+    color: var(--ink-500); 
+    line-height: 1.6; 
+  }
   .about-strip-btn {
-    font-size: 14px; font-weight: 600; background: transparent; color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 99px;
+    font-size: 14px; font-weight: 600; 
+    background: var(--paper); 
+    color: var(--ink-700);
+    border: 1px solid var(--line); 
+    border-radius: 99px;
     padding: 12px 24px; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px;
-    flex-shrink: 0; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease;
+    flex-shrink: 0; cursor: pointer; 
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
     position: relative; z-index: 2;
   }
-  .about-strip-btn:hover { background: var(--trace-blue); border-color: var(--trace-blue); }
+  .about-strip-btn:hover { 
+    background: var(--trace-blue); 
+    border-color: var(--trace-blue); 
+    color: #FFFFFF; 
+    transform: translateX(2px);
+  }
 
   /* ---------- LEADERSHIP CARDS ---------- */
   .about-lead-grid {
@@ -237,10 +308,11 @@ const PAGE_CSS = `
     background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
     padding: 16px; text-align: left; position: relative;
     display: flex; flex-direction: column; justify-content: space-between;
-    transition: transform .25s ease, box-shadow .25s ease;
+    transition: transform .25s ease, box-shadow .25s ease, background 0.25s ease, border-color 0.25s ease;
   }
   .about-lead-card:hover {
-    transform: translateY(-4px); box-shadow: 0 16px 32px rgba(11, 18, 34, 0.08);
+    transform: translateY(-4px); box-shadow: var(--card-shadow);
+    background: var(--panel-hover);
   }
   .about-lead-photo {
     width: 100%; height: 210px; border-radius: 14px;
@@ -265,7 +337,7 @@ const PAGE_CSS = `
   }
   .about-lead-footer {
     display: flex; align-items: center; justify-content: space-between;
-    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--paper);
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
   }
   .about-lead-link {
     font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
@@ -283,11 +355,12 @@ const PAGE_CSS = `
 
   /* ---------- JOIN CTA ---------- */
   .about-join {
-    background: #FFFFFF;
+    background: var(--panel);
     border: 1px solid var(--line); border-radius: 20px;
     padding: 48px 52px; display: flex; flex-direction: column; align-items: center; text-align: center;
     position: relative; overflow: hidden;
-    box-shadow: 0 10px 30px rgba(11, 18, 34, 0.04);
+    box-shadow: var(--card-shadow);
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
   .about-join h3 { font-size: 28px; font-weight: 700; margin-bottom: 12px; color: var(--ink); }
   .about-join p { color: var(--ink-500); font-size: 15.5px; line-height: 1.65; max-width: 720px; margin: 0 auto 12px; }
@@ -301,7 +374,7 @@ const PAGE_CSS = `
   .about-join-cta:hover { background: #2358c4; transform: translateY(-2px); }
 
   /* ---------- FOOTER ---------- */
-  .about-footer { background: var(--ink); color: #AEB8CF; margin-top: 20px; padding: 56px 0 26px; }
+  .about-footer { background: var(--footer-bg); color: #AEB8CF; margin-top: 20px; padding: 56px 0 26px; border-top: 1px solid var(--line); }
   .about-foot-grid {
     display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 32px;
     padding-bottom: 38px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -358,14 +431,20 @@ export default function AboutUsNewPage() {
   const { isAuthenticated, role } = useAuth();
 
   const [theme, setTheme] = React.useState(() => {
-    return localStorage.getItem("theme") || "dark";
+    return (
+      document.documentElement.getAttribute("data-theme") ||
+      localStorage.getItem("theme") ||
+      "dark"
+    );
   });
 
+  React.useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
   const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
   const handleDashboard = () => {
@@ -636,7 +715,7 @@ export default function AboutUsNewPage() {
                 Together, we can create an open platform that empowers the next generation of innovators.
               </p>
               <a 
-                href="https://github.com/FOSSEE/OpenHW-Studio" 
+                href="https://github.com/OpenHW-Studio" 
                 target="_blank" 
                 rel="noopener noreferrer" 
                 className="about-join-cta"
@@ -694,7 +773,7 @@ export default function AboutUsNewPage() {
               <ul>
                 <li><Link to="/about">About Us</Link></li>
                 <li><Link to="/contributors">Contributors</Link></li>
-                <li><a href="https://github.com/FOSSEE/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Repo</a></li>
+                <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub Organization</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE IIT Bombay</a></li>
               </ul>
             </div>
@@ -709,7 +788,7 @@ export default function AboutUsNewPage() {
             <div>
               <h5>Connect</h5>
               <ul>
-                <li><a href="https://github.com/FOSSEE/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                <li><a href="https://github.com/OpenHW-Studio" target="_blank" rel="noopener noreferrer">GitHub</a></li>
                 <li><a href="https://fossee.in" target="_blank" rel="noopener noreferrer">FOSSEE Website</a></li>
                 <li><a href="https://www.youtube.com/@FOSSEE" target="_blank" rel="noopener noreferrer">YouTube Channel</a></li>
                 <li><a href="mailto:support@fossee.in">Support Email</a></li>
