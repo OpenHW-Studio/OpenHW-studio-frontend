@@ -70,6 +70,7 @@ import ContributorsPage from "./pages/ContributorsPage.jsx";
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 import VisitorTracker from "./components/VisitorTracker.jsx";
 import BetaBanner from "./components/BetaBanner.jsx";
+import VersionWatcher from "./components/VersionWatcher.jsx";
 import ThemeToggleSlider from "./components/ThemeToggleSlider.jsx";
 
 import { fetchMaintenanceStatus } from "./services/simulatorService.js";
@@ -208,6 +209,8 @@ export default function App() {
             <MaintenanceGuard>
               {/* Beta development notice banner */}
               <BetaBanner />
+              {/* Production version watcher & auto-update */}
+              <VersionWatcher />
               {/* Global toast notifications (level-up, badge earned, XP) */}
               <GamificationToasts />
               <ThemeToggleButton />
