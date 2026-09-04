@@ -59,11 +59,10 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const logout = () => {
-    logoutService()
+  const logout = async () => {
+    await logoutService()          // ensures removeToken() + removeUser() run first
     setUser(null)
     setToken(null)
-    // Also clear any lingering admin session to prevent state leakage
     removeAdminToken()
     removeAdminUser()
     setAdminUser(null)

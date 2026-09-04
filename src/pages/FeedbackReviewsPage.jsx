@@ -137,7 +137,7 @@ export default function FeedbackReviewsPage() {
     e.stopPropagation();
     if (!isAuthenticated) {
       if (window.confirm("Please log in to vote for community features. Go to login page?")) {
-        navigate("/login");
+        navigate("/login?returnTo=/feedback", { state: { from: "/feedback" } });
       }
       return;
     }
@@ -176,7 +176,7 @@ export default function FeedbackReviewsPage() {
     e.stopPropagation();
     if (!isAuthenticated) {
       if (window.confirm("You need to sign in to vote. Go to login?")) {
-        navigate("/login");
+        navigate("/login?returnTo=/feedback", { state: { from: "/feedback" } });
       }
       return;
     }

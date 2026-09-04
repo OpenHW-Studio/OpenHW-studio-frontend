@@ -112,7 +112,7 @@ export default function UserProfilePage() {
     return { completion: Math.round((completed / 5) * 100) }
   }, [user?.bio, user?.branch, user?.college, user?.image, user?.semester])
 
-  const handleLogout = () => { logout(); navigate('/') }
+  const handleLogout = async () => { await logout(); navigate('/') }
 
   const openEditModal = () => {
     setForm(buildFormState(user)); setError(''); setIsEditOpen(true)

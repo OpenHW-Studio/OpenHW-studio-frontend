@@ -58,8 +58,8 @@ export default function TeacherProfilePage() {
     { key: 'settings', label: 'Settings', icon: Settings, isActive: false, onClick: () => navigate('/teacher/dashboard') }
   ]
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/')
   }
 

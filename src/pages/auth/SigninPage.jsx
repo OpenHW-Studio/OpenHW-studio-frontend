@@ -8,63 +8,90 @@ import AuthLeftShowcase from "./AuthLeftShowcase.jsx";
 export default function SigninPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, logout, isAuthenticated, user } = useAuth();
   const [selectedRole, setSelectedRole] = useState(
     searchParams.get("role") || "student"
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [wrongPortalRole, setWrongPortalRole] = useState(null); // set when backend returns registeredRole
 
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
 
+  // ─── Catch redirect error / role parameters (e.g. from Google OAuth callback) ─
   useEffect(() => {
-    if (isAuthenticated) {
-      if (user?.status === "pending_deletion") {
-        navigate("/reactivate");
-      } else if (selectedRole === "teacher") {
-        navigate("/teacher/dashboard");
-      } else if (selectedRole === "student") {
-        navigate("/student/dashboard");
-      } else {
-        navigate("/user/dashboard");
-      }
+    const errorParam = searchParams.get("error");
+    const regRole = searchParams.get("registeredRole");
+    const roleParam = searchParams.get("role");
+    if (roleParam && (roleParam === "student" || roleParam === "teacher")) {
+      setSelectedRole(roleParam);
     }
-  }, [isAuthenticated, user, navigate, selectedRole]);
+    if (errorParam) {
+      setError(decodeURIComponent(errorParam));
+      if (regRole) setWrongPortalRole(regRole);
+    }
+  }, [searchParams]);
+
+  // ─── Already authenticated guard ────────────────────────────────────────────
+  // Runs whenever auth state changes. If user is already logged in:
+  //   - Correct tab (student on student tab) → redirect to their dashboard
+  //   - Wrong tab (student on teacher tab)   → show error, block form
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const dbRole = user?.role;
+
+    if (user?.status === 'pending_deletion') {
+      navigate('/reactivate');
+      return;
+    }
+
+    if (dbRole === selectedRole || dbRole === 'admin') {
+      // Correct portal — redirect to their dashboard
+      if (dbRole === 'teacher') navigate('/teacher/dashboard');
+      else if (dbRole === 'student') navigate('/student/dashboard');
+      else navigate('/user/dashboard');
+    } else {
+      // Wrong portal — show error, do NOT redirect
+      setWrongPortalRole(dbRole);
+      setError(`This account is registered as a "${dbRole}". You selected the "${selectedRole}" tab. Please switch tabs or log out.`);
+    }
+  }, [isAuthenticated, user?.role, user?.status, selectedRole]);
 
   const handleInputChange = (e) => {
-    const value =
-      e.target.type === "email" ? e.target.value.trim() : e.target.value;
+    const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value;
     setFormData({ ...formData, [e.target.name]: value });
   };
 
+  // ─── Email / Password login ───────────────────────────────────────────────
   const handleEmailLogin = async (e) => {
     e.preventDefault();
-    if (!selectedRole) {
-      setError("Please select your role first.");
-      return;
-    }
+    if (!selectedRole) { setError('Please select your role first.'); return; }
+
     setLoading(true);
-    setError("");
+    setError('');
+    setWrongPortalRole(null);
+
     try {
       const data = await loginUser({ ...formData, role: selectedRole });
-      login(data.token, data.user);
-      localStorage.setItem("lastUsedLogin", "email");
 
-      if (data.user?.status === "pending_deletion") {
-        navigate("/reactivate");
-      } else if (selectedRole === "teacher") {
-        navigate("/teacher/dashboard");
-      } else if (selectedRole === "student") {
-        navigate("/student/dashboard");
-      } else {
-        navigate("/user/dashboard");
-      }
+      login(data.token, data.user);
+      localStorage.setItem('lastUsedLogin', 'email');
+
+      // Redirect by actual DB role, not the tab
+      const dbRole = data.user?.role;
+      if (data.user?.status === 'pending_deletion') navigate('/reactivate');
+      else if (dbRole === 'teacher') navigate('/teacher/dashboard');
+      else if (dbRole === 'student') navigate('/student/dashboard');
+      else navigate('/user/dashboard');
+
     } catch (err) {
-      setError(err.message || "Invalid email or password.");
+      if (err.registeredRole) setWrongPortalRole(err.registeredRole);
+      setError(err.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -81,7 +108,7 @@ export default function SigninPage() {
       import.meta.env.VITE_API_BASE_URL || "/api";
     window.location.href =
       baseUrl.replace("/api", "") +
-      "/auth/google/signup?role=" +
+      "/auth/google?role=" +
       selectedRole +
       "&origin=" +
       encodeURIComponent(window.location.origin);
@@ -201,7 +228,69 @@ export default function SigninPage() {
                 </div>
               </label>
 
-              {error && <div className="auth-form__error">{error}</div>}
+              {error && (
+                <div className="auth-form__error" style={{ lineHeight: "1.6" }}>
+                  <div>{error}</div>
+                  {wrongPortalRole && (
+                    <div style={{ marginTop: "10px", fontSize: "12px" }}>
+                      {wrongPortalRole === "user" ? (
+                        <Link to="/login" style={{ color: "#38bdf8", fontWeight: "bold", textDecoration: "underline" }}>
+                          → Go to User Node portal (/login)
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRole(wrongPortalRole);
+                            setError("");
+                            setWrongPortalRole(null);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            color: "#38bdf8",
+                            fontWeight: "bold",
+                            textDecoration: "underline",
+                            cursor: "pointer"
+                          }}
+                        >
+                          → Switch to {wrongPortalRole === "teacher" ? "Instructor" : "Student"} tab
+                        </button>
+                      )}
+
+                      {isAuthenticated && (
+                        <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (wrongPortalRole === 'teacher') navigate('/teacher/dashboard');
+                              else if (wrongPortalRole === 'student') navigate('/student/dashboard');
+                              else navigate('/user/dashboard');
+                            }}
+                            className="hardware-submit-btn"
+                            style={{ flex: 1, padding: "8px", fontSize: "11px", background: "#0284c7", margin: 0 }}
+                          >
+                            Go to {wrongPortalRole} Dashboard
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await logout();
+                              setWrongPortalRole(null);
+                              setError("");
+                            }}
+                            className="hardware-alt-btn"
+                            style={{ flex: 1, padding: "8px", fontSize: "11px", borderColor: "#ef4444", color: "#ef4444", margin: 0 }}
+                          >
+                            Log Out of Session
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"
