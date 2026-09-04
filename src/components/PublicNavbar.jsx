@@ -39,13 +39,22 @@ export default function PublicNavbar({ links, actions }) {
 
   const navLinks = links ?? DEFAULT_LINKS;
 
+  const currentPath = location.pathname + location.search;
+
   const defaultActions = isAuthenticated ? (
     <button className="btn btn-primary public-navbar__cta" onClick={handleDashboard}>
       Dashboard →
     </button>
   ) : (
     <>
-      <button className="public-navbar__link" onClick={() => navigate("/login")}>
+      <button
+        className="public-navbar__link"
+        onClick={() =>
+          navigate(`/login?returnTo=${encodeURIComponent(currentPath)}`, {
+            state: { from: currentPath },
+          })
+        }
+      >
         Log In
       </button>
       <button className="btn btn-primary public-navbar__cta" onClick={() => navigate("/simulator")}>

@@ -10,50 +10,100 @@ const lastUsedLogin = localStorage.getItem("lastUsedLogin");
 export default function UserLoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, logout, isAuthenticated, user } = useAuth();
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [wrongPortalRole, setWrongPortalRole] = useState(null);
+  const [wrongPortalWarning, setWrongPortalWarning] = useState(null); // set when already-logged-in student/teacher visits /login
 
-  const from = location.state?.from || null;
+  const searchParams = new URLSearchParams(location.search);
+  const from = location.state?.from || searchParams.get("returnTo") || searchParams.get("from") || null;
+
+  // ─── Catch redirect error parameters (e.g. from Google OAuth role mismatch) ──
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    const regRole = searchParams.get("registeredRole");
+    if (errorParam) {
+      console.warn('[UserLogin] Received URL error parameter:', errorParam);
+      setError(decodeURIComponent(errorParam));
+      if (regRole) setWrongPortalRole(regRole);
+    }
+  }, [location.search]);
 
   const handleRedirect = (userRole, userStatus) => {
     if (userStatus === 'pending_deletion' || user?.status === 'pending_deletion') {
       navigate('/reactivate');
       return;
     }
+    // 1. If returning to a previous page (e.g. /feedback, /bugs, /simulator), go there directly
     if (from) {
       navigate(from);
       return;
     }
-    navigate('/user/dashboard');
+    // 2. Direct login: route directly to their authentic dashboard according to their role
+    if (userRole === "teacher") {
+      navigate('/teacher/dashboard');
+    } else if (userRole === "student") {
+      navigate('/student/dashboard');
+    } else {
+      navigate('/user/dashboard');
+    }
   };
 
+  // ─── Already authenticated guard ────────────────────────────────────────────
+  // This is the User Node portal — only 'user' role belongs here.
+  // If a student/teacher visits /login while already authenticated,
+  // show a clear warning. Do NOT silently redirect.
   useEffect(() => {
-    if (isAuthenticated) {
-      handleRedirect(user?.role, user?.status);
+    console.log('[UserLogin] useEffect fired | isAuthenticated:', isAuthenticated, '| user.role:', user?.role);
+    if (!isAuthenticated) return;
+
+    const dbRole = user?.role;
+
+    if (user?.status === 'pending_deletion') {
+      console.log('[UserLogin] → pending deletion, redirecting to /reactivate');
+      navigate('/reactivate');
+      return;
     }
-  }, [isAuthenticated, user]);
+
+    if (dbRole === 'user' || dbRole === 'admin') {
+      // Correct portal — redirect normally
+      console.log('[UserLogin] → correct role for this portal, redirecting');
+      handleRedirect(dbRole, user?.status);
+    } else {
+      // student or teacher visiting /login — show warning, block
+      console.warn('[UserLogin] → role mismatch! DB role is', dbRole, 'but this is the user portal. Showing warning.');
+      setWrongPortalWarning(dbRole);
+      setError(`This account is registered as a "${dbRole}". The User Node portal is only for regular user accounts. Please log out or switch to your dashboard.`);
+    }
+  }, [isAuthenticated, user?.role, user?.status]);
 
   const handleInputChange = (e) => {
-    const value =
-      e.target.type === "email" ? e.target.value.trim() : e.target.value;
+    const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value;
     setFormData((prev) => ({ ...prev, [e.target.name]: value }));
   };
 
+  // ─── Email / Password login ───────────────────────────────────────────────
   const handleUserLogin = async (e) => {
     e.preventDefault();
+    console.log('[UserLogin] handleUserLogin | email:', formData.email, '| sending role: "user" to backend');
     setLoading(true);
-    setError("");
+    setError('');
+    setWrongPortalRole(null);
+    setWrongPortalWarning(null);
 
     try {
-      const data = await loginUser({ ...formData });
+      const data = await loginUser({ ...formData, role: 'user' });
+      console.log('[UserLogin] Backend ACCEPTED login | DB role returned:', data.user?.role);
       login(data.token, data.user);
-      localStorage.setItem("lastUsedLogin", "email");
+      localStorage.setItem('lastUsedLogin', 'email');
       handleRedirect(data.user?.role, data.user?.status);
     } catch (err) {
-      setError(err.message || "Invalid email or password.");
+      console.error('[UserLogin] Backend BLOCKED login | message:', err.message, '| registeredRole:', err.registeredRole);
+      if (err.registeredRole) setWrongPortalRole(err.registeredRole);
+      setError(err.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -66,7 +116,7 @@ export default function UserLoginPage() {
       import.meta.env.VITE_API_BASE_URL || "/api";
     window.location.href =
       baseUrl.replace("/api", "") +
-      "/auth/google?origin=" +
+      "/auth/google?role=user&origin=" +
       encodeURIComponent(window.location.origin);
   };
 
@@ -164,7 +214,50 @@ export default function UserLoginPage() {
                 </div>
               </label>
 
-              {error && <div className="auth-form__error">{error}</div>}
+              {error && (
+                <div className="auth-form__error" style={{ lineHeight: "1.5" }}>
+                  <div>{error}</div>
+                  {wrongPortalRole && (
+                    <div style={{ marginTop: "10px" }}>
+                      <Link
+                        to={`/classroom/signin?role=${wrongPortalRole}`}
+                        style={{
+                          color: "#38bdf8",
+                          textDecoration: "underline",
+                          fontWeight: "bold",
+                          fontSize: "12px",
+                        }}
+                      >
+                        → Go to Classroom portal as {wrongPortalRole}
+                      </Link>
+                    </div>
+                  )}
+                  {wrongPortalWarning && (
+                    <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/${wrongPortalWarning}/dashboard`)}
+                        className="hardware-submit-btn"
+                        style={{ flex: 1, padding: "8px", fontSize: "11px", background: "#0284c7", margin: 0 }}
+                      >
+                        Go to {wrongPortalWarning} Dashboard
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await logout();
+                          setWrongPortalWarning(null);
+                          setError('');
+                        }}
+                        className="hardware-alt-btn"
+                        style={{ flex: 1, padding: "8px", fontSize: "11px", borderColor: "#ef4444", color: "#ef4444", margin: 0 }}
+                      >
+                        Log Out of Session
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"

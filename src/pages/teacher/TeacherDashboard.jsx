@@ -233,7 +233,7 @@ export default function TeacherDashboard() {
   }, [classrooms])
 
   /* ── Handlers ── */
-  const handleLogout = () => { logout(); navigate('/') }
+  const handleLogout = async () => { await logout(); navigate('/') }
 
   const handleCreateInputChange = (e) => {
     setNewClassForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))

@@ -28,10 +28,8 @@ export default function ProtectedRoute({ children, allowedRole, loginRoute }) {
     }
 
     // 3. Authorization check: If the user is authenticated, ensure they have the required role.
-    // Allow any registered user (student, teacher, user) to access the 'user' routes
-    // Hierarchy: admin can access everything.
-    const isUserRoute = allowedRole === 'user';
-    const hasAccess = role === 'admin' || (isUserRoute ? ['student', 'teacher', 'user'].includes(role) : role === allowedRole);
+    // Admin can access everything. Otherwise, role must match allowedRole exactly.
+    const hasAccess = role === 'admin' || role === allowedRole;
 
     if (allowedRole && !hasAccess) {
         // Direct users to their appropriate dashboard if they land on a route they don't have access to

@@ -239,8 +239,8 @@ export default function StudentClassDetailPage() {
     })
   }, [assignments, notices])
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/')
   }
 

@@ -193,7 +193,10 @@ export default function SubmitFeedbackModal({
                 className="f-modal-btn f-modal-btn-primary"
                 onClick={() => {
                   onClose();
-                  navigate("/login");
+                  const target = window.location.pathname + window.location.search;
+                  navigate(`/login?returnTo=${encodeURIComponent(target)}`, {
+                    state: { from: target },
+                  });
                 }}
               >
                 <LogIn size={15} />
@@ -204,7 +207,10 @@ export default function SubmitFeedbackModal({
                 className="f-modal-btn f-modal-btn-secondary"
                 onClick={() => {
                   onClose();
-                  navigate("/signup");
+                  const target = window.location.pathname + window.location.search;
+                  navigate(`/signup?returnTo=${encodeURIComponent(target)}`, {
+                    state: { from: target },
+                  });
                 }}
               >
                 <span>Create an Account</span>

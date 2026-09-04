@@ -40,29 +40,36 @@ export default function AuthSuccess() {
             return;
           }
 
-          // Check if there was a saved redirect destination
-          const redirectPath = localStorage.getItem("authRedirectPath") || defaultRedirect;
-          // Delay removal so StrictMode's second execution can still read it
+          // Always determine the correct dashboard from the actual role in DB
+          const roleDashboard = 
+            data.user.role === 'student' ? '/student/dashboard' :
+            data.user.role === 'teacher' ? '/teacher/dashboard' :
+            data.user.role === 'admin' ? '/admin/dashboard' :
+            '/user/dashboard';
+
+          const savedPath = localStorage.getItem("authRedirectPath") || "";
           setTimeout(() => localStorage.removeItem("authRedirectPath"), 1000);
-          
-          const isAdminPortal = redirectPath.startsWith("/admin");
-          
+
+          const isAdminPortal = savedPath.startsWith("/admin");
+
           if (isAdminPortal) {
             saveAdminUser(data.user);
           } else {
             saveUser(data.user);
           }
-          
+
           login(token, data.user, isAdminPortal);
           localStorage.setItem("lastUsedLogin", "google");
-          
-          navigate(redirectPath, { replace: true });
+
+          // Use role-based dashboard — ignore saved path if it doesn't match user's role
+          // This prevents students from being sent to /user/dashboard via Google OAuth
+          navigate(roleDashboard, { replace: true });
         } else {
           throw new Error("Failed to fetch user profile");
         }
       } catch (err) {
         console.error("OAuth Success Handling Error:", err);
-        navigate("/user/login", { replace: true, state: { error: "Google authentication failed. Please try again." } });
+        navigate("/login?error=" + encodeURIComponent("Google authentication failed. Please try again."), { replace: true });
       }
     };
 

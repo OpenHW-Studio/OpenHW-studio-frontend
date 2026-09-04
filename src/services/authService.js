@@ -114,7 +114,9 @@ export const loginUser = async (credentials, isAdminPortal = false) => {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || data.message || 'Login failed');
+    const err = new Error(data.error || data.message || 'Login failed');
+    if (data.registeredRole) err.registeredRole = data.registeredRole;
+    throw err;
   }
 
   // Save the JWT and user data returned by the backend
@@ -220,13 +222,20 @@ export const logout = async () => {
     // Calls logoutController in userController.js
     await fetch(`${BASE_URL}/user/logout`, { 
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      credentials: 'include'
     });
   } catch (err) {
     console.error("Backend logout failed", err);
   } finally {
     removeToken();
     removeUser();
+    removeAdminToken();
+    removeAdminUser();
+    localStorage.removeItem('authRedirectPath');
+    localStorage.removeItem('lastUsedLogin');
+    localStorage.removeItem('ohw_last_email');
+    sessionStorage.clear();
   }
 };
 
