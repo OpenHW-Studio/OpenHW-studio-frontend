@@ -26,7 +26,6 @@ export default function UserLoginPage() {
     const errorParam = searchParams.get("error");
     const regRole = searchParams.get("registeredRole");
     if (errorParam) {
-      console.warn('[UserLogin] Received URL error parameter:', errorParam);
       setError(decodeURIComponent(errorParam));
       if (regRole) setWrongPortalRole(regRole);
     }
@@ -57,24 +56,18 @@ export default function UserLoginPage() {
   // If a student/teacher visits /login while already authenticated,
   // show a clear warning. Do NOT silently redirect.
   useEffect(() => {
-    console.log('[UserLogin] useEffect fired | isAuthenticated:', isAuthenticated, '| user.role:', user?.role);
     if (!isAuthenticated) return;
 
     const dbRole = user?.role;
 
     if (user?.status === 'pending_deletion') {
-      console.log('[UserLogin] → pending deletion, redirecting to /reactivate');
       navigate('/reactivate');
       return;
     }
 
     if (dbRole === 'user' || dbRole === 'admin') {
-      // Correct portal — redirect normally
-      console.log('[UserLogin] → correct role for this portal, redirecting');
       handleRedirect(dbRole, user?.status);
     } else {
-      // student or teacher visiting /login — show warning, block
-      console.warn('[UserLogin] → role mismatch! DB role is', dbRole, 'but this is the user portal. Showing warning.');
       setWrongPortalWarning(dbRole);
       setError(`This account is registered as a "${dbRole}". The User Node portal is only for regular user accounts. Please log out or switch to your dashboard.`);
     }
@@ -88,7 +81,6 @@ export default function UserLoginPage() {
   // ─── Email / Password login ───────────────────────────────────────────────
   const handleUserLogin = async (e) => {
     e.preventDefault();
-    console.log('[UserLogin] handleUserLogin | email:', formData.email, '| sending role: "user" to backend');
     setLoading(true);
     setError('');
     setWrongPortalRole(null);
@@ -96,12 +88,10 @@ export default function UserLoginPage() {
 
     try {
       const data = await loginUser({ ...formData, role: 'user' });
-      console.log('[UserLogin] Backend ACCEPTED login | DB role returned:', data.user?.role);
       login(data.token, data.user);
       localStorage.setItem('lastUsedLogin', 'email');
       handleRedirect(data.user?.role, data.user?.status);
     } catch (err) {
-      console.error('[UserLogin] Backend BLOCKED login | message:', err.message, '| registeredRole:', err.registeredRole);
       if (err.registeredRole) setWrongPortalRole(err.registeredRole);
       setError(err.message || 'Invalid email or password.');
     } finally {

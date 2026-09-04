@@ -31,7 +31,6 @@ export default function SigninPage() {
       setSelectedRole(roleParam);
     }
     if (errorParam) {
-      console.warn('[SigninPage] Received URL error parameter:', errorParam);
       setError(decodeURIComponent(errorParam));
       if (regRole) setWrongPortalRole(regRole);
     }
@@ -42,26 +41,22 @@ export default function SigninPage() {
   //   - Correct tab (student on student tab) → redirect to their dashboard
   //   - Wrong tab (student on teacher tab)   → show error, block form
   useEffect(() => {
-    console.log('[SigninPage] useEffect fired | isAuthenticated:', isAuthenticated, '| user.role:', user?.role, '| selectedRole:', selectedRole);
     if (!isAuthenticated) return;
 
     const dbRole = user?.role;
 
     if (user?.status === 'pending_deletion') {
-      console.log('[SigninPage] → pending deletion, redirecting to /reactivate');
       navigate('/reactivate');
       return;
     }
 
     if (dbRole === selectedRole || dbRole === 'admin') {
       // Correct portal — redirect to their dashboard
-      console.log('[SigninPage] → correct role, redirecting to dashboard');
       if (dbRole === 'teacher') navigate('/teacher/dashboard');
       else if (dbRole === 'student') navigate('/student/dashboard');
       else navigate('/user/dashboard');
     } else {
       // Wrong portal — show error, do NOT redirect
-      console.warn('[SigninPage] → role mismatch! DB role is', dbRole, 'but selected tab is', selectedRole, '. Showing warning.');
       setWrongPortalRole(dbRole);
       setError(`This account is registered as a "${dbRole}". You selected the "${selectedRole}" tab. Please switch tabs or log out.`);
     }
@@ -77,14 +72,12 @@ export default function SigninPage() {
     e.preventDefault();
     if (!selectedRole) { setError('Please select your role first.'); return; }
 
-    console.log('[SigninPage] handleEmailLogin | email:', formData.email, '| requesting role:', selectedRole);
     setLoading(true);
     setError('');
     setWrongPortalRole(null);
 
     try {
       const data = await loginUser({ ...formData, role: selectedRole });
-      console.log('[SigninPage] Backend accepted login | DB role returned:', data.user?.role);
 
       login(data.token, data.user);
       localStorage.setItem('lastUsedLogin', 'email');
@@ -97,7 +90,6 @@ export default function SigninPage() {
       else navigate('/user/dashboard');
 
     } catch (err) {
-      console.error('[SigninPage] Backend BLOCKED login | message:', err.message, '| registeredRole:', err.registeredRole);
       if (err.registeredRole) setWrongPortalRole(err.registeredRole);
       setError(err.message || 'Invalid email or password.');
     } finally {
