@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
@@ -52,6 +52,7 @@ import UserMapTab from './components/UserMapTab';
 import AnalyticsTab from './components/AnalyticsTab';
 import ResourcesTab from './components/ResourcesTab';
 import AdminAdventureContentTab from './components/AdminAdventureContentTab';
+import UserManagerTab from './components/UserManagerTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
 export default function AdminPage() {
@@ -231,13 +232,13 @@ export default function AdminPage() {
         }
     };
 
-    const showToast = (message, type = 'success') => {
-        const id = Date.now();
+    const showToast = useCallback((message, type = 'success') => {
+        const id = Date.now() + Math.random();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 5000);
-    };
+    }, []);
 
     const handleRestartService = async (serviceName) => {
         addLog(`Restarting ${serviceName}...`, 'info');
@@ -490,6 +491,8 @@ export default function AdminPage() {
                 />;
             case 'adventure-content':
                 return <AdminAdventureContentTab />;
+            case 'users':
+                return <UserManagerTab showToast={showToast} />;
             case 'approval':
                 return <ApprovalsTab 
                     pendingComponents={pendingComponents} 
