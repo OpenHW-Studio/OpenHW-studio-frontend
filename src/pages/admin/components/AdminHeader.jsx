@@ -7,6 +7,7 @@ const TAB_LABELS = {
     analytics: 'Analytics',
     libraries: 'Libraries',
     'adventure-content': 'Adventure Content',
+    users: 'User Manager',
     approval: 'Approvals',
     components: 'Custom Components',
     deployments: 'CI/CD Workflow',

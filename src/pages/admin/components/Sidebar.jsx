@@ -18,6 +18,7 @@ import {
     Bug,
     MessageSquare,
     ExternalLink,
+    Users,
 } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -26,6 +27,7 @@ const MENU_ITEMS = [
     { id: 'analytics',          icon: BarChart3,        label: 'Analytics' },
     { id: 'libraries',          icon: Library,         label: 'Libraries' },
     { id: 'adventure-content',  icon: Activity,        label: 'Adventure Content' },
+    { id: 'users',              icon: Users,           label: 'User Manager' },
     { id: 'approval',           icon: Clock,           label: 'Approvals' },
     { id: 'components',         icon: Package,         label: 'Custom Components' },
     { id: 'bugs-tracker',       icon: Bug,             label: 'Bug Tracker', isExternalLink: '/bugs' },

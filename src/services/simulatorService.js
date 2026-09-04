@@ -535,3 +535,57 @@ export async function getStm32CompileStatus(jobId) {
     const response = await axios.get(`${COMPILER_URL}/compile/stm32/status/${jobId}`, getUserAuthConfig());
     return response.data;
 }
+
+/**
+ * Admin User Management & Email Blocklist APIs
+ */
+export async function fetchAdminUsers(params = {}) {
+    const response = await axios.get(`${COMPILER_URL}/admin/users`, {
+        params,
+        ...getAdminAuthConfig()
+    });
+    return response.data;
+}
+
+export async function fetchAdminUserById(userId) {
+    const response = await axios.get(`${COMPILER_URL}/admin/users/${userId}`, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function updateAdminUserRole(userId, role) {
+    const response = await axios.patch(`${COMPILER_URL}/admin/users/${userId}/role`, { role }, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function suspendAdminUser(userId, data) {
+    const response = await axios.patch(`${COMPILER_URL}/admin/users/${userId}/suspend`, data, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function unsuspendAdminUser(userId, data = {}) {
+    const response = await axios.patch(`${COMPILER_URL}/admin/users/${userId}/unsuspend`, data, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function blockAdminUser(userId, data = {}) {
+    const response = await axios.post(`${COMPILER_URL}/admin/users/${userId}/block`, data, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function unblockAdminEmail(data = {}) {
+    const response = await axios.post(`${COMPILER_URL}/admin/users/unblock`, data, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function fetchAdminBlockedEmails(params = {}) {
+    const response = await axios.get(`${COMPILER_URL}/admin/blocked-emails`, {
+        params,
+        ...getAdminAuthConfig()
+    });
+    return response.data;
+}
+
+export async function deleteAdminUserPermanently(userId) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/users/${userId}`, getAdminAuthConfig());
+    return response.data;
+}

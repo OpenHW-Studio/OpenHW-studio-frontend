@@ -1088,3 +1088,74 @@
 .ad-adventure-wrap [class*="bg-cyan-600"] {
   /* preserve cyan as-is for adventure brand identity */
 }
+
+/* ─── ADMIN MODALS ──────────────────────────────────────────────────── */
+.ad-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: adFadeIn 0.2s ease-out;
+}
+
+.ad-modal-box {
+  background-color: var(--ad-surface);
+  border: 1px solid var(--ad-border-2);
+  border-radius: 16px;
+  box-shadow: var(--ad-shadow-lg);
+  width: 100%;
+  max-width: 520px;
+  overflow: hidden;
+  animation: adScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.ad-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ad-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--ad-surface-2);
+}
+
+.ad-modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ad-text);
+  letter-spacing: -0.01em;
+}
+
+.ad-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: calc(85vh - 120px);
+}
+
+.ad-modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--ad-border);
+  background-color: var(--ad-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@keyframes adFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes adScaleUp {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
