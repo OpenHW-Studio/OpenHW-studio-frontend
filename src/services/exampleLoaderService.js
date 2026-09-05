@@ -41,6 +41,7 @@
 import GUIDED_PROJECTS_DATA from './guidedProjects.json';
 import GUIDE_INDEX_DATA from './guideProjectsIndex.json';
 import { extractProjectMetaFromPng } from '../utils/projectCompilerUtils.js';
+import { getExampleBlockData, EXAMPLE_BLOCK_MAP } from './exampleBlocks/index.js';
 
 export const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
@@ -159,6 +160,8 @@ export function findGuidedProjectBySlug(slug) {
 export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) {
   if (!slug) return null;
 
+  const blockData = getExampleBlockData(slug);
+
   // 1. Structured Schema Check (Instant 0ms in-memory resolution from guidedProjects.json)
   const project = findGuidedProjectBySlug(slug);
   if (project?.schemas?.arduino) {
@@ -166,9 +169,9 @@ export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) 
     return {
       meta: {
         ...schema,
-        blocklyXml: schema.blocklyXml || project.blocklyXml || '',
-        blocklyGeneratedCode: schema.blocklyGeneratedCode || project.blocklyGeneratedCode || '',
-        useBlocklyCode: schema.useBlocklyCode !== undefined ? schema.useBlocklyCode : (project.useBlocklyCode !== undefined ? project.useBlocklyCode : true),
+        blocklyXml: blockData?.blocklyXml || schema.blocklyXml || project.blocklyXml || '',
+        blocklyGeneratedCode: blockData?.blocklyGeneratedCode || schema.blocklyGeneratedCode || project.blocklyGeneratedCode || '',
+        useBlocklyCode: blockData?.useBlocklyCode !== undefined ? blockData.useBlocklyCode : (schema.useBlocklyCode !== undefined ? schema.useBlocklyCode : (project.useBlocklyCode !== undefined ? project.useBlocklyCode : true)),
         code: schema.code || project.code || '',
         projectName: project.title || slug,
       },
@@ -184,6 +187,13 @@ export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) 
       const buf = await res.arrayBuffer();
       const meta = extractProjectMetaFromPng(new Uint8Array(buf));
       if (meta && (meta.components || meta.connections || meta.wires || meta.schemas)) {
+        if (blockData) {
+          meta.blocklyXml = blockData.blocklyXml || meta.blocklyXml || '';
+          meta.blocklyGeneratedCode = blockData.blocklyGeneratedCode || meta.blocklyGeneratedCode || '';
+          if (blockData.useBlocklyCode !== undefined) {
+            meta.useBlocklyCode = blockData.useBlocklyCode;
+          }
+        }
         return { meta, source: 'png' };
       }
     }
@@ -199,6 +209,9 @@ export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) 
         code: project.code,
         components: [],
         connections: [],
+        blocklyXml: blockData?.blocklyXml || project.blocklyXml || '',
+        blocklyGeneratedCode: blockData?.blocklyGeneratedCode || project.blocklyGeneratedCode || '',
+        useBlocklyCode: blockData?.useBlocklyCode !== undefined ? blockData.useBlocklyCode : (project.useBlocklyCode !== undefined ? project.useBlocklyCode : true),
         projectName: project.title || slug,
       },
       source: 'index',
@@ -207,3 +220,6 @@ export async function loadExampleProjectData(slug, baseUrl = EXAMPLES_BASE_URL) 
 
   return null;
 }
+
+export { getExampleBlockData, EXAMPLE_BLOCK_MAP };
+
