@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PublicNavbar from '../components/PublicNavbar.jsx';
 import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 import {
   EXAMPLES_BASE_URL,
@@ -186,19 +187,17 @@ const toggleTheme = () => {
 
   return (
     <div className="landing">
-      <nav className="nav">
-        <div className="nav-brand">
-          <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--nav" />
-        </div>
-        <div className="nav-actions">
-          <button className="btn btn-ghost" onClick={() => navigate('/')}>← Home</button>
-          <button className="btn btn-ghost" onClick={() => navigate('/about')}>About Us</button>
-          <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
-  {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-</button>
-          <button className="btn btn-primary" onClick={() => navigate('/simulator')}>▶ Try Simulator</button>
-        </div>
-      </nav>
+      <PublicNavbar
+        links={[
+          { label: "← Home",    path: "/" },
+          { label: "About Us",  path: "/about" },
+        ]}
+        actions={
+          <button className="btn btn-primary" onClick={() => navigate('/simulator')}>
+            ▶ Try Simulator
+          </button>
+        }
+      />
 
       <div style={{
         textAlign: 'center',

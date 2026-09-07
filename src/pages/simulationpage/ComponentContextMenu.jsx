@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Bug } from 'lucide-react';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function normalizeBoardKind(source) {
@@ -49,7 +50,7 @@ const actionPanelStyle = (theme) => ({
 
 export const ComponentContextMenu = ({
   x, y, comp, info, visible, onClose, theme,
-  onRename, onPinMap, onRotate, onDelete, onDoc,
+  onRename, onPinMap, onRotate, onDelete, onDoc, onReportBug,
   updateComponentAttr, onValueEdit,
   programmableBoards = [], boardColors = {}, onWireToBoard,
   onOpenCode, onAutoCode
@@ -784,6 +785,27 @@ export const ComponentContextMenu = ({
           <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onDoc(); onClose(); }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
             <span>Docs</span>
+          </button>
+        )}
+
+        {onReportBug && (
+          <button
+            className="canvas-menu-item context-menu-item"
+            style={{
+              fontSize: '11.5px',
+              padding: '4px 8px',
+              gap: '6px',
+              color: 'var(--amber, #f59e0b)',
+              '--item-hover-bg': 'rgba(245, 158, 11, 0.12)'
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onReportBug(comp);
+              onClose();
+            }}
+          >
+            <Bug size={11} strokeWidth={2.3} />
+            <span>Report Bug</span>
           </button>
         )}
 

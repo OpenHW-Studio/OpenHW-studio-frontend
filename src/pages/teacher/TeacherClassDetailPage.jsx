@@ -339,8 +339,8 @@ export default function TeacherClassDetailPage() {
     };
   }, [classId, assignments, students.length]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate("/");
   };
 

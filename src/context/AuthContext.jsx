@@ -59,11 +59,10 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const logout = () => {
-    logoutService()
+  const logout = async () => {
+    await logoutService()          // ensures removeToken() + removeUser() run first
     setUser(null)
     setToken(null)
-    // Also clear any lingering admin session to prevent state leakage
     removeAdminToken()
     removeAdminUser()
     setAdminUser(null)
@@ -85,6 +84,7 @@ export function AuthProvider({ children }) {
 
   const isAuthenticated = !!user && !!token
   const role = user?.role || null // 'student' | 'teacher' | 'user'
+  const isPendingDeletion = user?.status === 'pending_deletion'
 
   const isAdminAuthenticated = !!adminUser && !!adminToken
   const adminRole = adminUser?.role || null // 'admin'
@@ -92,7 +92,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       // Main student/teacher session
-      user, token, isAuthenticated, role,
+      user, token, isAuthenticated, role, isPendingDeletion,
 
       // Admin session
       adminUser, adminToken, isAdminAuthenticated, adminRole,

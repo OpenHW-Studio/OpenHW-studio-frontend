@@ -194,7 +194,7 @@ export default function TeacherProjectBankPage() {
               </a>
 
               <button
-                onClick={() => { logout(); navigate("/login"); }}
+                onClick={async () => { await logout(); navigate("/"); }}
                 className="student-db-sidebar__link"
                 style={{ color: "#ef4444" }}
               >

@@ -162,8 +162,8 @@ export function GamificationProvider({ children }) {
         }
         parsed.currentLevel = Math.max(parsed.currentLevel || 1, calculatedLevel);
         
-        // Fetch full gamification state from MongoDB if user is authenticated
-        if (user?.email && (user._id || user.id)) {
+        // Fetch full gamification state from MongoDB if user is authenticated and active
+        if (user?.email && (user._id || user.id) && user.status !== 'pending_deletion') {
           try {
             const apiData = await fetchUserGamificationState(user._id || user.id);
             if (apiData?.state && Object.keys(apiData.state).length > 0) {
@@ -201,7 +201,7 @@ export function GamificationProvider({ children }) {
             parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(parsed.currentLevel || 1)];
           }
         } else {
-          // No user, use level-based unlocks
+          // No backend auth or pending deletion, use level-based unlocks
           parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(parsed.currentLevel || 1)];
         }
         
@@ -224,7 +224,7 @@ export function GamificationProvider({ children }) {
   const saveImmediately = useCallback(async (currentState, currentUser) => {
     try {
       const u = currentUser || user;
-      if (u?.email && (u._id || u.id)) {
+      if (u?.email && (u._id || u.id) && u.status !== 'pending_deletion') {
         await saveUserGamificationState(u._id || u.id, currentState);
         localStorage.setItem(storageKey, JSON.stringify(currentState));
       } else {
@@ -239,7 +239,7 @@ export function GamificationProvider({ children }) {
   useEffect(() => {
     const handleSave = async () => {
       try {
-        if (user?.email && (user._id || user.id)) {
+        if (user?.email && (user._id || user.id) && user.status !== 'pending_deletion') {
           await saveUserGamificationState(user._id || user.id, state);
           
           // Also save to localStorage as backup/migration
@@ -249,7 +249,7 @@ export function GamificationProvider({ children }) {
             console.warn('Failed to save to localStorage:', e);
           }
         } else {
-          // Guest mode: Just save to localStorage
+          // Guest mode or pending deletion: Just save to localStorage
           try {
             localStorage.setItem(storageKey, JSON.stringify(state));
           } catch (e) {

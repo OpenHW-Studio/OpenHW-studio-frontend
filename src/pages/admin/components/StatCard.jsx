@@ -1,27 +1,32 @@
 import React from 'react';
-import AdminCard from './AdminCard';
 
-const StatCard = ({ label, value, icon, color = 'text-blue-500' }) => {
+/**
+ * StatCard — used in infrastructure tabs for large metric display.
+ * Now uses admin.css token variables.
+ */
+const StatCard = ({ label, value, icon, color = 'blue' }) => {
+    const colorMap = {
+        'text-blue-500':    'blue',
+        'text-emerald-500': 'emerald',
+        'text-amber-500':   'amber',
+        'text-purple-500':  'purple',
+        'text-red-500':     'red',
+        'text-cyan-500':    'cyan',
+        blue: 'blue', emerald: 'emerald', amber: 'amber',
+        purple: 'purple', red: 'red', cyan: 'cyan',
+    };
+    const resolvedColor = colorMap[color] || 'blue';
+
     return (
-        <AdminCard className="min-h-[200px] justify-between group relative overflow-hidden">
-            {/* Background Glow */}
-            <div className={`absolute -right-10 -top-10 w-24 h-24 blur-[60px] opacity-20 rounded-full ${color.replace('text-', 'bg-')}`}></div>
-            
-            <div className={`p-4 rounded-lg bg-slate-900/80 w-fit shadow-2xl mb-4 ${color} transition-transform group-hover:scale-110 border border-white/5`}>
-                <div className="w-8 h-8">
-                    {icon}
-                </div>
+        <div className="ad-stat-card">
+            <div className={`ad-stat-icon ${resolvedColor}`}>
+                {icon}
             </div>
-            
-            <div className="space-y-1 w-full">
-                <div className="text-4xl font-black text-white tracking-tighter leading-none">
-                    {value}
-                </div>
-                <div className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] opacity-80">
-                    {label}
-                </div>
+            <div>
+                <div className="ad-stat-value">{value}</div>
+                <div className="ad-stat-label" style={{ marginTop: 4 }}>{label}</div>
             </div>
-        </AdminCard>
+        </div>
     );
 };
 

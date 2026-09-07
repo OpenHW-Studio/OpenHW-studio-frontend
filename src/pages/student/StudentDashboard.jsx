@@ -351,8 +351,8 @@ export default function StudentDashboard() {
     return list.sort((a, b) => b.date - a.date);
   }, [classrooms, noticesByClass, assignmentsByClass]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate("/");
   };
 

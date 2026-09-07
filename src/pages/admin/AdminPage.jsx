@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
+import './admin.css';
 
 import {
     fetchInstalledLibraries,
@@ -48,8 +49,10 @@ import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
 import UserMapTab from './components/UserMapTab';
+import AnalyticsTab from './components/AnalyticsTab';
 import ResourcesTab from './components/ResourcesTab';
 import AdminAdventureContentTab from './components/AdminAdventureContentTab';
+import UserManagerTab from './components/UserManagerTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
 export default function AdminPage() {
@@ -76,7 +79,13 @@ export default function AdminPage() {
     const [isSearchingLibs, setIsSearchingLibs] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [theme, setTheme] = useState(() => localStorage.getItem('admin_theme') || 'dark');
     const restoreInputRef = useRef(null);
+
+    const handleToggleTheme = (newTheme) => {
+        setTheme(newTheme);
+        localStorage.setItem('admin_theme', newTheme);
+    };
 
     const lastToggleTime = useRef(0);
     const loadData = async () => {
@@ -223,13 +232,13 @@ export default function AdminPage() {
         }
     };
 
-    const showToast = (message, type = 'success') => {
-        const id = Date.now();
+    const showToast = useCallback((message, type = 'success') => {
+        const id = Date.now() + Math.random();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 5000);
-    };
+    }, []);
 
     const handleRestartService = async (serviceName) => {
         addLog(`Restarting ${serviceName}...`, 'info');
@@ -447,6 +456,8 @@ export default function AdminPage() {
                 return <OverviewTab stats={analytics} />;
             case 'map':
                 return <UserMapTab stats={analytics} />;
+            case 'analytics':
+                return <AnalyticsTab stats={analytics} />;
             case 'libraries':
                 return <LibrariesTab 
                     libraries={libraries}
@@ -480,6 +491,8 @@ export default function AdminPage() {
                 />;
             case 'adventure-content':
                 return <AdminAdventureContentTab />;
+            case 'users':
+                return <UserManagerTab showToast={showToast} />;
             case 'approval':
                 return <ApprovalsTab 
                     pendingComponents={pendingComponents} 
@@ -529,37 +542,39 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="flex h-screen bg-[#070b14] text-slate-100 font-sans overflow-hidden relative gap-8 lg:gap-12">
-            {/* Sidebar with overlay for mobile */}
+        <div className="ad-root" data-admin-theme={theme}>
+            {/* Sidebar */}
             <Sidebar 
                 isOpen={isSidebarOpen}
                 onClose={() => setIsSidebarOpen(false)}
                 activeTab={activeTab} 
                 setActiveTab={(tab) => {
                     setActiveTab(tab);
-                    setIsSidebarOpen(false); // Close on selection on mobile
+                    setIsSidebarOpen(false);
                 }} 
                 onLogout={handleLogout} 
                 maintenanceMode={maintenanceMode}
                 onToggleMaintenance={handleToggleMaintenance}
+                pendingCount={pendingComponents?.length || 0}
             />
 
             {/* Mobile Overlay */}
-            {isSidebarOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-                    onClick={() => setIsSidebarOpen(false)}
-                ></div>
-            )}
+            <div 
+                className={`ad-overlay ${isSidebarOpen ? 'visible' : ''}`}
+                onClick={() => setIsSidebarOpen(false)}
+            />
 
-            <main className="flex-1 overflow-y-auto p-12 md:p-20 lg:p-32 xl:p-40 custom-scrollbar relative">
+            {/* Main Content */}
+            <main className="ad-main">
                 <AdminHeader 
                     activeTab={activeTab} 
                     onRefresh={loadData} 
                     onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+                    theme={theme}
+                    onToggleTheme={handleToggleTheme}
                 />
 
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="ad-content ad-fade-in">
                     {renderTabContent()}
                 </div>
 

@@ -148,8 +148,8 @@ export default function UserDashboard() {
     }
   }, [activeTab, user]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate("/");
   };
 

@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@keyframes betaPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
+
 @keyframes openhw-loading-spin {
   to {
     transform: rotate(360deg);
@@ -33,6 +38,7 @@
   --canvas-bg: #0a0e1a;
   --border: #1e2d47;
   --border2: #243350;
+  --line: #1e2d47;
   --text: #e8edf5;
   --text2: #8fa3be;
   --text3: #4d6380;
@@ -59,6 +65,7 @@
   --canvas-bg: #e2e8f0;
   --border: #cbd5e1;
   --border2: #94a3b8;
+  --line: #cbd5e1;
   --text: #0f172a;
   --text2: #475569;
   --text3: #64748b;
@@ -205,9 +212,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 48px;
-  background: rgba(var(--bg), 0.85);
-  backdrop-filter: blur(12px);
+  padding: 14px 48px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -263,6 +269,34 @@ body {
 .nav-actions {
   display: flex;
   gap: 12px;
+}
+
+.nav-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link-btn:hover {
+  color: var(--text);
+  background: rgba(125, 125, 125, 0.08);
+}
+
+.nav-link-btn.active {
+  color: var(--accent);
+  background: rgba(0, 212, 255, 0.08);
 }
 
 /* ─── HERO ────────────────────────────────────────────────────────────────── */
@@ -9939,30 +9973,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.universal-admin-card {
-  background: rgba(13, 21, 37, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  /* sharper but modern */
-  padding: 1.5rem;
-  /* Increased slightly for better balance */
-  margin: 1rem;
-  /* Guaranteed space in every direction */
-  display: flex;
-  flex-direction: column;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.4);
-}
-
-.universal-admin-card:hover {
-  background: rgba(13, 21, 37, 0.8);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-4px);
-}
+/* .universal-admin-card removed — replaced by .ad-card in admin.css */
 
 .admin-status-chip {
   @apply flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300;
