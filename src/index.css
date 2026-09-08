@@ -11674,7 +11674,7 @@ body {
   background-color: #0b0f19;
   overflow: visible;
   display: grid;
-  grid-template-columns: 1fr minmax(450px, 640px);
+  grid-template-columns: 1fr 1fr;
   box-shadow: none;
   border: none;
   border-radius: 0;
@@ -11699,7 +11699,7 @@ body {
     linear-gradient(90deg, rgba(30, 41, 59, 0.6) 1px, transparent 1px);
   background-size: 24px 24px;
   border-right: 1px solid #1e293b;
-  padding: 40px 32px;
+  padding: 24px 20px;
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -11719,15 +11719,15 @@ body {
   display: none;                /* Chrome/Safari */
 }
 
-/* ─── MODERN AVATAR STUDIO CARD (EXPANDED SIZING) ─── */
+/* ─── MODERN AVATAR STUDIO CARD (BALANCED SIZING) ─── */
 .avatar-studio-card {
   width: 100%;
-  max-width: 460px;
+  max-width: 420px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 24px;
-  padding: 28px;
-  box-shadow: 0 16px 36px -8px rgba(15, 23, 42, 0.1), 0 8px 16px -6px rgba(15, 23, 42, 0.05);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.08), 0 4px 12px -4px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -11738,36 +11738,36 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .avatar-studio-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: #eff6ff;
   border: 1px solid #dbeafe;
   color: #2563eb;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  padding: 6px 14px;
+  padding: 4px 10px;
   border-radius: 9999px;
 }
 
 .avatar-studio-status {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 600;
   color: #10b981;
   letter-spacing: 0.04em;
 }
 
 .avatar-pulse-dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   background-color: #10b981;
   border-radius: 50%;
   box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
@@ -11779,7 +11779,7 @@ body {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
   }
   100% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
@@ -11789,8 +11789,8 @@ body {
 /* Avatar Preview Canvas */
 .avatar-preview-canvas {
   width: 100%;
-  height: 230px;
-  border-radius: 20px;
+  height: 155px;
+  border-radius: 14px;
   background: radial-gradient(circle at center, #ffffff 0%, #f8fafc 100%);
   border: 1px solid #e2e8f0;
   display: flex;
@@ -11798,23 +11798,23 @@ body {
   justify-content: center;
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 2px 8px rgba(15, 23, 42, 0.04);
+  box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.03);
 }
 
 .avatar-preview-halo {
   position: absolute;
-  width: 190px;
-  height: 190px;
+  width: 130px;
+  height: 130px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, rgba(59, 130, 246, 0) 70%);
   pointer-events: none;
 }
 
 .avatar-preview-img {
-  width: 154px;
-  height: 154px;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
-  box-shadow: 0 10px 28px -4px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 8px 20px -3px rgba(37, 99, 235, 0.22);
   position: relative;
   z-index: 1;
   object-fit: cover;
@@ -11827,11 +11827,11 @@ body {
 
 .avatar-quick-randomize-btn {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(6px);
   border: 1px solid #e2e8f0;
@@ -11839,7 +11839,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.07);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
   transition: all 0.2s ease;
   z-index: 2;
 }
@@ -11855,9 +11855,9 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  margin-bottom: 10px;
-  font-size: 12px;
+  margin-top: 12px;
+  margin-bottom: 7px;
+  font-size: 11px;
   font-weight: 700;
   color: #64748b;
   letter-spacing: 0.05em;
@@ -11866,14 +11866,14 @@ body {
 .avatar-style-current {
   color: #2563eb;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .avatar-style-pills {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   scrollbar-width: none;
 }
 
@@ -11883,8 +11883,8 @@ body {
 
 .avatar-style-pill {
   flex-shrink: 0;
-  padding: 8px 16px;
-  font-size: 12px;
+  padding: 5px 12px;
+  font-size: 11px;
   font-weight: 600;
   border-radius: 9999px;
   background: #f1f5f9;
@@ -11903,7 +11903,7 @@ body {
   background: #eff6ff;
   color: #2563eb;
   border-color: #bfdbfe;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.15);
 }
 
 /* Variant Grid Header */
@@ -11911,12 +11911,12 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  margin-bottom: 12px;
+  margin-top: 12px;
+  margin-bottom: 8px;
 }
 
 .avatar-grid-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #64748b;
   letter-spacing: 0.05em;
@@ -11925,20 +11925,20 @@ body {
 .avatar-page-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .avatar-page-indicator {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #64748b;
   font-variant-numeric: tabular-nums;
 }
 
 .avatar-page-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   display: flex;
@@ -11958,7 +11958,7 @@ body {
 .avatar-selection-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 8px;
   width: 100%;
 }
 
@@ -11966,8 +11966,8 @@ body {
   aspect-ratio: 1;
   background: #f8fafc;
   border: 2px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 8px;
+  border-radius: 10px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11980,60 +11980,60 @@ body {
   border-color: #93c5fd;
   transform: translateY(-2px);
   background: #ffffff;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.12);
 }
 
 .avatar-grid-card.is-selected {
   border-color: #2563eb;
   background: #eff6ff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 .avatar-grid-card-img {
   width: 100%;
   height: 100%;
-  border-radius: 10px;
+  border-radius: 7px;
   object-fit: contain;
 }
 
 .avatar-check-badge {
   position: absolute;
-  top: -5px;
-  right: -5px;
-  width: 20px;
-  height: 20px;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #2563eb;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.4);
 }
 
 /* Randomize Button */
 .avatar-random-btn {
   width: 100%;
-  margin-top: 20px;
-  padding: 13px 20px;
-  border-radius: 12px;
+  margin-top: 14px;
+  padding: 10px 16px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   color: #ffffff;
   border: none;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.15);
   transition: all 0.2s ease;
 }
 
 .avatar-random-btn:hover {
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
   transform: translateY(-1px);
 }
 
@@ -12044,7 +12044,7 @@ body {
 /* Right panel with forms */
 .auth-hardware-panel {
   background-color: #0f172a;
-  padding: 60px 40px;
+  padding: clamp(16px, 3vh, 40px) clamp(16px, 3vw, 40px);
   width: 100%;
   min-height: 100vh;
   box-sizing: border-box;
@@ -12053,7 +12053,7 @@ body {
   justify-content: center;
   align-items: center;
   position: relative;
-  overflow-y: visible;
+  overflow-y: auto;
 }
 
 .auth-hardware-panel::-webkit-scrollbar {
@@ -12079,7 +12079,7 @@ body {
 .hardware-switch-wrapper {
   display: flex;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: clamp(10px, 1.8vh, 20px);
   width: 100%;
 }
 
@@ -12087,7 +12087,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border: 1px solid #d59b2e;
   border-radius: 8px;
   background-color: #fbf6ec;
@@ -12106,17 +12106,17 @@ body {
 
 .hardware-panel__header {
   margin-top: 0;
-  margin-bottom: 16px;
+  margin-bottom: clamp(10px, 1.6vh, 16px);
   text-align: center;
 }
 
 .hardware-panel__header h2 {
-  font-size: 22px;
+  font-size: clamp(17px, 2.2vh, 22px);
   font-weight: 900;
   color: #0f172a;
   letter-spacing: -0.02em;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: clamp(2px, 0.5vh, 6px);
 }
 
 .hardware-panel__header p {
@@ -12134,7 +12134,7 @@ body {
 }
 
 .hardware-role-btn {
-  padding: 10px;
+  padding: clamp(7px, 1vh, 10px);
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -12160,20 +12160,20 @@ body {
   background-color: #eff6ff;
   border: 2px solid #2563eb;
   color: #2563eb;
-  padding: 9px;
+  padding: clamp(6px, 0.9vh, 9px);
 }
 
 /* Form fields */
 .hardware-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: clamp(8px, 1.4vh, 14px);
 }
 
 .hardware-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(3px, 0.5vh, 6px);
 }
 
 .hardware-label {
@@ -12198,11 +12198,11 @@ body {
 
 .hardware-input {
   width: 100%;
-  padding: 12px 14px;
+  padding: clamp(8px, 1.2vh, 12px) 14px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: clamp(13px, 1.4vh, 14px);
   color: #0f172a;
   transition: all 0.2s ease;
 }
@@ -12264,32 +12264,33 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .hardware-checkbox {
   margin-top: 3px;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .hardware-checkbox-label {
-  font-size: 12px;
+  font-size: clamp(11px, 1.15vh, 12px);
   color: #475569;
-  line-height: 1.4;
+  line-height: 1.35;
   cursor: pointer;
 }
 
 /* Submit Button */
 .hardware-submit-btn {
   width: 100%;
-  padding: 14px;
+  padding: clamp(10px, 1.3vh, 14px);
   background-color: #0066ff;
   border: none;
   border-radius: 8px;
   color: #ffffff;
-  font-size: 14px;
+  font-size: clamp(12px, 1.3vh, 14px);
   font-weight: bold;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -12299,7 +12300,7 @@ body {
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  margin-top: 10px;
+  margin-top: clamp(6px, 1vh, 10px);
 }
 
 .hardware-submit-btn:hover {
@@ -12320,7 +12321,7 @@ body {
 }
 
 .hardware-panel__footer {
-  margin-top: 24px;
+  margin-top: clamp(12px, 1.8vh, 24px);
   text-align: center;
   font-size: 12px;
   color: #64748b;
