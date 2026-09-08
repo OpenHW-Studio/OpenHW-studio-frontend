@@ -199,7 +199,15 @@ function ThemeToggleButton() {
     location.pathname.includes('/demo') ||
     location.pathname.includes('/guided');
 
-  if (isSimulator || hasNavbarToggle) return null;
+  const isAuthPage =
+    location.pathname.startsWith('/classroom/sign') ||
+    location.pathname === '/login' ||
+    location.pathname === '/signup' ||
+    location.pathname === '/user/signup' ||
+    location.pathname === '/forgot-password' ||
+    location.pathname.startsWith('/reset-password');
+
+  if (isSimulator || hasNavbarToggle || isAuthPage) return null;
 
   return (
     <div

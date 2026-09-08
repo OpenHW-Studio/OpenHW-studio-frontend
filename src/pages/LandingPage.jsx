@@ -4,11 +4,12 @@ import { useAuth } from "../context/AuthContext.jsx";
 import PublicNavbar from "../components/PublicNavbar.jsx";
 import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
 import GUIDED_JSON from "../services/guidedProjects.json";
+import {
+  EXAMPLES_BASE_URL,
+  getDemoCircuitUrl,
+} from "../services/exampleLoaderService.js";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
-
-const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
 
 // JSON slug → URL slug for projects where they differ
 const JSON_SLUG_TO_URL = {
@@ -67,10 +68,7 @@ const CIRCUIT_IMAGE_MAP = {
 
 // Resolve circuit image URL for a given slug
 function getCircuitImageUrl(slug, baseUrl) {
-  const entry = CIRCUIT_IMAGE_MAP[slug];
-  if (entry) return `${baseUrl}/${entry.folder}/${entry.file}`;
-  // fallback: try slug/circuit.png directly
-  return `${baseUrl}/${slug}/circuit.png`;
+  return getDemoCircuitUrl(slug, baseUrl);
 }
 
 const PREFERRED_SLUGS = [

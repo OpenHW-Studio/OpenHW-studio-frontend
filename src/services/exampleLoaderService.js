@@ -87,7 +87,7 @@ export const CIRCUIT_IMAGE_MAP = {
   '7-segment-counter':       { folder: '7-segment-display',       file: 'circuit.png' },
   'ir-remote-control-system':{ folder: 'ir-remote-control-system',file: 'circuit.png' },
   'ir-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
-  // Closest equivalents / aliased projects:
+  // Closest genuine circuit diagram from examples repo for projects without a dedicated folder:
   'led-pwm':                 { folder: 'potentiometer-led',       file: 'circuit.png' },
   'dht-lcd':                 { folder: 'temperature-rgb-led',     file: 'circuit.png' },
   'line-following-robot':    { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
@@ -108,7 +108,8 @@ export function getDemoCircuitUrl(slug, baseUrl = EXAMPLES_BASE_URL) {
   if (!slug) return '';
   const entry = CIRCUIT_IMAGE_MAP[slug];
   if (entry) {
-    return `${baseUrl}/${entry.folder}/${entry.file}`;
+    if (entry.localAsset) return entry.localAsset;
+    if (entry.folder && entry.file) return `${baseUrl}/${entry.folder}/${entry.file}`;
   }
   return `${baseUrl}/${slug}/circuit.png`;
 }

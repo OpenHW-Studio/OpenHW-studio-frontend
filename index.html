@@ -7,9 +7,15 @@
     <link rel="icon" href="/title-logo.png" />
     <script>
       (function () {
-        const savedTheme = localStorage.getItem("theme") || "dark";
+        let savedTheme = localStorage.getItem("theme");
+        if (!savedTheme || savedTheme === "light") {
+          savedTheme = "dark";
+          localStorage.setItem("theme", "dark");
+        }
         document.documentElement.setAttribute("data-theme", savedTheme);
       })();
+    </script>
+    <script>
       // Service Worker & Development Cache Handling
       const isLocalhost = Boolean(
         location.hostname === "localhost" ||

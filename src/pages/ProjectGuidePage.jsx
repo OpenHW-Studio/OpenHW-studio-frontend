@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu } from "lucide-react";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu, X } from "lucide-react";
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from "./simulationpage/components/SerialMonitor";
 
 const SLUG_MAP = {
@@ -50,6 +50,7 @@ import { findGuidedProjectBySlug } from "../services/exampleLoaderService.js";
 import PROJECT_INDEX from "../services/guideProjectsIndex.json";
 
 export default function ProjectGuidePage() {
+  const navigate = useNavigate();
   const { projectName = "" } = useParams();
   const [searchParams] = useSearchParams();
   const classId = searchParams.get('classId');
@@ -196,7 +197,53 @@ export default function ProjectGuidePage() {
       <div style={{
         display: "flex", alignItems: "stretch",
         height: "70vh", maxWidth: "calc(70vw + 400px)",
+        position: "relative",
       }}>
+        {/* Close Button */}
+        <button
+          onClick={() => {
+            if (window.history.length > 1) {
+              navigate(-1);
+            } else {
+              navigate('/examples');
+            }
+          }}
+          style={{
+            position: 'absolute',
+            top: -16,
+            right: -16,
+            zIndex: 50,
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'var(--bg2, #1e293b)',
+            border: '1px solid var(--border, rgba(255,255,255,0.15))',
+            color: 'var(--text, #f8fafc)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.background = '#ef4444';
+            e.currentTarget.style.color = '#fff';
+            e.currentTarget.style.borderColor = '#ef4444';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.background = 'var(--bg2, #1e293b)';
+            e.currentTarget.style.color = 'var(--text, #f8fafc)';
+            e.currentTarget.style.borderColor = 'var(--border, rgba(255,255,255,0.15))';
+          }}
+          title="Close Guide"
+          aria-label="Close Guide"
+        >
+          <X size={18} strokeWidth={2.5} />
+        </button>
+
         <div style={{
           width: "110vh", maxWidth: "70vw",
           borderRadius: 12, overflow: "hidden",
