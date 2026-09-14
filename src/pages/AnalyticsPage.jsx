@@ -33,7 +33,7 @@ const TIMEFRAMES = [
     { id: 'today', label: 'Today', days: 1 },
 ];
 
-const windowLabel = (id, noun) => {
+const windowLabel = (id) => {
     if (id === 'today') return `for the latest day`;
     if (id === 'week') return `across the last 7 days`;
     return `across the last 30 days`;
@@ -300,7 +300,6 @@ export default function AnalyticsPage() {
     );
     const simWindowDays = TIMEFRAMES.find((t) => t.id === buildTimeframe)?.days ?? fullSimulations.length;
     const simulations = fullSimulations.slice(-Math.min(simWindowDays, fullSimulations.length));
-    const simMax = Math.max(1, ...simulations.map((d) => d.count));
     const simTotal = useMemo(() => simulations.reduce((acc, d) => acc + d.count, 0), [simulations]);
 
     const syncParams = (next) => {
@@ -454,7 +453,7 @@ export default function AnalyticsPage() {
                                 <p className="pa-section-sub">
                                     Account signups broken down by role
                                     {timeframe !== 'allTime' && (
-                                        <> — showing new accounts this {timeframe === 'today' ? 'day' : timeframe}</>
+                                        <> — showing new accounts {timeframe === 'today' ? 'for the latest day' : timeframe === 'week' ? 'from the last 7 days' : 'from the last 30 days'}</>
                                     )}.
                                 </p>
                                 <div className="pa-roles">
@@ -476,12 +475,12 @@ export default function AnalyticsPage() {
                                             );
                                         })}
                                         <div className="pa-role-row">
-                                            <div>
-                                                <div className="pa-role-name">Total accounts</div>
-                                                <div className="pa-role-share">
-                                                    {timeframe === 'allTime' ? 'All-time registered' : `New this ${timeframe}`}
-                                                </div>
+                                        <div>
+                                            <div className="pa-role-name">Total accounts</div>
+                                            <div className="pa-role-share">
+                                                {timeframe === 'allTime' ? 'All-time registered' : timeframe === 'today' ? 'New on the latest day' : timeframe === 'week' ? 'New in the last 7 days' : 'New in the last 30 days'}
                                             </div>
+                                        </div>
                                             <div className="pa-role-num">{fmtInt(total)}</div>
                                         </div>
                                     </div>
@@ -497,7 +496,7 @@ export default function AnalyticsPage() {
                                                     />
                                                 ))
                                             ) : (
-                                                <span className="pa-trend-cap">No signup data yet.</span>
+                                                <span className="pa-trend-cap pa-trend-empty">No signup data yet.</span>
                                             )}
                                         </div>
                                         <p className="pa-trend-cap">
