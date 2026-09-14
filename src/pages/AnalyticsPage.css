@@ -417,7 +417,8 @@
   padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
+  justify-content: flex-start;
 }
 
 .pa-role-side h3 {
@@ -426,6 +427,7 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text3);
+  margin-bottom: 14px;
 }
 
 .pa-trend {
@@ -433,7 +435,7 @@
   align-items: flex-end;
   gap: 5px;
   height: 96px;
-  padding-top: 8px;
+  margin-bottom: 14px;
 }
 
 .pa-trend i {
@@ -445,11 +447,19 @@
   min-height: 3px;
 }
 
-/* Empty trend state: keep the 96px figure box so the side panel does not
+/* Empty/flat trend state: keep the 96px figure box so the side panel does not
    collapse when a fresh backend has no signup rows yet. */
 .pa-trend-empty {
   align-self: center;
   margin: auto 0;
+}
+
+/* Single-day spike note: plain sentence, no oversized chart for one bar. */
+.pa-trend-flat {
+  align-self: center;
+  margin: auto 0;
+  text-align: center;
+  max-width: 34ch;
 }
 
 .pa-trend-cap {

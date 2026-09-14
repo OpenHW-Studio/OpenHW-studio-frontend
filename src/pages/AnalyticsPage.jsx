@@ -486,6 +486,8 @@ export default function AnalyticsPage() {
                                     </div>
                                     <div className="pa-role-side">
                                         <h3>Daily signups, {timeframe === 'today' ? 'latest day' : timeframe === 'week' ? 'last 7 days' : 'last 30 days'}</h3>
+                                        {regMax > 1 ? (
+                                        <>
                                         <div className="pa-trend" role="img" aria-label={`Daily signup totals for the selected window (${regTimeline.length} days, ${regWindowTotals} signups)`}>
                                             {regTimeline.length > 0 ? (
                                                 regTimeline.map((d, i) => (
@@ -502,6 +504,14 @@ export default function AnalyticsPage() {
                                         <p className="pa-trend-cap">
                                             {regWindowTotals} signup{regWindowTotals === 1 ? '' : 's'} in view across every role. Hover a bar for the exact count.
                                         </p>
+                                        </>
+                                        ) : (
+                                        <p className="pa-trend-cap pa-trend-flat">
+                                            {regWindowTotals === 0
+                                                ? 'No signups in this window yet — new accounts will appear here day by day.'
+                                                : `Only ${regWindowTotals} signup${regWindowTotals === 1 ? '' : 's'} in this window, all on ${shortDate(regTimeline.find((d) => (d.total || 0) > 0)?.date)}. Not enough spread to draw a trend yet.`}
+                                        </p>
+                                        )}
                                     </div>
                                 </div>
                             </section>
