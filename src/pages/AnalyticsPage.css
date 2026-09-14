@@ -32,7 +32,17 @@
   --pa-ink: #16233c;
   --pa-ink-2: #43547a;
   --pa-ink-3: #7585a3;
-  --pa-rule: #ded4bc;
+  --pa-rule: #d9cfB4;
+  --pa-chip: #ffffff;
+}
+
+.light-mode .pa-page {
+  --pa-paper: #fbf8ef;
+  --pa-paper-2: #f1ebda;
+  --pa-ink: #16233c;
+  --pa-ink-2: #43547a;
+  --pa-ink-3: #7585a3;
+  --pa-rule: #d9cfB4;
   --pa-chip: #ffffff;
 }
 
@@ -342,9 +352,11 @@
 }
 
 /* ── Role ledger table ────────────────────────────────────────────── */
+/* Left = role counts (~35%), right = signup trend graph (~65%). The graph
+   carries 30 daily bars, so it gets the majority of the width. */
 .pa-roles {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 0.55fr 1fr;
   gap: 0;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -431,6 +443,13 @@
   background: var(--accent);
   opacity: 0.85;
   min-height: 3px;
+}
+
+/* Empty trend state: keep the 96px figure box so the side panel does not
+   collapse when a fresh backend has no signup rows yet. */
+.pa-trend-empty {
+  align-self: center;
+  margin: auto 0;
 }
 
 .pa-trend-cap {
@@ -581,6 +600,7 @@
   color: var(--text);
 }
 
+/* Legacy helper kept for older markup (unused by current page). */
 .pa-build-avg {
   font-size: 13px;
   color: var(--text2);
@@ -617,7 +637,7 @@
   margin-top: 30px;
 }
 
-/* Keep the old split helper for any other consumer. */
+/* Legacy two-column helper (no current consumer on this page). */
 .pa-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -822,10 +842,6 @@
     border-top: 1px solid var(--border);
   }
 
-  .pa-split {
-    grid-template-columns: 1fr;
-  }
-
   .pa-duo {
     grid-template-columns: 1fr;
   }
@@ -833,6 +849,11 @@
   .pa-duo-card + .pa-duo-card {
     border-left: none;
     border-top: 1px solid var(--border);
+  }
+
+  /* Legacy two-column helper (no current consumer on this page). */
+  .pa-split {
+    grid-template-columns: 1fr;
   }
 
   .pa-reach {
