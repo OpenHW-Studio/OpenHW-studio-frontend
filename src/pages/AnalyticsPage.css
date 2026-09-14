@@ -1,0 +1,897 @@
+/* ═══════════════════════════════════════════════════════════════════
+   OpenHW Studio — Public Analytics Page (standalone, scoped under .pa-)
+   "Lab ledger" concept: a bench notebook page, not an admin console clone.
+   - Paper-ledger hero: one ruled ledger sheet holding the community total.
+   - Signal-ink charts: ink-on-paper line work (SVG, no chart lib needed).
+   - Quiet ledger rows elsewhere; tabular numerals for all figures.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.pa-page {
+  --pa-paper: #f5f1e6;
+  --pa-paper-2: #ece5d2;
+  --pa-ink: #17233b;
+  --pa-ink-2: #46587a;
+  --pa-ink-3: #7d8aa3;
+  --pa-rule: #d8cfb8;
+  --pa-line: #1f6feb;
+  --pa-line-soft: rgba(31, 111, 235, 0.14);
+  --pa-line-2: #0e9f6e;
+  --pa-line-2-soft: rgba(14, 159, 110, 0.14);
+  --pa-warn: #c2410c;
+  --pa-chip: #fffdf6;
+
+  background: var(--bg);
+  color: var(--text);
+  min-height: calc(100vh - 70px);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .pa-page {
+  --pa-paper: #fbf8ef;
+  --pa-paper-2: #f1ebda;
+  --pa-ink: #16233c;
+  --pa-ink-2: #43547a;
+  --pa-ink-3: #7585a3;
+  --pa-rule: #ded4bc;
+  --pa-chip: #ffffff;
+}
+
+.pa-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 28px 88px;
+}
+
+/* ── Masthead ─────────────────────────────────────────────────────── */
+.pa-masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-bottom: 22px;
+  border-bottom: 2px solid var(--border2);
+  margin-bottom: 30px;
+}
+
+.pa-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+
+.pa-title {
+  font-size: clamp(34px, 4.6vw, 54px);
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  max-width: 16ch;
+}
+
+.pa-lede {
+  margin-top: 12px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text2);
+  max-width: 52ch;
+}
+
+.pa-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pa-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.pa-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pa-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.pa-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pa-btn.is-busy svg {
+  animation: pa-spin 0.8s linear infinite;
+}
+
+.pa-updated {
+  font-size: 12px;
+  color: var(--text3);
+}
+
+/* ── Ledger hero ──────────────────────────────────────────────────── */
+.pa-ledger {
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--pa-paper) 0px,
+      var(--pa-paper) 30px,
+      var(--pa-rule) 30px,
+      var(--pa-rule) 31px
+    );
+  border: 1px solid var(--pa-rule);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  color: var(--pa-ink);
+  padding: 30px 34px 26px 74px;
+  margin-bottom: 34px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pa-ledger::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(245, 241, 230, 0.22), rgba(245, 241, 230, 0) 26%);
+}
+
+.pa-ledger-row,
+.pa-ledger-foot {
+  position: relative;
+  z-index: 2;
+}
+
+.pa-ledger::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48px;
+  width: 2px;
+  background: rgba(194, 65, 12, 0.45);
+}
+
+.pa-ledger-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.pa-ledger-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pa-ink-2);
+}
+
+.pa-ledger-total {
+  font-size: clamp(56px, 8vw, 104px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: var(--pa-ink);
+}
+
+.pa-ledger-note {
+  font-size: 13px;
+  color: var(--pa-ink-2);
+  max-width: 30ch;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.pa-ledger-foot {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--pa-rule);
+  font-size: 13px;
+  color: var(--pa-ink-2);
+}
+
+.pa-ledger-foot strong {
+  color: var(--pa-ink);
+  font-weight: 800;
+  margin-right: 6px;
+}
+
+/* ── Reach strip ──────────────────────────────────────────────────── */
+.pa-reach {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 44px;
+  background: var(--bg2);
+}
+
+.pa-reach-cell {
+  padding: 20px 22px;
+  border-left: 1px solid var(--border);
+}
+
+.pa-reach-cell:first-child {
+  border-left: none;
+}
+
+.pa-reach-num {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text);
+}
+
+.pa-reach-cap {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.pa-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 8px;
+  box-shadow: 0 0 10px var(--green);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pa-live-dot {
+    animation: pa-blink 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes pa-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ── Sections ─────────────────────────────────────────────────────── */
+.pa-section {
+  margin-bottom: 48px;
+}
+
+.pa-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.pa-section-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.pa-section-sub {
+  font-size: 13.5px;
+  color: var(--text2);
+  max-width: 62ch;
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+
+/* Timeframe switch: quiet segmented control */
+.pa-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg2);
+}
+
+.pa-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--text3);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.pa-switch-btn:hover {
+  color: var(--text);
+}
+
+.pa-switch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pa-switch-btn.is-on {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* ── Role ledger table ────────────────────────────────────────────── */
+.pa-roles {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg2);
+}
+
+.pa-role-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pa-role-row:last-child {
+  border-bottom: none;
+}
+
+.pa-role-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pa-role-share {
+  font-size: 12.5px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+
+.pa-role-num {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-align: right;
+}
+
+.pa-role-bar {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg3);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.pa-role-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.pa-role-side {
+  border-left: 1px solid var(--border);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pa-role-side h3 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.pa-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 96px;
+  padding-top: 8px;
+}
+
+.pa-trend i {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+  min-height: 3px;
+}
+
+.pa-trend-cap {
+  font-size: 12.5px;
+  color: var(--text3);
+  line-height: 1.55;
+}
+
+/* ── Traffic figure ───────────────────────────────────────────────── */
+.pa-traffic {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg2);
+  padding: 24px 24px 14px;
+}
+
+.pa-traffic-fig {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.pa-traffic-fig .pa-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.pa-traffic-fig .pa-axis {
+  font-size: 10.5px;
+  fill: var(--text3);
+}
+
+.pa-traffic-legend {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  padding: 12px 4px 8px;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.pa-sims {
+  margin-top: 4px;
+}
+
+.pa-sims-total {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text3);
+}
+
+.pa-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.pa-devices {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pa-device {
+  flex: 1 1 120px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text2);
+  background: var(--bg);
+}
+
+.pa-device strong {
+  display: block;
+  font-size: 19px;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+/* ── Build log ────────────────────────────────────────────────────── */
+.pa-builds {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg2);
+}
+
+.pa-build-row {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.pa-build-row:last-child {
+  border-bottom: none;
+}
+
+.pa-build-date {
+  color: var(--text3);
+  font-size: 12.5px;
+}
+
+.pa-build-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+
+.pa-build-track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--pa-line-2);
+}
+
+.pa-build-track b {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--red);
+  opacity: 0.85;
+}
+
+.pa-build-nums {
+  color: var(--text2);
+  white-space: nowrap;
+}
+
+.pa-build-nums strong {
+  color: var(--text);
+}
+
+.pa-build-avg {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+/* ── Boards + places ──────────────────────────────────────────────── */
+/* Full-width symmetric ledger (Option A): one shared card split into two
+   columns — boards+sims on the left, geo reach on the right. Equal widths
+   and one shared frame keep the closing section balanced; it collapses to
+   a single column below 960px. */
+.pa-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg2);
+  overflow: hidden;
+}
+
+.pa-duo-card {
+  padding: 24px 26px;
+  min-width: 0;
+}
+
+.pa-duo-card + .pa-duo-card {
+  border-left: 1px solid var(--border);
+}
+
+.pa-duo-card .pa-section-sub:last-child {
+  margin-bottom: 0;
+}
+
+.pa-duo-gap {
+  margin-top: 30px;
+}
+
+/* Keep the old split helper for any other consumer. */
+.pa-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+.pa-board-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 14px;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.pa-board-row:last-child {
+  border-bottom: none;
+}
+
+.pa-board-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pa-board-count {
+  color: var(--text2);
+  text-align: right;
+}
+
+.pa-board-track {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+
+.pa-board-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.pa-place-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pa-place-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 2px;
+  border-bottom: 1px dashed var(--border2);
+  font-size: 14px;
+}
+
+.pa-place-list li:last-child {
+  border-bottom: none;
+}
+
+.pa-place-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pa-place-count {
+  color: var(--text3);
+}
+
+/* Country bars: ranked rows that mirror the "Most-built boards" rows, so
+   the two halves of the closing section read as one symmetric ledger. */
+.pa-country-bars li {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 13px 2px;
+}
+
+.pa-country-bars li:last-child {
+  border-bottom: none;
+}
+
+.pa-rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+
+.pa-place-main {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+
+.pa-place-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.pa-place-track {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg3);
+  overflow: hidden;
+  margin-top: 7px;
+}
+
+.pa-place-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.pa-cities-label {
+  margin-top: 18px;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.pa-cities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.pa-city {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--bg2);
+}
+
+.pa-city b {
+  color: var(--text);
+  margin-left: 6px;
+}
+
+/* ── States ───────────────────────────────────────────────────────── */
+.pa-state {
+  text-align: center;
+  padding: 90px 24px;
+}
+
+.pa-state h2 {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.pa-state p {
+  font-size: 14px;
+  color: var(--text2);
+  margin-bottom: 20px;
+}
+
+.pa-spin {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  border: 3px solid var(--border2);
+  border-top-color: var(--accent);
+  animation: pa-spin 0.8s linear infinite;
+}
+
+@keyframes pa-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .pa-roles {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-role-side {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .pa-split {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-duo {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-duo-card + .pa-duo-card {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .pa-reach {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pa-reach-cell:nth-child(3) {
+    border-left: none;
+  }
+
+  .pa-reach-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 560px) {
+  .pa-wrap {
+    padding: 28px 16px 64px;
+  }
+
+  .pa-ledger {
+    padding: 22px 20px 20px 52px;
+  }
+
+  .pa-ledger::before {
+    left: 32px;
+  }
+
+  .pa-ledger-note {
+    text-align: left;
+  }
+
+  .pa-reach {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-reach-cell {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .pa-reach-cell:first-child {
+    border-top: none;
+  }
+
+  .pa-build-row {
+    grid-template-columns: 76px 1fr;
+  }
+
+  .pa-build-nums {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pa-page *,
+  .pa-page *::before,
+  .pa-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

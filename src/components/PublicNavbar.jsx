@@ -6,6 +6,7 @@ import ThemeToggleSlider from "./ThemeToggleSlider.jsx";
 const DEFAULT_LINKS = [
   { label: "Home",               path: "/" },
   { label: "Components Status",  path: "/components-status" },
+  { label: "Analytics",          path: "/analytics" },
   { label: "Bug Tracker",        path: "/bugs" },
   { label: "Feedback & Reviews", path: "/feedback" },
   { label: "About Us",           path: "/about" },

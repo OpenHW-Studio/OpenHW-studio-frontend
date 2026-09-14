@@ -390,6 +390,7 @@ export default function LandingPage() {
             Documentation
           </a>
           <a href="/components-status">Component Status</a>
+          <a href="/analytics">Analytics</a>
           <a href="/bugs">Bug Tracker</a>
           <a href="/feedback">Reviews & Feedback</a>
           <a href="/examples">Examples</a>
