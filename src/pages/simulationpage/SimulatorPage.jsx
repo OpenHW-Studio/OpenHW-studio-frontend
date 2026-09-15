@@ -494,6 +494,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const isLiveStudent = liveMeetingMode && !isLiveTeacher;
   const canvasOnly = assessmentParams.get("canvas-only") === "1";
   const readOnly = assessmentParams.get("readonly") === "1";
+  const editorModeParam = useMemo(() => {
+    const fromQuery = assessmentParams.get("editorMode") || assessmentParams.get("mode");
+    if (fromQuery === "blocks" || fromQuery === "block") return "blocks";
+    if (fromQuery === "code") return "code";
+    if (location.state?.editorMode === "blocks") return "blocks";
+    if (location.state?.editorMode === "code") return "code";
+    const fromStorage = localStorage.getItem("openhw_demo_editor_mode");
+    if (fromStorage === "blocks") return "blocks";
+    return "code";
+  }, [assessmentParams, location.state]);
 
   // -- Gamification --
   const {
@@ -813,7 +823,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [hoveredPin, setHoveredPin] = useState(null);
   const [board, setBoard] = useState("arduino_uno");
   const [restoreProjectPrompt, setRestoreProjectPrompt] = useState(null);
-  const [codeTab, setCodeTab] = useState("code");
+  const [codeTab, setCodeTab] = useState(() => {
+    return editorModeParam === "blocks" ? "block" : "code";
+  });
   const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState("logic");
   const [webGpuSupported, setWebGpuSupported] = useState(false);
@@ -846,16 +858,29 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, []);
 
   const [blocklyGeneratedCode, setBlocklyGeneratedCode] = useState("");
-  const [useBlocklyCode, setUseBlocklyCode] = useState(false);
+  const [useBlocklyCode, setUseBlocklyCode] = useState(() => {
+    return editorModeParam === "blocks";
+  });
   const [blocklyDisabled, setBlocklyDisabled] = useState(() => {
+    if (editorModeParam === "blocks") return false;
     try {
       const saved = localStorage.getItem("ohw_blockly_disabled");
-      // Default is DISABLED (true) if never explicitly set
       return saved === null ? true : saved === "true";
     } catch (_) {
       return true;
     }
   });
+
+  useEffect(() => {
+    if (editorModeParam === "blocks") {
+      setCodeTab("block");
+      setBlocklyDisabled(false);
+      setUseBlocklyCode(true);
+    } else if (editorModeParam === "code") {
+      setCodeTab("code");
+      setUseBlocklyCode(false);
+    }
+  }, [editorModeParam]);
   const {
     projectFiles,
     setProjectFiles,
@@ -14162,6 +14187,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 setShowValidation={setShowValidation}
                 healthScore={healthScore}
                 applyFix={applyFix}
+                demoEditorMode={editorModeParam}
                 codeTab={codeTab}
                 setCodeTab={setCodeTab}
                 code={code}

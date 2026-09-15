@@ -2523,7 +2523,7 @@ const SIDEBAR_WIDTH_MOBILE = 260;
 const BLOCKLY_HISTORY_LIMIT = 64
 const EMPTY_WORKSPACE_XML = '<xml xmlns="https://developers.google.com/blockly/xml"></xml>'
 
-function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false, isManualChangeDetected = false }) {
+function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false, isManualChangeDetected = false, readOnly = false }) {
   const [showSidebar, setShowSidebar] = useState(true);
   const sidebarWidth = isMobile ? SIDEBAR_WIDTH_MOBILE : SIDEBAR_WIDTH_DESKTOP;
   const wsContainerRef = useRef(null)
@@ -2547,6 +2547,8 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   // a useEffect dependency (which would re-fire the effect on every parent render).
   const syncGeneratedCodeRef = useRef(null)
   const lastSentXmlRef = useRef(null)
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
 
   const [loadStatus, setLoadStatus] = useState('loading')
   const [errMsg, setErrMsg] = useState('')
@@ -2587,6 +2589,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   }, [refreshUndoRedoState])
 
   const syncGeneratedCode = useCallback(({ notifyParent = true, emitXml = false } = {}) => {
+    if (readOnlyRef.current) return ''
     const B = window.Blockly
     const ws = workspaceRef.current
     const gen = genRef.current
@@ -2647,6 +2650,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   }, [syncGeneratedCode])
 
   const performBlocklyUndo = useCallback(() => {
+    if (readOnlyRef.current) return
     const past = historyPastRef.current
     if (past.length <= 1) return
     const current = captureWorkspaceXml()
@@ -2657,6 +2661,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   }, [captureWorkspaceXml, applyWorkspaceXml, refreshUndoRedoState])
 
   const performBlocklyRedo = useCallback(() => {
+    if (readOnlyRef.current) return
     const future = historyFutureRef.current
     if (future.length === 0) return
     const next = future.shift()
@@ -2789,6 +2794,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     genRef.current = buildGenerator(B)
 
     const ws = B.inject(wsContainerRef.current, {
+      readOnly: false,
       toolbox: null,
       theme: buildTheme(B, isDark),
       renderer: 'zelos',
@@ -2838,6 +2844,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     ])
 
     ws.addChangeListener(e => {
+      if (readOnlyRef.current) return
       const B2 = window.Blockly
       if (!B2) return
 
@@ -2861,6 +2868,14 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
       syncGeneratedCode({ notifyParent: true, emitXml: true })
     })
   }, [isDark, boardKind, xml, resetBlocklyHistory, captureWorkspaceXml, scheduleHistoryPush, syncGeneratedCode])
+
+  useEffect(() => {
+    if (workspaceRef.current && window.Blockly) {
+      try {
+        workspaceRef.current.options.readOnly = Boolean(readOnly);
+      } catch (_) {}
+    }
+  }, [readOnly]);
 
   // Watch for external XML changes (e.g. project import or async project load)
   useEffect(() => {
@@ -2916,6 +2931,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   }, [loadStatus])
 
   const placeBlock = useCallback((type, wsX, wsY) => {
+    if (readOnlyRef.current) return
     const ws = workspaceRef.current
     if (!ws || !window.Blockly) return
     const block = ws.newBlock(type)
@@ -2929,12 +2945,13 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     ))
     window.Blockly.svgResize(ws)
     syncGeneratedCode({ notifyParent: true, emitXml: true })
-  }, [])
+  }, [syncGeneratedCode])
 
   const addBlock = useCallback((type) => placeBlock(type), [placeBlock])
 
   // ── Variable blocks ────────────────────────────────────────────────────────
   const addVariableBlock = useCallback((type, variable) => {
+    if (readOnlyRef.current) return
     const ws = workspaceRef.current
     if (!ws || !window.Blockly) return
     const block = ws.newBlock(type)
@@ -2979,6 +2996,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   }, [syncGeneratedCode])
 
   const handleNewVariable = useCallback((type = '') => {
+    if (readOnlyRef.current) return
     const ws = workspaceRef.current
     if (!ws) return
     const typeLabel = type === 'String' ? 'Text' : type || 'Any'
@@ -3035,6 +3053,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   // ── Drag-and-drop into workspace ───────────────────────────────────────────
   const handleWsDragOver = useCallback((e) => {
     e.preventDefault()
+    if (readOnlyRef.current) return
     e.dataTransfer.dropEffect = 'copy'
 
     const ws = workspaceRef.current
@@ -3091,6 +3110,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
 
   const handleWsDrop = useCallback((e) => {
     e.preventDefault()
+    if (readOnlyRef.current) return
     const type = e.dataTransfer.getData('text/plain')
     const ws = workspaceRef.current
     const B = window.Blockly
@@ -3369,20 +3389,23 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
 
         <button
           type="button"
+          disabled={readOnly}
           style={{
             ...BTN,
-            borderColor: showSidebar ? 'var(--accent)' : tok.border,
-            color: showSidebar ? 'var(--accent)' : tok.textMuted,
+            borderColor: (showSidebar && !readOnly) ? 'var(--accent)' : tok.border,
+            color: (showSidebar && !readOnly) ? 'var(--accent)' : tok.textMuted,
             fontSize: 10,
             padding: '4px 10px',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
+            opacity: readOnly ? 0.45 : 1,
+            cursor: readOnly ? 'not-allowed' : 'pointer',
           }}
-          onClick={() => setShowSidebar((v) => !v)}
-          title={showSidebar ? 'Hide blocks panel' : 'Show blocks panel'}
+          onClick={() => { if (!readOnly) setShowSidebar((v) => !v); }}
+          title={readOnly ? 'Blocks are in view-only mode' : (showSidebar ? 'Hide blocks panel' : 'Show blocks panel')}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showSidebar ? 'rotate(180deg)' : 'none' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: (showSidebar && !readOnly) ? 'rotate(180deg)' : 'none' }}>
             <path d="m9 18 6-6-6-6" />
           </svg>
           Blocks
@@ -3393,17 +3416,17 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             type="button"
             title="Undo (Ctrl+Z)"
             aria-label="Undo"
-            disabled={!canUndo || loadStatus !== 'ready'}
+            disabled={readOnly || !canUndo || loadStatus !== 'ready'}
             onClick={(e) => { e.preventDefault(); performBlocklyUndo() }}
             style={{
               ...BTN,
               padding: '4px 7px',
               fontSize: 11,
               lineHeight: 1,
-              color: canUndo ? tok.text : tok.textMuted,
+              color: canUndo && !readOnly ? tok.text : tok.textMuted,
               borderColor: tok.border,
-              opacity: canUndo && loadStatus === 'ready' ? 1 : 0.45,
-              cursor: canUndo && loadStatus === 'ready' ? 'pointer' : 'not-allowed',
+              opacity: !readOnly && canUndo && loadStatus === 'ready' ? 1 : 0.45,
+              cursor: !readOnly && canUndo && loadStatus === 'ready' ? 'pointer' : 'not-allowed',
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -3415,17 +3438,17 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
             type="button"
             title="Redo (Ctrl+Shift+Z)"
             aria-label="Redo"
-            disabled={!canRedo || loadStatus !== 'ready'}
+            disabled={readOnly || !canRedo || loadStatus !== 'ready'}
             onClick={(e) => { e.preventDefault(); performBlocklyRedo() }}
             style={{
               ...BTN,
               padding: '4px 7px',
               fontSize: 11,
               lineHeight: 1,
-              color: canRedo ? tok.text : tok.textMuted,
+              color: canRedo && !readOnly ? tok.text : tok.textMuted,
               borderColor: tok.border,
-              opacity: canRedo && loadStatus === 'ready' ? 1 : 0.45,
-              cursor: canRedo && loadStatus === 'ready' ? 'pointer' : 'not-allowed',
+              opacity: !readOnly && canRedo && loadStatus === 'ready' ? 1 : 0.45,
+              cursor: !readOnly && canRedo && loadStatus === 'ready' ? 'pointer' : 'not-allowed',
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -3479,7 +3502,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
 
         {/* ════ Sidebar (collapsible) ════ */}
         <div style={{
-          width: showSidebar ? (isMobile ? 110 : 130) : 0,
+          width: (showSidebar && !readOnly) ? (isMobile ? 110 : 130) : 0,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -3489,9 +3512,9 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
           minWidth: 0,
           boxSizing: 'border-box',
           background: isMobile ? 'var(--bg2)' : tok.sidebar,
-          borderRight: showSidebar ? `1px solid ${tok.border}` : 'none',
-          opacity: showSidebar ? 1 : 0,
-          pointerEvents: showSidebar ? 'auto' : 'none',
+          borderRight: (showSidebar && !readOnly) ? `1px solid ${tok.border}` : 'none',
+          opacity: (showSidebar && !readOnly) ? 1 : 0,
+          pointerEvents: (showSidebar && !readOnly) ? 'auto' : 'none',
           transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
         }}>
 
@@ -3811,7 +3834,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
         </div>
 
         {/* ════ Blockly workspace ════ */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 400 }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 400, position: 'relative' }}>
           <div
             ref={wsContainerRef}
             style={{
@@ -3819,11 +3842,26 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
               position: 'relative',
               overflow: 'hidden',
               transition: 'flex .2s',
-              background: tok.bg // Reserve color to match final look
+              background: tok.bg
             }}
             onDragOver={handleWsDragOver}
             onDrop={handleWsDrop}
           />
+          {readOnly && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: showCode ? '55%' : 0,
+                bottom: 0,
+                zIndex: 20,
+                cursor: 'default',
+                background: 'transparent',
+              }}
+              title="Blocks are locked in view-only mode in Code mode"
+            />
+          )}
 
           {/* Code preview pane */}
           {showCode && (
