@@ -1,5 +1,5 @@
-# Build stage
-FROM node:20 AS build
+# Stage 1: Build Frontend
+FROM node:20 AS frontend-builder
 WORKDIR /app/frontend
 
 # Copy frontend package files
@@ -13,7 +13,7 @@ RUN rm -rf ./src/emulator/node_modules ./src/emulator/dist
 RUN sed -i 's|"@openhw/emulator": "file:../openhw-studio-emulator"|"@openhw/emulator": "file:./src/emulator"|' package.json
 
 # 3. Install dependencies and native binaries for Linux
-RUN npm install --legacy-peer-deps && \
+RUN npm install --legacy-peer-deps --no-audit --no-fund && \
     npm install --no-save @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu
 
 # Copy frontend source code
@@ -35,20 +35,25 @@ ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 ARG VITE_DOCS_URL
 ENV VITE_DOCS_URL=$VITE_DOCS_URL
 
-# Build the app
+# Build the frontend app
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
-# Build documentation
+# Stage 2: Build Documentation (Runs concurrently in parallel with Stage 1)
+FROM node:20 AS docs-builder
 WORKDIR /app/docs
+
+# Copy docs package files
 COPY openhw-studio-docs/package*.json ./
-RUN npm install
+RUN npm ci --prefer-offline --no-audit --no-fund --legacy-peer-deps || npm install --legacy-peer-deps --no-audit --no-fund
+
+# Copy docs source code and build
 COPY openhw-studio-docs/ .
 RUN npm run docs:build
 
-# Production stage
+# Stage 3: Production Nginx
 FROM nginx:stable-alpine
-COPY --from=build /app/frontend/dist /usr/share/nginx/html
-COPY --from=build /app/docs/.vitepress/dist /usr/share/nginx/html/docs
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+COPY --from=docs-builder /app/docs/.vitepress/dist /usr/share/nginx/html/docs
 
 # Custom nginx config to handle SPA routing and Reverse Proxy
 COPY OpenHW-studio-frontend/nginx.conf /etc/nginx/conf.d/default.conf

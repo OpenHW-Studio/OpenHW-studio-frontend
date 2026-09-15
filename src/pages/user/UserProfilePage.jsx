@@ -280,9 +280,9 @@ export default function UserProfilePage() {
               <button type="button" onClick={() => setIsEditOpen(false)} aria-label="Close profile editor"><X size={18} /></button>
             </header>
             <form className="student-profile-form" onSubmit={handleSubmit}>
-              <div className="student-profile-form__top-section" style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "32px", alignItems: "start" }}>
-                <div className="student-profile-dicebear-builder" style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div className="hardware-card" style={{ margin: "0 auto 12px auto" }}>
+              <div className="student-profile-form__top-section">
+                <div className="student-profile-dicebear-builder">
+                  <div className="hardware-card">
                     <div className="hardware-card__header">
                       <span>LIVE PROFILE PREVIEW</span>
                       <span className="hardware-card__signal"><Activity className="w-3.5 h-3.5 animate-pulse" /><span>ONLINE</span></span>
@@ -293,7 +293,7 @@ export default function UserProfilePage() {
                     </div>
                     <div className="hardware-card__footer"><span>ID: READY</span><span>V.1.0.4</span></div>
                   </div>
-                  <div className="hardware-tabs-wrapper" style={{ margin: "0 auto 10px auto", width: "100%" }}>
+                  <div className="hardware-tabs-wrapper">
                     <button type="button" onClick={prevStyle} className="hardware-slider-btn"><ChevronLeft className="w-4 h-4" /></button>
                     <div className="hardware-tabs-slider">
                       <button type="button" onClick={prevStyle} className="hardware-tab-slide is-adjacent">{STYLE_PRESETS[getAdjacentIndex(-1)].label.toUpperCase()}</button>
@@ -302,7 +302,7 @@ export default function UserProfilePage() {
                     </div>
                     <button type="button" onClick={nextStyle} className="hardware-slider-btn"><ChevronRight className="w-4 h-4" /></button>
                   </div>
-                  <div className="hardware-grid-wrapper" style={{ margin: "0 auto 12px auto", width: "100%" }}>
+                  <div className="hardware-grid-wrapper">
                     <button type="button" onClick={prevPage} className="hardware-slider-btn"><ChevronLeft className="w-4 h-4" /></button>
                     <div className="hardware-grid">
                       {currentPageSeeds.map(seed => (
@@ -313,18 +313,18 @@ export default function UserProfilePage() {
                     </div>
                     <button type="button" onClick={nextPage} className="hardware-slider-btn"><ChevronRight className="w-4 h-4" /></button>
                   </div>
-                  <button type="button" onClick={handleRandomize} className="hardware-random-btn" style={{ margin: "0 auto 4px auto", display: "flex" }}>
+                  <button type="button" onClick={handleRandomize} className="hardware-random-btn">
                     <Shuffle className="w-3.5 h-3.5" /> [ RANDOMIZE AVATAR ]
                   </button>
                 </div>
-                <div className="student-profile-form__grid" style={{ marginTop: 0 }}>
+                <div className="student-profile-form__grid">
                   <label className="student-profile-field"><span>Full Name</span><input name="name" value={form.name} onChange={handleChange} placeholder="Enter your full name" /></label>
                   <label className="student-profile-field"><span>Email</span><input type="email" value={user?.email || ''} disabled className="student-profile-field__disabled" /></label>
                   <label className="student-profile-field"><span>College / Organization</span><input name="college" value={form.college} onChange={handleChange} placeholder="Your college or organization" /></label>
                   <label className="student-profile-field"><span>Branch / Department</span><input name="branch" value={form.branch} onChange={handleChange} placeholder="Your branch or department" /></label>
                   <label className="student-profile-field"><span>Semester</span><input type="number" min="1" max="12" name="semester" value={form.semester} onChange={handleChange} placeholder="Semester" /></label>
                   <div className="student-profile-field student-profile-field--hint"><span>Account Category</span><input value="General User" disabled className="student-profile-field__disabled" /></div>
-                  <label className="student-profile-field student-profile-field--full" style={{ gridColumn: "1 / -1" }}><span>Biography</span><textarea name="bio" rows="4" value={form.bio} onChange={handleChange} placeholder="Tell us about your interests and background" style={{ minHeight: "90px" }} /></label>
+                  <label className="student-profile-field student-profile-field--full"><span>Biography</span><textarea name="bio" rows="4" value={form.bio} onChange={handleChange} placeholder="Tell us about your interests and background" style={{ minHeight: "90px" }} /></label>
                 </div>
               </div>
               {error ? <p className="teacher-inline-state teacher-inline-state--error">{error}</p> : null}

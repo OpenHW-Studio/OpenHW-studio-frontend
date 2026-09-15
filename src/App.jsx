@@ -67,6 +67,7 @@ const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
 import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import ContributorsPage from "./pages/ContributorsPage.jsx";
+import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 const BugTrackerPage = React.lazy(() => import("./pages/BugTrackerPage.jsx"));
 const FeedbackReviewsPage = React.lazy(() => import("./pages/FeedbackReviewsPage.jsx"));
@@ -257,6 +258,7 @@ export default function App() {
                   <Route path="/review" element={<Navigate to="/feedback" replace />} />
                   <Route path="/reviews" element={<Navigate to="/feedback" replace />} />
                   <Route path="/examples" element={<ExamplesPage />} />
+                  <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/login" element={<UserLoginPage />} />
                   <Route path="/signup" element={<UserSignupPage />} />
                   <Route path="/user/signup" element={<UserSignupPage />} />
