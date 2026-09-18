@@ -92,7 +92,15 @@ export default function LandingPage() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "dark",
   );
+  const [editorMode, setEditorMode] = useState(
+    () => localStorage.getItem("openhw_demo_editor_mode") || "code"
+  );
   const [imageErrors, setImageErrors] = useState({});
+
+  const handleEditorModeChange = (mode) => {
+    setEditorMode(mode);
+    localStorage.setItem("openhw_demo_editor_mode", mode);
+  };
 
   const allCards = useMemo(() => {
     const cards = [];
@@ -250,12 +258,114 @@ export default function LandingPage() {
           style={{
             textAlign: "center",
             color: "var(--text2)",
-            marginBottom: "2rem",
+            marginBottom: "1.25rem",
             fontSize: 15,
           }}
         >
           Explore pre-built circuits and code — no login required
         </p>
+
+        {/* MODE TOGGLE: Code vs Blocks */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "8px",
+          marginBottom: "1.75rem",
+        }}>
+          <div
+            role="radiogroup"
+            aria-label="Editor Mode"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              background: "var(--bg2, rgba(15, 23, 42, 0.6))",
+              border: "1px solid var(--border, rgba(255, 255, 255, 0.1))",
+              borderRadius: "9999px",
+              padding: "4px",
+              position: "relative",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              gap: "4px",
+            }}
+          >
+            <button
+              type="button"
+              id="mode-toggle-code"
+              onClick={() => handleEditorModeChange("code")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 22px",
+                borderRadius: "9999px",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "13px",
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                color: editorMode === "code" ? "#ffffff" : "var(--text2, #94a3b8)",
+                background: editorMode === "code"
+                  ? "linear-gradient(135deg, #0284c7, #2563eb)"
+                  : "transparent",
+                boxShadow: editorMode === "code"
+                  ? "0 2px 12px rgba(2, 132, 199, 0.4)"
+                  : "none",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <span>Code</span>
+            </button>
+
+            <button
+              type="button"
+              id="mode-toggle-blocks"
+              onClick={() => handleEditorModeChange("blocks")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 22px",
+                borderRadius: "9999px",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "13px",
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                color: editorMode === "blocks" ? "#ffffff" : "var(--text2, #94a3b8)",
+                background: editorMode === "blocks"
+                  ? "linear-gradient(135deg, #0284c7, #2563eb)"
+                  : "transparent",
+                boxShadow: editorMode === "blocks"
+                  ? "0 2px 12px rgba(2, 132, 199, 0.4)"
+                  : "none",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+              <span>Blocks</span>
+            </button>
+          </div>
+
+          <span style={{ fontSize: "12px", color: "var(--text3, #64748b)", fontWeight: 500 }}>
+            {editorMode === "blocks"
+              ? "🧩 Blocks mode: Edit visually with blocks (Code editor is locked in read-only)"
+              : "💻 Code mode: Edit directly in code editor (Blocks are locked in view-only)"}
+          </span>
+        </div>
+
         <div style={{
           maxHeight: 520, overflowY: "auto",
           paddingRight: 8,
@@ -271,7 +381,7 @@ export default function LandingPage() {
                 <div
                   className="feature-card"
                   key={p.slug}
-                  onClick={() => handleNavigate(`/${p.slug}/guide`)}
+                  onClick={() => handleNavigate(`/${p.slug}/demo?editorMode=${editorMode}`, { state: { editorMode, guidedProject: p } })}
                   style={{ cursor: "pointer", textAlign: "center" }}
                 >
                   <div style={{
