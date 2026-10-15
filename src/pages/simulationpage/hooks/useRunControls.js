@@ -29,16 +29,39 @@ export function useRunControls({
   setSerialInput,
   setBoardBaudRates,
   setSerialBaudRate,
+  cmdWriterRef,
+  sabOffsetsRef,
 }) {
     // Stable identities: passed to memoized TopToolbox + run controls. Read
     // live run state via refs so toolbar props never invalidate per render.
+    // Ring-first (§10.4): HALT/RESUME go through the command ring when the
+    // buffers exist; postMessage DEBUG_HALT/DEBUG_RESUME is the fallback
+    // (worker applies the same DebugService transition either way).
     const handlePause = useCallback(() => {
-      if (workerRef.current) workerRef.current.postMessage({ type: "PAUSE" });
+      let viaRing = false;
+      try {
+        const w = cmdWriterRef?.current;
+        if (w && typeof w.enqueueHalt === "function") {
+          viaRing = !!w.enqueueHalt(Date.now());
+        } else if (typeof window !== "undefined" && window.__sabCmdWriter?.enqueueHalt) {
+          viaRing = !!window.__sabCmdWriter.enqueueHalt(Date.now());
+        }
+      } catch { viaRing = false; }
+      if (workerRef.current) workerRef.current.postMessage({ type: "DEBUG_HALT", viaRing });
       setIsPaused(true);
     }, []);
 
     const handleResume = useCallback(() => {
-      if (workerRef.current) workerRef.current.postMessage({ type: "RESUME" });
+      let viaRing = false;
+      try {
+        const w = cmdWriterRef?.current;
+        if (w && typeof w.enqueueResume === "function") {
+          viaRing = !!w.enqueueResume(Date.now());
+        } else if (typeof window !== "undefined" && window.__sabCmdWriter?.enqueueResume) {
+          viaRing = !!window.__sabCmdWriter.enqueueResume(Date.now());
+        }
+      } catch { viaRing = false; }
+      if (workerRef.current) workerRef.current.postMessage({ type: "DEBUG_RESUME", viaRing });
       setIsPaused(false);
     }, []);
 
@@ -79,12 +102,25 @@ export function useRunControls({
         const baudRate = baudRateOverride || serialBaudRate;
 
         if (workerRef.current && isRunning) {
-          workerRef.current.postMessage({
-            type: "SERIAL_INPUT",
-            data: payload,
-            targetBoardId,
-            baudRate: baudRate,
-          });
+          // Ring-first: serial bytes ride the command ring (SAB_CMD_OP_SERIAL)
+          // with a postMessage SERIAL_INPUT fallback when the ring is absent
+          // or full. Either path lands in runner.serialRx with same semantics.
+          let viaRing = false;
+          try {
+            const w = cmdWriterRef?.current
+              || (typeof window !== "undefined" ? window.__sabCmdWriter : null);
+            if (w && typeof w.enqueueSerial === "function") {
+              viaRing = !!w.enqueueSerial(payload, Date.now());
+            }
+          } catch { viaRing = false; }
+          if (!viaRing) {
+            workerRef.current.postMessage({
+              type: "SERIAL_INPUT",
+              data: payload,
+              targetBoardId,
+              baudRate: baudRate,
+            });
+          }
           pushSerialTxLine(txt, targetBoardId || "all", "sim");
           if (inputOverride === undefined) setSerialInput("");
           return;

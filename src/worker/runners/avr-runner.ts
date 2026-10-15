@@ -3,6 +3,8 @@ import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config,
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, sabKindForType } from '../sab/layout.ts';
+import { DebugService } from '../debug/service.ts';
 import { 
     BoardRunner, 
     AVRRunnerOptions, 
@@ -88,6 +90,17 @@ export class AVRRunner {
     private physicsWorker: Worker | null = null;
     private physicsWorkerBusy: boolean = false;
     private cpuCyclesAtStart: number = 0;
+    // SAB state river (§12.2): assigned from options at construction.
+    // AVR previously ignored sab entirely — now stored like RP2040/proxy.
+    private sab: SharedArrayBuffer | null = null;
+    private sabOffsets: Record<string, number> = {};
+    private sabWriter: SabStateWriter | null = null;
+    // Command/event rings + debug service (§10.4/§10.7). All optional:
+    // absent buffers → postMessage control path unchanged (fallback).
+    private cmdReader: SabCommandReader | null = null;
+    private evtWriter: SabEventWriter | null = null;
+    /** Worker-owned debug service (public for DEBUG_STEP fallback queueing). */
+    public debugService: DebugService | null = null;
 
     constructor(
         hexData: string,
@@ -155,6 +168,33 @@ export class AVRRunner {
             }
         };
 
+        // SAB river attach (§12.2): store shared buffer + per-component slots.
+        // Accepts both new layout (sabOffsets = slot indexes) and legacy
+        // byte-offset maps (converted via /64 stride) for compat.
+        this.sab = (options as any).sab || null;
+        const rawOffsets = (options as any).sabOffsets || {};
+        this.sabOffsets = {};
+        for (const key of Object.keys(rawOffsets)) {
+            const v = Number(rawOffsets[key]);
+            this.sabOffsets[key] = Number.isFinite(v) && v >= 64 ? Math.floor(v / 64) : (Number.isFinite(v) ? v : 0);
+        }
+        if (this.sab) {
+            try {
+                this.sabWriter = new SabStateWriter(this.sab as SharedArrayBuffer);
+            } catch { this.sabWriter = null; }
+        }
+        // Command/event ring attach (§10.4): buffers shared from START alloc.
+        // DebugService owns HALT/STEP/WATCH state; runners apply movement cmds.
+        try {
+            const cmdBuf = (options as any).cmdBuffer as SharedArrayBuffer | undefined;
+            const evtBuf = (options as any).evtBuffer as SharedArrayBuffer | undefined;
+            if (cmdBuf) this.cmdReader = new SabCommandReader(cmdBuf);
+            if (evtBuf) this.evtWriter = new SabEventWriter(evtBuf);
+            if (this.sab && (this.cmdReader || this.evtWriter)) {
+                this.debugService = new DebugService(this.sab as SharedArrayBuffer, { ...this.sabOffsets }, this.evtWriter);
+            }
+        } catch { this.cmdReader = null; this.evtWriter = null; this.debugService = null; }
+
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
@@ -162,6 +202,9 @@ export class AVRRunner {
                 const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
+                // Slot assignment: declared upfront on BaseComponent (shape-stable).
+                const slot = this.sabOffsets[cDef.id];
+                inst.sabSlot = Number.isFinite(Number(slot)) ? Number(slot) : -1;
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
                 inst.onTelemetryFinding = (finding: any) => {
                     this.onStateUpdate({
@@ -1537,6 +1580,26 @@ export class AVRRunner {
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
 
+        // Command ring drain (§10.6 step 1): ≤16 commands per tick, then
+        // HALT freezes the tick (takeStepBudget returns 0) until RESUME/STEP.
+        // postMessage INTERACT/SERIAL/RESET/SPEED/TELEMETRY handlers stay as
+        // fallback for clients without ring buffers.
+        try {
+            if (this.cmdReader && this.debugService) {
+                const changed = this.debugService.drainCommands(this.cmdReader, Number(this.cpu.cycles) || 0);
+                if (changed) this.applyRingMovementCommands();
+                if (this.debugService.isHalted()) {
+                    const budget = this.debugService.takeStepBudget(0);
+                    if (budget <= 0) {
+                        // Frozen: still emit state so UI shows paused frame, then wait.
+                        this.lastTime = performance.now();
+                        setTimeout(this.runLoop, 8);
+                        return;
+                    }
+                }
+            }
+        } catch { /* ring drain never breaks the tick */ }
+
         const loopStart = performance.now();
         const now = performance.now();
         const deltaTime = now - this.lastTime;
@@ -1729,24 +1792,49 @@ export class AVRRunner {
         const msg: any = { type: 'state', boardId: this.boardId };
         msg.pins = this.pinStates;
         this.pinsChanged = false;
-        
+
         if (this.adc) {
             msg.analog = Array.from(this.adc.channelValues);
         }
 
         const compStates: Array<{ id: string; state: any }> = [];
+        const dirtySlots: number[] = [];
+        // T3: telemetry ring write — one compact record per telemetry-enabled
+        // component per flush (overwrites oldest when full; lossy by design).
+        // Grading/teacher-key paths keep full-fidelity postMessage snapshots.
+        const cyclesNow = Number(this.cpu.cycles) || 0;
+        let anyTelemetry = false;
         for (const inst of this.instances.values()) {
             const pendingEmit = (inst as any).pendingVisualStateEmit;
             if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
-            
+
             const syncState = getUnifiedComponentSyncState(inst);
-            
+
             // Respect the component's sync policy to avoid overloading the UI
             if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-            
+
+            // SAB publish (§12.3 T5): numeric slot write, zero postMessage bytes.
+            if (this.sabWriter && inst.sabSlot >= 0) {
+                try {
+                    const ui = typeof (inst as any).uiState === 'function' ? (inst as any).uiState() : null;
+                    const f = ui?.f ? Object.values(ui.f).map(Number) : [];
+                    const i = ui?.i ? Object.values(ui.i).map(Number) : [];
+                    this.sabWriter.writeSlot(inst.sabSlot, (inst as any).stateVersion || 0, sabKindForType(inst.type), 0, f as number[], i as number[]);
+                    dirtySlots.push(inst.sabSlot);
+                    if ((inst as any).telemetryEnabled && (f.length > 0 || i.length > 0)) {
+                        this.sabWriter.pushTelemetry(inst.sabSlot, sabKindForType(inst.type), Number(f[0] || 0), Number(i[0] || 0), cyclesNow);
+                        anyTelemetry = true;
+                    } else if ((inst as any).telemetryEnabled) {
+                        anyTelemetry = true;
+                    }
+                } catch { /* SAB write never breaks sim */ }
+            } else if ((inst as any).telemetryEnabled) {
+                anyTelemetry = true;
+            }
+
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
-            
+
             compStates.push({
                 id: inst.id,
                 type: inst.type,
@@ -1755,12 +1843,19 @@ export class AVRRunner {
             });
         }
         msg.components = compStates;
+        if (dirtySlots.length) msg.dirtySlots = dirtySlots;
+        // T5: mark SAB fast-path eligibility — postRunnerState shrinks to the
+        // wakeup when this is set (slow-mirror still flows when recording).
+        if (this.sabWriter) msg.sabFastPath = true;
 
         this.statusIntervalEmitCount++;
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
         msg.simTimeMs = this.getSimulatedTimeMs();
-        
+        if (this.sabWriter) {
+            try { this.sabWriter.publishFrame(msg.simTimeMs, anyTelemetry); } catch { /* never break sim */ }
+        }
+
         this.lastStateEmitCycle = this.cpu.cycles;
         this.lastStateEmitTime = now;
         this.onStateUpdate(msg);
@@ -1841,6 +1936,126 @@ export class AVRRunner {
         if (Number.isFinite(s) && s > 0) {
             this.speed = s;
         }
+    }
+
+    /** Apply movement-class commands drained from the ring (§10.6 step 1).
+     * INTERACT/SERIAL are applied inline (same semantics as the postMessage
+     * handlers); RESET/SPEED/TELEMETRY delegate to existing methods.
+     * Called only when drainCommands reports a halt-relevant change OR every
+     * tick when pending commands exist — cheap (≤16 records). */
+    private pendingRingLog: Array<{ op: number; target: number; str: string; cycles: number }> = [];
+
+    private applyRingMovementCommands(): void {
+        try {
+            const log = this.debugService?.getCommandLog() || [];
+            const fresh = log.slice(this.pendingRingLog.length);
+            for (const c of fresh) {
+                this.pendingRingLog.push({ op: c.op, target: c.target, str: c.str, cycles: c.cycles });
+                if (c.op === 3) { // RESET
+                    this.reset();
+                } else if (c.op === 4) { // SET_SPEED (arg0 = speed*1000)
+                    this.setSpeed(Number(c.arg0) / 1000);
+                } else if (c.op === 5) { // SET_TELEMETRY (arg0 = enabled)
+                    this.setTelemetryEnabled(!!c.arg0);
+                } else if (c.op === 1) { // INTERACT (str = event, target = slot)
+                    const inst = this.slotToInstance(c.target);
+                    if (inst && c.event) {
+                        try { (inst as any).onEvent(c.event); } catch { /* never break tick */ }
+                    }
+                } else if (c.op === 2) { // SERIAL (str = bytes)
+                    if (c.str) this.serialRx(c.str);
+                }
+            }
+            if (this.pendingRingLog.length > 512) {
+                this.pendingRingLog.splice(0, this.pendingRingLog.length - 512);
+            }
+        } catch { /* ring apply never breaks the tick */ }
+    }
+
+    private slotToInstance(slot: number): BaseComponent | null {
+        for (const inst of this.instances.values()) {
+            if ((inst as any).sabSlot === slot) return inst;
+        }
+        return null;
+    }
+
+    /** Live HALT/STEP/pause controls for worker postMessage handlers. */
+    pause(): void {
+        try {
+            (this.debugService as any)?.halt?.();
+        } catch { /* ignore */ }
+        this.running = false;
+    }
+
+    resume(): void {
+        try {
+            (this.debugService as any)?.resume?.();
+        } catch { /* ignore */ }
+        if (!this.running) {
+            this.running = true;
+            this.lastTime = performance.now();
+            this.runLoop();
+        }
+    }
+
+    /** Single-step N cpu cycles while halted (debug service budget).
+     * Enqueues STEP into the budget AND executes it synchronously so a
+     * halted loop advances immediately (no need to wait for the 8ms refreeze
+     * tick). No-ops when running free (takeStepBudget passes through). */
+    stepCycles(n: number): number {
+        try {
+            const budget = (this.debugService as any)?.takeStepBudget?.(n) ?? 0;
+            if (budget > 0 && this.cpu && !(this as any).running) {
+                // Synchronous burst: bounded (≤1M cycles) so UI can't hang.
+                const target = Number(this.cpu.cycles) + Math.min(budget, 1000000);
+                let guard = 0;
+                while (Number(this.cpu.cycles) < target && guard++ < 1000000) {
+                    avrInstruction(this.cpu);
+                    this.cpu.tick();
+                }
+                this.forceEmitState();
+            }
+            return budget;
+        } catch { return 0; }
+    }
+
+    getDebugSnapshot(): any {
+        try {
+            const snap = (this.debugService as any)?.snapshot?.() ?? { halted: false, cycles: 0 };
+            // Enrich with live CPU state (service only tracks what it drains).
+            // avr8js: cpu.pc (word addr), cpu.SP (byte addr into data[]).
+            try {
+                if (this.cpu) {
+                    (snap as any).cycles = Number(this.cpu.cycles) || (snap as any).cycles;
+                    const pc = Number((this.cpu as any)?.pc);
+                    if (Number.isFinite(pc)) (snap as any).pc = pc >>> 0;
+                    const sp = Number((this.cpu as any)?.SP);
+                    if (Number.isFinite(sp)) (snap as any).sp = sp >>> 0;
+                }
+            } catch { /* enrichment never breaks snapshot */ }
+            return snap;
+        } catch { return { halted: false, cycles: 0 }; }
+    }
+
+    /** Live RAM/SRAM view for DEBUG_READ_MEM (valid while halted). */
+    readMem(addr: number, len: number): Uint8Array | null {
+        try {
+            const mem = (this.cpu as any)?.data;
+            if (!mem) return null;
+            const n = Math.max(1, Math.min(256, len));
+            const out = new Uint8Array(n);
+            for (let i = 0; i < n; i++) out[i] = mem[(addr + i) & 0xffff] & 0xff;
+            return out;
+        } catch { return null; }
+    }
+
+    /** Direct pin-watch registration (DEBUG_WATCH fallback path). */
+    addPinWatch(pinName: string, expectHigh = true): void {
+        try { (this.debugService as any)?.addPinWatch?.(pinName, expectHigh); } catch { /* ignore */ }
+    }
+
+    removePinWatch(pinName: string): void {
+        try { (this.debugService as any)?.removePinWatch?.(pinName); } catch { /* ignore */ }
     }
 
     stop() {
@@ -2144,6 +2359,12 @@ export class AVRRunner {
     private dispatchOptionalProtocols(pinId: string, isHigh: boolean, cycles: number) {
         this.dispatchOptionalPwm(pinId, isHigh, cycles);
         this.dispatchOptionalOneWire(pinId, isHigh, cycles);
+        // Debug pin watchpoints (§10.7): edge check on every board-pin edge.
+        // checkPinWatch is baseline-then-edge (first call seeds, no false hit)
+        // and emits WATCH_HIT into the event ring on match. Never breaks tick.
+        try {
+            (this.debugService as any)?.checkPinWatch?.(String(pinId), !!isHigh, Number(cycles) || 0);
+        } catch { /* ignore */ }
     }
 
     private netHasResistor = new Set<number>();

@@ -458,6 +458,9 @@ export type AVRRunnerOptions = {
     rp2040FlashPartitions?: RP2040FlashPartitionInput[];
     solverMode?: 'logic';
     sab?: SharedArrayBuffer;
+    sabOffsets?: Record<string, number>; // componentId → slot index (sab/layout.ts)
+    cmdBuffer?: SharedArrayBuffer; // main→worker command ring (sab/layout.ts)
+    evtBuffer?: SharedArrayBuffer; // worker→main event ring (sab/layout.ts)
 };
 
 export type BoardRunner = {
@@ -1217,47 +1220,71 @@ export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?:
         // Telemetry failures should never break simulation state delivery.
     }
 
-    try {
-        if (!out.telemetrySummary && typeof inst?.getTelemetrySummary === 'function') {
-            const summary = inst.getTelemetrySummary();
-            if (typeof summary === 'string' && summary.trim()) {
-                out.telemetrySummary = summary.trim();
-            }
-        }
-    } catch (e) {
-        // Telemetry failures should never break simulation state delivery.
-    }
-
-    const fallback = buildFallbackTelemetry(inst);
-
-    if (effectiveMode === 'delta' && out.delta === undefined) {
-        if (!fallback.telemetryData.delta) {
-            return { delta: false }; // Ultra-fast early return for fallback components!
-        }
-        out.delta = true;
-    }
+    // T4 (§12.3): single telemetry build — primary OR fallback, never both.
+    // getRawMetrics/getDeltaMetrics/getTelemetryData already embed
+    // metrics+heuristics+capturedAt, so a complete primary skips the fallback
+    // entirely (saves 1 JSON fingerprint + 1 state scan per component/flush).
+    // Exception by design: simple-mode light primary ({state} only) is NOT
+    // complete and still takes the fallback supplement below.
+    const tdAny = out.telemetryData as any;
+    const primaryComplete = !!tdAny && typeof tdAny === 'object'
+        && !!(tdAny.metrics || tdAny._metrics);
+    const primaryHeuristicSummary: string | null =
+        (tdAny && typeof tdAny === 'object')
+            ? (tdAny?.heuristics?.summary || tdAny?._heuristics?.summary || null)
+            : null;
 
     if (!out.telemetrySummary) {
-        out.telemetrySummary = fallback.telemetrySummary;
+        if (primaryHeuristicSummary) {
+            // Reuse the heuristics summary the primary already computed —
+            // avoids a second getTelemetrySummary() → applyHeuristics() pass.
+            out.telemetrySummary = primaryHeuristicSummary;
+        } else {
+            try {
+                if (typeof inst?.getTelemetrySummary === 'function') {
+                    const summary = inst.getTelemetrySummary();
+                    if (typeof summary === 'string' && summary.trim()) {
+                        out.telemetrySummary = summary.trim();
+                    }
+                }
+            } catch (e) {
+                // Telemetry failures should never break simulation state delivery.
+            }
+        }
     }
 
-    if (!out.telemetryData || typeof out.telemetryData !== 'object') {
-        out.telemetryData = fallback.telemetryData;
-    } else {
-        const merged = { ...out.telemetryData };
-        if (!merged._metrics) {
-            merged._metrics = fallback.telemetryData._metrics;
+    if (!primaryComplete) {
+        const fallback = buildFallbackTelemetry(inst);
+
+        if (effectiveMode === 'delta' && out.delta === undefined) {
+            if (!fallback.telemetryData.delta) {
+                return { delta: false }; // Ultra-fast early return for fallback components!
+            }
+            out.delta = true;
         }
-        if (!merged._heuristics) {
-            merged._heuristics = fallback.telemetryData._heuristics;
+
+        if (!out.telemetrySummary) {
+            out.telemetrySummary = fallback.telemetrySummary;
         }
-        if (!merged._capturedAt) {
-            merged._capturedAt = fallback.telemetryData._capturedAt;
+
+        if (!out.telemetryData || typeof out.telemetryData !== 'object') {
+            out.telemetryData = fallback.telemetryData;
+        } else {
+            const merged = { ...out.telemetryData };
+            if (!merged._metrics) {
+                merged._metrics = fallback.telemetryData._metrics;
+            }
+            if (!merged._heuristics) {
+                merged._heuristics = fallback.telemetryData._heuristics;
+            }
+            if (!merged._capturedAt) {
+                merged._capturedAt = fallback.telemetryData._capturedAt;
+            }
+            if (!merged._fallbackGenerated) {
+                merged._fallbackGenerated = true;
+            }
+            out.telemetryData = merged;
         }
-        if (!merged._fallbackGenerated) {
-            merged._fallbackGenerated = true;
-        }
-        out.telemetryData = merged;
     }
 
     if (inst.deepSiliconEnabled && cpu && (inst.type.includes('arduino') || inst.type.includes('pico') || inst.type.includes('attiny'))) {

@@ -3,6 +3,7 @@ import RightPanelEditor from './components/RightPanelEditor';
 import { FileExplorerSidebar } from './components/FileExplorerSidebar';
 import { PlotterManager } from './components/PlotterManager';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from './components/SerialMonitor';
+import { DebugPanel } from './components/DebugPanel';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
 import { fetchLibrariesInfo } from '../../services/simulatorService';
@@ -960,7 +961,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     serialSplitRatio, setSerialSplitRatio,
     serialBoardFilter2, setSerialBoardFilter2,
     plotterTimeDiv, setPlotterTimeDiv,
-    isPlotterVisible = true
+    isPlotterVisible = true,
+    debugControls = null
   } = props;
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
@@ -1699,17 +1701,18 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                   top: '3px',
                   bottom: '3px',
                   left: '3px',
-                  width: 'calc((100% - 6px - 8px) / 3)',
+                  width: 'calc((100% - 6px - 12px) / 4)',
                   background: 'var(--accent)',
                   borderRadius: '6px',
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  transform: `translateX(calc(${['code', 'block', 'serial'].indexOf(codeTab)} * (100% + 4px)))`,
+                  transform: `translateX(calc(${['code', 'block', 'serial', 'debug'].indexOf(codeTab)} * (100% + 4px)))`,
                   zIndex: 0
                 }} />
                 {[
                   { id: 'code', label: 'Code', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg> },
                   { id: 'block', label: 'Blocks', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg> },
                   { id: 'serial', label: 'Serial', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg> },
+                  { id: 'debug', label: 'Debug', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M2 12h3M19 12h3M12 2v3M12 19v3" /></svg> },
                 ].map(({ id, label, icon }) => (
                   <button
                     key={id}
@@ -1832,6 +1835,31 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 serialBoardSourceModes={serialBoardSourceModes}
                 isManualChangeDetected={isManualChangeDetected}
                 demoEditorMode={demoEditorMode}
+              />
+            )}
+            {codeTab === 'debug' && debugControls && (
+              <DebugPanel
+                isRunning={isRunning}
+                halted={debugControls.halted}
+                snapshot={debugControls.snapshot}
+                watchPins={debugControls.watchPins}
+                recordLog={debugControls.recordLog}
+                replayDigest={debugControls.replayDigest}
+                memView={debugControls.memView}
+                stepCycles={debugControls.stepCycles}
+                setStepCycles={debugControls.setStepCycles}
+                isRecording={debugControls.isRecording}
+                debugHalt={debugControls.debugHalt}
+                debugResume={debugControls.debugResume}
+                debugStep={debugControls.debugStep}
+                debugWatchPin={debugControls.debugWatchPin}
+                debugUnwatchPin={debugControls.debugUnwatchPin}
+                debugReadMem={debugControls.debugReadMem}
+                requestSnapshot={debugControls.requestSnapshot}
+                startRecording={debugControls.startRecording}
+                stopRecording={debugControls.stopRecording}
+                clearRecording={debugControls.clearRecording}
+                replayRecording={debugControls.replayRecording}
               />
             )}
             {codeTab === 'serial' && (
@@ -2022,13 +2050,15 @@ const RightPanelBase = React.forwardRef((props, ref) => {
     isSerialSplit, setIsSerialSplit,
     serialSplitRatio, setSerialSplitRatio,
     serialBoardFilter2, setSerialBoardFilter2,
-    plotterTimeDiv, setPlotterTimeDiv
+    plotterTimeDiv, setPlotterTimeDiv,
+    debugControls = null
   } = props;
 
   const [activePanel, setActivePanel] = React.useState('code');
 
   React.useEffect(() => {
     if (codeTab === 'serial') setActivePanel('serial');
+    else if (codeTab === 'debug') setActivePanel('debug');
     else setActivePanel('code');
   }, [codeTab]);
 
@@ -2069,7 +2099,8 @@ const RightPanelBase = React.forwardRef((props, ref) => {
         isSerialSplit, setIsSerialSplit,
         serialSplitRatio, setSerialSplitRatio,
         serialBoardFilter2, setSerialBoardFilter2,
-        plotterTimeDiv, setPlotterTimeDiv
+        plotterTimeDiv, setPlotterTimeDiv,
+        debugControls
       }}
     />
   );
@@ -2093,10 +2124,28 @@ export const RightPanel = React.memo(RightPanelBase, (prev, next) => {
   const pk = serialVisibleKey(prev);
   const nk = serialVisibleKey(next);
   if (pk !== nk) return false;
+  // Debug tab state changes at most on user action / worker reply — compare
+  // by identity except the debugControls bundle, which mutates every render
+  // (hook returns fresh callbacks). Compare its visible leaves instead.
+  const debugKey = (p) => {
+    const d = p.debugControls;
+    if (!d) return "none";
+    return [
+      d.halted, d.isRecording,
+      d.watchPins?.length ?? 0,
+      d.watchPins?.map((w) => `${w.pin}=${w.expectHigh ? 1 : 0}`).join(",") ?? "",
+      d.recordLog?.length ?? 0,
+      d.replayDigest ?? "",
+      d.memView ? `${d.memView.addr}:${(d.memView.mem || []).join(",")}` : "",
+      JSON.stringify(d.snapshot ?? null),
+      d.stepCycles ?? 0,
+    ].join("|");
+  };
+  if (debugKey(prev) !== debugKey(next)) return false;
   const keys = Object.keys(next);
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i];
-    if (k === 'serialHistory') continue;
+    if (k === 'serialHistory' || k === 'debugControls') continue;
     if (!Object.is(prev[k], next[k])) return false;
   }
   return true;

@@ -64,6 +64,47 @@ export default defineConfig(({ mode }) => {
             }, null, 2)
           });
         }
+      },
+      {
+        name: 'engine-precache',
+        generateBundle(_options, bundle) {
+          // Board engine = simulation worker + board runners + shared
+          // registry/execute chunks + render/net workers + raw emulator
+          // sources (emitted as ui-*.tsx / logic-*.ts) + wasm.
+          // Hashed names change every build, so we emit the resolved list
+          // here and sw.js precaches it at install time.
+          const engineRe = [
+            /^assets\/simulation\.worker-.*\.js$/,
+            /^assets\/avr-runner-.*\.js$/,
+            /^assets\/rp2040-runner-.*\.js$/,
+            /^assets\/execute-.*\.js$/,
+            /^assets\/logic-.*\.js$/,
+            /^assets\/emulatorLoader-.*\.js$/,
+            /^assets\/display\.render\.worker-.*\.js$/,
+            /^assets\/network\.worker-.*\.js$/,
+            /^assets\/simulatorConstants-.*\.js$/,
+            /^assets\/precompiledBinaries-.*\.js$/,
+            /^assets\/guidedProject.*\.js$/,
+            /^assets\/ui-.*\.tsx$/,
+            /^assets\/logic-.*\.ts$/,
+          ];
+          const files = Object.keys(bundle)
+            .filter((f) => engineRe.some((re) => re.test(f)))
+            .map((f) => `/${f}`);
+          // Any wasm emitted into the bundle (autowiring/grading engines)
+          Object.keys(bundle).forEach((f) => {
+            if (f.endsWith('.wasm') && !files.includes(`/${f}`)) files.push(`/${f}`);
+          });
+          // littlefs.wasm ships via public/wasm (not in bundle) — the sim
+          // worker loads it for SD-card / filesystem emulation.
+          if (!files.includes('/wasm/littlefs.wasm')) files.push('/wasm/littlefs.wasm');
+          files.sort();
+          this.emitFile({
+            type: 'asset',
+            fileName: 'engine-precache.json',
+            source: JSON.stringify({ version: 1, buildTime: Date.now(), files }, null, 2),
+          });
+        }
       }
     ],
     define: {
@@ -116,11 +157,11 @@ export default defineConfig(({ mode }) => {
                  loader: 'js',
                }))
              },
-           },
-         ],
-      },
-    },
-    ssr: {
+            },
+          ],
+       },
+     },
+     ssr: {
       noExternal: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
     },
     test: {

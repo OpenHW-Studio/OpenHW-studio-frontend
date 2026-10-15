@@ -25,6 +25,36 @@ import {
     resolveUartRoute,
     areBoardsSoftSerialConnected,
 } from './protocol-routing.js';
+import { SabCommandReader, SabEventWriter } from './sab/layout.ts';
+import { DebugService } from './debug/service.ts';
+
+// Command/event rings (§10.4): shared at START. Worker owns the reader +
+// debug service; runners get per-board instances bound to the same buffers.
+// Absent buffers → postMessage control path unchanged (fallback).
+let sabCmdReader: SabCommandReader | null = null;
+let sabEvtWriter: SabEventWriter | null = null;
+let sabDebugService: DebugService | null = null;
+
+function attachCommandRings(data: any): void {
+    try {
+        sabCmdReader = null;
+        sabEvtWriter = null;
+        sabDebugService = null;
+        const cmdBuf = (data as any)?.cmdBuffer as SharedArrayBuffer | undefined;
+        const evtBuf = (data as any)?.evtBuffer as SharedArrayBuffer | undefined;
+        const sab = (data as any)?.sab as SharedArrayBuffer | undefined;
+        if (cmdBuf) sabCmdReader = new SabCommandReader(cmdBuf);
+        if (evtBuf) sabEvtWriter = new SabEventWriter(evtBuf);
+        if (sab && (sabCmdReader || sabEvtWriter)) {
+            const offsets = ((data as any)?.sabOffsets || {}) as Record<string, number>;
+            sabDebugService = new DebugService(sab, { ...offsets }, sabEvtWriter);
+        }
+    } catch {
+        sabCmdReader = null;
+        sabEvtWriter = null;
+        sabDebugService = null;
+    }
+}
 
 self.onerror = (msg, url, line, col, error) => {
     console.error(`[SimWorker] Global Error: ${msg} at ${line}:${col}`, error);
@@ -891,6 +921,35 @@ function routeDisplayFrames(components: any[]): any[] {
     return remaining;
 }
 
+// T5 (§12.3): postMessage byte accounting for the bench gate.
+// Tracks steady-frame `components` bytes; exposed via GET_SAB_STATS.
+let sabBenchBytesTotal = 0;
+let sabBenchFrames = 0;
+let sabBenchLastComponentsBytes = 0;
+let sabBenchWakeups = 0;
+
+function estimateComponentsBytes(components: any): number {
+    if (!components) return 0;
+    try {
+        if (Array.isArray(components)) {
+            let n = 0;
+            for (const c of components) {
+                const s = (c as any)?.state;
+                if (s && typeof s === 'object') {
+                    n += Object.keys(s).length * 24;
+                    const v = (s as any)?.buffer;
+                    if (v instanceof Uint8Array) n += v.byteLength;
+                    else if (v instanceof ArrayBuffer) n += v.byteLength;
+                } else {
+                    n += 32;
+                }
+            }
+            return n;
+        }
+        return 64;
+    } catch { return 0; }
+}
+
 function postRunnerState(stateObj: any, boardId: string) {
     const resolvedBoardId = String(stateObj?.boardId || boardId || 'default').trim() || 'default';
 
@@ -913,15 +972,48 @@ function postRunnerState(stateObj: any, boardId: string) {
         ? routeDisplayFrames(stateObj.components)
         : stateObj?.components;
 
+    // T5: bench accounting — measured BEFORE any shrink so the gate can
+    // observe the delta as sabFastPath flips on.
+    const compBytes = estimateComponentsBytes(resolvedComponents);
+
     if (mode === 'single') {
+        // T5 FLUSH shrink: when the SAB fast path is active, main already
+        // polls slots via __sabTickers — post only the wakeup
+        // {seq, simTimeMs, dirtyBoards} instead of the full components array.
+        // Slow-mirror (full payload) still flows for: trace recording,
+        // teacher-key capture, first frame after START (seq 0 → hydration),
+        // and whenever the SAB is absent (fallback).
+        const canShrink = !!(stateObj as any)?.sabFastPath
+            && (stateObj as any)?.type === 'state'
+            && !isRecordingTrace;
+        if (canShrink) {
+            sabBenchWakeups += 1;
+            sabBenchLastComponentsBytes = 0;
+            const wakeup: any = {
+                type: 'state', boardId: resolvedBoardId,
+                sabWakeup: true,
+                seq: (stateObj as any)._emitSeq ?? 0,
+                simTimeMs: (stateObj as any).simTimeMs,
+                dirtySlots: (stateObj as any).dirtySlots || [],
+            };
+            if ((stateObj as any).pins) wakeup.pins = (stateObj as any).pins;
+            if ((stateObj as any).analog) wakeup.analog = (stateObj as any).analog;
+            if ((stateObj as any).perf) wakeup.perf = (stateObj as any).perf;
+            postMessage(wakeup);
+            emitSyncHeartbeat(resolvedBoardId, wakeup);
+            return;
+        }
         const msg = (stateObj && typeof stateObj === 'object')
             ? { ...stateObj, boardId: resolvedBoardId, components: resolvedComponents }
             : stateObj;
-            
+
         if (isRecordingTrace) {
             handleRecorderState(msg, resolvedBoardId);
         }
-        
+
+        sabBenchBytesTotal += compBytes;
+        sabBenchFrames += 1;
+        sabBenchLastComponentsBytes = compBytes;
         postMessage(msg);
         emitSyncHeartbeat(resolvedBoardId, msg);
         return;
@@ -940,11 +1032,17 @@ function postRunnerState(stateObj: any, boardId: string) {
     if (stateObj.pins) msg.pins = stateObj.pins;
     if (stateObj.components) msg.components = resolvedComponents;
     if (stateObj.simTimeMs) msg.simTimeMs = stateObj.simTimeMs;
-    
+    if ((stateObj as any).dirtySlots) msg.dirtySlots = (stateObj as any).dirtySlots;
+    if ((stateObj as any)._emitSeq !== undefined) msg._emitSeq = (stateObj as any)._emitSeq;
+    if ((stateObj as any)._emitTime !== undefined) msg._emitTime = (stateObj as any)._emitTime;
+
     if (isRecordingTrace) {
         handleRecorderState(msg, resolvedBoardId);
     }
-    
+
+    sabBenchBytesTotal += compBytes;
+    sabBenchFrames += 1;
+    sabBenchLastComponentsBytes = compBytes;
     postMessage(msg);
     emitSyncHeartbeat(resolvedBoardId, msg);
 }
@@ -1267,6 +1365,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
         stopAllRunners();
         syncValidationEnabled = !!debugSyncHeartbeat;
         resetSyncValidationState();
+        attachCommandRings(data);
 
         // --- INJECT TEMPORARY SANDBOX LOGIC ---
         if (customLogics && Array.isArray(customLogics)) {
@@ -1359,6 +1458,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         deepSiliconEnabled: activeDeepSiliconEnabled,
                         sab: data.sab,
                         sabOffsets: data.sabOffsets,
+                        cmdBuffer: (data as any).cmdBuffer,
+                        evtBuffer: (data as any).evtBuffer,
                     }
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
@@ -1523,6 +1624,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
                     sab: data.sab,
                     sabOffsets: data.sabOffsets,
+                    cmdBuffer: (data as any).cmdBuffer,
+                    evtBuffer: (data as any).evtBuffer,
                 }
             );
 
@@ -1611,6 +1714,155 @@ const coreMessageHandler = async (e: MessageEvent) => {
         });
     } else if (data.type === 'STOP') {
         stopAllRunners();
+    } else if (data.type === 'DEBUG_HALT') {
+        // Debug control-plane (ring-first; postMessage fallback when no rings).
+        // HALT freezes run loops via DebugService; runners check budgets/ticks.
+        try {
+            if (sabDebugService) {
+                (sabDebugService as any).halt?.();
+            }
+        } catch { /* ignore */ }
+        const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+        for (const r of targets) {
+            try { (r as any)?.pause?.(); } catch { /* ignore */ }
+        }
+        postMessage({ type: 'DEBUG_STATE', halted: true });
+        return;
+    } else if (data.type === 'DEBUG_RESUME') {
+        try {
+            if (sabDebugService) {
+                (sabDebugService as any).resume?.();
+            }
+        } catch { /* ignore */ }
+        const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+        for (const r of targets) {
+            try { (r as any)?.resume?.(); } catch { /* ignore */ }
+        }
+        postMessage({ type: 'DEBUG_STATE', halted: false });
+        return;
+    } else if (data.type === 'DEBUG_STEP') {
+        const n = Math.max(1, Number(data.cycles) || Number(data.steps) || 16000);
+        const viaRing = (data as any)?.viaRing === true;
+        const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+        for (const r of targets) {
+            try {
+                if (viaRing) {
+                    // UI already enqueued STEP into the ring; the halted
+                    // runner drains it on its next tick (drain runs before
+                    // the freeze check) and stepCycles() bursts
+                    // synchronously there. No worker action needed.
+                    continue;
+                }
+                // PostMessage fallback: queue budget directly on the service
+                // (logged for replayDigest determinism), then burst inline.
+                try {
+                    const svc = (r as any)?.debugService ?? sabDebugService;
+                    (svc as any)?.queueStep?.(n);
+                } catch { /* ignore */ }
+                const budget = (r as any)?.stepCycles?.(n) ?? 0;
+                // If runner lacks ring support, run the burst inline (legacy).
+                if (!budget && (r as any)?.running === false) {
+                    (r as any)?.resume?.();
+                }
+            } catch { /* ignore */ }
+        }
+        // Snapshot refresh so the panel shows the advanced pc/cycles.
+        try {
+            const snap = (mode === 'single' && runner)
+                ? ((runner as any)?.getDebugSnapshot?.() ?? null)
+                : (() => {
+                    const out: Record<string, any> = {};
+                    for (const [id, br] of boardRunners) {
+                        try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
+                    }
+                    return out;
+                })();
+            postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: snap });
+        } catch { /* ignore */ }
+        return;
+    } else if (data.type === 'DEBUG_WATCH') {
+        // Pin watchpoint add. Authoritative path is the command ring
+        // (WATCH_ADD record, cycle-stamped, drained per-tick even while
+        // halted). The worker owns the ring READER; the UI owns the WRITER,
+        // so the UI already enqueued the record — here we only cover the
+        // postMessage fallback (ring absent/full: viaRing === false).
+        const pin = String((data as any)?.pin || '').trim();
+        const expectHigh = (data as any)?.expectHigh !== false;
+        const viaRing = (data as any)?.viaRing === true;
+        if (pin && !viaRing) {
+            try {
+                const svc = sabDebugService as any;
+                if (svc && typeof svc.addPinWatch === 'function') {
+                    svc.addPinWatch(pin, expectHigh);
+                }
+            } catch { /* ignore */ }
+            const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+            for (const r of targets) {
+                try { (r as any)?.addPinWatch?.(pin, expectHigh); } catch { /* ignore */ }
+            }
+        }
+        // Echo current watch list so the panel stays in sync.
+        try {
+            const watches = ((sabDebugService as any)?.getWatches?.() ?? null) as any;
+            postMessage({ type: 'DEBUG_STATE', halted: !!(sabDebugService as any)?.isHalted?.(), watches });
+        } catch {
+            postMessage({ type: 'DEBUG_STATE', halted: false });
+        }
+        return;
+    } else if (data.type === 'DEBUG_UNWATCH') {
+        const pin = String((data as any)?.pin || '').trim();
+        try {
+            const svc = sabDebugService as any;
+            if (svc && typeof svc.removePinWatch === 'function') {
+                svc.removePinWatch(pin);
+            }
+        } catch { /* ignore */ }
+        const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+        for (const r of targets) {
+            try { (r as any)?.removePinWatch?.(pin); } catch { /* ignore */ }
+        }
+        return;
+    } else if (data.type === 'DEBUG_READ_MEM') {
+        const addr = Number((data as any)?.addr || 0) >>> 0;
+        const len = Math.max(1, Math.min(256, Number((data as any)?.len || 16)));
+        let mem: Array<number> | null = null;
+        try {
+            const svc = sabDebugService as any;
+            if (svc && typeof svc.readMem === 'function') {
+                const view = svc.readMem(addr, len) as Uint8Array;
+                mem = Array.from(view);
+            }
+        } catch { mem = null; }
+        if (!mem) {
+            const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+            for (const r of targets) {
+                try {
+                    const view = (r as any)?.readMem?.(addr, len);
+                    if (view) { mem = Array.from(view as Uint8Array); break; }
+                } catch { /* ignore */ }
+            }
+        }
+        postMessage({ type: 'DEBUG_MEM', addr, len, mem: mem || [] });
+        return;
+    } else if (data.type === 'DEBUG_SNAPSHOT') {
+        const snap = (mode === 'single' && runner)
+            ? ((runner as any)?.getDebugSnapshot?.() ?? null)
+            : (() => {
+                const out: Record<string, any> = {};
+                for (const [id, br] of boardRunners) {
+                    try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
+                }
+                return out;
+            })();
+        let digest: string | null = null;
+        try {
+            const svc = sabDebugService as any;
+            if (svc && typeof svc.replayDigest === 'function') {
+                digest = svc.replayDigest();
+            }
+        } catch { digest = null; }
+        postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: snap, digest });
+        return;
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
@@ -1769,6 +2021,18 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 }
             });
         }
+    } else if (data.type === 'GET_SAB_STATS') {
+        // T5 bench gate readout for Playwright: steady-frame components bytes,
+        // wakeup count, and running averages. Never blocks the tick loop.
+        postMessage({
+            type: 'SAB_STATS',
+            frames: sabBenchFrames,
+            bytesTotal: sabBenchBytesTotal,
+            lastComponentsBytes: sabBenchLastComponentsBytes,
+            wakeups: sabBenchWakeups,
+            avgComponentsBytes: sabBenchFrames > 0 ? Math.round(sabBenchBytesTotal / sabBenchFrames) : 0,
+        });
+        return;
     } else if (data.type === 'REAL_METRICS') {
         setRealMetrics(data.canvasFps, data.uiMainThreadBlockedTimeMs);
     } else if (data.type === 'SERIAL_SET_BAUD') {

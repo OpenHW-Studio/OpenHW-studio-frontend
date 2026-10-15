@@ -167,6 +167,11 @@ export function useTelemetryManager({
   const latestTelemetryCacheRef = useRef([]);
   const [telemetryWatchedParamsMap, setTelemetryWatchedParamsMap] = useState({});
 
+  // T3 pre-read filter (§12.3): ring-backed numeric snapshot per selected
+  // component, refreshed from the SAB telemetry ring. postMessage payloads
+  // still carry full state (fallback); the ring lets formatting run WITHOUT
+  // touching unselected components' objects. Stays lazy (250ms throttle).
+  const telemetryRingCursorRef = useRef(0);
   const handleTelemetryStateMessage = useCallback((msg) => {
     if (isBooting) return;
     if (!componentTelemetryEnabled || !msg || !Array.isArray(msg.components)) return;
@@ -177,7 +182,7 @@ export function useTelemetryManager({
     const now = Date.now();
 
     // In Delta mode, we must never throttle delta events, otherwise mutations occurring between sample intervals are permanently lost!
-    if (telemetryMode !== 'delta' && now - lastLogTimeRef.current < intervalMs) return; 
+    if (telemetryMode !== 'delta' && now - lastLogTimeRef.current < intervalMs) return;
     lastLogTimeRef.current = now;
 
     // Upstream O(1) filtering by selected component IDs
@@ -185,12 +190,49 @@ export function useTelemetryManager({
       ? new Set(selectedTelemetryComponentIds)
       : new Set();
 
+    // T3: pre-read — pull ONLY selected slots' newest ring records BEFORE
+    // formatting, so unselected components cost zero string/object work.
+    // Records keyed by slot; offsets map lives on window (START postamble).
+    let ringBySlot = null;
+    try {
+      const sab = typeof window !== "undefined" ? window.__sabBuffer || null : null;
+      const offsets = (typeof window !== "undefined" ? window.__sabOffsets : null) || {};
+      if (sab && Object.keys(offsets).length) {
+        import("../utils/sabReader.js").then((mod) => {
+          try {
+            const res = mod.readTelemetryRing(sab, telemetryRingCursorRef.current, 128);
+            if (res && Array.isArray(res.records)) {
+              telemetryRingCursorRef.current = res.head;
+              const latest = {};
+              for (const r of res.records) latest[r.compSlot] = r;
+              try {
+                if (typeof window !== "undefined") window.__sabTelemetryLatest = latest;
+              } catch { /* ignore */ }
+            }
+          } catch { /* ring read never breaks telemetry */ }
+        }).catch(() => {});
+        ringBySlot = (typeof window !== "undefined" ? window.__sabTelemetryLatest : null) || null;
+      }
+    } catch { ringBySlot = null; }
+
     const processed = [];
     msg.components.forEach((comp) => {
       if (!comp || !comp.id) return;
       if (!filterSet.has(comp.id)) return;
 
-      const formatted = formatTelemetryEntry(comp, telemetryMode, telemetryWatchedParamsMap);
+      // Attach newest ring numerics for this component (if any) so
+      // formatTelemetryEntry can render WITHOUT re-scanning full state.
+      let compForFormat = comp;
+      try {
+        const offsets = (typeof window !== "undefined" ? window.__sabOffsets : null) || {};
+        const slot = offsets[comp.id];
+        const rec = ringBySlot && Number.isFinite(Number(slot)) ? ringBySlot[Number(slot)] : null;
+        if (rec) {
+          compForFormat = { ...comp, _ringV0: rec.v0, _ringV1: rec.v1, _ringCycles: rec.cycles };
+        }
+      } catch { compForFormat = comp; }
+
+      const formatted = formatTelemetryEntry(compForFormat, telemetryMode, telemetryWatchedParamsMap);
       processed.push(formatted);
 
       // Append to console

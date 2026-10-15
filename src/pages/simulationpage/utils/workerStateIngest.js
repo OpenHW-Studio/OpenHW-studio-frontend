@@ -131,7 +131,28 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
             renderNeopixelsByBoardRef.current[boardIdKey] = msg.neopixels;
             applyLiveNeopixelData(msg.neopixels);
           }
-          if (msg.type === "state" && msg.components) {
+          // T5: SAB wakeup fast path — slots already polled into the live-OOP
+          // mirror by the rAF reader (sabReader.js). Skip the clone-heavy
+          // components fan-out; telemetry still flows via the ring/ingest.
+          if (msg.type === "state" && msg.sabWakeup) {
+            const boardIdKey = String(msg.boardId || "default");
+            if (Array.isArray(msg.dirtySlots)) {
+              const counts = runComponentUpdateCountsRef.current;
+              // Attribute updates by slot via the offsets map when available.
+              const offsets = ctx.sabOffsetsRef?.current || window.__sabOffsets || null;
+              if (offsets && typeof offsets === "object") {
+                for (const id of Object.keys(offsets)) {
+                  if (msg.dirtySlots.includes(offsets[id])) {
+                    counts[id] = (counts[id] || 0) + 1;
+                  }
+                }
+              }
+            }
+            // Buzzer latency trace still works: read buzzing flag from mirror.
+            // (Buzzer state arrives via SAB slot i0; mirror updated by reader.)
+            runLagTelemetryLastStateRef.current.set(boardIdKey, { ts: Date.now() });
+          }
+          if (msg.type === "state" && msg.components && !msg.sabWakeup) {
             const boardIdKey = String(msg.boardId || "default");
             const boardComponentState = {
               ...(renderComponentsByBoardRef.current[boardIdKey] || {}),

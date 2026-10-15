@@ -124,6 +124,7 @@ import { useCodeFiles } from "./hooks/useCodeFiles";
 import { useHardwareUpload } from "./hooks/useHardwareUpload";
 import { useRunStop } from "./hooks/useRunStop";
 import { useRunControls } from "./hooks/useRunControls";
+import { useDebugControls } from "./hooks/useDebugControls";
 import { useRunTimingEffects } from "./hooks/useRunTimingEffects";
 import { useTeacherKeyCapture } from "./hooks/useTeacherKeyCapture";
 import { useCanvasWheelZoom } from "./hooks/useCanvasWheelZoom";
@@ -1531,10 +1532,39 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
+  // SAB reader cursor (main-thread poll state for §12.3 T5). Offsets land in
+  // sabOffsetsRef at START (workerStartPostamble return); buffer identity in
+  // stateSabRef. Poll is Atomics.load-only — never blocks, never waits.
+  const sabOffsetsRef = useRef(null);
+  const sabCursorRef = useRef(null);
+  const sabPollStatsRef = useRef({ polls: 0, frames: 0, slots: 0, lastSeq: -1 });
+  // Command/event ring handles (§10.4): SabCommandWriter (main→worker) +
+  // SabEventReader (worker→main), bound at START in workerStartPostamble.
+  const cmdWriterRef = useRef(null);
+  const evtReaderRef = useRef(null);
+  const cmdBufferRef = useRef(null);
+  const evtBufferRef = useRef(null);
 
   // Global SharedArrayBuffer Web Component Ticker Loop (Bypasses React)
+  // + SAB state poll (§12.5 step 3): each rAF, after ticking web components,
+  // poll dirty slots from the state SAB and mirror into liveOopStatesRef
+  // (same shape as the postMessage path). postMessage stays as fallback +
+  // slow mirror; SAB is the fast path. Exposes window.__sabPollStats for
+  // Playwright verification.
   useEffect(() => {
     let active = true;
+    let sabReaderMod = null;
+    import("./utils/sabReader.js").then((m) => {
+      sabReaderMod = m;
+      if (typeof window !== "undefined") window.__sabReaderLoaded = true;
+    }).catch(() => { sabReaderMod = null; });
+    // Publish verification hooks immediately (before any run) so Playwright
+    // and debug tooling can observe reader presence + isolation state.
+    if (typeof window !== "undefined") {
+      window.__sabPollStats = { ...sabPollStatsRef.current };
+      window.__sabReaderLoaded = false;
+      if (!("___sabOffsets" in window)) window.__sabOffsets = sabOffsetsRef.current;
+    }
     const tickLoop = () => {
       if (!active) return;
       const w = window;
@@ -1545,6 +1575,45 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
         });
       }
+      try {
+        const stats = sabPollStatsRef.current;
+        const sab = stateSabRef.current;
+        const offsets = sabOffsetsRef.current;
+        // Event ring poll (§10.4): worker→main hints (BREAK_HIT/WATCH_HIT/
+        // ERROR/TOAST). postMessage stays authoritative; overflow there.
+        try {
+          const evtReader = evtReaderRef.current
+            || (typeof window !== "undefined" ? window.__sabEvtReader : null);
+          if (evtReader && sabReaderMod && typeof sabReaderMod.drainSabEvents === "function" && isRunningRef.current) {
+            const drained = sabReaderMod.drainSabEvents(evtReader, 16, appendConsoleEntry);
+            if (drained && drained.length && typeof window !== "undefined") {
+              window.__sabLastEvents = drained.slice(-8);
+            }
+          }
+        } catch { /* event poll never breaks render loop */ }
+        if (sabReaderMod && sab && offsets && isRunningRef.current) {
+          if (!sabCursorRef.current) sabCursorRef.current = sabReaderMod.createSabCursor();
+          const frames = sabReaderMod.pollSabFrames(sab, offsets, sabCursorRef.current);
+          stats.polls += 1;
+          if (Array.isArray(frames) && frames.length > 0) {
+            stats.frames += 1;
+            stats.slots += frames.length;
+            const changed = sabReaderMod.applySabFrames(frames, liveOopStatesRef, runComponentUpdateCountsRef);
+            changed.forEach(notifyLiveOopStateListeners);
+          }
+          const diag = sabReaderMod.getSabDiag(sab);
+          if (diag) stats.lastSeq = diag.frameSeq;
+        }
+        // Publish every tick (even idle) — cheap object spread at rAF rate,
+        // keeps __sabPollStats observable before/during/after runs.
+        if (typeof window !== "undefined") {
+          window.__sabPollStats = {
+            ...stats,
+            readerLoaded: !!sabReaderMod,
+            running: !!(isRunningRef && isRunningRef.current),
+          };
+        }
+      } catch { /* SAB poll must never break render loop */ }
       requestAnimationFrame(tickLoop);
     };
     requestAnimationFrame(tickLoop);
@@ -3811,6 +3880,12 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           setValidationToast,
         })) return;
 
+        // ── Debug control-plane replies (DEBUG_STATE / SNAPSHOT / MEM) ────
+        // Owns halted/snapshot/memView state; returns true when consumed.
+        try {
+          if (debugControlsRef.current?.handleDebugMessage?.(msg)) return;
+        } catch { /* debug feed never breaks ingest */ }
+
 
         if (
           msg.type === "state" ||
@@ -4008,7 +4083,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           deepSiliconDebuggingEnabled,
           logSerial,
         },
-        { COMPONENT_REGISTRY, stateSabRef },
+        { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef },
       );
 
 
@@ -4143,7 +4218,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setSerialInput,
     setBoardBaudRates,
     setSerialBaudRate,
+    cmdWriterRef,
+    sabOffsetsRef,
   });
+
+  // ── Debug control-plane (§10.7) ───────────────────────────────────────
+  // Ring-first via cmdWriterRef; worker replies (DEBUG_STATE / DEBUG_SNAPSHOT
+  // / DEBUG_MEM) are fed from worker.onmessage above via handleDebugMessage.
+  // Ref mirror: worker.onmessage is installed per-Run and closes over refs,
+  // so the live handleDebugMessage identity is published through this ref.
+  const debugControls = useDebugControls({ workerRef, cmdWriterRef, isRunning });
+  const debugControlsRef = useRef(null);
+  debugControlsRef.current = debugControls;
   const openComponentEditor = useCallback(() => {
     try {
       navigate("/component-editor");
@@ -5228,6 +5314,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 setSerialSplitRatio={setSerialSplitRatio}
                 serialBoardFilter2={serialBoardFilter2}
                 setSerialBoardFilter2={setSerialBoardFilter2}
+                debugControls={debugControls}
               />
 
               <ProjectsSidebarChrome

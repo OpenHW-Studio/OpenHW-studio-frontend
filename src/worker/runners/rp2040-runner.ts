@@ -21,6 +21,8 @@ import {
     isSoftSerialSourceLabel,
 } from '../registries/component-registry.ts';
 import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions, ConnectedComponentPin } from '../registries/component-registry.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, sabKindForType } from '../sab/layout.ts';
+import { DebugService } from '../debug/service.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
 const RP2040_XIP_NOCACHE_BASE = 0x11000000;
@@ -709,6 +711,16 @@ export class RP2040Runner implements BoardRunner {
     private pinToNet = new Map<string, number>();
     private physicsWorker: Worker | null = null;
     private physicsWorkerBusy: boolean = false;
+    // SAB state river (§12.2): same contract as AVRRunner. Legacy byte
+    // offsets accepted and converted via /64 stride for compat.
+    private sabOffsets: Record<string, number> = {};
+    private sabWriter: SabStateWriter | null = null;
+    private sab: SharedArrayBuffer | null = null;
+    private cmdReader: SabCommandReader | null = null;
+    private evtWriter: SabEventWriter | null = null;
+    /** Worker-owned debug service (public for DEBUG_STEP fallback queueing). */
+    public debugService: DebugService | null = null;
+    private pendingRingLog: Array<{ op: number; target: number; str: string; cycles: number }> = [];
 
     private readonly debugEnabled: boolean;
     private readonly debugIntervalMs: number;
@@ -916,6 +928,30 @@ export class RP2040Runner implements BoardRunner {
         ) >>> 0;
         this.flashPartitions = normalizeRp2040FlashPartitions(options.rp2040FlashPartitions);
 
+        // SAB river attach (§12.2): store shared buffer + per-component slots.
+        const sabBuf = (options as any)?.sab || null;
+        const rawOffsets = (options as any)?.sabOffsets || {};
+        this.sabOffsets = {};
+        for (const key of Object.keys(rawOffsets)) {
+            const v = Number(rawOffsets[key]);
+            this.sabOffsets[key] = Number.isFinite(v) && v >= 64 ? Math.floor(v / 64) : (Number.isFinite(v) ? v : 0);
+        }
+        if (sabBuf) {
+            try {
+                this.sab = sabBuf as SharedArrayBuffer;
+                this.sabWriter = new SabStateWriter(sabBuf as SharedArrayBuffer);
+            } catch { this.sabWriter = null; }
+        }
+        try {
+            const cmdBuf = (options as any)?.cmdBuffer as SharedArrayBuffer | undefined;
+            const evtBuf = (options as any)?.evtBuffer as SharedArrayBuffer | undefined;
+            if (cmdBuf) this.cmdReader = new SabCommandReader(cmdBuf);
+            if (evtBuf) this.evtWriter = new SabEventWriter(evtBuf);
+            if (this.sab && (this.cmdReader || this.evtWriter)) {
+                this.debugService = new DebugService(this.sab, { ...this.sabOffsets }, this.evtWriter);
+            }
+        } catch { this.cmdReader = null; this.evtWriter = null; this.debugService = null; }
+
         this.cpu = new RP2040(new RP2040MockClock() as any);
         const wrapFlashAliasAddressMethod = (methodName: string) => {
             const original = (this.cpu as any)?.[methodName];
@@ -1013,8 +1049,13 @@ export class RP2040Runner implements BoardRunner {
                 const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
-                inst.sab = this.options?.sab;
-                inst.sabOffset = this.options?.sabOffsets ? this.options.sabOffsets[cDef.id] : undefined;
+                // SAB river (§12.2): slot index assignment, same contract as AVR.
+                // Legacy byte offsets converted via /64 stride for compat.
+                const rawSlot = (options as any)?.sabOffsets ? (options as any).sabOffsets[cDef.id] : undefined;
+                const slotNum = Number(rawSlot);
+                (inst as any).sabSlot = Number.isFinite(slotNum)
+                    ? (slotNum >= 64 ? Math.floor(slotNum / 64) : slotNum)
+                    : -1;
                 (inst as any)._runner = this;
                 (inst as any)._simCpu = {
                     addClockEvent: (cb: () => void, avrCycles: number) => {
@@ -3336,6 +3377,11 @@ export class RP2040Runner implements BoardRunner {
 
 
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
+        // Debug pin watchpoints (§10.7): same contract as AVRRunner.
+        try {
+            const cycles = Number((this.cpu as any)?.core?.cycles) || 0;
+            (this.debugService as any)?.checkPinWatch?.(String(gpPin), !!isHigh, cycles);
+        } catch { /* ignore */ }
         this.propagateBoardPinInternal(gpPin, isHigh ? 3.3 : 0.0, isHigh);
     }
 
@@ -3516,6 +3562,22 @@ export class RP2040Runner implements BoardRunner {
 
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
+
+        // Command ring drain (§10.6 step 1) + HALT freeze. Mirrors AVRRunner.
+        try {
+            if (this.cmdReader && this.debugService) {
+                const changed = this.debugService.drainCommands(this.cmdReader, Number(this.cpu.core.cycles) || 0);
+                if (changed) this.applyRingMovementCommands();
+                if (this.debugService.isHalted()) {
+                    const budget = this.debugService.takeStepBudget(0);
+                    if (budget <= 0) {
+                        this.lastTime = performance.now();
+                        setTimeout(this.runLoop, 8);
+                        return;
+                    }
+                }
+            }
+        } catch { /* ring drain never breaks the tick */ }
 
         const loopStart = performance.now();
         const now = performance.now();
@@ -4060,6 +4122,9 @@ export class RP2040Runner implements BoardRunner {
         this.pinsChanged = false;
 
         const compStates: Array<{ id: string; state: any }> = [];
+        const dirtySlots: number[] = [];
+        const cyclesNow = Number(this.cpu.core.cycles) || 0;
+        let anyTelemetry = false;
         for (const inst of this.instances.values()) {
             const pendingEmit = (inst as any).pendingVisualStateEmit;
             if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
@@ -4067,6 +4132,25 @@ export class RP2040Runner implements BoardRunner {
             const syncState = getUnifiedComponentSyncState(inst);
 
             if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
+            // SAB publish (§12.3 T5) + T3 telemetry ring — same as AVRRunner.
+            if (this.sabWriter && (inst as any).sabSlot >= 0) {
+                try {
+                    const ui = typeof (inst as any).uiState === 'function' ? (inst as any).uiState() : null;
+                    const f = ui?.f ? Object.values(ui.f).map(Number) : [];
+                    const i = ui?.i ? Object.values(ui.i).map(Number) : [];
+                    this.sabWriter.writeSlot((inst as any).sabSlot, (inst as any).stateVersion || 0, sabKindForType(inst.type), 0, f as number[], i as number[]);
+                    dirtySlots.push((inst as any).sabSlot);
+                    if ((inst as any).telemetryEnabled && (f.length > 0 || i.length > 0)) {
+                        this.sabWriter.pushTelemetry((inst as any).sabSlot, sabKindForType(inst.type), Number(f[0] || 0), Number(i[0] || 0), cyclesNow);
+                        anyTelemetry = true;
+                    } else if ((inst as any).telemetryEnabled) {
+                        anyTelemetry = true;
+                    }
+                } catch { /* SAB write never breaks sim */ }
+            } else if ((inst as any).telemetryEnabled) {
+                anyTelemetry = true;
+            }
 
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
@@ -4079,11 +4163,16 @@ export class RP2040Runner implements BoardRunner {
             });
         }
         msg.components = compStates;
+        if (dirtySlots.length) msg.dirtySlots = dirtySlots;
+        if (this.sabWriter) msg.sabFastPath = true;
 
         this.statusIntervalEmitCount++;
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
         msg.simTimeMs = this.getSimulatedTimeMs();
+        if (this.sabWriter) {
+            try { this.sabWriter.publishFrame(msg.simTimeMs, anyTelemetry); } catch { /* never break sim */ }
+        }
 
         this.lastStateEmitCycle = currentCycles;
         this.lastStateEmitTime = now;
@@ -4151,16 +4240,110 @@ export class RP2040Runner implements BoardRunner {
 
     /** Temporarily freeze the CPU run-loop without tearing down any state. */
     pause() {
+        try { (this.debugService as any)?.halt?.(); } catch { /* ignore */ }
         this.running = false;
     }
 
     /** Resume the CPU run-loop after a pause(). Resets the wall-clock reference
      *  so that no catch-up cycles are generated for the frozen duration. */
     resume() {
+        try { (this.debugService as any)?.resume?.(); } catch { /* ignore */ }
         if (this.running) return;
         this.running = true;
         this.lastTime = performance.now();
         this.runLoop();
+    }
+
+    private slotToInstance(slot: number): any {
+        for (const inst of this.instances.values()) {
+            if ((inst as any).sabSlot === slot) return inst;
+        }
+        return null;
+    }
+
+    private applyRingMovementCommands(): void {
+        try {
+            const log = this.debugService?.getCommandLog() || [];
+            const fresh = log.slice(this.pendingRingLog.length);
+            for (const c of fresh) {
+                this.pendingRingLog.push({ op: c.op, target: c.target, str: c.str, cycles: c.cycles });
+                if (c.op === 3) {
+                    if (typeof (this as any).reset === 'function') (this as any).reset();
+                } else if (c.op === 4) {
+                    this.setSpeed(Number(c.arg0) / 1000);
+                } else if (c.op === 5) {
+                    this.setTelemetryEnabled(!!c.arg0);
+                } else if (c.op === 1) {
+                    const inst = this.slotToInstance(c.target);
+                    if (inst && (c as any).event) {
+                        try { inst.onEvent((c as any).event); } catch { /* never break tick */ }
+                    }
+                } else if (c.op === 2) {
+                    if (c.str && typeof (this as any).serialRx === 'function') (this as any).serialRx(c.str);
+                }
+            }
+            if (this.pendingRingLog.length > 512) {
+                this.pendingRingLog.splice(0, this.pendingRingLog.length - 512);
+            }
+        } catch { /* ring apply never breaks the tick */ }
+    }
+
+    /** Single-step N cpu cycles while halted — synchronous burst, same
+     * contract as AVRRunner.stepCycles (bounded so UI can't hang). */
+    stepCycles(n: number): number {
+        try {
+            const budget = (this.debugService as any)?.takeStepBudget?.(n) ?? 0;
+            if (budget > 0 && this.cpu && !(this as any).running) {
+                const core = (this.cpu as any).core;
+                const target = Number(core?.cycles) + Math.min(budget, 1000000);
+                let guard = 0;
+                while (Number(core?.cycles) < target && guard++ < 100000) {
+                    core.executeInstruction();
+                }
+                try { this.forceEmitState(); } catch { /* ignore */ }
+            }
+            return budget;
+        } catch { return 0; }
+    }
+
+    getDebugSnapshot(): any {
+        try {
+            const snap = (this.debugService as any)?.snapshot?.() ?? { halted: false, cycles: 0 };
+            try {
+                const core = (this.cpu as any)?.core;
+                if (core) {
+                    (snap as any).cycles = Number(core.cycles) || (snap as any).cycles;
+                    const pc = Number(core.PC);
+                    if (Number.isFinite(pc)) (snap as any).pc = pc >>> 0;
+                    const sp = Number(core.SP);
+                    if (Number.isFinite(sp)) (snap as any).sp = sp >>> 0;
+                }
+            } catch { /* enrichment never breaks snapshot */ }
+            return snap;
+        } catch { return { halted: false, cycles: 0 }; }
+    }
+
+    /** Live SRAM view for DEBUG_READ_MEM (0x20000000-based). */
+    readMem(addr: number, len: number): Uint8Array | null {
+        try {
+            const sram = (this.cpu as any)?.sram as Uint8Array | undefined;
+            if (!sram) return null;
+            const n = Math.max(1, Math.min(256, len));
+            const out = new Uint8Array(n);
+            for (let i = 0; i < n; i++) {
+                const off = (addr + i - RP2040_SRAM_BASE) >>> 0;
+                out[i] = off < sram.length ? sram[off] : 0;
+            }
+            return out;
+        } catch { return null; }
+    }
+
+    addPinWatch(pinName: string, expectHigh = true): void {
+        try { (this.debugService as any)?.addPinWatch?.(pinName, expectHigh); } catch { /* ignore */ }
+    }
+
+    removePinWatch(pinName: string): void {
+        try { (this.debugService as any)?.removePinWatch?.(pinName); } catch { /* ignore */ }
     }
 }
 

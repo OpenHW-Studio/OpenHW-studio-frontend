@@ -11,6 +11,8 @@
  * teacher-key duration are preserved verbatim.
  * Verify via run-start + teacher-key + neopixel-matrix checks.
  */
+import { allocateStateSab, SabCommandWriter, SabEventReader } from "../../../worker/sab/layout.ts";
+
 export function postWorkerStartMessage(worker, args, ctx) {
   const {
     components,
@@ -34,7 +36,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
     telemetryWatchedParamsMap,
     deepSiliconDebuggingEnabled,
   } = args;
-  const { COMPONENT_REGISTRY, stateSabRef } = ctx;
+  const { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef } = ctx;
         logSerial("Simulator started in Web Worker.");
 
         const neopixelWiring = components
@@ -70,22 +72,20 @@ export function postWorkerStartMessage(worker, args, ctx) {
 
         console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
 
-        const componentSabOffsets = {};
-        let currentSabOffset = 0;
-        components.forEach((c) => {
-          componentSabOffsets[c.id] = currentSabOffset;
-          if (c.type === "openhw-neopixel-matrix" || c.type === "wokwi-neopixel-matrix") {
-            const rows = parseInt(c.attrs?.rows || "8", 10);
-            const cols = parseInt(c.attrs?.cols || "8", 10);
-            currentSabOffset += (rows * cols * 4); // 4 bytes per pixel (RGBA)
-          } else {
-            currentSabOffset += 8; // Default 8 bytes per component (e.g. 1 Float64 or 2 Float32s)
-          }
-        });
-
-        // Align buffer to nearest 4KB block
-        const bufferSize = Math.max(4096, Math.ceil(currentSabOffset / 4096) * 4096);
-        stateSabRef.current = new SharedArrayBuffer(bufferSize);
+        // SAB layout v1 (§12.2): fixed 64 B slots via shared sab/layout.ts.
+        // Neopixel pixel data stays OUT (VRAM path); slots carry numerics only.
+        // Falls back to legacy byte math only if the layout module is unavailable
+        // (e.g. unit-test context without worker bundling).
+        // Synchronous alloc (layout.ts is a bundled static import — no await,
+        // so the START postamble keeps its fire-and-forget call contract).
+        const alloc = allocateStateSab(components.map((c) => c.id));
+        stateSabRef.current = alloc.buffer;
+        const componentSabOffsets = alloc.offsets;
+        // Command/event rings (§10.4): shared with the worker at START.
+        // Stored on dedicated refs when provided; mirrored on window for
+        // debug tooling + Playwright verification.
+        const cmdBuffer = alloc.cmdBuffer || null;
+        const evtBuffer = alloc.evtBuffer || null;
 
         // Expose to window for Web Components
         const isTeacherKeyCapture = !!options?.isTeacherKeyCapture;
@@ -111,6 +111,8 @@ export function postWorkerStartMessage(worker, args, ctx) {
           teacherKeyDurationMs: 7900,
           sab: stateSabRef.current,
           sabOffsets: componentSabOffsets,
+          cmdBuffer,
+          evtBuffer,
           networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
           hex: result.hex,
           neopixels: neopixelWiring,
@@ -141,6 +143,35 @@ export function postWorkerStartMessage(worker, args, ctx) {
           watchedParamsMap: telemetryWatchedParamsMap,
           deepSilicon: deepSiliconDebuggingEnabled,
         };
+  // SAB reader wiring (§12.5 step 3): publish offsets + reset poll cursor so
+  // the rAF reader in SimulatorPage starts clean on every run.
+  // Bind ring handles (§10.4): writer on main, reader for worker events.
+  // postMessage DEBUG_*/SERIAL_INPUT stay as fallback when rings are absent.
+  let cmdWriter = null;
+  let evtReader = null;
+  try {
+    if (cmdBuffer) cmdWriter = new SabCommandWriter(cmdBuffer);
+    if (evtBuffer) evtReader = new SabEventReader(evtBuffer);
+  } catch { cmdWriter = null; evtReader = null; }
+  try {
+    if (sabOffsetsRef) sabOffsetsRef.current = componentSabOffsets;
+    if (sabCursorRef) sabCursorRef.current = null;
+    if (sabPollStatsRef) sabPollStatsRef.current = { polls: 0, frames: 0, slots: 0, lastSeq: -1 };
+    if (cmdBufferRef) cmdBufferRef.current = cmdBuffer;
+    if (evtBufferRef) evtBufferRef.current = evtBuffer;
+    if (cmdWriterRef) cmdWriterRef.current = cmdWriter;
+    if (evtReaderRef) evtReaderRef.current = evtReader;
+    if (typeof window !== "undefined") {
+      window.__sabOffsets = componentSabOffsets;
+      window.__sabPollStats = { polls: 0, frames: 0, slots: 0, lastSeq: -1 };
+      window.__sabBuffer = stateSabRef.current;
+      window.__sabCmdBuffer = cmdBuffer;
+      window.__sabEvtBuffer = evtBuffer;
+      window.__sabCmdWriter = cmdWriter;
+      window.__sabEvtReader = evtReader;
+      window.__sabTelemetryLatest = null;
+    }
+  } catch { /* SAB wiring must never break START */ }
   worker.postMessage(startPayload);
   return startPayload;
 }
