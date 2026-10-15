@@ -4392,6 +4392,22 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (Array.isArray(selectTelemetry) && selectTelemetry.length) {
             setSelectedTelemetryComponentIds(selectTelemetry);
           }
+          // Seed watched params for the selection (default ['all'] only
+          // where unset — never overrides user config): the worker reads
+          // these keys at shrink time to decide which components keep
+          // full rich frames on the SAB fast path (plan §11.4 on-demand
+          // detail). Settles during compile; read live at START/SET.
+          try {
+            if (typeof setTelemetryWatchedParamsMap === 'function') {
+              setTelemetryWatchedParamsMap((prev) => {
+                const m = { ...(prev || {}) };
+                for (const id of selectTelemetry || []) {
+                  if (m[id] === undefined) m[id] = ['all'];
+                }
+                return m;
+              });
+            }
+          } catch { /* ignore */ }
           // Synchronous e2e telemetry intent (see workerStartPostamble):
           // React setState is async-stale by compile/START time, so the
           // postamble reads this global instead. Kept alongside the state
@@ -4414,6 +4430,22 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (mode) { try { setTelemetryMode(mode); } catch { /* ignore */ }
           }
           await sleep(Math.max(1000, Number(forMs) || 8000));
+          // Deterministic telemetry enable: post DIRECTLY to the live
+          // worker (no React-state round trip — setState timing vs worker
+          // creation raced forever). One emit cycle later the verdict reads
+          // full worker telemetry, not stateChanged scraps or skeletons.
+          try {
+            workerRef.current?.postMessage({
+              type: 'SET_COMPONENT_TELEMETRY',
+              enabled: true,
+              mode: mode || 'detail',
+              // NOTE: watchedParamsMap deliberately omitted — sending {}
+              // would wipe the worker's selection and re-shrink rich
+              // telemetry for the selected components.
+              deepSilicon: false,
+            });
+          } catch { /* ignore */ }
+          await sleep(2500);
           const serialNew = serialHistoryRef.current.slice(serialMark).map((e) => String(e?.text ?? e ?? ""));
           const serialText = serialNew.join("");
           const pins = JSON.parse(JSON.stringify(renderPinsByBoardRef.current || {}));

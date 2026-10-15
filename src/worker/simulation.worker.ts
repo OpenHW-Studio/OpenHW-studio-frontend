@@ -635,6 +635,22 @@ function postRunnerState(stateObj: any, boardId: string) {
             if ((stateObj as any).pins) wakeup.pins = (stateObj as any).pins;
             if ((stateObj as any).analog) wakeup.analog = (stateObj as any).analog;
             if ((stateObj as any).perf) wakeup.perf = (stateObj as any).perf;
+            // Rich detail on demand (plan §11.4): the fast path carries
+            // only numerics, so selected telemetry components would NEVER
+            // deliver text/vram/custom state (LCD lines, display fill,
+            // buzzing flags, mic amplitude all dropped by design). Attach
+            // full frames for explicitly selected components; the ingest
+            // feeds msg.components through the normal path whenever
+            // present, wakeup or not. Unselected traffic stays shrunk.
+            try {
+                const watched = activeTelemetryWatchedParamsMap || {};
+                const ids = Object.keys(watched);
+                if (Array.isArray(resolvedComponents) && ids.length > 0) {
+                    const set = new Set(ids.map(String));
+                    const rich = resolvedComponents.filter((c: any) => c && set.has(String(c.id)));
+                    if (rich.length > 0) wakeup.components = rich;
+                }
+            } catch { /* shrink stays shrink on any failure */ }
             postMessage(wakeup);
             emitSyncHeartbeat(resolvedBoardId, wakeup);
             return;

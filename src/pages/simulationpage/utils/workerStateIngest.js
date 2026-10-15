@@ -169,7 +169,10 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
             // (Buzzer state arrives via SAB slot i0; mirror updated by reader.)
             runLagTelemetryLastStateRef.current.set(boardIdKey, { ts: Date.now() });
           }
-          if (msg.type === "state" && msg.components && !msg.sabWakeup) {
+          if (msg.type === "state" && msg.components) {
+            // NOTE: components ride along even on sabWakeup posts now (rich
+            // on-demand detail for selected telemetry components, §11.4).
+            // Wakeups without components behave exactly as before.
             const boardIdKey = String(msg.boardId || "default");
             const boardComponentState = {
               ...(renderComponentsByBoardRef.current[boardIdKey] || {}),
