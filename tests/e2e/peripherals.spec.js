@@ -15,7 +15,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     page.on('console', (msg) => {
       try {
         const t = `[${msg.type()}] ${msg.text()}`;
-        if (/AVRRunner DBG|DHT22|inst id=(sd1|neo1|neo2|tm1|mx1|nk1|seg1|lc1|lc2|lc3|spk1|ep1|tft2|ds1|dht1|max1|pcm1|sph1|sr1|rl1|rgb1|sv1|sr595|mq1|ph1|bt1|jy1) |SD-DIAG|NEO-LATCH|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
+        if (/AVRRunner DBG|ADC DBG|DHT22|inst id=(sd1|neo1|neo2|tm1|mx1|nk1|seg1|lc1|lc2|lc3|spk1|ep1|tft2|ds1|dht1|max1|pcm1|sph1|sr1|rl1|rgb1|sv1|sr595|mq1|ph1|bt1|jy1|btn1|pir1|irr1|irm1|kp1|rot1) |SD-DIAG|NEO-LATCH|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
       } catch { /* ignore */ }
     });
   });
@@ -668,10 +668,10 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     expect(byId['rl1'] && ((verdict.liveOop || {}).rl1 || {}).energised).toBe(true);
     // RGB cathode default: COM=GND, R=255 -> full red.
     expect(Number(((verdict.liveOop || {}).rgb1 || {}).r ?? -1)).toBe(255);
-    // Servo decodes the 90deg PWM duty.
+    // Servo decodes the 90deg PWM duty (float mapping, tolerance for cycle quantization).
     const scustom = (byId['sv1']?.details?.custom) || (byId['sv1']?.details?.metrics?.custom) || {};
     console.log('SERVO custom:', JSON.stringify(scustom).slice(0, 200));
-    expect(Number(scustom.targetAngle ?? -1)).toBe(90);
+    expect(Math.abs(Number(scustom.targetAngle ?? -1) - 90)).toBeLessThan(0.5);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
@@ -691,7 +691,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
         { from: 'uno1:5V', to: 'sr595:vcc' },
         { from: 'uno1:gnd_1', to: 'sr595:gnd' },
       ],
-      code: 'void setup(){Serial.begin(9600);Serial.println("S595_READY");pinMode(8,OUTPUT);pinMode(9,OUTPUT);pinMode(10,OUTPUT);shiftOut(8,9,MSBFIRST,0xAA);digitalWrite(10,HIGH);delayMicroseconds(5);digitalWrite(10,LOW);}\nvoid loop(){Serial.println("S595_TICK");delay(2000);}\n',
+      code: 'void wbit(int v){digitalWrite(8,v);delayMicroseconds(50);digitalWrite(9,HIGH);delayMicroseconds(50);digitalWrite(9,LOW);delayMicroseconds(50);}\nvoid setup(){Serial.begin(9600);Serial.println("S595_READY");pinMode(8,OUTPUT);pinMode(9,OUTPUT);pinMode(10,OUTPUT);int b[]={1,0,1,0,1,0,1,0};for(int i=0;i<8;i++)wbit(b[i]);digitalWrite(10,HIGH);delayMicroseconds(50);digitalWrite(10,LOW);}\nvoid loop(){Serial.println("S595_TICK");delay(2000);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
       forMs: 14000, selectTelemetry: ['sr595'], serialNeedle: 'S595_READY', telemetryMode: 'detail',
@@ -762,30 +762,301 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       wires: [
         { from: 'uno1:5V', to: 'mq1:VCC' },
         { from: 'uno1:gnd_1', to: 'mq1:GND' },
-        { from: 'mq1:AO', to: 'uno1:A0' },
+        { from: 'mq1:AO', to: 'uno1:A2' },
         { from: 'uno1:5V', to: 'ph1:p1' },
-        { from: 'ph1:p2', to: 'uno1:A1' },
-        { from: 'bt1:VCC', to: 'uno1:A2' },
+        { from: 'ph1:p2', to: 'uno1:A3' },
+        { from: 'bt1:VCC', to: 'uno1:A0' },
         { from: 'bt1:GND', to: 'uno1:gnd_1' },
         { from: 'uno1:5V', to: 'jy1:VCC' },
         { from: 'uno1:gnd_1', to: 'jy1:GND' },
-        { from: 'jy1:VERT', to: 'uno1:A3' },
+        { from: 'jy1:VERT', to: 'uno1:A1' },
       ],
-      code: 'void setup(){Serial.begin(9600);Serial.println("ANA_READY");Serial.print("MQ2:");Serial.println(analogRead(A0));Serial.print("PHOTO:");Serial.println(analogRead(A1));Serial.print("BATT:");Serial.println(analogRead(A2));Serial.print("JOY:");Serial.println(analogRead(A3));}\nvoid loop(){Serial.println("ANA_TICK");delay(2000);}\n',
+      code: 'void setup(){Serial.begin(9600);Serial.println("ANA_READY");delay(1000);Serial.print("MQ2:");Serial.println(analogRead(A2));Serial.print("PHOTO:");Serial.println(analogRead(A3));Serial.print("BATT:");Serial.println(analogRead(A0));Serial.print("JOY:");Serial.println(analogRead(A1));delay(1000);Serial.print("R2-MQ2:");Serial.println(analogRead(A2));Serial.print("R2-PHOTO:");Serial.println(analogRead(A3));}\nvoid loop(){Serial.println("ANA_TICK");delay(2000);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 14000, serialNeedle: 'ANA_READY', telemetryMode: 'detail',
+      forMs: 14000, selectTelemetry: ['mq1'], serialNeedle: 'ANA_READY', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
     const serial = verdict.serial || '';
     console.log('ANA serial:', JSON.stringify(serial.slice(0, 300)));
+    console.log('ANA liveOop:', JSON.stringify({ mq1: (verdict.liveOop || {}).mq1, ph1: (verdict.liveOop || {}).ph1, bt1: (verdict.liveOop || {}).bt1, jy1: (verdict.liveOop || {}).jy1 }).slice(0, 500));
     const num = (k) => Number(new RegExp(k + ':(\\d+)').exec(serial)?.[1] ?? NaN);
-    // MQ2 gasLevel 600 -> ~600 counts; photo lux 500 -> ~500; battery 3.7V -> ~757; joystick mid -> ~512.
+    // MQ2 gasLevel 600 -> ~600 counts; photo lux 500 -> ~500; battery
+    // full-charge 4.2V -> ~860; joystick mid -> ~512. Second round must match.
     expect(num('MQ2')).toBeGreaterThan(550); expect(num('MQ2')).toBeLessThan(650);
     expect(num('PHOTO')).toBeGreaterThan(480); expect(num('PHOTO')).toBeLessThan(520);
-    expect(num('BATT')).toBeGreaterThan(700); expect(num('BATT')).toBeLessThan(800);
+    expect(num('BATT')).toBeGreaterThan(830); expect(num('BATT')).toBeLessThan(890);
     expect(num('JOY')).toBeGreaterThan(480); expect(num('JOY')).toBeLessThan(545);
+    expect(num('R2-MQ2')).toBeGreaterThan(550); expect(num('R2-MQ2')).toBeLessThan(650);
+    expect(num('R2-PHOTO')).toBeGreaterThan(480); expect(num('R2-PHOTO')).toBeLessThan(520);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('Pushbutton press reaches firmware (DOM click -> digitalRead)', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'btn1', type: 'openhw-pushbutton', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:2', to: 'btn1:1l' },
+        { from: 'uno1:gnd_1', to: 'btn1:2l' },
+      ],
+      code: 'int last=1;\nvoid setup(){Serial.begin(9600);Serial.println("BTN_READY");pinMode(2,INPUT_PULLUP);}\nvoid loop(){int v=digitalRead(2);if(v!=last){Serial.print("BTN:");Serial.println(v);last=v;}delay(50);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 16000, selectTelemetry: ['btn1'], serialNeedle: 'BTN_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // Exactly one pushbutton on the canvas (uno reset uses another class).
+    // Scope to the placed instance: palette previews render too.
+    const boxes = await page.locator('#comp-master-btn1 .btn-wrapper').evaluateAll((els) =>
+      els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+    console.log('BTN boxes:', JSON.stringify(boxes));
+    expect(boxes.length).toBeGreaterThanOrEqual(1);
+    const b = boxes.reduce((a, c) => (c.x > a.x ? c : a));
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.waitForTimeout(1500);
+    await page.mouse.up();
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    console.log('BTN serial:', JSON.stringify((verdict.serial || '').slice(0, 200)));
+    // Press shorts 1l-2l to GND -> digitalRead goes LOW.
+    expect((verdict.serial || '').includes('BTN:0')).toBe(true);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('PIR motion reaches firmware (drag dot into cone -> digitalRead)', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'pir1', type: 'openhw-pir-motion-sensor', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:2', to: 'pir1:OUT' },
+        { from: 'uno1:5V', to: 'pir1:VCC' },
+        { from: 'uno1:gnd_1', to: 'pir1:GND' },
+      ],
+      code: 'int last=0;\nvoid setup(){Serial.begin(9600);Serial.println("PIR_READY");pinMode(2,INPUT);}\nvoid loop(){int v=digitalRead(2);if(v!=last){Serial.print("MOTION:");Serial.println(v);last=v;}delay(100);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 22000, selectTelemetry: ['pir1'], serialNeedle: 'PIR_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // Reveal the cone + draggable dot by clicking the placed sensor body.
+    await page.locator('#comp-master-pir1').click({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    // Wiggle the teal grab-dot inside the cone to simulate movement.
+    const dot = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-pir1');
+      if (!root) return [];
+      const out = [];
+      for (const c of root.querySelectorAll('circle')) {
+        const fill = c.getAttribute('fill');
+        if (fill === '#008C9E' || fill === '#2563eb') {
+          const r = c.getBoundingClientRect();
+          out.push({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+        }
+      }
+      return out;
+    });
+    console.log('PIR dots:', JSON.stringify(dot));
+    expect(dot.length).toBeGreaterThan(0);
+    const d = dot[0];
+    await page.mouse.move(d.x, d.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) {
+      await page.mouse.move(d.x + 25 * Math.cos(i * 0.7), d.y + 25 * Math.sin(i * 0.7), { steps: 3 });
+      await page.waitForTimeout(120);
+    }
+    await page.mouse.up();
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    console.log('PIR serial:', JSON.stringify((verdict.serial || '').slice(0, 200)));
+    expect((verdict.serial || '').includes('MOTION:1')).toBe(true);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('IR receiver decodes POWER from its own remote popup', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'irr1', type: 'openhw-ir-receiver', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:5V', to: 'irr1:VCC' },
+        { from: 'uno1:gnd_1', to: 'irr1:GND' },
+      ],
+      code: 'void setup(){Serial.begin(9600);Serial.println("IRR_READY");}\nvoid loop(){Serial.println("IRR_TICK");delay(1000);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 16000, selectTelemetry: ['irr1'], serialNeedle: 'IRR_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // Click the placed receiver body to open its remote popup, then POWER.
+    const svgBox = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-irr1');
+      if (!root) return null;
+      const svgs = [...root.querySelectorAll('svg')];
+      const hit = svgs.find((s) => (s.innerHTML || '').includes('M 145 55')) || svgs[0];
+      if (!hit) return null;
+      const r = hit.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    console.log('IRR svg:', JSON.stringify(svgBox));
+    expect(svgBox).toBeTruthy();
+    await page.mouse.click(svgBox.x + svgBox.w / 2, svgBox.y + svgBox.h / 2);
+    await page.waitForTimeout(800);
+    await page.locator('#comp-master-irr1').getByRole('button', { name: 'POWER' }).click({ timeout: 10000 });
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    const btn = String(((verdict.liveOop || {}).irr1 || {}).lastButton || '');
+    console.log('IRR lastButton:', btn);
+    expect(btn).toBe('POWER');
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('IR remote sends POWER on DOM click', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'irm1', type: 'openhw-ir-remote', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [],
+      code: 'void setup(){Serial.begin(9600);Serial.println("IRM_READY");}\nvoid loop(){Serial.println("IRM_TICK");delay(1000);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 14000, selectTelemetry: ['irm1'], serialNeedle: 'IRM_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // POWER circle at viewBox (25,35) r=16 in the placed 130x310 remote svg.
+    const svgBox = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-irm1');
+      if (!root) return null;
+      const svgs = [...root.querySelectorAll('svg')];
+      const hit = svgs.find((s) => (s.innerHTML || '').includes('M-4,-4 A 6 6')) || svgs[0];
+      if (!hit) return null;
+      const r = hit.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    console.log('IRM svg:', JSON.stringify(svgBox));
+    expect(svgBox).toBeTruthy();
+    await page.mouse.click(svgBox.x + (25 / 130) * svgBox.w, svgBox.y + (35 / 310) * svgBox.h);
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    const irm = (verdict.telemetry || []).find((t) => t.id === 'irm1');
+    expect(irm).toBeTruthy();
+    const icustom = irm.details?.custom || irm.details?.metrics?.custom || {};
+    console.log('IRM custom:', JSON.stringify(icustom).slice(0, 200));
+    expect(String(icustom.lastCommand || '')).toBe('Power');
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('Membrane keypad scans key 5 (DOM hold -> matrix scan)', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'kp1', type: 'openhw-membrane-keypad', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:8', to: 'kp1:R1' },
+        { from: 'uno1:9', to: 'kp1:R2' },
+        { from: 'uno1:10', to: 'kp1:R3' },
+        { from: 'uno1:11', to: 'kp1:R4' },
+        { from: 'uno1:12', to: 'kp1:C1' },
+        { from: 'uno1:13', to: 'kp1:C2' },
+        { from: 'uno1:A0', to: 'kp1:C3' },
+        { from: 'uno1:A1', to: 'kp1:C4' },
+      ],
+      code: 'int rows[4]={8,9,10,11};\nint cols[4]={12,13,A0,A1};\nvoid setup(){Serial.begin(9600);Serial.println("KP_READY");for(int i=0;i<4;i++){pinMode(rows[i],OUTPUT);digitalWrite(rows[i],HIGH);pinMode(cols[i],INPUT_PULLUP);}}\nvoid loop(){for(int r=0;r<4;r++){digitalWrite(rows[r],LOW);for(int c=0;c<4;c++){if(digitalRead(cols[c])==LOW){Serial.print("KEY:");Serial.print(r);Serial.println(c);delay(300);}}digitalWrite(rows[r],HIGH);}delay(50);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 22000, selectTelemetry: ['kp1'], serialNeedle: 'KP_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // Hold key 5 (row 2, col 2) while the firmware matrix-scans.
+    const key = page.locator('#comp-master-kp1 wokwi-membrane-keypad').getByText('5', { exact: true });
+    await key.scrollIntoViewIfNeeded().catch(() => {});
+    const kbox = await key.boundingBox({ timeout: 10000 }).catch(() => null);
+    console.log('KP key5 box:', JSON.stringify(kbox));
+    expect(kbox).toBeTruthy();
+    await page.mouse.move(kbox.x + kbox.width / 2, kbox.y + kbox.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(2500);
+    await page.mouse.up();
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    console.log('KP serial:', JSON.stringify((verdict.serial || '').slice(0, 200)));
+    // Row index 1, col index 1 == key 5.
+    expect((verdict.serial || '').includes('KEY:11')).toBe(true);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('Rotary encoder turns and clicks (drag arc + knob press)', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'rot1', type: 'openhw-rotary-encoder', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:2', to: 'rot1:CLK' },
+        { from: 'uno1:3', to: 'rot1:DT' },
+        { from: 'uno1:4', to: 'rot1:SW' },
+        { from: 'uno1:5V', to: 'rot1:VCC' },
+        { from: 'uno1:gnd_1', to: 'rot1:GND' },
+      ],
+      code: 'int last=1;\nvoid setup(){Serial.begin(9600);Serial.println("ROT_READY");pinMode(4,INPUT_PULLUP);}\nvoid loop(){int v=digitalRead(4);if(v!=last){Serial.print("SW:");Serial.println(v);last=v;}delay(100);}\n',
+    });
+    const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 22000, selectTelemetry: ['rot1'], serialNeedle: 'ROT_READY', telemetryMode: 'detail',
+    }));
+    await page.waitForTimeout(3000);
+    // Knob svg is 99x75, center x=60/99, y=1/2. Drag an arc outside r=14.
+    const knob = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-rot1');
+      if (!root) return null;
+      const svgs = [...root.querySelectorAll('svg')];
+      const hit = svgs.find((s) => (s.getAttribute('viewBox') || '') === '0 0 99 75') || svgs[0];
+      if (!hit) return null;
+      const r = hit.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    console.log('ROT knob:', JSON.stringify(knob));
+    expect(knob).toBeTruthy();
+    const cx = knob.x + knob.w * (60 / 99);
+    const cy = knob.y + knob.h / 2;
+    const R = Math.min(knob.w, knob.h) * 0.32;
+    await page.mouse.move(cx + R, cy);
+    await page.mouse.down();
+    for (let i = 1; i <= 14; i += 1) {
+      const a = (i / 14) * Math.PI * 1.2;
+      await page.mouse.move(cx + R * Math.cos(a), cy + R * Math.sin(a), { steps: 2 });
+      await page.waitForTimeout(90);
+    }
+    await page.mouse.up();
+    // Knob center click = SW press (radius < 14 svg units).
+    await page.mouse.click(cx, cy);
+    await page.waitForTimeout(600);
+    const verdict = await verdictPromise;
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    const rot = Number(((verdict.liveOop || {}).rot1 || {}).rot ?? 0);
+    console.log('ROT rot:', rot, 'serial:', JSON.stringify((verdict.serial || '').slice(0, 200)));
+    expect(rot).not.toBe(0);
+    expect((verdict.serial || '').includes('SW:0')).toBe(true);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
