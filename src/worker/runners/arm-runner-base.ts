@@ -300,16 +300,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
             // Step-counted callbacks (_scheduleBoardCycles service): due
             // callbacks fire in FIFO order right after the engine advanced,
             // so component timing tracks simulated steps, not wall clocks.
-            try {
-                const due: Array<() => void> = [];
-                this.schedQueue = this.schedQueue.filter((item) => {
-                    if (item.target <= this.simCycleCount) { due.push(item.cb); return false; }
-                    return true;
-                });
-                for (const cb of due) {
-                    try { cb(); } catch { /* never break tick */ }
-                }
-            } catch { /* scheduler never breaks tick */ }
+            try { this.drainDueCallbacks(); } catch { /* scheduler never breaks tick */ }
             // Bidirectional GPIO: sample external inputs (buttons, sensors,
             // pull-ups) into the engine, then publish engine-driven outputs
             // back out. Push-model engines (stm32 on('change') hooks) already
@@ -624,6 +615,9 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 if (!(inst as any)._boardCyclesNow) {
                     (inst as any)._boardCyclesNow = () => this.simCycleCount;
                 }
+                if (!(inst as any)._boardCyclesPerUs) {
+                    (inst as any)._boardCyclesPerUs = () => this.cyclesPerMicrosecond();
+                }
                 if (!(inst as any)._boardNetOf) {
                     (inst as any)._boardNetOf = (componentPin: string): string | null => {
                         try { return this.boardPinForComponentPin(cDef.id, componentPin); } catch { return null; }
@@ -658,7 +652,12 @@ export abstract class ArmRunnerBase implements BoardRunner {
             );
         } catch { /* pin publish never breaks propagation */ }
         const boardInst = this.instances.get(this.boardId);
-        try { boardInst?.onPinStateChange(pinId, !!isHigh, 0); } catch { /* ignore */ }
+        // Cycle stamp: pass the live board counter (NOT 0) so components
+        // can derive pulse widths / duty from deltas (AVR passes cpu.cycles;
+        // ARM/retro pass simCycleCount in the engine's step domain; the
+        // _boardCyclesPerUs service gives the divisor).
+        const stamp = Math.floor(this.simCycleCount);
+        try { boardInst?.onPinStateChange(pinId, !!isHigh, stamp); } catch { /* ignore */ }
         // Component fan-out: LEDs light, buttons/sensors react, protocol
         // handlers (I2C/SPI/UART/PWM/OneWire) get their signal callbacks.
         const voltage = isHigh ? railV : 0.0;
@@ -669,7 +668,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
                     (endpoint.inst as any).pins[endpoint.pinId].isHigh = !!isHigh;
                     (endpoint.inst as any).pins[endpoint.pinId].voltage = voltage;
                 }
-                endpoint.inst.onPinStateChange(endpoint.pinId, !!isHigh, 0);
+                endpoint.inst.onPinStateChange(endpoint.pinId, !!isHigh, stamp);
             } catch { /* one bad component never breaks the fan-out */ }
         }
     }
@@ -679,6 +678,15 @@ export abstract class ArmRunnerBase implements BoardRunner {
      * Overridden per runner family via board-type sniff (no extra option). */
     protected gpioRailV(): number {
         return 3.3;
+    }
+
+    /** Board steps (instructions/cycles) per microsecond in the
+     * simCycleCount domain. Default 16 (AVR 16MHz). Runners with a
+     * different core clock override (F1 = sysclk, typically 72).
+     * Consumed via the _boardCyclesPerUs component service so
+     * microsecond-scale protocols (DHT, OneWire) scale correctly. */
+    protected cyclesPerMicrosecond(): number {
+        return 16;
     }
 
     /** Board-pin aliases for netlist lookup (D13/13, GPIOx/GPx, PA9/A9…). */
@@ -942,6 +950,18 @@ export abstract class ArmRunnerBase implements BoardRunner {
                         seen.add(end);
                         const inst = this.instances.get(compId);
                         if (!inst || typeof (inst as any).getPinVoltage !== 'function') continue;
+                        // Bidirectional one-wire models (DHT-22 et al., marked
+                        // by isTransactionActive) drive the engine directly via
+                        // _driveBoardPin at signal time; the idle pull-up is
+                        // engine-side. Pushing the component pin voltage here
+                        // would force a STALE level (e.g. the 0V left by the
+                        // firmware-LOW fan-out) over the release/HIGH the
+                        // model waits for, deadlocking the transaction
+                        // (observed: F1 DHT stuck in WAKE_WAIT, edges=1).
+                        // Rails/buttons on other nets are unaffected.
+                        try {
+                            if (typeof (inst as any).isTransactionActive === 'function') continue;
+                        } catch { /* fall through to legacy push */ }
                         let voltage = 0;
                         try { voltage = Number((inst as any).getPinVoltage(pinId)) || 0; } catch { continue; }
                         // Find the board pin on the same net.
@@ -1028,6 +1048,20 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 try { this.dispatchOptionalProtocols(pinId, high); } catch { /* ignore */ }
             }
         } catch { /* output poll never breaks the tick */ }
+    }
+
+    /** Fire due _scheduleBoardCycles callbacks (FIFO). Extracted so
+     * fine-slicing step paths (DHT bit slots, softserial bits) can drain
+     * mid-tick instead of quantizing microsecond timing to whole ticks. */
+    protected drainDueCallbacks(): void {
+        const due: Array<() => void> = [];
+        this.schedQueue = this.schedQueue.filter((item) => {
+            if (item.target <= this.simCycleCount) { due.push(item.cb); return false; }
+            return true;
+        });
+        for (const cb of due) {
+            try { cb(); } catch { /* never break tick */ }
+        }
     }
 
     /** Board pins worth polling (manifest order; cached per runner). */

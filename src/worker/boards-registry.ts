@@ -136,11 +136,21 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     limits: NO_LIMITS,
   },
   {
+    family: 'esp32_cam',
+    match: ['esp32-cam', 'esp32_cam', 'esp32cam'],
+    railVoltage: 3.3,
+    engine: 'esp32-emu',
+    runner: 'runners/esp32-runner.ts',
+    capabilities: ['digital-gpio-input', 'analog-adc', 'uart', 'onewire', 'pwm', 'i2c-target', 'spi-target', 'i2s', 'twai', 'camera'],
+    firmware: ['arduino-sketch', 'micropython-script'],
+    limits: [{ code: 'no-gpio-output-readback', detail: 'SAB proxy exposes setPinInput only; firmware-driven outputs cannot light components.' }],
+  },
+  {
     family: 'esp32',
     match: ['esp32'],
-    // openhw-esp32-cam is a camera *component* shell, not a board —
-    // without this it claims the esp32-emu engine and dies on
-    // "Unknown chip: esp32-cam", taking the UNO run down with it.
+    // openhw-esp32-cam resolves to the esp32_cam family above (not here):
+    // the runner boots it on the esp32-cam board preset (4MB flash + 4MB
+    // PSRAM) instead of dying on "Unknown chip: esp32-cam".
     exclude: ['-cam'],
     railVoltage: 3.3,
     engine: 'esp32-emu',

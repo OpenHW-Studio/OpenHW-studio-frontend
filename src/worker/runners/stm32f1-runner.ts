@@ -124,15 +124,21 @@ export class Stm32f1Runner extends ArmRunnerBase {
     // SoftwareSerial soft(PB6, PB7): RX=PB6, TX=PB7). Mirrors the AVRRunner
     // edge decoder (observeSoftSerialTx/processSoftSerialDecode/
     // emitSoftSerialByte/getSoftSerialBitCycles) with one adaptation: engine
-    // GPIO change events are batch-quantized (≈20K retired instructions per
-    // drain, ~2.7 nominal 9600-baud bits at 72MHz), so change events only ARM
-    // the observer. All decode comes from sub-bit polling: while armed,
-    // stepBudget slices the tick budget into ≤bit/8 instruction steps and
-    // samples PB7 after each slice (time base = retired-instruction counter,
-    // exact in the engine domain). Bit period self-calibrates from
+    // GPIO change events are batch-quantized, so change events only ARM the
+    // observer (with an exact-phase stamp when the engine provides pin-event
+    // tcounts — see softSerialArm). All decode comes from sub-bit polling:
+    // while armed, stepBudget slices the tick budget into ≤bit/8 instruction
+    // steps and samples PB7 after each slice (time base = retired-instruction
+    // counter, exact in the engine domain). Bit period self-calibrates from
     // consecutive validated frame starts (Δ/10 for back-to-back bytes), so
     // instruction-vs-cycle skew (CPI≠1) cancels out. Decoded bytes publish
     // on the 'softserial' serial source (same contract as AVR).
+    // Timer-ISR latency gate (timFineEngaged/stepTimFine below): timer
+    // per-bit ISRs (STM32duino SoftwareSerial = TIMER update IRQ per bit)
+    // can only materialize ≤1 ISR per engine batch — a 20K batch stretches
+    // each bit to ≥20K instr (proven: 12 edges where 97 belong). While any
+    // general-purpose timer runs with its update IRQ armed, the whole tick
+    // budget steps in ~2K slices so ISR latency stays ≤0.27 bit.
     private readonly softSerialTxPort = 'B';
     private readonly softSerialTxPinNum = 7;
     private readonly softSerialTxPinId = 'PB7';
@@ -151,6 +157,12 @@ export class Stm32f1Runner extends ArmRunnerBase {
     private softSerialBitInstr = 7500;
     private softSerialLastStartAt: number | null = null;
     private softSerialTxHandle: any = null;
+    /** Last step slice size (tracks which arm tier is safe; see arm). */
+    private lastStepSlice = 20000;
+    /** Deferred SoftSerial arm stamp (set in the pin callback, consumed
+     * after the clock advance — see softSerialFlushPendingArm). NaN when
+     * the engine build omits stamps (legacy tiers apply). */
+    private softSerialPendingArm: number | null = null;
 
     /** Wire engine bus callbacks into the shared bridges (runner-owned, AVR-adapter pattern). */
     private wireBusBridges(): void {
@@ -185,41 +197,152 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // read phase (the I2cDevice repeated-start path drains the
                 // pending pointer write and prefills the read queue).
                 let busIdle = true;
+                // Bounded early prefill (first-byte + BTF-tail fix):
+                //  - write drain (pointer known): PEEK the model register
+                //    image (pure onI2CReadRequest — no model stream
+                //    disturbance) and arm the engine queue BEFORE the next
+                //    batch executes. Adjacent-batch reads then consume model
+                //    bytes instead of sink zeros (observed: prefilled 0x55
+                //    never reached DR on the first read phase). NOTE: peeking
+                //    via br.read() here would be WRONG — the model's stream
+                //    only rebuilds at read-START, so write-phase reads serve
+                //    stale leftovers (the UT=0x55FF shape).
+                //  - read-START drain: clearRx + re-sync the same bounded
+                //    burst from the rebuilt model stream (pointer may have
+                //    moved within the flush; drain order is chronological).
+                //  - STOP / write-START drain: clearRx — no stale leftovers
+                //    to poison the next transfer's address-phase preload
+                //    (observed: stale bytes wedge the following N=6 BTF
+                //    tail into a timeout, n=0).
+                //  - top-up while a read is active: keep ~BURST outstanding
+                //    so the engine's BTF heuristic (arms when queue ≤3)
+                //    tracks the HAL tail. A 32-deep burst over-prefills and
+                //    the tail never arms (proven: 4/6 bytes then stall to
+                //    timeout). Same-batch write+read stays unservable
+                //    reactively (documented engine limitation); HAL
+                //    flag-polling spans batches in practice.
+                let readActive = false;
+                let injected = 0;   // bytes injected since last clear
+                let readEvents = 0; // I2cRead events drained since last clear
+                let lastAddr = 0;
+                let pointerBytes: number[] = [];
+                const BURST = 4;
+                const hasClear = typeof mcu.i2c1.clearRx === 'function';
+                // Pure model peek (no stream disturbance): first claimant in
+                // bridge order (insertion order) offering onI2CReadRequest.
+                const peekModel = (addr7: number, pointer: number, count: number): number[] => {
+                    try {
+                        for (const inst of this.instances.values()) {
+                            if (typeof (inst as any)?.onI2CStart !== 'function') continue;
+                            if (typeof (inst as any)?.onI2CReadRequest !== 'function') continue;
+                            const id = String((inst as any)?.id || '');
+                            const attrs = this.compAttrById?.get(id) || {};
+                            const cands = [
+                                (inst as any)?.i2cAddr,
+                                typeof (inst as any)?.getI2CAddress === 'function' ? (inst as any).getI2CAddress() : NaN,
+                                attrs?.address, attrs?.i2cAddress, attrs?.addr,
+                            ];
+                            let match = false;
+                            for (const c of cands) {
+                                const v = Number(c);
+                                if (!Number.isFinite(v)) continue;
+                                match = ((v & 0x7f) === (addr7 & 0x7f));
+                                break;
+                            }
+                            if (!match) continue;
+                            const data = (inst as any).onI2CReadRequest(pointer & 0xff, count) || [];
+                            return (Array.isArray(data) ? data : []).slice(0, count).map((b) => Number(b) & 0xff);
+                        }
+                    } catch { /* peek never breaks the bus */ }
+                    return [];
+                };
+                const safeClear = () => {
+                    if (!hasClear) return;
+                    try { mcu.i2c1.clearRx(); } catch { /* ignore */ }
+                    injected = 0; readEvents = 0;
+                };
+                const topUp = () => {
+                    try {
+                        // -1: the address-phase preload stages one byte
+                        // silently (no I2cRead event for it).
+                        let outstanding = injected - readEvents - 1;
+                        if (outstanding < 0) outstanding = 0;
+                        while (outstanding < BURST) {
+                            mcu.i2c1.injectRx([br.read() & 0xff]);
+                            injected++; outstanding++;
+                        }
+                    } catch { /* prefill never breaks the bus */ }
+                };
+                const armBurst = () => {
+                    try {
+                        safeClear();
+                        topUp();
+                    } catch { /* prefill never breaks the bus */ }
+                };
                 try { mcu.i2c1.onStart = (addr: number) => { try {
                     const readPhase = !busIdle;
                     br.start(Number(addr) & 0x7f, readPhase);
                     busIdle = false;
-                    // Deterministic prefill: clear the engine queue, then
-                    // mirror up to 32 bytes from the just-drained model
-                    // pointer state. Atomic at read-START (before any DR
-                    // read of this phase), so every transaction is exact
-                    // regardless of batch timing. No-op without clearRx.
-                    if (readPhase && typeof mcu.i2c1.clearRx === 'function') {
+                    lastAddr = Number(addr) & 0x7f;
+                    if (!readPhase) {
+                        // Write phase: kill previous leftovers, stay out of
+                        // the model's stream (it rebuilds at read-START).
+                        readActive = false;
+                        pointerBytes = [];
+                        safeClear();
+                    } else if (hasClear) {
+                        readActive = true;
+                        armBurst();
+                    } else {
+                        // Legacy facade without clearRx: unbounded prefill
+                        // (BTF-tail caveat applies).
+                        readActive = true;
                         try {
-                            mcu.i2c1.clearRx();
                             const burst: number[] = [];
                             for (let i = 0; i < 32; i++) burst.push(br.read() & 0xff);
                             try { mcu.i2c1.injectRx(burst); } catch { /* ignore */ }
                         } catch { /* prefill never breaks start */ }
                     }
                 } catch { /* ignore */ } }; } catch { /* ignore */ }
-                try { mcu.i2c1.onWrite = (byte: number) => { try { br.write(Number(byte) & 0xff); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try { mcu.i2c1.onWrite = (byte: number) => { try {
+                    br.write(Number(byte) & 0xff);
+                    // Early arm from the just-drained pointer: the read half
+                    // usually executes in a later batch, so this lands first.
+                    // PEEK (pure compute) — never br.read() here, the model
+                    // stream only rebuilds at read-START.
+                    if (!readActive && hasClear) {
+                        pointerBytes.push(Number(byte) & 0xff);
+                        if (pointerBytes.length >= 1) {
+                            const peek = peekModel(lastAddr, pointerBytes[0], BURST);
+                            if (peek.length > 0) {
+                                try {
+                                    safeClear();
+                                    mcu.i2c1.injectRx(peek);
+                                    injected = peek.length;
+                                } catch { /* prefill never breaks the bus */ }
+                            }
+                        }
+                    }
+                } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try {
                     // NOTE: the engine's _read() calls onRead but IGNORES
                     // its return value — the MCU consumes the pre-queued
-                    // injectRx FIFO. Fill it synchronously on every read
-                    // edge (direct wasm call, lands before the engine
-                    // consumes); the bridge serves the model register
+                    // injectRx FIFO. Count consumption and top the bounded
+                    // burst back up (direct wasm call, lands before the next
+                    // batch executes); the bridge serves the model register
                     // stream (pointer was set in the write phase).
                     mcu.i2c1.onRead = () => {
                         try {
-                            const b = br.read() & 0xff;
-                            try { mcu.i2c1.injectRx([b]); } catch { /* ignore */ }
-                            return b;
+                            readEvents++;
+                            if (readActive && hasClear) topUp();
+                            return 0xff;
                         } catch { return 0xff; }
                     };
                 } catch { /* ignore */ }
-                try { mcu.i2c1.onStop = () => { try { br.stop(); busIdle = true; } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try { mcu.i2c1.onStop = () => { try {
+                    br.stop(); busIdle = true; readActive = false;
+                    safeClear();
+                } catch { /* ignore */ } }; } catch { /* ignore */ }
             }
             // SPI: per-DR-write transfers grouped by 2ms sim gaps (mirrors
             // AVR's framing); MISO responses queue immediately (timing
@@ -366,8 +489,6 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         }
                     }
                     if (oledAddrs.length > 0 || sinkAddrs.length > 0) {
-                        // TEMP-DIAG (sink isolation — revert).
-                        try { console.log(`[F1Runner] SINK diag oled=${JSON.stringify(oledAddrs)} sink=${JSON.stringify(sinkAddrs)}`); } catch { /* ignore */ }
                         extDevices = {};
                         if (oledAddrs.length > 0) {
                             extDevices.i2c_oled = oledAddrs.slice(0, 4).map((address) => ({
@@ -404,19 +525,65 @@ export class Stm32f1Runner extends ArmRunnerBase {
             stepBudget(budget: number): number {
                 if (!self.mcu) return 0;
                 try {
+                    // Chunked coarse execute: 20K-instr chunks (the engine's
+                    // native batch size — zero extra core pressure) with a
+                    // scheduler drain + GPIO poll + fine-gate check between
+                    // chunks. A single 1M execute starves step-domain chains
+                    // for a whole tick (proven: DHT ACK stretched ~6ms, bits
+                    // collapse) and can't notice a mid-tick WAKE (the DHT
+                    // fine gate only re-evaluates per tick). 20K chunks bound
+                    // scheduler lag to ~280us; a WAKE mid-tick flips to
+                    // stepDhtFine for the remainder (512-instr slices for
+                    // the 55us sensor-response window). ~50 FFI/tick — far
+                    // from the 800+ starvation zone (see NOTE below).
                     // NOTE: small quanta were tried for MISO/RX timing
                     // (512-1024 inst slices) but starve the core (800+
                     // FFI calls/tick); single coarse execute + START
                     // prefill is the correct architecture instead.
+                    // (20K chunks preserve it: same native batches, only the
+                    // JS drain/poll runs between them.)
                     const n = Math.max(1, Math.floor(budget));
                     // SoftSerial TX observe: while armed, slice the budget
                     // into sub-bit steps and poll PB7 after each (the
                     // change-event path only arms — see softSerial fields).
                     if (self.softSerialArmed) return self.stepSoftSerialFine(n);
-                    const r = self.mcu.execute(n);
-                    const done = Number(r?.instCount ?? r?.totalSteps ?? budget) || 0;
-                    try { self.softSerialAdvanceClock(done); } catch { /* clock never breaks the tick */ }
-                    return done;
+                    // Timer-ISR latency gate: a running update-IRQ timer
+                    // needs sub-bit ISR latency (see timFineEngaged).
+                    if (self.timFineEngaged()) return self.stepTimFine(n);
+                    // DHT bit-slot gate: while a DHT-22 transaction is
+                    // active, 20K batches quantize the 28/70µs data slots
+                    // and the model's ACK schedule; slice + drain mid-tick
+                    // (see dhtFineEngaged/stepDhtFine).
+                    if (self.dhtFineEngaged()) return self.stepDhtFine(n);
+                    self.lastStepSlice = 20000;
+                    let coarseTotal = 0;
+                    let remaining = n;
+                    while (remaining > 0) {
+                        const c = Math.min(20000, remaining);
+                        let r: any = null;
+                        try { r = self.mcu.execute(c); } catch { break; }
+                        // Delta contract (see retiredDelta): the facade
+                        // reports cumulative instCount; the base adds our
+                        // return to simCycleCount, so accumulate retired.
+                        coarseTotal += self.retiredDelta(Number(r?.instCount), c);
+                        try { self.softSerialFlushPendingArm(); } catch { /* ignore */ }
+                        try { self.drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
+                        try { self.pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
+                        remaining -= c;
+                        if (r?.stopped) break;
+                        // Mid-tick WAKE: a DHT edge landed in this chunk —
+                        // hand the remainder to fine slicing now instead of
+                        // waiting for the next tick (the 55us ACK window
+                        // cannot survive a coarse remainder).
+                        try {
+                            if (remaining > 0 && self.dhtFineEngaged()) {
+                                try { self.stepDhtFine(remaining); } catch { /* ignore */ }
+                                remaining = 0;
+                                break;
+                            }
+                        } catch { /* gate never breaks stepping */ }
+                    }
+                    return Math.max(1, Math.floor(coarseTotal));
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
@@ -598,27 +765,34 @@ export class Stm32f1Runner extends ArmRunnerBase {
     private hookGpio(unsubs: Array<() => void>): void {
         if (!this.mcu?.gpio) return;
         // Watch the pins the Blue Pill exposes; publish changes into SAB.
-        const watch: Array<[string, number]> = [];
-        for (const n of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) watch.push(['A', n]);
+        const watch: Array<[string, number]> = [];        for (const n of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) watch.push(['A', n]);
         for (const n of [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) watch.push(['B', n]);
         for (const n of [13, 14, 15]) watch.push(['C', n]);
         const led = f1LedFor(this.chip);
         for (const [port, pin] of watch) {
             try {
                 const h = this.mcu.gpio.pin(port, pin);
-                const u = h.on('change', (high: boolean) => {
+                const u = h.on('change', (high: boolean, tcount?: number) => {
                     this.publishGpio(`P${port}${pin}`, !!high);
                     // SoftSerial TX arm (decode itself is poll-driven while
                     // armed — see softSerial fields): a driven falling edge
                     // on PB7 while idle means a start bit began somewhere in
                     // the last engine batch; arm and resync on the next
                     // validated frame. Coarse level tracks for edge sense.
+                    // With engine pin-event stamps the fall carries its exact
+                    // instruction count → exact-phase arm (no hunt).
                     try {
                         if (`P${port}${pin}` === this.softSerialTxPinId) {
                             const wasHigh = this.softSerialCoarseHigh;
                             this.softSerialCoarseHigh = !!high;
-                            if (!this.softSerialArmed && wasHigh && !high) {
-                                try { this.softSerialArm(); } catch { /* arm never breaks gpio */ }
+                            // Defer the arm past the clock advance (see
+                            // softSerialFlushPendingArm): the callback fires
+                            // inside the engine step, a full slice before
+                            // the observer clock accounts for it — arming
+                            // here would back-date from a stale clock.
+                            if (!this.softSerialArmed && wasHigh && !high
+                                && this.softSerialPendingArm === null) {
+                                this.softSerialPendingArm = Number(tcount);
                             }
                         }
                     } catch { /* observer never breaks gpio */ }
@@ -638,8 +812,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
     // slices driven by stepSoftSerialFine.
 
     /** Retired-instruction clock advance from a facade absolute counter. */
-    private softSerialAdvanceClock(abs: number): void {
-        const a = Math.floor(Number(abs));
+    private softSerialAdvanceClock(abs: number): void {        const a = Math.floor(Number(abs));
         if (!Number.isFinite(a) || a < 0) return;
         if (this.softSerialLastAbs < 0 || a < this.softSerialLastAbs) {
             // First sighting, or emulator recreated under us (reset zeroes
@@ -654,6 +827,26 @@ export class Stm32f1Runner extends ArmRunnerBase {
         }
     }
 
+    /** Facade absolute → per-call delta. execute()/step() report the
+     * cumulative retired count (probed: 1000 then 2000 for two
+     * execute(1000)s), but the base runLoop's `simCycleCount += steps`
+     * contract is DELTA (pico/retro return deltas; retro says so
+     * explicitly). Returning the absolute inflated simCycleCount
+     * quadratically and broke every step-domain delay (observed: DHT
+     * wakeUs 18M us, 7/9 reads nan). Same rebase rule as
+     * softSerialAdvanceClock, so the softserial clock is untouched —
+     * only the value returned to the base changes. */
+    private retiredDelta(abs: number, fallback: number): number {
+        const a = Math.floor(Number(abs));
+        if (Number.isFinite(a) && a >= 0 && this.softSerialLastAbs >= 0 && a >= this.softSerialLastAbs) {
+            const d = a - this.softSerialLastAbs;
+            if (d > 0) this.softSerialClock += d;
+            this.softSerialLastAbs = a;
+            return Math.max(1, d);
+        }
+        try { this.softSerialAdvanceClock(a); } catch { /* ignore */ }
+        return Math.max(1, Math.floor(Number(fallback)) || 1);
+    }
     private softSerialSysclkHz(): number {
         try {
             const hz = Number((this.mcu as any)?._emu?.rccSysclkHz?.());
@@ -666,7 +859,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
         return Math.max(64, Math.floor(this.softSerialSysclkHz() / Math.max(300, this.softSerialBaud)));
     }
 
-    private softSerialArm(): void {
+    private softSerialArm(edgeCount?: number): void {
         if (!this.mcu) return;
         this.softSerialArmed = true;
         this.softSerialReceiving = false;
@@ -679,6 +872,51 @@ export class Stm32f1Runner extends ArmRunnerBase {
         try {
             this.softSerialTxHandle = this.mcu?.gpio?.pin?.(this.softSerialTxPort, this.softSerialTxPinNum) || null;
         } catch { this.softSerialTxHandle = null; }
+        const bit = Math.max(64, this.softSerialBitInstr | 0);
+        const startNow = (startRel: number) => {
+            this.softSerialLastPollHigh = false;
+            this.softSerialLastActivity = startRel;
+            this.softSerialLastStartAt = null;
+            this.softSerialReceiving = true;
+            this.softSerialCurrentByte = 0;
+            this.softSerialSampleIndex = 0;
+            this.softSerialStartAt = startRel;
+            this.softSerialSampleAt = startRel + Math.max(64, this.softSerialBitInstr | 0) * 1.5;
+        };
+        const t = Math.floor(Number(edgeCount));
+        if (Number.isFinite(t) && t >= 0) {
+            // Tier 1 — stamped fall (engine pin-event tcount): measure the
+            // edge age in the ENGINE domain (instructionCountNow — the
+            // facade instCount skips IRQ-handler instructions, so mixing
+            // domains drifts under interrupt load) and receive this byte
+            // immediately at true phase. Batch-drain quantization alone
+            // shifts every frame (proven: first start t=11300 armed at
+            // clock=40000 → permanent hunt). The age guard (one chunk +
+            // margin) rejects stale/foreign stamps; older engine builds
+            // omit the stamp (tcount undefined → NaN → skip).
+            let wNow = NaN;
+            try {
+                const v = (this.mcu as any)?._emu?.instructionCountNow?.();
+                wNow = typeof v === 'bigint' ? Number(v) : Math.floor(Number(v));
+            } catch { /* ignore */ }
+            if (Number.isFinite(wNow)) {
+                const age = wNow - t;
+                if (age >= -1024 && age <= 24000) {
+                    startNow(this.softSerialClock - Math.max(0, age));
+                    return;
+                }
+            }
+        }
+        // Tier 2 — fine-slice arm (TIM-gated or armed stepping): the arming
+        // fall fired at most one slice ago, so back-date half a slice and
+        // receive immediately (error ≤0.14 nominal bit — inside margin).
+        if (this.lastStepSlice <= 4096) {
+            startNow(this.softSerialClock - Math.floor(this.lastStepSlice / 2));
+            return;
+        }
+        // Tier 3 — legacy coarse arm: the fall is up to a full batch old;
+        // back-dating would exceed margin, so init the level and hunt the
+        // next fall (previous behavior, unchanged).
         try {
             const lv = this.softSerialTxHandle?.read?.();
             if (lv === 0 || lv === 1) this.softSerialLastPollHigh = lv === 1;
@@ -690,6 +928,22 @@ export class Stm32f1Runner extends ArmRunnerBase {
         this.softSerialReceiving = false;
         this.softSerialSampleIndex = 0;
         this.softSerialCurrentByte = 0;
+        this.softSerialPendingArm = null;
+    }
+
+    /**
+     * Consume a deferred pin-change arm after the observer clock has
+     * accounted for the slice containing the edge (call sites: every step
+     * loop right after the clock advance, plus the coarse path). Arming
+     * inside the pin callback itself would align against a stale clock
+     * (one slice behind), shifting every frame by up to a slice.
+     */
+    private softSerialFlushPendingArm(): void {
+        if (this.softSerialArmed) { this.softSerialPendingArm = null; return; }
+        const t = this.softSerialPendingArm;
+        this.softSerialPendingArm = null;
+        if (t === null || t === undefined) return;
+        try { this.softSerialArm(t); } catch { /* arm never breaks stepping */ }
     }
 
     private softSerialEmitByte(value: number): void {
@@ -697,7 +951,74 @@ export class Stm32f1Runner extends ArmRunnerBase {
         try { this.emitTxByte(value & 0xff, 'softserial'); } catch { /* ignore */ }
     }
 
-    /** Fine-grained stepping while armed: sub-bit slices + PB7 poll. */
+    /**
+     * Timer-IRQ fine-step gate: true while any general-purpose timer runs
+     * with its update IRQ armed (CR1.CEN && DIER.UIE on TIM2/3/4). Polled
+     * once per tick (6 peripheral reads); timer per-bit ISRs need sub-bit
+     * delivery latency that 20K batches cannot give (see the field comment).
+     * No-op without the low-level emulator handle.
+     */
+    private timFineEngaged(): boolean {
+        try {
+            const emu = (this.mcu as any)?._emu;
+            if (!emu || typeof emu.periphRead !== 'function') return false;
+            for (const base of [0x40000000, 0x40000400, 0x40000800]) {
+                let cr1 = 0, dier = 0;
+                try { cr1 = emu.periphRead(base, 4) >>> 0; } catch { continue; }
+                if ((cr1 & 1) === 0) continue;
+                try { dier = emu.periphRead(base + 0x0c, 4) >>> 0; } catch { continue; }
+                if ((dier & 1) !== 0) return true;
+            }
+        } catch { /* gate never breaks stepping */ }
+        return false;
+    }
+
+    /**
+     * Fine stepping for timer-IRQ firmware: fixed ~2K slices (ISR latency
+     * ≤0.27 nominal 9600-baud bit) with the same retired-counter clock
+     * advance as the coarse path. No polling — the SoftSerial observer (or
+     * any pin watcher) still arms off change events; the slices just make
+     * those events and the underlying ISR delivery timely. Returns the
+     * retired delta (see retiredDelta).
+     */
+    private stepTimFine(budget: number): number {
+        const mcu = this.mcu;
+        if (!mcu) return 0;
+        let remaining = Math.max(1, Math.floor(budget));
+        const slice = 2048;
+        let guard = 0;
+        const maxSlices = 2048;
+        let total = 0;
+        this.lastStepSlice = slice;
+        while (remaining > 0 && guard++ < maxSlices) {
+            const s = Math.min(slice, remaining);
+            let r: any = null;
+            try { r = mcu.step(s); } catch { break; }
+            total += this.retiredDelta(Number(r?.instCount), s);
+            try { this.softSerialFlushPendingArm(); } catch { /* ignore */ }
+            // A mid-tick arm must poll for the REST of this tick too —
+            // otherwise the arming byte's samples collapse into one stale
+            // catch-up read at the next tick (proven: bits 0-4 sampled from
+            // a single level → garbage first byte, self-sync only after).
+            if (this.softSerialArmed) {
+                try { this.softSerialPoll(); } catch { /* poll never breaks stepping */ }
+            }
+            remaining -= s;
+            if (r?.stopped) break;
+        }
+        if (remaining > 0 && guard >= maxSlices) {
+            // Degenerate (giant budget): finish coarse so the sim cannot
+            // stall; timer latency degrades for this tick only.
+            try {
+                const r3 = mcu.execute(remaining);
+                total += this.retiredDelta(Number(r3?.instCount), remaining);
+            } catch { /* ignore */ }
+        }
+        return Math.max(1, Math.floor(total));
+    }
+
+    /** Fine-grained stepping while armed: sub-bit slices + PB7 poll.
+     * Returns the retired delta (see retiredDelta). */
     private stepSoftSerialFine(budget: number): number {
         const mcu = this.mcu;
         if (!mcu) { try { this.softSerialDisarm(); } catch { /* ignore */ } return 0; }
@@ -707,37 +1028,25 @@ export class Stm32f1Runner extends ArmRunnerBase {
         // misses edges. Calibration shrinks the slice as bitInstr settles.
         const bit = Math.max(64, this.softSerialBitInstr | 0);
         const slice = Math.max(256, Math.min(4096, Math.floor(bit / 8)));
+        this.lastStepSlice = slice;
         let guard = 0;
         const maxSlices = 4096;
+        let total = 0;
         while (remaining > 0 && guard++ < maxSlices) {
             const s = Math.min(slice, remaining);
             let r: any = null;
             try { r = mcu.step(s); } catch { break; }
-            const abs = Number(r?.instCount);
-            if (Number.isFinite(abs) && abs >= 0) {
-                if (this.softSerialLastAbs < 0 || abs < this.softSerialLastAbs) {
-                    this.softSerialLastAbs = Math.floor(abs);
-                } else {
-                    const d = Math.floor(abs) - this.softSerialLastAbs;
-                    if (d > 0) {
-                        this.softSerialClock += d;
-                        this.softSerialLastAbs = Math.floor(abs);
-                    }
-                }
-            } else {
-                // Counter unreadable: advance by requested slice (monotonic).
-                this.softSerialClock += s;
-            }
+            total += this.retiredDelta(Number(r?.instCount), s);
             remaining -= s;
             try { this.softSerialPoll(); } catch { /* poll never breaks stepping */ }
+            try { this.softSerialFlushPendingArm(); } catch { /* ignore */ }
             if (r?.stopped) break;
             if (!this.softSerialArmed) {
                 // Disarmed mid-budget (idle timeout): run the rest coarse.
                 if (remaining > 0) {
                     try {
                         const r2 = mcu.execute(remaining);
-                        const done = Number(r2?.instCount ?? remaining) || 0;
-                        try { this.softSerialAdvanceClock(done); } catch { /* ignore */ }
+                        total += this.retiredDelta(Number(r2?.instCount), remaining);
                     } catch { /* ignore */ }
                     remaining = 0;
                 }
@@ -749,12 +1058,155 @@ export class Stm32f1Runner extends ArmRunnerBase {
             // sim cannot stall; decode may gap for this tick only.
             try {
                 const r3 = mcu.execute(remaining);
-                const done = Number(r3?.instCount ?? remaining) || 0;
-                try { this.softSerialAdvanceClock(done); } catch { /* ignore */ }
+                total += this.retiredDelta(Number(r3?.instCount), remaining);
             } catch { /* ignore */ }
         }
-        // Mirror the coarse path's return shape (absolute retired count).
-        return this.softSerialLastAbs >= 0 ? this.softSerialLastAbs : Math.max(1, Math.floor(budget));
+        return Math.max(1, Math.floor(total));
+    }
+
+    // ---- DHT-22 bit-slot fine stepping (DHT agent handoff) ----
+    /** Board steps per microsecond: F1 sysclk (engine RCC, default 72M). */
+    protected override cyclesPerMicrosecond(): number {
+        try {
+            return Math.max(1, Math.floor(this.softSerialSysclkHz() / 1_000_000));
+        } catch { return 72; }
+    }
+
+    /** True while any DHT-22 component has an active transaction
+     * (WAKE negotiation, ACK, or bit send). The model exposes
+     * isTransactionActive(); anything else never engages. */
+    private dhtFineEngaged(): boolean {
+        try {
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.isTransactionActive === 'function'
+                        && (inst as any).isTransactionActive()) return true;
+                } catch { /* keep scanning */ }
+            }
+        } catch { /* gate never breaks stepping */ }
+        return false;
+    }
+
+    /** Fine stepping for DHT transactions: 512-instr slices (~7µs at
+     * 72MHz) with per-slice scheduler drain + GPIO poll, so release
+     * detection and the model's 30/50/80µs ACK schedule meet the
+     * firmware's CYCCNT bit reads in the same slot instead of
+     * quantizing to whole-tick (~400K).
+     * Counter discipline: the facade's execute() reports the ABSOLUTE
+     * retired count, so derive per-slice deltas (same rebase rule as
+     * softSerialAdvanceClock) — simCycleCount advances in real
+     * instructions, the domain the DHT scheduler and firmware CYCCNT
+     * share. Already advanced per-slice below, so return ~0: the base
+     * runLoop's `simCycleCount += steps` then adds only its +1 floor
+     * instead of double-counting the budget. */
+    private stepDhtFine(budget: number): number {
+        const mcu = this.mcu;
+        if (!mcu) return 0;
+        let remaining = Math.max(1, Math.floor(budget));
+        // 512-instr slices (~7us at 72MHz): release detection and every
+        // model edge land within 7us of target. Proven by sweep: sensor
+        // lag 28us shifts the decode (12.00/25.00), per-edge jitter 28us
+        // kills it (nan); lag<=7us + jitter<=7us decodes 24.00/50.00
+        // deterministically. FFI cost (~800 slices/tick) applies only
+        // while a transaction is active (~15 sim-ms per 2 sim-s).
+        const slice = 512;
+        let guard = 0;
+        const maxSlices = 4096;
+        this.lastStepSlice = slice;
+        while (remaining > 0 && guard++ < maxSlices) {
+            const s = Math.min(slice, remaining);
+            let r: any = null;
+            try { r = mcu.execute(s); } catch { break; }
+            // Delta discipline (see retiredDelta): the facade reports a
+            // cumulative count — derive retired-this-slice so the
+            // scheduler domain matches firmware CYCCNT 1:1.
+            const d = this.retiredDelta(Number(r?.instCount), s);
+            try { this.simCycleCount += Math.max(1, Math.floor(d)); } catch { /* ignore */ }
+            try { this.softSerialFlushPendingArm(); } catch { /* ignore */ }
+            try { this.drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
+            try { this.pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
+            remaining -= s;
+            if (r?.stopped) break;
+        }
+        if (remaining > 0 && guard >= maxSlices) {
+            try {
+                const r3 = mcu.execute(remaining);
+                this.retiredDelta(Number(r3?.instCount), remaining);
+            } catch { /* ignore */ }
+        }
+        return 0;
+    }
+
+    /**
+     * Base poll + release detection for bidirectional one-wire nets.
+     * The engine's gpio change hooks fire on OUTPUT writes only, so a
+     * firmware release to INPUT_PULLUP (DHT wake release → pull-up HIGH)
+     * never publishes — the model would wait in WAKE_WAIT forever
+     * (proven: edges=1). dhtPollInput() detects the release via the
+     * GPIO MODE bits and emulates the pull-up the engine omits. Runs
+     * every tick via the base runLoop and every slice via stepDhtFine;
+     * same-level dedup keeps it a no-op when nothing moved.
+     */
+    protected override pollGpioBidirectional(): void {
+        try { super.pollGpioBidirectional(); } catch { /* never break the tick */ }
+        try { this.dhtPollInput(); } catch { /* poll never breaks the tick */ }
+    }
+
+    /** Sample readInput() on board pins netted to a one-wire model and
+     * publish edges the output-only change hooks miss (see above).
+     * MODE-aware bus policy (RM0008 §9.2): the facade's readInput()
+     * resolves external drive else 0 — the internal pull-up is NOT
+     * modeled (probed: CNF=10/ODR=1 reads 0 undriven). So while the
+     * firmware holds the pin as OUTPUT, hooks own the line (skip
+     * injection — output wins); once firmware releases to INPUT, the
+     * runner IS the pull-up: push HIGH while the model idles, or the
+     * model's driven level while it drives (_drivingBus), and publish
+     * changes so the model sees release + ACK edges. Without this the
+     * wake release never arrives (proven: edges=1, WAKE_WAIT). */
+    private dhtPollInput(): void {
+        if (!this.mcu) return;
+        for (const [id, inst] of this.instances) {
+            let bidi = false;
+            try { bidi = typeof (inst as any)?.isTransactionActive === 'function'; } catch { bidi = false; }
+            if (!bidi) continue;
+            let modelDriving = false;
+            let modelHigh = true;
+            try {
+                modelDriving = !!(inst as any)?._drivingBus;
+                const lv = Number((inst as any)?._lastDrivenVoltage);
+                if (Number.isFinite(lv)) modelHigh = lv > 1.8;
+            } catch { /* fall through to pull-up */ }
+            for (const cPin of ['DATA', 'SDA']) {
+                const net = this.pinToNet.get(`${id}:${cPin}`);
+                if (net === undefined) continue;
+                for (const [node, netId] of this.pinToNet) {
+                    if (netId !== net) continue;
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) !== this.boardId) continue;
+                    const bPin = node.slice(sep + 1);
+                    const [port, n] = portPinFor(bPin);
+                    if (!port || n < 0) continue;
+                    // MODE==00 (input) → firmware released the bus.
+                    let inputMode = false;
+                    try {
+                        const emu = (this.mcu as any)?._emu;
+                        if (emu && typeof emu.periphRead === 'function') {
+                            const base = 0x40010800 + (port.charCodeAt(0) - 65) * 0x400;
+                            const cr = emu.periphRead(base + (n < 8 ? 0x00 : 0x04), 4) >>> 0;
+                            const shift = (n < 8 ? n : n - 8) * 4;
+                            inputMode = ((cr >>> shift) & 0x3) === 0;
+                        }
+                    } catch { continue; }
+                    if (!inputMode) continue; // OUTPUT: hooks own it
+                    const high = modelDriving ? modelHigh : true; // idle pull-up
+                    try { this.engine.setGpioInput?.(bPin, high); } catch { /* ignore */ }
+                    if (this.pinStates[bPin] !== !!high) {
+                        try { this.publishGpio(bPin, !!high); } catch { /* ignore */ }
+                    }
+                }
+            }
+        }
     }
 
     private softSerialPollLevel(): boolean | null {
@@ -799,10 +1251,16 @@ export class Stm32f1Runner extends ArmRunnerBase {
             if (prev && !lv) {
                 // Live calibration: back-to-back bytes start exactly 10
                 // bits apart; refine the period from the measured delta so
-                // instruction-vs-cycle skew cancels out.
+                // instruction-vs-cycle skew cancels out. Window is TIGHT
+                // around 10 CURRENT bits (not nominal): transmitters with
+                // an inter-byte gap (STM32duino SoftwareSerial leaves ~1
+                // idle bit: starts land ~11 bits apart) must NOT calibrate
+                // — d/10 would lock 10% high and every later byte shifts
+                // (proven runaway: 82K spacing → est 8227 → all garbage).
                 if (this.softSerialLastStartAt !== null) {
                     const d = now - this.softSerialLastStartAt;
-                    if (d > bit * 9 && d < bit * 11) {
+                    const b0 = Math.max(64, this.softSerialBitInstr | 0);
+                    if (d > b0 * 9.7 && d < b0 * 10.3) {
                         const est = d / 10;
                         const nom = this.softSerialNominalBit();
                         const lo = Math.max(64, Math.floor(nom / 4));

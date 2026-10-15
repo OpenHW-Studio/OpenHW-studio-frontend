@@ -12,9 +12,6 @@ function boardLikeTypes() {
   return Object.keys(COMPONENT_PINS).filter((t) => {
     if (t.startsWith('wokwi-')) return false;
     if (/shield/i.test(t)) return false;
-    // Cam shells are components, not boards (asserted 'unknown' below):
-    // openhw-esp32-cam must not resolve to a runnable family.
-    if (/-cam$/i.test(t)) return false;
     return BOARD_TYPE_RE.test(t);
   });
 }
@@ -47,10 +44,11 @@ describe('registry coverage is CI-required (plan Phase 4 seed)', () => {
     }
   });
 
-  test('component shells sharing a family token are not boards', () => {
-    // openhw-esp32-cam claimed the esp32-emu engine and died on
-    // "Unknown chip: esp32-cam", taking the UNO run down with it.
-    assert.equal(matchBoardFamily('openhw-esp32-cam').family, 'unknown');
+  test('esp32-cam resolves to its own runnable family (not generic esp32)', () => {
+    // openhw-esp32-cam used to claim the esp32-emu engine and die on
+    // "Unknown chip: esp32-cam", taking the UNO run down with it. The
+    // esp32_cam family boots it on the esp32-cam board preset instead.
+    assert.equal(matchBoardFamily('openhw-esp32-cam').family, 'esp32_cam');
     assert.equal(matchBoardFamily('openhw-esp32').family, 'esp32');
   });
 });
