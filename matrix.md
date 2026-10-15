@@ -29,17 +29,21 @@ stm32f1-sys (WDG/EXTI/BKP, all three boards).
 | Board | UART | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI/FS | LTDC | DCMI | QSPI | FSMC | SAI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | NONE (deferred — user takes ETH/WiFi later) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
-| openhw-stm32f401 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE (sdio:T) | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
-| openhw-stm32f411 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
-| openhw-stm32f407ve | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | NONE |
-| openhw-stm32f429 | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; Disco loopback proven, no 429 cell) | NONE (DMA2D gate unused) | NONE | NONE | NONE (CAN hw; staged can-x spec unrun) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | NONE (ext displays unproven; LTDC proven) |
+| openhw-stm32f401 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f411 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f407ve | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | FULL (CDC echo) | ABSENT | NONE (deferred — user takes ETH/WiFi later) | FULL | FULL (raw; FS NO-GO engine-side) | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f429 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE (DMA2D gate unused) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | FULL | FULL (raw; FS NO-GO engine-side) | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | FULL (OLED/MAX7219; LTDC proven) |
 
 Specs: stm32f4-sdio, stm32f4-ltdc, stm32f4-usb, stm32f4-dcmi, stm32f4-qspi,
 stm32f4-fsmc, stm32f4-sai, stm32f4-dac, stm32f4-adc, stm32f4-pwm, stm32f4-spi,
 stm32f4-sd, stm32f4-sd-fs, stm32f4-sweep, multi-board-uart,
 stm32f4-dcmi, stm32f4-qspi, stm32f4-fsmc, stm32f4-sai, stm32f4-can(+x),
 stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x, stm32f4-display-x,
-stm32f4-gpio-rtc, stm32f4-crc-rng-x, stm32f4-1wire, stm32f4-usb-ve.
+stm32f4-gpio-rtc, stm32f4-crc-rng-x, stm32f4-1wire, stm32f4-usb-ve,
+stm32f4-can(+x), stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x (VE DAC),
+F4 sibling NO-GOs (engine-side, specs left failing): SdFat FS (P_ERR init
+contradiction), ILI9341 (tap death on 120ms+ delays), RNG (DRDY never sets),
+DHT22 (micros() 1ms-quantized), I2S (SPI2 block unrouted).
 
 ## AVR (survey-verified 2026-10-09; no RED)
 

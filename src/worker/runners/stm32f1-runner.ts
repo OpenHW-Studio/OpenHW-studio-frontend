@@ -725,7 +725,12 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         try {
                             const tag = `F1WDOG_RST:${Number(w) | 0}\n`;
                             for (let i = 0; i < tag.length; i++) {
-                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1sys'); } catch { break; }
+                                // Into the TX queue, not direct emit: the page
+                                // arbitrates one serial source per 240ms window
+                                // (useSerialIngress) and drops a second source
+                                // in the same burst — direct markers eat the
+                                // reboot's own setup prints (proven F1-wide).
+                                try { txQueue.push(tag.charCodeAt(i) & 0xff); } catch { break; }
                             }
                         } catch { /* marker never breaks the drain */ }
                     };
@@ -916,7 +921,8 @@ export class Stm32f1Runner extends ArmRunnerBase {
                                     emu.periphWrite(0xE000E010, 4, csr >>> 0);
                                     const tag = `F1CLK:div=${div} `;
                                     for (let i = 0; i < tag.length; i++) {
-                                        try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1clk'); } catch { break; }
+                                        // Queue, not direct emit (see onWdogReset).
+                                        try { txQueue.push(tag.charCodeAt(i) & 0xff); } catch { break; }
                                     }
                                 } catch { /* ignore */ }
                             }
@@ -1082,7 +1088,8 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         try {
                             const tag = line + '\n';
                             for (let i = 0; i < tag.length; i++) {
-                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1sys'); } catch { break; }
+                                // Queue, not direct emit (see onWdogReset).
+                                try { txQueue.push(tag.charCodeAt(i) & 0xff); } catch { break; }
                             }
                         } catch { /* ignore */ }
                     };
@@ -1206,7 +1213,8 @@ export class Stm32f1Runner extends ArmRunnerBase {
                             try {
                                 const tag = line + '\n';
                                 for (let i = 0; i < tag.length; i++) {
-                                    try { (self as any).emitTxByte(tag.charCodeAt(i), 'usbhost'); } catch { break; }
+                                    // Queue, not direct emit (see onWdogReset).
+                                    try { txQueue.push(tag.charCodeAt(i) & 0xff); } catch { break; }
                                 }
                             } catch { /* ignore */ }
                         };
