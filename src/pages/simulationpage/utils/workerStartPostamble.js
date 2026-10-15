@@ -158,8 +158,17 @@ export function postWorkerStartMessage(worker, args, ctx) {
           debugSyncHeartbeat: false,
           speed: simulationSpeed,
           telemetryEnabled:
-            componentTelemetryEnabled && !isBooting && !isCompiling,
-          telemetryMode: telemetryMode,
+            // E2E override (agent harness): a synchronous global the e2e
+            // loop sets before Run. React state is async-stale at this
+            // point (enable-then-immediately-Run reads the old value), so
+            // the postamble prefers the explicit global when present.
+            // Real UI runs never set it and behave exactly as before.
+            (typeof window !== 'undefined' && window.__openhwE2ETelemetry && window.__openhwE2ETelemetry.enabled === true)
+              ? true
+              : (componentTelemetryEnabled && !isBooting && !isCompiling),
+          telemetryMode: (typeof window !== 'undefined' && window.__openhwE2ETelemetry && typeof window.__openhwE2ETelemetry.mode === 'string')
+            ? window.__openhwE2ETelemetry.mode
+            : telemetryMode,
           watchedParamsMap: telemetryWatchedParamsMap,
           deepSilicon: deepSiliconDebuggingEnabled,
         };

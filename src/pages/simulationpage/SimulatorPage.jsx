@@ -4392,12 +4392,27 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (Array.isArray(selectTelemetry) && selectTelemetry.length) {
             setSelectedTelemetryComponentIds(selectTelemetry);
           }
-          try { setComponentTelemetryEnabled(true); } catch { /* ignore */ }
-          if (mode) { try { setTelemetryMode(mode); } catch { /* ignore */ } }
+          // Synchronous e2e telemetry intent (see workerStartPostamble):
+          // React setState is async-stale by compile/START time, so the
+          // postamble reads this global instead. Kept alongside the state
+          // setters below (UI toggle + selection filtering unchanged).
+          try {
+            if (typeof window !== 'undefined') {
+              window.__openhwE2ETelemetry = { enabled: true, mode: mode || 'detail' };
+            }
+          } catch { /* ignore */ }
+          // NOTE: the state-based enable below ALSO stays (it drives the
+          // UI toggle + the live-worker SET post when it lands); the
+          // global above is what deterministically enables the new worker.
+          try { setComponentTelemetryEnabled(false); } catch { /* ignore */ }
           // Via the live mirror (see above) — never the mount-time closure.
           const liveRun = window.__openhwRunRef?.current;
           if (typeof liveRun === "function") await liveRun({});
           else await handleRun({});
+          await sleep(2500);
+          try { setComponentTelemetryEnabled(true); } catch { /* ignore */ }
+          if (mode) { try { setTelemetryMode(mode); } catch { /* ignore */ }
+          }
           await sleep(Math.max(1000, Number(forMs) || 8000));
           const serialNew = serialHistoryRef.current.slice(serialMark).map((e) => String(e?.text ?? e ?? ""));
           const serialText = serialNew.join("");
@@ -4406,6 +4421,35 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           try {
             telemetry = (typeof window !== "undefined" && window.OpenHWTelemetry?.getLatestTelemetry?.()) || [];
           } catch { telemetry = []; }
+          // Raw worker-state mirror (unformatted, unthrottled) for the
+          // selected components: proves model-level truth independently of
+          // the lossy/formatted telemetry channel. Additive e2e-only field.
+          let liveOop = {};
+          try {
+            const all = (typeof liveOopStatesRef !== 'undefined' && liveOopStatesRef.current) || {};
+            const ids = Array.isArray(selectTelemetry) && selectTelemetry.length
+              ? selectTelemetry
+              : Object.keys(all).slice(0, 8);
+            const slim = {};
+            for (const id of ids) {
+              const st = all[id];
+              if (st === undefined) continue;
+              try {
+                slim[id] = JSON.parse(JSON.stringify(st, (k, v) => {
+                  if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) {
+                    const arr = v instanceof ArrayBuffer ? new Uint8Array(v) : new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+                    let nz = 0; const n = 0;
+                    const step = Math.max(1, Math.floor(arr.length / 2000));
+                    let cnt = 0;
+                    for (let i = 0; i < arr.length; i += step) { cnt++; if (arr[i] !== 0) nz++; }
+                    return { nonzeroFrac: cnt ? nz / cnt : 0, len: arr.length };
+                  }
+                  return v;
+                }));
+              } catch { slim[id] = { note: 'unserializable' }; }
+            }
+            liveOop = slim;
+          } catch { liveOop = {}; }
           let pass = true;
           const reasons = [];
           if (serialNeedle && !serialText.includes(String(serialNeedle))) {
@@ -4427,6 +4471,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             pins,
             telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
             telemetryCount: Array.isArray(telemetry) ? telemetry.length : 0,
+            liveOop,
           };
         } catch (err) {
           return { ok: false, pass: false, reasons: [String(err?.message || err)], wallMs: Date.now() - t0 };
@@ -4435,6 +4480,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       stop() {
         try {
           handleStop();
+          try { if (typeof window !== 'undefined') delete window.__openhwE2ETelemetry; } catch { /* ignore */ }
           return { ok: true, running: !!isRunningRef.current };
         } catch (err) {
           return { ok: false, error: String(err?.message || err) };

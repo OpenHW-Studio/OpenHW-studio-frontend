@@ -1277,6 +1277,12 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 sabBoardDebugBase: (data as any).sabBoardDebugBase,
                 sabNumBoards: (data as any).sabNumBoards,
                 boardPinMaps: (data as any).boardPinMaps,
+                // START telemetry intent, same as the single-board path:
+                // runners apply it at construction (no post-START race).
+                telemetryEnabled: activeTelemetryEnabled,
+                telemetryMode: activeTelemetryMode,
+                telemetryWatchedParams: activeTelemetryWatchedParamsMap,
+                deepSiliconEnabled: activeDeepSiliconEnabled,
             };
 
             // Heavy engines (ARM boards) tick on a dedicated compute Worker

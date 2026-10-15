@@ -200,6 +200,22 @@ export abstract class ArmRunnerBase implements BoardRunner {
         this.attachSab(options);
         this.instantiateComponents(componentsDef || []);
         this.buildNetlist();
+        // Apply START telemetry flags at construction (plan §5.5): the
+        // enable message can race worker creation, so every run starts
+        // with the postamble's intent already applied; later
+        // SET_COMPONENT_TELEMETRY still toggles via setTelemetryEnabled.
+        try {
+            const o = options as any;
+            if (o && typeof o.telemetryEnabled === 'boolean') {
+                this.setTelemetryEnabled(
+                    !!o.telemetryEnabled,
+                    typeof o.telemetryMode === 'string' ? o.telemetryMode : undefined,
+                    o.telemetryWatchedParams && typeof o.telemetryWatchedParams === 'object'
+                        ? o.telemetryWatchedParams : undefined,
+                    !!(o.deepSilicon ?? o.deepSiliconEnabled),
+                );
+            }
+        } catch { /* telemetry defaults stand */ }
     }
 
     /** Async boot: load firmware, then start the tick timer. Subclasses call after super(). */
@@ -353,7 +369,21 @@ export abstract class ArmRunnerBase implements BoardRunner {
         this.solverMode = 'logic';
     }
 
-    setTelemetryEnabled(_enabled: boolean): void { /* per-component flags ride instances */ }
+    setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean): void {
+        // Real per-instance application (mirrors AVRRunner): the previous
+        // no-op meant ARM-family telemetry was state-only forever.
+        try {
+            for (const inst of this.instances.values()) {
+                (inst as any).telemetryEnabled = !!enabled;
+                if (typeof mode === 'string' && mode) (inst as any).telemetryMode = mode;
+                try {
+                    (inst as any).telemetryWatchedParams =
+                        (watchedParamsMap && watchedParamsMap[(inst as any).id]) || ['all'];
+                } catch { (inst as any).telemetryWatchedParams = ['all']; }
+                (inst as any).deepSiliconEnabled = !!deepSilicon;
+            }
+        } catch { /* telemetry flags never break construction */ }
+    }
 
     getRichTelemetrySnapshot(_options: any = {}): any {
         return { boardId: this.boardId, pins: { ...this.pinStates }, components: [] };

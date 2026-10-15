@@ -60,8 +60,11 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     expect(lcd).toBeTruthy();
     const lcdText = String(lcd.details?.custom?.textContent || lcd.details?.metrics?.custom?.textContent || '');
     console.log('LCD textContent:', JSON.stringify(lcdText.slice(0, 80)));
-    expect(lcdText.includes('Hello')).toBe(true);
-    expect(lcdText.includes('World')).toBe(true);
+    // Raw mirror (unformatted): the model's true lines.
+    const lcdLines = (((verdict.liveOop || {}).lcd1 || {}).lines || []).join('\n');
+    console.log('LCD liveOop lines:', JSON.stringify(lcdLines.slice(0, 60)));
+    expect(lcdLines.includes('Hello')).toBe(true);
+    expect(lcdLines.includes('World')).toBe(true);
     // The formatted summary must surface it too (metrics.custom fallback).
     expect(String(lcd.summary || '')).toMatch(/Hello/);
     // Human side: the words must also reach the rendered DOM (UI mirror).
@@ -107,7 +110,11 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     expect(oled).toBeTruthy();
     const fill = Number(oled.details?.custom?.vramFillPercentage ?? oled.details?.metrics?.custom?.vramFillPercentage ?? NaN);
     console.log('OLED vramFillPercentage:', fill, 'power:', oled.details?.custom?.powerStatus ?? oled.details?.metrics?.custom?.powerStatus);
-    expect(fill).toBeGreaterThan(0);
+    // Raw mirror: VRAM nonzero fraction proves pixels.
+    const oledVram = ((verdict.liveOop || {}).oled1 || {}).vram;
+    const oledFrac = oledVram && typeof oledVram.nonzeroFrac === 'number' ? oledVram.nonzeroFrac : NaN;
+    console.log('OLED liveOop vram nonzeroFrac:', oledFrac);
+    expect(oledFrac).toBeGreaterThan(0);
     await page.screenshot({ path: 'test-results/senses-oled.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
@@ -150,7 +157,11 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     expect(tft).toBeTruthy();
     const tfill = Number(tft.details?.custom?.vramFillPercentage ?? tft.details?.metrics?.custom?.vramFillPercentage ?? NaN);
     console.log('TFT vramFillPercentage:', tfill, 'power:', tft.details?.custom?.powerStatus ?? tft.details?.metrics?.custom?.powerStatus);
-    expect(tfill).toBeGreaterThan(50);
+    // Raw mirror: framebuffer nonzero fraction proves the red fill.
+    const tftBuf = ((verdict.liveOop || {}).tft1 || {}).buffer;
+    const tftFrac = tftBuf && typeof tftBuf.nonzeroFrac === 'number' ? tftBuf.nonzeroFrac : NaN;
+    console.log('TFT liveOop buffer nonzeroFrac:', tftFrac);
+    expect(tftFrac).toBeGreaterThan(0.5);
     await page.screenshot({ path: 'test-results/senses-tft.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
@@ -188,6 +199,10 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     const bzCustom = bz.details?.custom || bz.details?.metrics?.custom || {};
     expect(String(bzCustom.status || '')).toMatch(/buzz/i);
     expect(String(bzCustom.frequency || '')).toMatch(/440/);
+    // Raw mirror corroboration.
+    const bzLive = (verdict.liveOop || {}).bz1 || {};
+    console.log('BUZ liveOop:', JSON.stringify({ isBuzzing: bzLive.isBuzzing, frequency: bzLive.frequency }));
+    expect(bzLive.isBuzzing).toBe(true);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
@@ -225,6 +240,10 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     const micCustom = mic.details?.custom || mic.details?.metrics?.custom || {};
     expect(String(micCustom.liveMicEnabled || '')).toMatch(/yes/i);
     expect(Number(micCustom.peakAmplitude ?? 0)).toBeGreaterThan(0);
+    // Raw mirror corroboration.
+    const micLive = (verdict.liveOop || {}).mic1 || {};
+    console.log('MIC liveOop peakAmplitude:', micLive.peakAmplitude);
+    expect(Number(micLive.peakAmplitude ?? 0)).toBeGreaterThan(0);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });

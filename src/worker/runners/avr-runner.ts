@@ -586,6 +586,23 @@ export class AVRRunner {
             }
         });
 
+        // Apply START telemetry flags at construction (plan §5.5): the
+        // enable message can race worker creation (stale-state post to the
+        // previous worker), so every run starts with the postamble's intent
+        // already applied; later SET_COMPONENT_TELEMETRY still toggles.
+        try {
+            const o = options as any;
+            if (typeof o?.telemetryEnabled === 'boolean') {
+                this.setTelemetryEnabled(
+                    !!o.telemetryEnabled,
+                    typeof o.telemetryMode === 'string' ? o.telemetryMode : undefined,
+                    o.telemetryWatchedParams && typeof o.telemetryWatchedParams === 'object'
+                        ? o.telemetryWatchedParams : undefined,
+                    !!(o.deepSilicon ?? o.deepSiliconEnabled),
+                );
+            }
+        } catch { /* telemetry defaults stand */ }
+
         this.running = true;
         this.lastTime = performance.now();
         this.lastStateEmitTime = this.lastTime;
