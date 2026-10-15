@@ -1323,6 +1323,36 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
 /**
+ * Sampling policy for one telemetry ingest decision (plan §5.5).
+ * Encodes the exact throttle semantics TelemetryManager applies:
+ * default 250 ms window scaled by sim speed, 50 ms floor, and Delta mode
+ * never throttles (throttling would permanently lose mutations).
+ */
+export interface TelemetrySamplePolicy {
+  throttleMs: number;
+  bypassThrottle: boolean;
+}
+
+export function telemetrySamplePolicy(
+  telemetryMode: unknown,
+  telemetrySampleInterval: unknown,
+  simulationSpeed: unknown,
+): TelemetrySamplePolicy {
+  const safeSpeed = Number.isFinite(Number(simulationSpeed)) && Number(simulationSpeed) > 0 ? Number(simulationSpeed) : 1.0;
+  const baseInterval = Number.isFinite(Number(telemetrySampleInterval)) ? Number(telemetrySampleInterval) : 250;
+  return {
+    throttleMs: Math.max(50, baseInterval / safeSpeed),
+    bypassThrottle: telemetryMode === 'delta',
+  };
+}
+
+/** Pure ingest gate: true when this message may be formatted/emitted now. */
+export function shouldEmitTelemetrySample(lastEmitMs: number, nowMs: number, policy: TelemetrySamplePolicy): boolean {
+  if (policy.bypassThrottle) return true;
+  return nowMs - lastEmitMs >= policy.throttleMs;
+}
+
+/**
  * Validate a collected telemetry payload against the schema contract
  * (plan §5.5, Phase 3 seed): versioned when present, never silently
  * misshapen. Disabled telemetry (`{}`) is valid by design.

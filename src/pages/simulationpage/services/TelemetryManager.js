@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getTelemetryParamsForComponent } from '../utils/telemetryRegistry.js';
+import { telemetrySamplePolicy, shouldEmitTelemetrySample } from '../../../worker/registries/component-registry.ts';
 
 function extractParamValue(key, comp, telemetryData, state, activeMetrics, activeCustom) {
   let val = comp[key];
@@ -176,13 +177,14 @@ export function useTelemetryManager({
     if (isBooting) return;
     if (!componentTelemetryEnabled || !msg || !Array.isArray(msg.components)) return;
 
-    const safeSpeed = Number.isFinite(Number(simulationSpeed)) && Number(simulationSpeed) > 0 ? Number(simulationSpeed) : 1.0;
-    const baseInterval = Number.isFinite(Number(telemetrySampleInterval)) ? Number(telemetrySampleInterval) : 250;
-    const intervalMs = Math.max(50, baseInterval / safeSpeed);
+    // Sampling policy (plan §5.5): identical throttle semantics as before —
+    // default 250 ms window scaled by speed, 50 ms floor, Delta never
+    // throttles — now owned by the shared policy helper, not inline math.
+    const policy = telemetrySamplePolicy(telemetryMode, telemetrySampleInterval, simulationSpeed);
     const now = Date.now();
 
     // In Delta mode, we must never throttle delta events, otherwise mutations occurring between sample intervals are permanently lost!
-    if (telemetryMode !== 'delta' && now - lastLogTimeRef.current < intervalMs) return;
+    if (!shouldEmitTelemetrySample(lastLogTimeRef.current, now, policy)) return;
     lastLogTimeRef.current = now;
 
     // Upstream O(1) filtering by selected component IDs

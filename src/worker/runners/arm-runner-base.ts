@@ -258,6 +258,19 @@ export abstract class ArmRunnerBase implements BoardRunner {
             // TX drain → serial path (SAB ring + postMessage callback).
             const out = this.engine.drainUartOut();
             for (const b of out) this.emitTxByte(b & 0xff, 'uart0');
+            // Step-counted callbacks (_scheduleBoardCycles service): due
+            // callbacks fire in FIFO order right after the engine advanced,
+            // so component timing tracks simulated steps, not wall clocks.
+            try {
+                const due: Array<() => void> = [];
+                this.schedQueue = this.schedQueue.filter((item) => {
+                    if (item.target <= this.simCycleCount) { due.push(item.cb); return false; }
+                    return true;
+                });
+                for (const cb of due) {
+                    try { cb(); } catch { /* never break tick */ }
+                }
+            } catch { /* scheduler never breaks tick */ }
             // Bidirectional GPIO: sample external inputs (buttons, sensors,
             // pull-ups) into the engine, then publish engine-driven outputs
             // back out. Push-model engines (stm32 on('change') hooks) already
@@ -523,6 +536,23 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 if (!(inst as any)._driveBoardPin) {
                     (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
                         try { this.engine.setGpioInput?.(String(boardPin), !!isHigh); } catch { /* ignore */ }
+                    };
+                }
+                // Runner-agnostic clock + net services (plan §5.3).
+                if (!(inst as any)._scheduleBoardCycles) {
+                    (inst as any)._scheduleBoardCycles = (cb: () => void, delayCycles: number) => {
+                        try {
+                            const d = Math.max(0, Math.floor(Number(delayCycles) || 0));
+                            this.schedQueue.push({ target: this.simCycleCount + d, cb });
+                        } catch { /* ignore */ }
+                    };
+                }
+                if (!(inst as any)._boardCyclesNow) {
+                    (inst as any)._boardCyclesNow = () => this.simCycleCount;
+                }
+                if (!(inst as any)._boardNetOf) {
+                    (inst as any)._boardNetOf = (componentPin: string): string | null => {
+                        try { return this.boardPinForComponentPin(cDef.id, componentPin); } catch { return null; }
                     };
                 }
                 this.instances.set(cDef.id, inst);
@@ -859,6 +889,23 @@ export abstract class ArmRunnerBase implements BoardRunner {
     private pinPollCache: string[] | null = null;
     private pinStatesInit = new Set<string>();
     private boardPinList: string[] = [];
+    /** Step-counted callback queue backing _scheduleBoardCycles. */
+    private schedQueue: Array<{ target: number; cb: () => void }> = [];
+
+    /**
+     * Board-side pin label sharing a net with one of a component's pins
+     * (backs the _boardNetOf bus service). Returns the bare pin label.
+     */
+    protected boardPinForComponentPin(compId: string, componentPin: string): string | null {
+        const net = this.pinToNet.get(`${compId}:${componentPin}`);
+        if (net === undefined) return null;
+        for (const [node, netId] of this.pinToNet) {
+            if (netId !== net) continue;
+            const [bId, bPin] = node.split(':');
+            if (bId === this.boardId && bPin) return bPin;
+        }
+        return null;
+    }
 
     /** Net identity for the alias guard: board pins aliasing to the same
      * net (Ln/Rn ↔ Pn on retro, Dx ↔ x on AVR-likes) share one key. */

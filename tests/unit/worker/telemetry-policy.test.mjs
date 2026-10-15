@@ -5,6 +5,8 @@ import {
   validateTelemetrySchema,
   collectComponentTelemetry,
   getUnifiedComponentSyncState,
+  telemetrySamplePolicy,
+  shouldEmitTelemetrySample,
 } from '../../../src/worker/registries/component-registry.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 
@@ -52,5 +54,22 @@ describe('telemetry enforcement (plan §5.5, Phase 3 seed)', () => {
     assert.deepEqual(getUnifiedComponentSyncState(off), getUnifiedComponentSyncState(on));
     // Disabled collection stays empty (bandwidth parity: nothing sent).
     assert.deepEqual(collectComponentTelemetry(off, 'detail', undefined), {});
+  });
+
+  test('sampling policy matches the wired ingest semantics', () => {
+    // Defaults: 250 ms window at 1x, Delta bypasses.
+    assert.deepEqual(telemetrySamplePolicy('detail', 250, 1.0), { throttleMs: 250, bypassThrottle: false });
+    assert.deepEqual(telemetrySamplePolicy('delta', 250, 1.0), { throttleMs: 250, bypassThrottle: true });
+    // Speed scaling with 50 ms floor; junk inputs fall back safely.
+    assert.equal(telemetrySamplePolicy('detail', 250, 2.0).throttleMs, 125);
+    assert.equal(telemetrySamplePolicy('detail', 250, 0).throttleMs, 250);
+    assert.equal(telemetrySamplePolicy('detail', NaN, NaN).throttleMs, 250);
+    assert.equal(telemetrySamplePolicy('detail', 10, 1.0).throttleMs, 50);
+    // Gate: emits on/after the window, suppresses inside it, never in Delta.
+    const p = telemetrySamplePolicy('detail', 250, 1.0);
+    assert.equal(shouldEmitTelemetrySample(0, 100, p), false);
+    assert.equal(shouldEmitTelemetrySample(0, 250, p), true);
+    const d = telemetrySamplePolicy('delta', 250, 1.0);
+    assert.equal(shouldEmitTelemetrySample(0, 0, d), true);
   });
 });
