@@ -108,6 +108,17 @@ import { useProjectPersistence } from "./hooks/useProjectPersistence";
 import { useComponentZipUpload } from "./hooks/useComponentZipUpload";
 import { useLiveMeeting } from "./hooks/useLiveMeeting";
 import { useEntryLoadEffects } from "./hooks/useEntryLoadEffects";
+import { useClassroomAssignment } from "./hooks/useClassroomAssignment";
+import { useShareDialog } from "./hooks/useShareDialog";
+import { useCodeFiles } from "./hooks/useCodeFiles";
+import { useHardwareUpload } from "./hooks/useHardwareUpload";
+import { useRunStop } from "./hooks/useRunStop";
+import { useRunControls } from "./hooks/useRunControls";
+import { useRunTimingEffects } from "./hooks/useRunTimingEffects";
+import { useTeacherKeyCapture } from "./hooks/useTeacherKeyCapture";
+import { useCanvasWheelZoom } from "./hooks/useCanvasWheelZoom";
+import { launchGdbSession } from "./utils/gdbLauncher";
+import { useValidationCore } from "./hooks/useValidationCore";
 import { useFirmwareArtifacts } from "./hooks/useFirmwareArtifacts";
 import { useFirmwareDialogs } from "./hooks/useFirmwareDialogs";
 import { simplifyOrthogonalPath } from "./utils/wireHitDetection";
@@ -152,6 +163,7 @@ const {
   FullCircuitValidator,
   analyzeCodeHardwareSync,
   runUnifiedValidation,
+  applyCircuitFix: sharedApplyCircuitFix,
   ProtocolAnalyzer: SharedProtocolAnalyzer,
 } = EmulatorComponents;
 
@@ -1945,263 +1957,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   ]);
 
 
-  const isAssignmentSubmissionClosed = useCallback(
-    (assignment) =>
-      Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date(),
-    [],
-  );
-
-  useEffect(() => {
-    if (!assignmentMode || user?.role !== "student") return;
-
-    let cancelled = false;
-
-    const loadAssignmentSubmission = async () => {
-      setAssignmentSubmissionState({
-        loading: true,
-        saving: false,
-        error: "",
-        data: null,
-      });
-      try {
-        const response = await getMyAssignmentSubmission(classId, assignmentId);
-        if (cancelled) return;
-
-        const submission = response?.submission || null;
-        setAssignmentSubmissionAssignment(response?.assignment || null);
-        setAssignmentSubmissionState({
-          loading: false,
-          saving: false,
-          error: "",
-          data: submission,
-        });
-        setAssignmentSubmissionForm({
-          notes: submission?.notes || "",
-          links: submission?.links?.length ? submission.links : [""],
-          attachments: submission?.attachments || submission?.files || [],
-        });
-      } catch (error) {
-        if (cancelled) return;
-        setAssignmentSubmissionState({
-          loading: false,
-          saving: false,
-          error: error.message || "Failed to load assignment submission.",
-          data: null,
-        });
-      }
-    };
-
-    loadAssignmentSubmission();
-    return () => {
-      cancelled = true;
-    };
-  }, [assignmentMode, classId, assignmentId, user?.role]);
-
-
-  // ── Auto-load circuit from URL (?circuit=JSON_ENCODED) ──────────────────────
-  useEffect(() => {
-    const urlCircuit = assessmentParams.get("circuit");
-    if (!urlCircuit) return;
-
-    try {
-      const payload = JSON.parse(decodeURIComponent(urlCircuit));
-      if (!payload || typeof payload !== "object") return;
-
-      const normalized = normalizeImportedCircuitData(
-        payload.components || [],
-        payload.connections || [],
-      );
-      setBoard(payload.board || "arduino_uno");
-      setComponents(normalized.components);
-      setWires(normalized.wires);
-      setCode(payload.code || "");
-      syncWireIds(normalized.components, normalized.wires);
-
-      // Clear project state so we don't accidentally overwrite the user's project
-      setCurrentProjectName("Sample Circuit");
-      setCurrentProjectId(null);
-      currentProjectIdRef.current = null;
-      setHistory({ past: [], future: [] });
-    } catch (e) {
-      console.error("[URL Circuit] Failed to parse circuit from URL:", e);
-    }
-  }, [assessmentParams]);
-
-  const handleAssignmentSubmissionFilesChange = async (event) => {
-    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
-      setAssignmentSubmissionState((current) => ({
-        ...current,
-        error: "This assignment is closed. You can no longer upload files.",
-      }));
-      event.target.value = "";
-      return;
-    }
-
-    try {
-      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
-        classId,
-        category: "submissions",
-        maxFiles: 8,
-        allowedTypes: ["application/pdf", "image"],
-      });
-
-      setAssignmentSubmissionForm((current) => ({
-        ...current,
-        attachments: [...current.attachments, ...uploadedFiles],
-      }));
-      setAssignmentSubmissionState((current) => ({ ...current, error: "" }));
-    } catch (error) {
-      setAssignmentSubmissionState((current) => ({
-        ...current,
-        error: error.message || "Failed to upload submission files.",
-      }));
-    } finally {
-      event.target.value = "";
-    }
-  };
-
-  const handleRemoveAssignmentSubmissionFile = (index) => {
-    setAssignmentSubmissionForm((current) => ({
-      ...current,
-      attachments: current.attachments.filter((_, idx) => idx !== index),
-    }));
-  };
-
-  const handleSubmitClassAssignment = async () => {
-    if (!assignmentSubmissionAssignment) {
-      return;
-    }
-
-    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
-      setAssignmentSubmissionState((current) => ({
-        ...current,
-        saving: false,
-        error: "This assignment is closed. Submissions are no longer accepted.",
-      }));
-      return;
-    }
-
-    setAssignmentSubmissionState((current) => ({
-      ...current,
-      saving: true,
-      error: "",
-    }));
-
-    try {
-      const shareResponse = await createSharedSimulation({
-        name: `${assignmentSubmissionAssignment.title || "Assignment"} Submission`,
-        isPublic: true,
-        classId,
-        assignmentId,
-        board,
-        components,
-        connections: wires,
-        code,
-        projectFiles,
-        openCodeTabs,
-        activeCodeFileId,
-      });
-      const simulationShareId = shareResponse.shareId;
-      if (!simulationShareId) {
-        throw new Error("Failed to create simulation link for submission.");
-      }
-      const simulationUrl = `${window.location.origin}/simulator/share/${simulationShareId}`;
-
-      // Auto-capture PNG of the current circuit
-      let finalAttachments = [...assignmentSubmissionForm.attachments];
-      try {
-        const pngBlob = await downloadPng({ returnBlob: true });
-        if (pngBlob) {
-          console.log("[Submission] Captured circuit PNG, uploading...");
-          // Cache locally for immediate feedback after redirect
-          try {
-            const dataUrl = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsDataURL(pngBlob);
-            });
-            sessionStorage.setItem(`ohw_preview_${assignmentId}`, dataUrl);
-          } catch (e) {
-            console.warn("[Submission] Failed to cache preview locally:", e);
-          }
-
-          const pngFile = new File(
-            [pngBlob],
-            `submission_${assignmentId}_${Date.now()}.png`,
-            { type: "image/png" },
-          );
-          const uploadedUrls = await uploadClassroomFiles([pngFile], {
-            classId,
-            category: "submissions",
-          });
-
-          if (uploadedUrls && uploadedUrls.length > 0) {
-            console.log(
-              "[Submission] PNG uploaded successfully:",
-              uploadedUrls[0],
-            );
-            finalAttachments.push(uploadedUrls[0]);
-          } else {
-            console.error("[Submission] PNG upload returned no URLs");
-          }
-        }
-      } catch (pngErr) {
-        console.warn(
-          "[Submission] Failed to auto-capture circuit PNG:",
-          pngErr,
-        );
-      }
-
-      // Store as a draft in sessionStorage for the dashboard modal to pick up
-      const draftData = {
-        notes: assignmentSubmissionForm.notes,
-        attachments: finalAttachments,
-        simulationShareId: simulationShareId,
-        simulationUrl: simulationUrl,
-        isDraft: true,
-        updatedAt: new Date().toISOString(),
-      };
-
-      console.log("[Submission] Saving draft to sessionStorage:", draftData);
-      sessionStorage.setItem(
-        `ohw_submission_draft_${assignmentId}`,
-        JSON.stringify(draftData),
-      );
-
-      setAssignmentSubmissionState({
-        loading: false,
-        saving: false,
-        error: "",
-        data: assignmentSubmissionState.data,
-      });
-
-      const targetClassId = classId || assignmentSubmissionAssignment?.classId;
-      const targetAssignmentId =
-        assignmentId || assignmentSubmissionAssignment?._id;
-      const targetUrl = `/student/classes/${targetClassId}?openAssignment=${targetAssignmentId}`;
-
-      console.log("[Submission] Stored draft and redirecting", {
-        classId,
-        assignmentId,
-        targetUrl,
-      });
-
-      if (targetClassId && targetAssignmentId) {
-        navigate(targetUrl);
-      } else {
-        alert(
-          "Simulation captured! Please return to your dashboard to finalize submission.",
-        );
-      }
-    } catch (error) {
-      setAssignmentSubmissionState((current) => ({
-        ...current,
-        saving: false,
-        error: error.message || "Failed to submit assignment.",
-      }));
-    }
-  };
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
@@ -3181,49 +2936,19 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // which overwrites our DOM transform on the SAME frame, creating the vibration.
   // Instead: apply only the CSS transform during pinch, update refs for correctness,
   // then flush to React state via a debounce AFTER the gesture ends.
-  const onWheel = useCallback((e) => {
-    if (isCanvasLockedRef.current) return;
-    e.preventDefault();
-
-    // ─── ZOOM LOGIC (scroll wheel always zooms) ─────────────────────────────
-    const zoomSpeed = 0.002;
-    const delta = -e.deltaY * zoomSpeed;
-    const currentZoom = canvasZoomRef.current;
-    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
-
-    if (newZoom === currentZoom) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
-
-    const newOffsetX = mx - cx * newZoom;
-    const newOffsetY = my - cy * newZoom;
-
-    canvasZoomRef.current = newZoom;
-    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
-
-    // Apply directly to DOM for zero-latency 60fps movement
-    if (innerCanvasRef.current) {
-      innerCanvasRef.current.style.transform = `translate(${canvasOffsetRef.current.x}px, ${canvasOffsetRef.current.y}px) scale(${canvasZoomRef.current})`;
-      innerCanvasRef.current.style.transformOrigin = "0 0";
-    }
-
-    // While running, keep the interaction in refs/DOM only so the simulator tree
-    // does not rerender on every pan/zoom tick.
-    if (isRunning) return;
-
-    // Debounce the React state flush to avoid re-render lag during interaction
-    if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
-    rafZoomRef.current = setTimeout(() => {
-      rafZoomRef.current = null;
-      setCanvasZoom(canvasZoomRef.current);
-      setCanvasOffset({ ...canvasOffsetRef.current });
-    }, 150);
-  }, []);
+  // ── Canvas wheel zoom (DOM-first, debounced flush) ──────────────────────────
+  // Lives in hooks/useCanvasWheelZoom.js (identical clamp + anchor math).
+  const { onWheel } = useCanvasWheelZoom({
+    isCanvasLockedRef,
+    canvasZoomRef,
+    canvasOffsetRef,
+    canvasRef,
+    innerCanvasRef,
+    isRunning,
+    rafZoomRef,
+    setCanvasZoom,
+    setCanvasOffset,
+  });
 
   // ── Move and Select component ──────────────────────────────────────────────
 
@@ -3307,15 +3032,17 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   // ── Wire actions (create/recolor/layer) ─────────────────────────────────
   // Lives in hooks/useWireActions.js (identical guards + color pick).
-  const { onPinClick, updateWireColor, toggleWireLayer } = useWireActions({
-    getPinPos,
-    saveHistory,
-    wireStartRef,
-    isRunningRef,
-    liveEditingDisabledRef,
-    setWireStart,
-    setWires,
-  });
+  const { onPinClick, updateWireColor, toggleWireLayer, deleteWire } =
+    useWireActions({
+      getPinPos,
+      saveHistory,
+      wireStartRef,
+      isRunningRef,
+      liveEditingDisabledRef,
+      setWireStart,
+      setWires,
+      setSelected,
+    });
 
   // ── Rewire to board ─────────────────────────────────────────────────────
   // Lives in utils/wireToBoard.js (identical plan + snippet strip).
@@ -3372,15 +3099,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   });
   // Stable identity: reads live state via refs so the memoized canvas
   // tree isn't invalidated on unrelated renders.
-  const deleteWire = useCallback(
-    (id) => {
-      if (isRunningRef.current || liveEditingDisabledRef.current) return;
-      saveHistory();
-      setWires((prev) => prev.filter((w) => w.id !== id));
-      setSelected((prev) => (prev === id ? null : prev));
-    },
-    [saveHistory],
-  );
 
   // Stable identity (same ref-mirror rationale as deleteWire above).
   // ── Component move/rotate ───────────────────────────────────────────────
@@ -3397,335 +3115,30 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setComponents,
     wiresRef,
   });
-  const downloadCodeFile = useCallback(
-    (fileId) => {
-      const file = projectFileMap.get(fileId);
-      if (!file) return;
-      const blob = new Blob([file.content || ""], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    },
-    [projectFileMap],
-  );
-
-  const getBoardFirmwareAssets = useCallback(
-    (boardId) => {
-      const boardFiles = projectFiles
-        .filter((f) => f.path.startsWith(`project/${boardId}/`))
-        .filter((f) => !isFileDisabled(f.path));
-      const uf2File = boardFiles.find(
-        (f) =>
-          fileExt(f.path) === ".uf2" &&
-          typeof f.content === "string" &&
-          f.content.trim(),
-      );
-      const pyFiles = boardFiles
-        .filter((f) => fileExt(f.path) === ".py")
-        .map((f) => ({
-          path: toBoardRelativePath(boardId, f.path),
-          name: f.name,
-          content: String(f.content || ""),
-        }));
-
-      const mainPy =
-        pyFiles.find((f) => f.name.toLowerCase() === "main.py") ||
-        pyFiles[0] ||
-        null;
-
-      let uf2Payload = null;
-      if (uf2File?.content) {
-        const raw = String(uf2File.content).trim();
-        uf2Payload = raw.startsWith(UF2_PAYLOAD_PREFIX)
-          ? raw
-          : `${UF2_PAYLOAD_PREFIX}${raw}`;
-      }
-
-      return { uf2Payload, mainPy, pythonFiles: pyFiles };
-    },
-    [projectFiles],
-  );
-
-  const fetchDefaultMicroPythonUf2Payload = useCallback(async () => {
-    if (micropythonUf2PayloadRef.current)
-      return micropythonUf2PayloadRef.current;
-
-    const response = await fetch(
-      `${DEFAULT_PICO_MICROPYTHON_UF2_URL}?v=uart0`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) {
-      throw new Error(
-        `Unable to fetch default MicroPython UF2 (${response.status})`,
-      );
-    }
-
-    const buffer = await response.arrayBuffer();
-    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-    micropythonUf2PayloadRef.current = payload;
-    return payload;
-  }, []);
-
-  const fetchDefaultCircuitPythonUf2Payload = useCallback(async () => {
-    if (circuitPythonUf2PayloadRef.current)
-      return circuitPythonUf2PayloadRef.current;
-
-    const version = encodeURIComponent(DEFAULT_PICO_CIRCUITPYTHON_VERSION);
-    const response = await fetch(
-      `${DEFAULT_PICO_CIRCUITPYTHON_UF2_URL}?v=${version}`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) {
-      throw new Error(
-        `Unable to fetch default CircuitPython UF2 (${response.status})`,
-      );
-    }
-
-    const buffer = await response.arrayBuffer();
-    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-    circuitPythonUf2PayloadRef.current = payload;
-    return payload;
-  }, []);
-
-  const resolveFolderFilePolicy = useCallback(
-    (parentPath = "project") => {
-      const normalizedParent =
-        String(parentPath || "project").trim() || "project";
-      const boardMatch = normalizedParent.match(/^project\/([^/]+)(?:\/|$)/);
-      if (!boardMatch) {
-        return {
-          parent: normalizedParent,
-          boardId: "",
-          boardKind: "root",
-          rp2040Mode: "native",
-          defaultExt: ".ino",
-          allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
-        };
-      }
-
-      const boardId = boardMatch[1];
-      const boardComp = boardComponentMap.get(boardId);
-      const boardKind = normalizeBoardKind(boardComp?.type || "");
-      if (boardKind !== "rp2040") {
-        return {
-          parent: normalizedParent,
-          boardId,
-          boardKind,
-          rp2040Mode: "native",
-          defaultExt: ".ino",
-          allowedExtensions: RP2040_NATIVE_ALLOWED_EXTENSIONS,
-        };
-      }
-
-      const rp2040Mode = rp2040BoardSourceModes[boardId] || "native";
-      return {
-        parent: normalizedParent,
-        boardId,
-        boardKind,
-        rp2040Mode,
-        defaultExt: isRp2040PythonEnv(rp2040Mode) ? ".py" : ".ino",
-        allowedExtensions: isRp2040PythonEnv(rp2040Mode)
-          ? RP2040_MICROPYTHON_ALLOWED_EXTENSIONS
-          : RP2040_NATIVE_ALLOWED_EXTENSIONS,
-      };
-    },
-    [boardComponentMap, rp2040BoardSourceModes],
-  );
-
-  const createCodeFile = useCallback(
-    (requestedName, openAfterCreate = false, customParent = null) => {
-      const cleaned = String(requestedName || "").trim();
-      if (!cleaned) return null;
-
-      let parent = "project";
-      if (customParent) {
-        parent = customParent;
-      } else {
-        const activePath = activeCodeFile?.path || "";
-        parent = activePath.includes("/")
-          ? activePath.substring(0, activePath.lastIndexOf("/"))
-          : "project";
-      }
-
-      const folderPolicy = resolveFolderFilePolicy(parent);
-
-      const defaultExt = folderPolicy.defaultExt || ".ino";
-      const rawExt = fileExt(cleaned);
-      const fileNameBase = rawExt ? cleaned.slice(0, -rawExt.length) : cleaned;
-      const ext = rawExt || defaultExt;
-      const safeBase =
-        fileNameBase.replace(/[^a-zA-Z0-9._-]/g, "_") || "new_file";
-      const safeExt = (
-        ext.replace(/[^a-zA-Z0-9.]/g, "") || defaultExt
-      ).toLowerCase();
-
-      if (!folderPolicy.allowedExtensions.has(safeExt)) {
-        if (folderPolicy.boardKind === "rp2040") {
-          const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode)
-            ? ".py"
-            : ".ino";
-          alert(
-            `RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" is disabled for this env.`,
-          );
-        } else {
-          alert(`Unsupported file type: ${safeExt}`);
-        }
-        return null;
-      }
-
-      let candidate = `${safeBase}${safeExt}`;
-      let candidatePath = `${parent}/${candidate}`;
-      let i = 2;
-
-      while (projectFileMap.has(candidatePath)) {
-        candidate = `${safeBase}_${i}${safeExt}`;
-        candidatePath = `${parent}/${candidate}`;
-        i++;
-      }
-
-      const boardMatch = candidatePath.match(/^project\/([^/]+)\//);
-      const content =
-        safeExt === ".h"
-          ? `#pragma once\n\n// ${safeBase} declarations\n`
-          : safeExt === ".cpp"
-            ? `#include "${safeBase}.h"\n\n// ${safeBase} implementation\n`
-            : safeExt === ".ino"
-              ? `void setup() {\n}\n\nvoid loop() {\n}\n`
-              : safeExt === ".py"
-                ? `from machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`
-                : "";
-
-      const nextFile = {
-        id: candidatePath,
-        path: candidatePath,
-        name: candidate,
-        kind: "code",
-        boardId: boardMatch ? boardMatch[1] : undefined,
-        boardKind: boardMatch ? folderPolicy.boardKind : undefined,
-        content,
-        dirty: true,
-      };
-
-      setProjectFiles((prev) => [...prev, nextFile]);
-      if (openAfterCreate) {
-        setOpenCodeTabs((prev) =>
-          prev.includes(candidatePath) ? prev : [...prev, candidatePath],
-        );
-        setActiveCodeFileId(candidatePath);
-      }
-
-      return candidatePath;
-    },
-    [activeCodeFile, projectFileMap, resolveFolderFilePolicy],
-  );
-
-  const createCodeTab = useCallback(
-    (requestedName) => {
-      return createCodeFile(requestedName, true);
-    },
-    [createCodeFile],
-  );
-
-  const uploadCodeFile = useCallback(
-    (customParent = null) => {
-      let parent = "project";
-      if (customParent) {
-        parent = customParent;
-      } else {
-        const activePath = activeCodeFile?.path || "";
-        parent = activePath.includes("/")
-          ? activePath.substring(0, activePath.lastIndexOf("/"))
-          : "project";
-      }
-
-      const folderPolicy = resolveFolderFilePolicy(parent);
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = Array.from(folderPolicy.allowedExtensions).join(",");
-      input.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const rawExt = fileExt(file.name);
-        const readAsBinary = rawExt === ".uf2";
-        const reader = new FileReader();
-        reader.onload = (re) => {
-          let content = re.target.result;
-          if (readAsBinary) {
-            const base64 = arrayBufferToBase64(content);
-            content = `${UF2_PAYLOAD_PREFIX}${base64}`;
-          }
-
-          const fileNameBase = rawExt
-            ? file.name.slice(0, -rawExt.length)
-            : file.name;
-          const ext = rawExt || folderPolicy.defaultExt || ".ino";
-          const safeBase =
-            fileNameBase.replace(/[^a-zA-Z0-9._-]/g, "_") || "uploaded";
-          const safeExt = (
-            ext.replace(/[^a-zA-Z0-9.]/g, "") || ".ino"
-          ).toLowerCase();
-
-          if (!folderPolicy.allowedExtensions.has(safeExt)) {
-            if (folderPolicy.boardKind === "rp2040") {
-              const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode)
-                ? ".py"
-                : ".ino";
-              alert(
-                `RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" cannot be uploaded in this env.`,
-              );
-            } else {
-              alert(`Unsupported file type: ${safeExt}`);
-            }
-            return;
-          }
-
-          let candidate = `${safeBase}${safeExt}`;
-          let candidatePath = `${parent}/${candidate}`;
-          let i = 2;
-
-          while (projectFileMap.has(candidatePath)) {
-            candidate = `${safeBase}_${i}${safeExt}`;
-            candidatePath = `${parent}/${candidate}`;
-            i++;
-          }
-
-          const boardMatch = candidatePath.match(/^project\/([^/]+)\//);
-          const nextFile = {
-            id: candidatePath,
-            path: candidatePath,
-            name: candidate,
-            kind: "code",
-            boardId: boardMatch ? boardMatch[1] : undefined,
-            boardKind: boardMatch ? folderPolicy.boardKind : undefined,
-            content,
-            dirty: true,
-          };
-
-          setProjectFiles((prev) => [...prev, nextFile]);
-          setOpenCodeTabs((prev) =>
-            prev.includes(candidatePath) ? prev : [...prev, candidatePath],
-          );
-          setActiveCodeFileId(candidatePath);
-
-          appendConsoleEntry("info", `File uploaded: ${candidate}`, "code");
-        };
-        if (readAsBinary) reader.readAsArrayBuffer(file);
-        else reader.readAsText(file);
-      };
-      input.click();
-    },
-    [
-      activeCodeFile,
-      projectFileMap,
-      appendConsoleEntry,
-      resolveFolderFilePolicy,
-    ],
-  );
-
+  // ── Code-file management (create/upload/download/UF2) ───────────────────────
+  // Lives in hooks/useCodeFiles.js (identical templates + gates).
+  const {
+    downloadCodeFile,
+    getBoardFirmwareAssets,
+    fetchDefaultMicroPythonUf2Payload,
+    fetchDefaultCircuitPythonUf2Payload,
+    resolveFolderFilePolicy,
+    createCodeFile,
+    createCodeTab,
+    uploadCodeFile,
+  } = useCodeFiles({
+    projectFileMap,
+    projectFiles,
+    boardComponentMap,
+    rp2040BoardSourceModes,
+    activeCodeFile,
+    setProjectFiles,
+    setOpenCodeTabs,
+    setActiveCodeFileId,
+    appendConsoleEntry,
+    micropythonUf2PayloadRef,
+    circuitPythonUf2PayloadRef,
+  });
   // ── Firmware/download artifacts ───────────────────────────────────────────
   // Lives in hooks/useFirmwareArtifacts.js (identical bytes + dep arrays).
   const {
@@ -3779,16 +3192,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     parseFirmwareUploadFile,
     lastCompiledRef,
   });
-  const handleStartGDB = () => {
-    appendConsoleEntry("info", "Connecting to GDB Session...", "simulator");
-    // Note: requires backend running wokwi-gdbserver (e.g. gdbserver.js) on port 3333
-    appendConsoleEntry(
-      "info",
-      "Opening local GDB session on http://localhost:3333...",
-      "simulator",
-    );
-    window.open("http://localhost:3333", "_blank");
-  };
+  // GDB launcher lives in utils/gdbLauncher.js (identical session URL).
+  const handleStartGDB = () => launchGdbSession({ appendConsoleEntry });
 
   // ── Project persistence (save/load/backup/restore/wokwi) ───────────────────
   // Lives in hooks/useProjectPersistence.js (identical gates + stripping).
@@ -3905,579 +3310,104 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   });
 
 
-  // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
-  const handleSyncToCloud = () => {
-    alert("Sync feature coming soon!");
-  };
-
-  const handleGenerateShareUrl = async () => {
-    setIsSharingSimulation(true);
-    try {
-      // 1. Save the project to Cloud & IndexedDB first
-      const name = currentProjectName || "Untitled";
-      const owner = getOwner();
-      let id = currentProjectIdRef.current;
-      if (!id) {
-        id = generateProjectId();
-        currentProjectIdRef.current = id;
-        setCurrentProjectId(id);
-      }
-      clearTimeout(autoSaveTimerRef.current);
-      const finalName = await saveProject({
-        id,
-        name,
-        board,
-        components,
-        connections: wires,
-        code,
-        blocklyXml,
-        blocklyGeneratedCode,
-        useBlocklyCode,
-        projectFiles,
-        openCodeTabs,
-        activeCodeFileId,
-        owner,
-      });
-      setCurrentProjectName(finalName || name);
-      await refreshProjectList();
-      setTimeout(() => captureThumbnailRef.current?.(), 1500);
-
-      // 2. Create the Shared Simulation snapshot with chosen visibility
-      const response = await createSharedSimulation({
-        name: finalName || name || "Untitled",
-        isPublic: shareVisibility === "public",
-        parentProjectId: shareLinkType === "live" ? id : "",
-        board,
-        components,
-        connections: wires,
-        code,
-        projectFiles,
-        openCodeTabs,
-        activeCodeFileId,
-      });
-
-      const url = `${window.location.origin}/simulator/share/${response.shareId}`;
-      setShareUrl(url);
-      setShareCopied(false);
-
-      // 3. Update browser address bar to the shared simulation link
-      justSharedRef.current = response.shareId;
-      navigate(`/simulator/share/${response.shareId}`);
-
-      return url;
-    } catch (error) {
-      console.error("Failed to share simulation", error);
-      alert(
-        error?.response?.data?.message ||
-        error.message ||
-        "Failed to share simulation.",
-      );
-      return "";
-    } finally {
-      setIsSharingSimulation(false);
-    }
-  };
-
-  const handleShareSimulation = async () => {
-    console.log(
-      "[SimulatorPage] handleShareSimulation - activeUser:",
-      activeUser,
-    );
-    if (!["teacher", "user", "admin"].includes(activeUser?.role)) {
-      alert("Only signed-in teachers and users can share simulator templates.");
-      return;
-    }
-
-    if (!isAnyAuthenticated) {
-      alert("Please sign in to share this simulation.");
-      navigate("/login");
-      return;
-    }
-
-    if (shareId) {
-      setShareUrl(`${window.location.origin}/simulator/share/${shareId}`);
-    } else {
-      setShareUrl("");
-    }
-    setShareCopied(false);
-    setShareVisibility("public");
-    setShareLinkType("snapshot");
-    setShowShareDialog(true);
-  };
-
-  const handleShareVisibilityChange = (val) => {
-    setShareVisibility(val);
-    setShareUrl("");
-  };
-
-  const handleShareLinkTypeChange = (val) => {
-    setShareLinkType(val);
-    setShareUrl("");
-  };
-
-  const handleCopyShareUrl = async () => {
-    if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShareCopied(true);
-    } catch (error) {
-      console.error("Failed to copy share URL", error);
-      alert("Failed to copy share URL.");
-    }
-  };
-
-  // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
-
-  const logCompileSummary = useCallback(
-    (compiledResult, boardComp, boardKind) => {
-      const summaryLines = extractCompileSummaryLines(
-        compiledResult?.stdout || "",
-      );
-      if (summaryLines.length === 0) return;
-
-      const boardLabel = boardCompToDisplayName(boardComp, boardKind);
-      summaryLines.forEach((line) => {
-        appendConsoleEntry("info", `[${boardLabel}] ${line}`, "simulator");
-      });
-    },
-    [appendConsoleEntry],
-  );
-
-  const registerGdbArtifact = useCallback(
-    (boardId, boardKind, compiledResult) => {
-      const compiled =
-        compiledResult && typeof compiledResult === "object"
-          ? compiledResult
-          : null;
-      if (!compiled || !boardId) return;
-
-      const elfPayload = typeof compiled.elf === "string" ? compiled.elf : "";
-      const gdbMeta =
-        compiled.gdb && typeof compiled.gdb === "object" ? compiled.gdb : null;
-      if (!elfPayload && !gdbMeta) return;
-
-      const artifact = {
-        boardId,
-        boardKind,
-        ts: Date.now(),
-        elf: elfPayload,
-        elfName: compiled.elfName || "",
-        firmware: compiled.hex || "",
-        artifactType: compiled.artifactType || "",
-        gdb: gdbMeta,
-      };
-
-      try {
-        localStorage.setItem(
-          `openhw_gdb_artifact_${boardId}`,
-          JSON.stringify(artifact),
-        );
-        localStorage.setItem(
-          "openhw_gdb_last_artifact",
-          JSON.stringify(artifact),
-        );
-      } catch (e) {
-        // ignore storage failures
-      }
-
-      const gdbName = gdbMeta?.gdb || "gdb-multiarch";
-      const remoteTarget = gdbMeta?.targetRemote || "localhost:3333";
-      const elfLabel = artifact.elfName ? ` (${artifact.elfName})` : "";
-      appendConsoleEntry(
-        "info",
-        `GDB artifact ready for ${boardId}: ${gdbName} -> target remote ${remoteTarget}${elfLabel}`,
-        "debug",
-      );
-      appendConsoleEntry(
-        "info",
-        "Web GDB reference: https://wokwi.github.io/web-gdb/",
-        "debug",
-      );
-    },
-    [appendConsoleEntry],
-  );
-
-  const buildValidationSignature = useCallback(() => {
-    const normalizedComponents = (components || [])
-      .map((comp) => ({
-        id: comp?.id || "",
-        type: comp?.type || "",
-        attrs: comp?.attrs || {},
-      }))
-      .sort((a, b) => `${a.id}|${a.type}`.localeCompare(`${b.id}|${b.type}`));
-
-    const normalizedWires = (wires || [])
-      .map((wire) => ({
-        from: String(wire?.from || ""),
-        to: String(wire?.to || ""),
-      }))
-      .sort((a, b) => `${a.from}|${a.to}`.localeCompare(`${b.from}|${b.to}`));
-
-    return JSON.stringify({
-      components: normalizedComponents,
-      wires: normalizedWires,
-      activeCodeFileId: activeCodeFileId || "",
-      code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
-    });
-  }, [
+  // ── Share dialog (snapshot/live links) ────────────────────────────────────
+  // Lives in hooks/useShareDialog.js (identical dedup + gates).
+  const {
+    handleSyncToCloud,
+    handleGenerateShareUrl,
+    handleShareSimulation,
+    handleShareVisibilityChange,
+    handleShareLinkTypeChange,
+    handleCopyShareUrl,
+  } = useShareDialog({
+    currentProjectName,
+    currentProjectIdRef,
+    setCurrentProjectId,
+    autoSaveTimerRef,
+    getOwner,
+    board,
     components,
     wires,
-    activeCodeFileId,
-    useBlocklyCode,
-    codeTab,
-    blocklyGeneratedCode,
     code,
-  ]);
-
-  const runCircuitValidation = useCallback(
-    (overriddenComponents, overriddenWires) => {
-      try {
-        if (isRunning) return true;
-
-        const targetComponents = overriddenComponents || components;
-        const targetWires = overriddenWires || wires;
-
-        // Skip signature check if we are forcing a validation with overridden state
-        if (!overriddenComponents && !overriddenWires) {
-          const validationSignature = buildValidationSignature();
-          const cachedValidation = validationRunCacheRef.current;
-          if (cachedValidation.signature === validationSignature) {
-            setValidationErrors(cachedValidation.errors || []);
-            setValidationToast(cachedValidation.toast || null);
-            setHealthScore(
-              Number.isFinite(cachedValidation.healthScore)
-                ? cachedValidation.healthScore
-                : 100,
-            );
-            if ((cachedValidation.errors || []).length > 0) {
-              setShowValidation(true);
-              if (typeof setIsPanelOpen === "function") setIsPanelOpen(true);
-            }
-            return cachedValidation.allowRun !== false;
-          }
-        }
-
-        const projectData = {
-          components: targetComponents,
-          connections: targetWires,
-          code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
-          activeCodeFileId,
-        };
-
-        // USE UNIFIED ENGINE (Locally)
-        const { safe, physicsSafe, errors, healthScore } = runUnifiedValidation(
-          projectData,
-          {
-            profile: "balanced",
-            incremental: true,
-            incrementalScope: "webui",
-            registry: EmulatorComponents, // Pass the full component library for rule discovery
-          },
-        );
-
-        setHealthScore(healthScore);
-        setValidationErrors(errors);
-
-        const hasFatalPhysics = errors.some(
-          (e) => e.severity === "error" || e.type === "error",
-        );
-        const allowRun = physicsSafe && !hasFatalPhysics; // Block if physics is unsafe (short circuit etc)
-
-        let nextToast = null;
-        if (!safe) {
-          if (errors.length > 0 && showAutofix) {
-            triggerAutofixAnalysis(errors, targetComponents, targetWires);
-          }
-          setShowValidation(true);
-          if (typeof setIsPanelOpen === "function") setIsPanelOpen(true);
-
-          nextToast = {
-            title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-            reasons: errors.slice(0, 3).map((e) => e.message),
-          };
-          setValidationToast(nextToast);
-        } else {
-          setValidationToast(null);
-        }
-
-        validationRunCacheRef.current = {
-          signature: overriddenComponents
-            ? "invalidated"
-            : buildValidationSignature(),
-          allowRun,
-          errors,
-          healthScore,
-          toast: nextToast,
-        };
-
-        return allowRun;
-      } catch (err) {
-        console.warn("[Validation] Engine failed, continuing run:", err);
-        return true;
-      }
-    },
-    [
-      components,
-      wires,
-      code,
-      useBlocklyCode,
-      blocklyGeneratedCode,
-      activeCodeFileId,
-      isRunning,
-      buildValidationSignature,
-    ],
-  );
-
-  const applyFix = useCallback(
-    async (error) => {
-      if (!error.remediation && !error.ruleId) {
-        appendConsoleEntry(
-          "warn",
-          "⚠️ Cannot fix: No remediation found",
-          "simulator",
-        );
-        return;
-      }
-
-      saveHistory();
-      const projectData = { components, connections: wires };
-      const circuitBefore = JSON.parse(JSON.stringify(projectData));
-
-      // Apply the fix using enhanced fixer
-      const result = sharedApplyCircuitFix(projectData, error, {
-        appliedBy: "webui",
-      });
-
-      if (!result.applied) {
-        appendConsoleEntry(
-          "warn",
-          `⚠️ Fix not applied: ${result.reason || "Check circuit connectivity"}`,
-          "simulator",
-        );
-        return;
-      }
-
-      // Update the circuit
-      setComponents(result.components);
-      setWires(result.connections);
-
-      // Log applied fix
-      const fixDesc =
-        result.appliedFixes?.[0]?.description || error.remediation;
-      appendConsoleEntry("info", `🔧 Applied: ${fixDesc}`, "simulator");
-
-      // CRITICAL: Clear validation cache so next run re-validates from scratch
-      validationRunCacheRef.current = {};
-
-      // Re-run validation to verify the fix worked
-      try {
-        const validator = new FullCircuitValidator({
-          components: result.components,
-          connections: result.connections,
-        });
-        const verifyResult = await validator.runValidation({
-          profile: "balanced",
-          incrementalScope: "webui",
-        });
-
-        const errorStillExists = verifyResult.errors?.some(
-          (e) => (e.id || e.ruleId) === (error.id || error.ruleId),
-        );
-
-        const newErrors =
-          verifyResult.errors?.filter(
-            (newErr) =>
-              !validationErrors.some(
-                (oldErr) =>
-                  (oldErr.id || oldErr.ruleId) === (newErr.id || newErr.ruleId),
-              ),
-          ) || [];
-
-        if (!errorStillExists) {
-          if (newErrors.length === 0) {
-            appendConsoleEntry(
-              "success",
-              `✅ Fix successful! Error resolved.`,
-              "simulator",
-            );
-          } else {
-            const errorCount = newErrors.filter(
-              (e) => e.severity === "error",
-            ).length;
-            const warnCount = newErrors.filter(
-              (e) => e.severity === "warn",
-            ).length;
-            appendConsoleEntry(
-              "warn",
-              `✅ Original error fixed, but introduced ${errorCount} error(s) and ${warnCount} warning(s). Review changes.`,
-              "simulator",
-            );
-          }
-        } else {
-          appendConsoleEntry(
-            "error",
-            `❌ Fix did not resolve the error. Try a different approach.`,
-            "simulator",
-          );
-        }
-      } catch (verifyErr) {
-        console.warn(
-          "[Verification] Revalidation failed after fix:",
-          verifyErr,
-        );
-        appendConsoleEntry(
-          "info",
-          `✅ Applied: ${fixDesc} (verification skipped)`,
-          "simulator",
-        );
-      }
-    },
-    [components, wires, saveHistory, validationErrors],
-  );
-
-  // Autofix preview/apply-all integration
-  // Unified project change application (shared by Autofix and future Autowiring engines)
-  const applyProjectChangePlan = useCallback(
-    (plan) => {
-      if (!plan) return;
-
-      // Set for verification loop
-      if (plan.targetRuleId) {
-        setPendingVerificationRule(plan.targetRuleId);
-      }
-
-      // Calculate the new project state using the centralized utility
-      const { components: nextComponents, wires: nextWires } =
-        calculateProjectPlanApplication(
-          plan,
-          components,
-          wires,
-          LOCAL_PIN_DEFS,
-        );
-
-      setComponents(nextComponents);
-      setWires(nextWires);
-      saveHistory();
-
-      appendConsoleEntry(
-        "info",
-        `🔧 Project Plan Applied: ${plan.addedComponents?.length || 0} components, ${plan.addedWires?.length || 0} wires.`,
-        "simulator",
-      );
-
-      // Force re-validation after fix to continue "Speak & Hear" loop
-      // We pass nextComponents/nextWires directly to bypass React's async state update
-      setTimeout(async () => {
-        validationRunCacheRef.current = {}; // Clear cache
-
-        // 1) Trigger Local Simulator Validation check against new topology
-        runCircuitValidation(nextComponents, nextWires);
-
-        appendConsoleEntry(
-          "info",
-          "📡 Re-validating circuit after repair...",
-          "simulator",
-        );
-      }, 150);
-    },
-    [components, wires, saveHistory, appendConsoleEntry, runCircuitValidation],
-  );
-
-  const handleApplyPlan = useCallback(() => {
-    if (!autofixPlan) return;
-    applyProjectChangePlan(autofixPlan);
-    setAutofixPlan(null); // Clear preview
-  }, [autofixPlan, applyProjectChangePlan]);
-
-  const handleHardwareBoardChange = useCallback(
-    (nextBoardId) => {
-      setHardwareBoardId(nextBoardId);
-      if (nextBoardId) setSelected(nextBoardId);
-    },
-    [setSelected],
-  );
-
-  const resolveBoardHex = useCallback(
-    async (boardComp) => {
-      if (!boardComp) throw new Error("No board selected for upload.");
-      const kind = normalizeBoardKind(boardComp.type);
-      const fqbn = resolveBoardFqbnForComponent(boardComp, kind);
-      const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
-      if (typeof boardHex === "string" && boardHex.trim()) return boardHex;
-
-      const compileUnit = getBoardCompileFiles(boardComp.id);
-      if (!compileUnit.hasMainFile) {
-        throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
-      }
-      const sourceCode = compileUnit.mainCode || '';
-      const cacheKeyBoard = `${kind}:${boardComp.id}`;
-      const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-      const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
-
-      const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-      const librariesTxt = libFile
-        ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
-        : '';
-
-      const cacheSource = [
-        sourceCode,
-        ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-        fqbn,
-        buildEngine,
-        librariesTxt,
-        'targetEngine:hardware'
-      ].join('\n/*__SPLIT__*/\n');
-
-      let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-      if (!compiled) {
-        if (kind === 'esp32') {
-          const startRes = await startEsp32Compile({
-            code: sourceCode,
-            libraries_txt: librariesTxt,
-            targetEngine: 'hardware'
-          });
-          if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-            throw new Error('Failed to start ESP32 compilation.');
-          }
-          const jobId = startRes.jobId || startRes.buildId;
-          let pollCount = 0;
-          while (true) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const statusRes = await getEsp32CompileStatus(jobId);
-            if (!statusRes) continue;
-
-            if (statusRes.status === 'success') {
-              if (!statusRes.binary_content) {
-                throw new Error('Compilation succeeded but no binary content was returned.');
-              }
-              compiled = { hex: statusRes.binary_content };
-              break;
-            } else if (statusRes.status === 'failed') {
-              throw new Error(statusRes.error || 'ESP32 compilation failed.');
-            }
-
-            pollCount++;
-            if (pollCount > 180) {
-              throw new Error('ESP32 compilation timed out after 90 seconds.');
-            }
-          }
-        } else {
-          compiled = await compileCode({
-            code: sourceCode,
-            files: compileUnit.files,
-            sketchName: compileUnit.sketchName,
-            fqbn,
-            target: kind,
-            libraries_txt: librariesTxt,
-            ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-          });
-        }
-        setCachedHex(cacheSource, cacheKeyBoard, compiled);
-      }
-      return compiled.hex;
-    }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
-
+    blocklyXml,
+    blocklyGeneratedCode,
+    useBlocklyCode,
+    projectFiles,
+    openCodeTabs,
+    activeCodeFileId,
+    setCurrentProjectName,
+    refreshProjectList,
+    captureThumbnailRef,
+    shareVisibility,
+    setShareVisibility,
+    shareLinkType,
+    setShareLinkType,
+    setShareUrl,
+    setShareCopied,
+    shareUrl,
+    justSharedRef,
+    navigate,
+    setIsSharingSimulation,
+    activeUser,
+    isAnyAuthenticated,
+    shareId,
+    setShowShareDialog,
+  });
+  // ── Validation/autofix core ───────────────────────────────────────────────
+  // Lives in hooks/useValidationCore.js (identical cache + bypass + apply).
   const {
+    logCompileSummary,
+    registerGdbArtifact,
+    buildValidationSignature,
+    runCircuitValidation,
+    applyFix,
+    applyProjectChangePlan,
+    handleApplyPlan,
+  } = useValidationCore({
+    appendConsoleEntry,
+    validationErrors,
+    setValidationErrors,
+    setValidationToast,
+    setAutofixPlan,
+    components,
+    wires,
+    runUnifiedValidation,
+    FullCircuitValidator,
+    analyzeCodeHardwareSync,
+    boardComponents,
+    code,
+    codeTab,
+    useBlocklyCode,
+    blocklyGeneratedCode,
+    activeCodeFile,
+    activeCodeFileId,
+    projectFiles,
+    saveHistory,
+    setComponents,
+    setWires,
+    setProjectFiles,
+    setSelected,
+    setWireStart,
+    wireStartRef,
+    setSnappingHoles,
+    movingComp,
+    setIsComponentDragging,
+    autofixPlan,
+    sharedApplyCircuitFix,
+    isRunning,
+    setHealthScore,
+    setShowValidation,
+    setPendingVerificationRule,
+    triggerAutofixAnalysis,
+    validationRunCacheRef,
+    EmulatorComponents,
+    setIsPanelOpen,
+  });
+  // ── Hardware flash (ports/resolve/upload) ───────────────────────────────────
+  // Lives in hooks/useHardwareUpload.js (identical key + poll + release).
+  const {
+    handleHardwareBoardChange,
+    resolveBoardHex,
     hardwareAvailablePorts,
     showAllHardwarePorts,
     setShowAllHardwarePorts,
@@ -4492,101 +3422,34 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     refreshHardwarePorts,
     uploadToHardware,
     isUploadingHardware,
-  } = useHardwareFlashing({
-    hardwareBoardId,
-    boardComponents,
-    resolveBoardHex,
-    normalizeBoardKind,
-    resolveBoardFqbn: resolveBoardFqbnForComponent,
-    boardFqbn: BOARD_FQBN,
-    flashFirmware,
-    pushSerialTxLine,
-    pushSerialRxChunk,
-    setHardwareStatus,
-  });
-
-  const {
     hardwareConnected,
     hardwareConnecting,
     connectHardwareSerial,
     disconnectHardwareSerial,
     sendHardwareSerialLine,
-  } = useWebSerialHardware({
+    handleUploadToHardware,
+  } = useHardwareUpload({
+    setHardwareBoardId,
+    setSelected,
+    getBoardCompileFiles,
+    resolveBoardFqbnForComponent,
+    projectFiles,
+    activeCodeFileId,
+    code,
     hardwareBoardId,
-    hardwareSerialTargetRef,
     boardComponents,
-    board,
-    hardwareBaudRate,
-    showAllHardwarePorts,
-    normalizeBoardKind,
-    boardDefaultBaud: BOARD_DEFAULT_BAUD,
-    pushSerialRxChunk,
+    BOARD_FQBN,
+    flashFirmware,
     pushSerialTxLine,
+    pushSerialRxChunk,
     setHardwareStatus,
-  });
-
-  useEffect(() => {
-    if (!hardwareConnected) {
-      setHardwareSerialTargetId(null);
-      hardwareSerialTargetRef.current = null;
-      return;
-    }
-
-    const deviceLabel = String(resolvedHardwarePort || "").trim();
-    const nextTarget = deviceLabel
-      ? `hw:${deviceLabel}`
-      : hardwareBoardId
-        ? `hw:${hardwareBoardId}`
-        : "hw:connected";
-
-    setHardwareSerialTargetId(nextTarget);
-    hardwareSerialTargetRef.current = nextTarget;
-  }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
-
-  const handleUploadToHardware = useCallback(async () => {
-    // RUN VALIDATION BEFORE FLASHING
-    appendConsoleEntry(
-      "info",
-      "🔍 Validating circuit health before hardware flash...",
-      "hardware",
-    );
-    if (!runCircuitValidation()) {
-      appendConsoleEntry(
-        "error",
-        "❌ Flash blocked: The circuit has electrical/safety violations. Fix them first.",
-        "hardware",
-      );
-      setHardwareStatus("Flash blocked: validation failed");
-      return;
-    }
-
-    // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
-    if (hardwareConnected) {
-      setHardwareStatus("Disconnecting Web Serial before flash...");
-      appendConsoleEntry(
-        "info",
-        "Disconnecting Web Serial to release port for flashing...",
-        "hardware",
-      );
-      await disconnectHardwareSerial();
-      await new Promise(r => setTimeout(r, 3500));
-    }
-
-    await uploadToHardware({
-      wasConnected: hardwareConnected,
-      disconnectFn: disconnectHardwareSerial,
-      connectFn: connectHardwareSerial,
-    });
-  }, [
-    hardwareConnected,
-    disconnectHardwareSerial,
-    connectHardwareSerial,
-    uploadToHardware,
-    setHardwareStatus,
+    board,
+    BOARD_DEFAULT_BAUD,
+    hardwareSerialTargetRef,
+    setHardwareSerialTargetId,
     appendConsoleEntry,
     runCircuitValidation,
-  ]);
-
+  });
   const handleRun = async (options = {}) => {
     try {
       // ── Run preflight (guard/validation/baud/ESP32 session) ─────────────
@@ -4711,7 +3574,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
           // ── RP2040 per-board compile ────────────────────────────────────
           // Lives in utils/rp2040Compile.js (identical UF2/cache semantics).
-          {
+          if (kind === "rp2040") {
             const rp2040Out = await compileRp2040Board(
               {
                 boardComp,
@@ -5049,6 +3912,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           telemetryWatchedParamsMap,
           deepSiliconDebuggingEnabled,
           esp32SimulationMode,
+          logSerial,
         },
         { COMPONENT_REGISTRY, stateSabRef },
       );
@@ -5076,403 +3940,114 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     }
   };
 
-  const runFnRef = useRef(null)
-  runFnRef.current = handleRun
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.data?.type === 'RUN_SIMULATION') {
-        runFnRef.current?.()
-      }
-      if (e.data?.type === 'serial-toggle' && canvasOnly) {
-        serialRelayActiveRef.current = !serialRelayActiveRef.current;
-        lastRelayedLengthRef.current = 0;
-      }
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [canvasOnly])
-
-  useEffect(() => {
-    if (!canvasOnly) return
-    const timer = setInterval(() => {
-      if (!serialRelayActiveRef.current) return
-      const history = serialHistoryRef.current
-      if (history.length > lastRelayedLengthRef.current) {
-        const newEntries = history.slice(lastRelayedLengthRef.current)
-        lastRelayedLengthRef.current = history.length
-        window.parent?.postMessage({ type: 'serial-entry', entries: newEntries }, '*')
-      }
-    }, 200)
-    return () => clearInterval(timer)
-  }, [canvasOnly])
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!serialPanelDragging.current) return
-      setSerialPanelPos({
-        x: Math.max(0, e.clientX - serialPanelDragOffset.current.x),
-        y: Math.max(0, e.clientY - serialPanelDragOffset.current.y),
-      })
-    }
-    const handleMouseUp = () => {
-      serialPanelDragging.current = false
-      setSerialPanelGrabbing(false)
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [])
-
-  const dispatchTeacherKeyCapture = useCallback(() => {
-    if (!workerRef.current) {
-      alert("Worker failed to start. Cannot capture key.");
-      return;
-    }
-
-    const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("esp32"));
-    const peripheralComp = components.find((c) => c.id !== boardComp?.id);
-    const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
-    const peripheralName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
-
-    const payload = buildSimulationJsonPayload();
-    const projectJson = JSON.stringify(payload, null, 2);
-
-    workerRef.current.postMessage({
-      type: "START_KEY_CAPTURE",
-      durationMs: 7900,
-      projectJson: projectJson,
-      board: boardName,
-      component: peripheralName
-    });
-  }, [components, buildSimulationJsonPayload]);
-
-  useEffect(() => {
-    if (isRunning && isQueuedForTeacherKey) {
-      setIsQueuedForTeacherKey(false);
-      appendConsoleEntry("info", "Simulation running! Visual telemetry recording started for 8 seconds...", "simulator");
-    }
-  }, [isRunning, isQueuedForTeacherKey, appendConsoleEntry]);
-
-  const generateTeacherKey = useCallback(async () => {
-    if (!isRunning) {
-      appendConsoleEntry("info", "Compiling and starting simulation to capture teacher key...", "simulator");
-      setIsQueuedForTeacherKey(true);
-      await handleRun({ isTeacherKeyCapture: true });
-    } else {
-      appendConsoleEntry("info", "Starting visual telemetry recording for 8 seconds...", "simulator");
-      dispatchTeacherKeyCapture();
-    }
-  }, [isRunning, handleRun, dispatchTeacherKeyCapture, appendConsoleEntry]);
-
-  // Stable identity: wasRunning read via ref so TopToolbox props stay stable.
-  const handleStop = useCallback(() => {
-    const wasRunning = isRunningRef.current;
-    runStartGuardRef.current = false;
-    stopEsp32Session();
-    rp2040GdbLastLogRef.current.clear();
-    rp2040WirelessLastLogRef.current.clear();
-    rp2040UartMicroPythonBoardsRef.current.clear();
-    rp2040UartSilentWarnedBoardsRef.current.clear();
-    runLagTelemetryLastStateRef.current.clear();
-    runLagTelemetryLastLogRef.current.clear();
-    runFpsTelemetryLastLogRef.current.clear();
-
-    if (wasRunning) {
-      const componentSummary = Object.entries(
-        runComponentUpdateCountsRef.current,
-      )
-        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
-        .slice(0, 10)
-        .map(([id, count]) => `${id}:${count}`);
-      const pinSummary = Object.entries(runPinTransitionCountsRef.current)
-        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
-        .slice(0, 12)
-        .map(([id, count]) => `${id}:${count}`);
-
-      if (componentSummary.length > 0) {
-        appendConsoleEntry(
-          "info",
-          `Runtime verification (component updates): ${componentSummary.join(", ")}`,
-          "simulator",
-        );
-      }
-      if (pinSummary.length > 0) {
-        appendConsoleEntry(
-          "info",
-          `Runtime verification (pin transitions): ${pinSummary.join(", ")}`,
-          "simulator",
-        );
-      }
-      if (componentSummary.length === 0 && pinSummary.length === 0) {
-        appendConsoleEntry(
-          "warn",
-          "Runtime verification: no component updates or pin transitions detected.",
-          "simulator",
-        );
-      }
-    }
-
-    runComponentUpdateCountsRef.current = {};
-    runPinTransitionCountsRef.current = {};
-    runLastBoardPinsRef.current = new Map();
-    renderPinsByBoardRef.current = {};
-    renderAnalogByBoardRef.current = {};
-    renderComponentsByBoardRef.current = {};
-    renderNeopixelsByBoardRef.current = {};
-
-    const neopixelOffStates = {};
-    const neopixelOffPixels = {};
-    componentsRef.current.forEach((comp) => {
-      if (!/(neopixel|ws2812|ws2821)/i.test(String(comp?.type || ""))) return;
-
-      const rows = Math.max(
-        1,
-        Number.parseInt(String(comp?.attrs?.rows ?? "8"), 10) || 1,
-      );
-      const cols = Math.max(
-        1,
-        Number.parseInt(String(comp?.attrs?.cols ?? "8"), 10) || 1,
-      );
-      const pixelCount = rows * cols;
-      const attrsState =
-        comp?.attrs && typeof comp.attrs === "object" ? comp.attrs : {};
-
-      neopixelOffStates[comp.id] = {
-        ...attrsState,
-        rows: String(rows),
-        cols: String(cols),
-        pixels: new Array(pixelCount).fill(0),
-      };
-
-      const pixelTriples = [];
-      for (let index = 0; index < pixelCount; index++) {
-        pixelTriples.push([
-          Math.floor(index / cols),
-          index % cols,
-          { r: 0, g: 0, b: 0 },
-        ]);
-      }
-      neopixelOffPixels[comp.id] = pixelTriples;
-    });
-
-    if (workerRef.current) {
-      workerRef.current.postMessage({ type: "STOP" });
-      workerRef.current.terminate();
-      workerRef.current = null;
-    }
-    // Terminate the Render Worker and tell it to release all canvas resources.
-    if (renderWorkerRef.current) {
-      renderWorkerRef.current.postMessage({ type: "DISPLAY_CLEAR_ALL" });
-      renderWorkerRef.current.terminate();
-      renderWorkerRef.current = null;
-      setRenderWorker(null); // Clear Provider so display UIs see null worker
-      if (typeof window !== "undefined") {
-        window.__displayRenderWorker = null;
-        window.dispatchEvent(
-          new CustomEvent("display-render-worker-changed", { detail: null }),
-        );
-      }
-    }
-    setIsRunning(false);
-    setIsCompiling(false);
-    setIsBooting(false); // TODO: Reset booting state on stop
-    setIsPaused(false);
-    setRunStartedAtMs(null);
-    setRunDurationSec(0);
-    livePinStatesRef.current = {};
-    clearLiveNeopixelData();
-    applyLiveNeopixelData(neopixelOffPixels);
-    liveOopStatesRef.current = neopixelOffStates;
-    Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
-    setSerialHistory([]);
-    plotDataRef.current = [];
-    setSerialPaused(false);
-    setPlotterPaused(false);
-    serialPlotBufferRef.current = "";
-    serialPlotLabelsRef.current = [];
-    latestParsedSerialRef.current = [];
-    serialIngressArbitrationRef.current.clear();
-    serialPausedQueueRef.current = [];
-    appendConsoleEntry("info", "Simulation stopped.", "simulator");
-    },
-    // stopEsp32Session/appendConsoleEntry stable (useCallback); components read via functional updates where needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-  const bootStartedAtRef = useRef(null);
-
-  // Track when boot starts
-  useEffect(() => {
-    if (isBooting && !isRunning) {
-      if (!bootStartedAtRef.current) {
-        bootStartedAtRef.current = Date.now();
-      }
-    }
-  }, [isBooting, isRunning]);
-
-  // Reset run start time when simulation actually starts running
-  useEffect(() => {
-    if (isRunning && !isCompiling && !isBooting) {
-      let startTime = Date.now();
-      if (bootStartedAtRef.current) {
-        const bootDuration = Date.now() - bootStartedAtRef.current;
-        startTime -= bootDuration;
-      }
-      setRunStartedAtMs(startTime);
-    } else if (!isRunning) {
-      bootStartedAtRef.current = null;
-    }
-  }, [isRunning, isCompiling, isBooting]);
-
-  useEffect(() => {
-    if (!isRunning || !runStartedAtMs || isCompiling || isBooting) return;
-
-    const updateElapsed = () => {
-      setRunDurationSec(Math.max(0, (Date.now() - runStartedAtMs) / 1000));
-    };
-
-    updateElapsed();
-    const timer = setInterval(updateElapsed, 250);
-    return () => clearInterval(timer);
-  }, [isRunning, runStartedAtMs, isCompiling, isBooting]);
-
-  useEffect(() => {
-    if (!hardwareStatus) return;
-    if (lastHardwareStatusRef.current === hardwareStatus) return;
-    lastHardwareStatusRef.current = hardwareStatus;
-
-    const statusLower = String(hardwareStatus).toLowerCase();
-    const level =
-      statusLower.includes("failed") || statusLower.includes("lost")
-        ? "error"
-        : "info";
-    appendConsoleEntry(level, hardwareStatus, "hardware");
-  }, [hardwareStatus, appendConsoleEntry]);
-
-  // Stable identities: passed to memoized TopToolbox + run controls. Read
-  // live run state via refs so toolbar props never invalidate per render.
-  const handlePause = useCallback(() => {
-    if (workerRef.current) workerRef.current.postMessage({ type: "PAUSE" });
-    setIsPaused(true);
-  }, []);
-
-  const handleResume = useCallback(() => {
-    if (workerRef.current) workerRef.current.postMessage({ type: "RESUME" });
-    setIsPaused(false);
-  }, []);
-
-  const handleReset = useCallback(() => {
-    if (workerRef.current && isRunningRef.current) {
-      workerRef.current.postMessage({ type: "RESET" });
-      const now = new Date();
-      const ts =
-        now.toTimeString().slice(0, 8) +
-        "." +
-        String(now.getMilliseconds()).padStart(3, "0");
-      setSerialHistory((prev) => [
-        ...prev,
-        { dir: "sys", text: "--- BOARD RESET ---", ts },
-      ]);
-    }
-  }, []);
-
-  const sendSerialInput = useCallback(
-    (
-      targetBoardOverride,
-      inputOverride,
-      lineEndingOverride,
-      baudRateOverride,
-    ) => {
-      const txt = String(
-        inputOverride !== undefined ? inputOverride : serialInput || "",
-      );
-      if (!txt.trim()) return;
-      const lineEnding =
-        SERIAL_LINE_ENDINGS[lineEndingOverride || serialLineEnding] ?? "\n";
-      const payload = txt + lineEnding;
-
-      const requestedBoard = targetBoardOverride || serialBoardFilter;
-      const targetBoardId =
-        requestedBoard !== "all" ? requestedBoard : undefined;
-
-      const baudRate = baudRateOverride || serialBaudRate;
-
-      if (workerRef.current && isRunning) {
-        workerRef.current.postMessage({
-          type: "SERIAL_INPUT",
-          data: payload,
-          targetBoardId,
-          baudRate: baudRate,
-        });
-        pushSerialTxLine(txt, targetBoardId || "all", "sim");
-        if (inputOverride === undefined) setSerialInput("");
-        return;
-      }
-
-      if (hardwareConnected) {
-        const targetBoard = targetBoardId
-          ? targetBoardId
-          : hardwareSerialTargetRef.current || hardwareBoardId || "hardware";
-        sendHardwareSerialLine(payload, targetBoard, txt)
-          .then(() => {
-            if (inputOverride === undefined) setSerialInput("");
-          })
-          .catch((err) => {
-            console.error("[WebSerial] TX failed:", err);
-            alert(
-              `Hardware serial write failed: ${err?.message || "Unknown error"}`,
-            );
-          });
-        return;
-      }
-
-      alert("Run simulator or connect hardware serial before sending data.");
-    },
-    [
-      serialInput,
-      serialLineEnding,
+  // ── Teacher-key capture + embed bridges ─────────────────────────────────────
+  // Lives in hooks/useTeacherKeyCapture.js (identical cadence + shape).
+  const { runFnRef, dispatchTeacherKeyCapture, generateTeacherKey } =
+    useTeacherKeyCapture({
+      handleRun,
+      canvasOnly,
+      serialRelayActiveRef,
+      lastRelayedLengthRef,
+      serialHistoryRef,
+      serialPanelDragging,
+      serialPanelDragOffset,
+      setSerialPanelPos,
+      setSerialPanelGrabbing,
+      components,
+      buildSimulationJsonPayload,
       workerRef,
       isRunning,
-      serialBoardFilter,
-      serialBaudRate,
-      pushSerialTxLine,
-      hardwareConnected,
-      hardwareBoardId,
-      sendHardwareSerialLine,
-      setSerialInput,
-    ],
-  );
-
-  const updateBoardBaudRate = useCallback(
-    (boardId, baud) => {
-      setBoardBaudRates((prev) => ({ ...prev, [boardId]: baud }));
-      if (workerRef.current && isRunning) {
-        workerRef.current.postMessage({
-          type: "SERIAL_SET_BAUD",
-          targetBoardId: boardId !== "all" ? boardId : undefined,
-          baudRate: baud,
-        });
-      }
-    },
-    [isRunning],
-  );
-
-  const updateGlobalBaudRate = useCallback(
-    (baud) => {
-      setSerialBaudRate(baud);
-      if (workerRef.current && isRunning) {
-        workerRef.current.postMessage({
-          type: "SERIAL_SET_BAUD",
-          baudRate: baud,
-        });
-      }
-    },
-    [isRunning],
-  );
-
+      isQueuedForTeacherKey,
+      setIsQueuedForTeacherKey,
+      appendConsoleEntry,
+    });
+  // ── Run stop (teardown + summaries + blackout) ──────────────────────────────
+  // Lives in hooks/useRunStop.js (identical [] deps + event).
+  const { handleStop } = useRunStop({
+    isRunningRef,
+    runStartGuardRef,
+    stopEsp32Session,
+    rp2040GdbLastLogRef,
+    rp2040WirelessLastLogRef,
+    rp2040UartMicroPythonBoardsRef,
+    rp2040UartSilentWarnedBoardsRef,
+    runLagTelemetryLastStateRef,
+    runLagTelemetryLastLogRef,
+    runFpsTelemetryLastLogRef,
+    runComponentUpdateCountsRef,
+    runPinTransitionCountsRef,
+    runLastBoardPinsRef,
+    renderPinsByBoardRef,
+    renderAnalogByBoardRef,
+    renderComponentsByBoardRef,
+    renderNeopixelsByBoardRef,
+    componentsRef,
+    workerRef,
+    renderWorkerRef,
+    setRenderWorker,
+    setIsRunning,
+    setIsCompiling,
+    setIsBooting,
+    setIsPaused,
+    setRunStartedAtMs,
+    setRunDurationSec,
+    livePinStatesRef,
+    clearLiveNeopixelData,
+    applyLiveNeopixelData,
+    liveOopStatesRef,
+    notifyLiveOopStateListeners,
+    setSerialHistory,
+    plotDataRef,
+    setSerialPaused,
+    setPlotterPaused,
+    serialPlotBufferRef,
+    serialPlotLabelsRef,
+    latestParsedSerialRef,
+    serialIngressArbitrationRef,
+    serialPausedQueueRef,
+    appendConsoleEntry,
+  });
+  // ── Run timing/status effects ───────────────────────────────────────────────
+  // Lives in hooks/useRunTimingEffects.js (identical backdate + ticker).
+  const { bootStartedAtRef } = useRunTimingEffects({
+    isBooting,
+    isRunning,
+    isCompiling,
+    setRunStartedAtMs,
+    setRunDurationSec,
+    runStartedAtMs,
+    hardwareStatus,
+    lastHardwareStatusRef,
+    appendConsoleEntry,
+  });
+  // ── Run controls (pause/reset/serial/baud) ──────────────────────────────────
+  // Lives in hooks/useRunControls.js (identical routing + dep arrays).
+  const {
+    handlePause,
+    handleResume,
+    handleReset,
+    sendSerialInput,
+    updateBoardBaudRate,
+    updateGlobalBaudRate,
+  } = useRunControls({
+    workerRef,
+    setIsPaused,
+    setSerialHistory,
+    isRunningRef,
+    serialInput,
+    serialLineEnding,
+    isRunning,
+    serialBoardFilter,
+    serialBaudRate,
+    pushSerialTxLine,
+    hardwareConnected,
+    hardwareSerialTargetRef,
+    hardwareBoardId,
+    sendHardwareSerialLine,
+    setSerialInput,
+    setBoardBaudRates,
+    setSerialBaudRate,
+  });
   const openComponentEditor = useCallback(() => {
     try {
       navigate("/component-editor");
@@ -5566,6 +4141,40 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     appendConsoleEntry,
     buildSimulationJsonPayload,
     currentProjectIdRef,
+  });
+  // ── Classroom assignment (submit/attach/?circuit=) ─────────────────────────
+  // Lives in hooks/useClassroomAssignment.js (identical gates + keys).
+  // NOTE: called after usePngExport (downloadPng dep for the submit PNG
+  // snapshot) — mount-only effects inside still run on first commit.
+  const {
+    isAssignmentSubmissionClosed,
+    handleAssignmentSubmissionFilesChange,
+    handleRemoveAssignmentSubmissionFile,
+    handleSubmitClassAssignment,
+  } = useClassroomAssignment({
+    assignmentMode,
+    classId,
+    assignmentId,
+    user,
+    assessmentParams,
+    setAssignmentSubmissionAssignment,
+    setAssignmentSubmissionState,
+    setAssignmentSubmissionForm,
+    setBoard,
+    setCode,
+    setComponents,
+    setWires,
+    setCurrentProjectName,
+    setCurrentProjectId,
+    currentProjectIdRef,
+    setHistory,
+    shareId,
+    assignmentSubmissionAssignment,
+    assignmentSubmissionForm,
+    assignmentSubmissionState,
+    downloadPng,
+    setAssignmentSubmissionOpen,
+    navigate,
   });
 
   useEffect(() => {

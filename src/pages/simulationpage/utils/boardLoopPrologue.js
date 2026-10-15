@@ -52,6 +52,14 @@ export function resolveBoardLoopPrologue(args, ctx) {
     appendConsoleEntry,
   } = ctx;
   let { result } = ctx;
+  const kind = normalizeBoardKind(boardComp.type);
+  const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
+  const defaultBaud = Number(
+    BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno,
+  );
+  boardBaudMap[boardComp.id] = Number(
+    boardBaudRates[boardComp.id] || selectedRunBaud,
+  );
             const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
             const uploadedFirmware = useUploaded
               ? String(

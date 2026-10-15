@@ -30,6 +30,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
     isBooting,
     isCompiling,
     telemetryMode,
+    logSerial,
     telemetryWatchedParamsMap,
     deepSiliconDebuggingEnabled,
     esp32SimulationMode,

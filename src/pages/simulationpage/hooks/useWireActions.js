@@ -5,7 +5,7 @@ import { wireColor } from "../wireUtils";
 /**
  * Wire create/recolor/layer domain, extracted verbatim from SimulatorPage.jsx.
  * (onPinClick start/complete w/ self-loop guard + specific-color pick,
- *  updateWireColor, toggleWireLayer.)
+ *  updateWireColor, toggleWireLayer, deleteWire.)
  *
  * Stable identities preserved verbatim ([getPinPos, saveHistory] /
  * [] / [saveHistory]) so CanvasSceneLayer's memoized tree keeps the same
@@ -21,6 +21,7 @@ export function useWireActions({
   liveEditingDisabledRef,
   setWireStart,
   setWires,
+  setSelected,
 }) {
     // ── Pin click — start or complete wire ─────────────────────────────────────
     // Stable identity: reads wireStart/isRunning/liveEditingDisabled via refs
@@ -88,5 +89,17 @@ export function useWireActions({
       [saveHistory],
     );
 
-  return { onPinClick, updateWireColor, toggleWireLayer };
+  // Stable identity: reads live state via refs so the memoized canvas
+  // tree isn't invalidated on unrelated renders.
+  const deleteWire = useCallback(
+    (id) => {
+      if (isRunningRef.current || liveEditingDisabledRef.current) return;
+      saveHistory();
+      setWires((prev) => prev.filter((w) => w.id !== id));
+      setSelected((prev) => (prev === id ? null : prev));
+    },
+    [saveHistory],
+  );
+
+  return { onPinClick, updateWireColor, toggleWireLayer, deleteWire };
 }

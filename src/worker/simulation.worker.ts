@@ -1458,7 +1458,10 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     scheduleCircuitPythonInject(runner!, singleBoardId, singleBoardRuntimeFiles);
                 }
             }
-            startTeacherKeyCaptureIfRequested(data);
+            // NOTE: single-board START already initializes teacher-key capture
+            // inline above (isTeacherKeyCapture branch); no extra helper needed.
+            // (A stale call to an undefined startTeacherKeyCaptureIfRequested
+            //  used to live here and threw a ReferenceError on every run.)
             return;
         }
 
