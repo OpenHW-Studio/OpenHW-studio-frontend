@@ -1039,6 +1039,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
             total += this.retiredDelta(Number(r?.instCount), s);
             remaining -= s;
             try { this.softSerialPoll(); } catch { /* poll never breaks stepping */ }
+            try { this.softSerialForwardRx(); } catch { /* forward never breaks stepping */ }
             try { this.softSerialFlushPendingArm(); } catch { /* ignore */ }
             if (r?.stopped) break;
             if (!this.softSerialArmed) {
@@ -1150,6 +1151,85 @@ export class Stm32f1Runner extends ArmRunnerBase {
     protected override pollGpioBidirectional(): void {
         try { super.pollGpioBidirectional(); } catch { /* never break the tick */ }
         try { this.dhtPollInput(); } catch { /* poll never breaks the tick */ }
+    }
+
+    /** GPIO MODE bit for a board pin (RM0008 §9.2 CRL/CRH): true when the
+     * firmware drives the pin as an output (MODE != 00). Null when the
+     * mode register is unreadable — callers treat null as "unknown, the
+     * publishing/source side wins" (same rule as the base peeker). */
+    private gpioPinIsOutput(pinId: string): boolean | null {
+        try {
+            const [port, n] = portPinFor(pinId);
+            if (!port || n < 0) return null;
+            const emu = (this.mcu as any)?._emu;
+            if (!emu || typeof emu.periphRead !== 'function') return null;
+            const base = 0x40010800 + (port.charCodeAt(0) - 65) * 0x400;
+            const cr = emu.periphRead(base + (n < 8 ? 0x00 : 0x04), 4) >>> 0;
+            const shift = (n < 8 ? n : n - 8) * 4;
+            return ((cr >>> shift) & 0x3) !== 0;
+        } catch { return null; }
+    }
+
+    /** Board-to-board GPIO fan-out (loopback wires live here, not on any
+     * component net): after the normal component publish, forward the
+     * driven level into same-net board pins that the firmware does NOT
+     * drive as outputs (output-vs-output is a short — skip). The base
+     * has no board→board propagation (AVR does it via net traversal);
+     * without this a TX→RX loopback wire is electrically dead (proven:
+     * F1 softserial RX never fires). Change hooks quantize edges to
+     * ~20K batches — in-frame exactness comes from softSerialForwardRx
+     * below; this covers idle levels and coarse ticks. */
+    protected override publishGpio(pinId: string, isHigh: boolean): void {
+        try { super.publishGpio(pinId, isHigh); } catch { /* never break propagation */ }
+        try {
+            const net = this.pinToNet.get(`${this.boardId}:${pinId}`);
+            if (net === undefined) return;
+            for (const [node, netId] of this.pinToNet) {
+                if (netId !== net) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const bPin = node.slice(sep + 1);
+                if (!bPin || bPin === pinId) continue;
+                try {
+                    if (this.gpioPinIsOutput(bPin) === true) continue; // driven: output wins
+                } catch { /* unknown mode: source wins */ }
+                try { this.engine.setGpioInput?.(bPin, !!isHigh); } catch { /* ignore */ }
+            }
+        } catch { /* board fan-out never breaks the tick */ }
+    }
+
+    /** Sub-bit loopback forward: while the softserial observer is armed,
+     * mirror the just-polled TX level into same-net board input pins
+     * (the loopback RX). Hook/publish forwarding above quantizes to
+     * batch edges (~2.7 bits at 9600 baud); the firmware's per-bit timer
+     * ISR needs the bit/8-sampled waveform — same time base as the
+     * decode poll. Change-gated (one setGpioInput per edge). */
+    private softSerialRxForward = new Map<string, boolean>();
+    private softSerialForwardRx(): void {
+        if (!this.mcu) return;
+        try {
+            const net = this.pinToNet.get(`${this.boardId}:${this.softSerialTxPinId}`);
+            if (net === undefined) return;
+            const level = !!this.softSerialLastPollHigh;
+            for (const [node, netId] of this.pinToNet) {
+                if (netId !== net) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const bPin = node.slice(sep + 1);
+                if (!bPin || bPin === this.softSerialTxPinId) continue;
+                let out = false;
+                try { out = this.gpioPinIsOutput(bPin) === true; } catch { out = false; }
+                if (out) continue;
+                try {
+                    if (this.softSerialRxForward.get(bPin) !== level) {
+                        this.softSerialRxForward.set(bPin, level);
+                        try { this.engine.setGpioInput?.(bPin, level); } catch { /* ignore */ }
+                    }
+                } catch { /* ignore */ }
+            }
+        } catch { /* forward never breaks stepping */ }
     }
 
     /** Sample readInput() on board pins netted to a one-wire model and

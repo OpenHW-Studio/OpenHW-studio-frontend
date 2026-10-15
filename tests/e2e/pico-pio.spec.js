@@ -50,13 +50,11 @@ test.describe('Pico PIO WS2812 (NeoPixel matrix)', () => {
     console.log('PIO-NEO custom:', JSON.stringify(ncustom).slice(0, 300));
     console.log('PIO-NEO liveOop:', JSON.stringify((verdict.liveOop || {}).neo1 || {}).slice(0, 500));
     // Content proof: firmware lights pixel 0 red + pixel 1 green + pixel 2 blue.
-    // NOTE (filed engine follow-up): 3rd frame word strands in TX
-  // (FLEVEL_TX=1, SMPC parked off-program at a NOP, RX drains exactly
-  // the first two words across all runs/firmwares). The PIO exec →
-  // RX-FIFO → tap → decode → model chain below is fully live-proven
-  // by 2 pixels; ≥3 awaits the engine-side 3rd-push fix.
-  expect(Number(ncustom.activePixels || 0)).toBeGreaterThanOrEqual(2);
-    expect(Number(ncustom.totalPixels || 0)).toBeGreaterThanOrEqual(2);
+    // (Engine history: the 3rd frame word used to strand in TX — wrong SET
+    // dest map dropped `SET Y,23` and JMP-dec preserved across the fallthrough.
+    // Fixed engine-side; this assertion pins all 3 pixels live.)
+    expect(Number(ncustom.activePixels || 0)).toBe(3);
+    expect(Number(ncustom.totalPixels || 0)).toBe(3);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
