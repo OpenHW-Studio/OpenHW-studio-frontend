@@ -77,11 +77,8 @@ import { ProjectsSidebarChrome } from "./components/ProjectsSidebar";
 import { SerialOutputPane, SerialSendRow } from "./components/SerialMonitor";
 import { multiRoutePath, wireColor } from "./wireUtils";
 import { handleProtocolObserverMessage } from "./utils/protocolObserver";
-import { handleRp2040DebugMessage } from "./utils/rp2040DebugObserver";
 import { handleWorkerStateMessage } from "./utils/workerStateIngest";
 import { handleWorkerControlMessage } from "./utils/workerControlPlane";
-import { compileRp2040Board } from "./utils/rp2040Compile";
-import { handleRp2040GdbSpiMessage } from "./utils/rp2040GdbSpi";
 import { postWorkerStartMessage } from "./utils/workerStartPostamble";
 import { resolveGuidedFirmware } from "./utils/guidedFirmware";
 import { compileFallbackBoard } from "./utils/fallbackCompile";
@@ -190,14 +187,9 @@ import {
   BOARD_FQBN,
   BOARD_DISPLAY_NAME,
   UF2_PAYLOAD_PREFIX,
-  DEFAULT_PICO_MICROPYTHON_UF2_URL,
-  DEFAULT_PICO_CIRCUITPYTHON_UF2_URL,
-  DEFAULT_PICO_CIRCUITPYTHON_VERSION,
   DISABLED_FILE_SUFFIX,
   ARDUINO_CODE_EXTENSIONS,
   ROOT_UPLOADABLE_EXTENSIONS,
-  RP2040_NATIVE_ALLOWED_EXTENSIONS,
-  RP2040_MICROPYTHON_ALLOWED_EXTENSIONS,
   GROUP_MAPPING,
 } from "./constants/simulatorConstants";
 
@@ -239,19 +231,8 @@ import {
   boardKindToDisplayName,
   boardCompToDisplayName,
   resolveBoardFqbnForComponent,
-  normalizeRp2040Env,
   createDefaultMainCode,
-  isRp2040PythonEnv,
-  getRp2040PythonEntryFileName,
-  mapRp2040EnvForLegacyContextMenu,
-  looksLikeMicroPythonSource,
-  arduinoBlinkToMicroPython,
-  arduinoSerialToMicroPython,
-  prepareRp2040SketchForSimulation,
-  resolveRp2040SourceMode,
   resolveComponentAttrString,
-  ensureMicroPythonSerialProbe,
-  applyRp2040MicroPythonCompat,
   isProgrammableBoardType,
   isBreadboardType,
   isResistorType,
@@ -278,18 +259,9 @@ import {
 
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
-const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
 import { assertSafeDynamicModule } from "./utils/dynamicModuleGuard";
 import { BACKEND_INJECTED_TYPES } from "./utils/injectedTypes";
 
-function isRp2040CoreMissingError(err) {
-  const msg = String(err?.message || err || "").toLowerCase();
-  return (
-    msg.includes("platform 'rp2040:rp2040' not found") ||
-    msg.includes("platform rp2040:rp2040 is not found") ||
-    msg.includes("platform not installed")
-  );
-}
 
 export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
@@ -1003,17 +975,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [isSerialSplit, setIsSerialSplit] = useState(false);
   const [serialSplitRatio, setSerialSplitRatio] = useState(0.5);
   const [serialBoardFilter2, setSerialBoardFilter2] = useState("all");
-  const [rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled] =
-    useState(() => {
-      try {
-        const saved = String(
-          localStorage.getItem("openhw.rp2040.debugTelemetry") || "",
-        ).toLowerCase();
-        return saved === "1" || saved === "true" || saved === "on";
-      } catch (e) {
-        return false;
-      }
-    });
   const [hardwareBoardId, setHardwareBoardId] = useState("");
   const [hardwareSerialTargetId, setHardwareSerialTargetId] = useState(null);
   const [hardwareStatus, setHardwareStatus] = useState("Not connected");
@@ -1115,7 +1076,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1146,7 +1107,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1188,7 +1149,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino|rp2040|pico)/i.test(c.type),
+        /(arduino)/i.test(c.type),
       ),
     [components],
   );
@@ -1198,16 +1159,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       map.set(component.id, component);
     });
     return map;
-  }, [boardComponents]);
-  const rp2040BoardSourceModes = useMemo(() => {
-    const modes = {};
-    boardComponents.forEach((component) => {
-      if (normalizeBoardKind(component.type) !== "rp2040") return;
-      modes[component.id] = normalizeRp2040Env(
-        resolveComponentAttrString(component?.attrs, "env", "native"),
-      );
-    });
-    return modes;
   }, [boardComponents]);
   const firmwareBoardOptions = useMemo(() => {
     return boardComponents
@@ -1333,13 +1284,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, []);
 
   const lastCompiledRef = useRef(null);
-  const micropythonUf2PayloadRef = useRef(null);
-  const circuitPythonUf2PayloadRef = useRef(null);
-  const rp2040DebugLastLogRef = useRef(new Map());
-  const rp2040WirelessLastLogRef = useRef(new Map());
-  const rp2040GdbLastLogRef = useRef(new Map());
-  const rp2040UartMicroPythonBoardsRef = useRef(new Set());
-  const rp2040UartSilentWarnedBoardsRef = useRef(new Set());
   const runComponentUpdateCountsRef = useRef({});
   const runPinTransitionCountsRef = useRef({});
   const runLagTelemetryLastStateRef = useRef(new Map());
@@ -1416,12 +1360,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const getComponentStateAttrs = useCallback((comp, liveStateOverride = null) => {
     let attrs = { ...comp.attrs };
-
-    if (normalizeBoardKind(comp.type) === "rp2040") {
-      attrs.env = mapRp2040EnvForLegacyContextMenu(
-        resolveComponentAttrString(attrs, "env", "native"),
-      );
-    }
 
     // Remote OOP state takes priority
     const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
@@ -1663,21 +1601,27 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               }
             }
           } catch { /* descriptor poll never breaks render loop */ }
-          // Serial TX ring (§10.4): worker→main bytes when bound. Strings
-          // assemble here off-tick; postMessage serial stays authoritative
-          // (overflow/dedup paths). Throttle: drain at most 256B per frame.
+          // Serial TX rings (§10.4/v2): worker→main bytes when bound. Each
+          // board owns its pair; drain all of them (strings assemble here
+          // off-tick; postMessage serial stays authoritative). Throttle:
+          // at most 256B per board per frame.
           // NOTE: pushSerialRxChunkRef is declared below (useSerialIngress
           // call site) — read it lazily via window to avoid TDZ. The START
           // postamble mirrors the live ref object at window.__sabSerialPushRef.
           try {
-            const txRing = (typeof window !== "undefined" ? window.__sabSerialTxRing : null) || null;
-            if (txRing && typeof txRing.drain === "function") {
+            const rings = (typeof window !== "undefined" ? window.__sabBoardSerialRings : null) || null;
+            const list = Array.isArray(rings) && rings.length
+              ? rings
+              : [{ tx: (typeof window !== "undefined" ? window.__sabSerialTxRing : null) || null }];
+            for (const entry of list) {
+              const txRing = entry && entry.tx;
+              if (!txRing || typeof txRing.drain !== "function") continue;
               const bytes = txRing.drain(256);
               if (bytes && bytes.length) {
                 const text = String.fromCharCode.apply(null, bytes);
                 const pushRef = (typeof window !== "undefined" ? window.__sabSerialPushRef : null) || null;
                 if (text && pushRef && typeof pushRef.current === "function") {
-                  pushRef.current(text, "default", "sim");
+                  pushRef.current(text, entry.boardId || "default", "sim");
                 } else if (text) {
                   appendConsoleEntry("info", `[SAB serial] ${bytes.length}B (ingress not bound)`, "simulator");
                 }
@@ -2450,7 +2394,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     if (!components) return;
     const currentBoardTypes = components
-      .filter((c) => /arduino|pico|rp2040|attiny/i.test(c.type))
+      .filter((c) => /arduino|attiny/i.test(c.type))
       .map((c) => c.type);
 
     const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
@@ -2552,16 +2496,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     }
   }, [serialLineEnding]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "openhw.rp2040.debugTelemetry",
-        rp2040DebugTelemetryEnabled ? "1" : "0",
-      );
-    } catch (e) {
-      // no-op: storage may be unavailable in restricted contexts
-    }
-  }, [rp2040DebugTelemetryEnabled]);
 
   useEffect(() => {
     if (serialBoardFilter === "all") return;
@@ -2769,12 +2703,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
-        const rp2040Mode =
-          kind === "rp2040"
-            ? normalizeRp2040Env(
-              resolveComponentAttrString(bc?.attrs, "env", "native"),
-            )
-            : "native";
 
         for (let i = 0; i < result.length; i += 1) {
           const file = result[i];
@@ -2785,9 +2713,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
         }
 
-        const expectedMainName = getDefaultMainFileName(kind, bc.id, {
-          rp2040Mode,
-        });
+        const expectedMainName = getDefaultMainFileName(kind, bc.id, {});
         const expectedMainPath = `${basePath}/${expectedMainName}`;
         const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
         if (
@@ -2801,14 +2727,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
           const ext = fileExt(file.path);
-          if (kind !== "rp2040") return ext === ".ino";
-          return isRp2040PythonEnv(rp2040Mode) ? ext === ".py" : ext === ".ino";
+          return ext === ".ino";
         });
 
         if (!hasEnabledMainForMode) {
-          const defaultContent = createDefaultMainCode(kind, bc.id, {
-            rp2040Mode,
-          });
+          const defaultContent = createDefaultMainCode(kind, bc.id, {});
           upsert({
             id: expectedMainPath,
             path: expectedMainPath,
@@ -2818,24 +2741,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             boardKind: kind,
             content: defaultContent,
             dirty: false,
-          });
-        }
-
-        if (kind === "rp2040") {
-          const boardFilePaths = result
-            .filter((file) => file.path.startsWith(`${basePath}/`))
-            .map((file) => file.path);
-
-          boardFilePaths.forEach((pathLike) => {
-            const ext = fileExt(pathLike);
-            const disabled = isFileDisabled(pathLike);
-            const shouldDisable = isRp2040PythonEnv(rp2040Mode)
-              ? ARDUINO_CODE_EXTENSIONS.has(ext)
-              : ext === ".py";
-
-            if (shouldDisable && !disabled) {
-              replaceFilePath(pathLike, `${pathLike}${DISABLED_FILE_SUFFIX}`);
-            }
           });
         }
 
@@ -3340,25 +3245,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // Lives in hooks/useCodeFiles.js (identical templates + gates).
   const {
     downloadCodeFile,
-    getBoardFirmwareAssets,
-    fetchDefaultMicroPythonUf2Payload,
-    fetchDefaultCircuitPythonUf2Payload,
     resolveFolderFilePolicy,
     createCodeFile,
     createCodeTab,
     uploadCodeFile,
   } = useCodeFiles({
     projectFileMap,
-    projectFiles,
     boardComponentMap,
-    rp2040BoardSourceModes,
     activeCodeFile,
     setProjectFiles,
     setOpenCodeTabs,
     setActiveCodeFileId,
     appendConsoleEntry,
-    micropythonUf2PayloadRef,
-    circuitPythonUf2PayloadRef,
   });
   // ── Firmware/download artifacts ───────────────────────────────────────────
   // Lives in hooks/useFirmwareArtifacts.js (identical bytes + dep arrays).
@@ -3578,7 +3476,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // Lives in hooks/useValidationCore.js (identical cache + bypass + apply).
   const {
     logCompileSummary,
-    registerGdbArtifact,
     buildValidationSignature,
     runCircuitValidation,
     applyFix,
@@ -3738,10 +3635,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           setIsCompiling,
           setRunStartedAtMs,
           setRunDurationSec,
-          rp2040GdbLastLogRef,
-          rp2040WirelessLastLogRef,
-          rp2040UartMicroPythonBoardsRef,
-          rp2040UartSilentWarnedBoardsRef,
           serialIngressArbitrationRef,
           serialPausedQueueRef,
           runComponentUpdateCountsRef,
@@ -3759,9 +3652,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       const {
         selectedRunBaud,
         boardHexMap,
-        boardPythonMap,
-        boardPythonFilesMap,
-        boardRuntimeEnvMap,
         boardBaudMap,
         programmableBoards,
         isBackendProxy,
@@ -3813,7 +3703,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               boardsWithoutCompilableSketch,
               getBoardCompileFiles,
               getBoardMainCode,
-              getBoardFirmwareAssets,
               normalizeFirmwareFileName,
               appendConsoleEntry,
               result,
@@ -3824,58 +3713,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           const {
             kind,
             targetFqbn,
-            firmwareAssets,
             activeFileExt,
             activeBoardFile,
             activeFileTargetsBoard,
             boardEnabledFiles,
-            pythonSource,
-            hasPythonSource,
-            activePrefersIno,
-            activePrefersPy,
             compileUnit,
             compileSource,
           } = prologue;
-
-          // ── RP2040 per-board compile ────────────────────────────────────
-          // Lives in utils/rp2040Compile.js (identical UF2/cache semantics).
-          if (kind === "rp2040") {
-            const rp2040Out = await compileRp2040Board(
-              {
-                boardComp,
-                kind,
-                targetFqbn,
-                compileUnit,
-                compileSource,
-                activePrefersIno,
-                activePrefersPy,
-                hasPythonSource,
-                pythonSource,
-                firmwareAssets,
-                boardEnabledFiles,
-                projectFiles,
-                activeCodeFileId,
-                code,
-              },
-              {
-                boardHexMap,
-                boardPythonMap,
-                boardPythonFilesMap,
-                boardRuntimeEnvMap,
-                boardsWithoutCompilableSketch,
-                appendConsoleEntry,
-                logSerial,
-                logCompileSummary,
-                registerGdbArtifact,
-                fetchDefaultCircuitPythonUf2Payload,
-                fetchDefaultMicroPythonUf2Payload,
-                result,
-              },
-            );
-            result = rp2040Out.result;
-            continue;
-          }
-
 
           // ── Generic per-board compile (AVR) ───────────────────
           // Lives in utils/genericBoardCompile.js (identical cache).
@@ -3896,7 +3740,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 appendConsoleEntry,
                 logSerial,
                 logCompileSummary,
-                registerGdbArtifact,
                 result,
               },
             );
@@ -3936,7 +3779,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           appendConsoleEntry,
           logSerial,
           logCompileSummary,
-          registerGdbArtifact,
           result,
         },
       ));
@@ -4000,42 +3842,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
         if (
           msg.type === "state" ||
-          (msg.type === "debug" && msg.category === "rp2040-runtime")
+          (msg.type === "debug" && msg.category === "removed-board-runtime")
         ) {
           if (!isBackendProxy) {
             setIsBooting(false);
           }
         }
 
-        // ── RP2040 debug (runtime/wifi/wireless-stub) ───────────────────────
-        // Lives in utils/rp2040DebugObserver.js (identical dedup + banners).
-        handleRp2040DebugMessage(msg, {
-          boardComponents,
-          components,
-          appendConsoleEntry,
-          logSerial,
-          rp2040UartMicroPythonBoardsRef,
-          rp2040UartSilentWarnedBoardsRef,
-          rp2040DebugLastLogRef,
-          rp2040WirelessLastLogRef,
-          liveOopStatesRef,
-          notifyLiveOopStateListeners,
-        });
-
-        // ── RP2040 GDB/SPI debug ────────────────────────────────────────
-        // Lives in utils/rp2040GdbSpi.js (identical dedup + field order).
-        handleRp2040GdbSpiMessage(msg, {
-          boardComponents,
-          rp2040GdbLastLogRef,
-          rp2040DebugTelemetryEnabled,
-          appendConsoleEntry,
-        });
-
         if (msg.type === "sync_heartbeat") {
-          if (!rp2040DebugTelemetryEnabled) {
-            return;
-          }
-
           const boardId = String(msg.boardId || "default").trim() || "default";
           const frameId = Number(msg.frameId || 0);
 
@@ -4234,11 +4048,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           options,
           buildSimulationJsonPayload,
           boardHexMap,
-          boardPythonMap,
-          boardPythonFilesMap,
-          boardRuntimeEnvMap,
           boardBaudMap,
-          rp2040DebugTelemetryEnabled,
           simulationSpeed,
           componentTelemetryEnabled,
           isBooting,
@@ -4255,10 +4065,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       runStartGuardRef.current = false;
     } catch (err) {
       runStartGuardRef.current = false;
-      rp2040GdbLastLogRef.current.clear();
-      rp2040WirelessLastLogRef.current.clear();
-      rp2040UartMicroPythonBoardsRef.current.clear();
-      rp2040UartSilentWarnedBoardsRef.current.clear();
       setIsRunning(false);
       setIsCompiling(false);
       setIsBooting(false); // TODO: Reset booting state on error
@@ -4308,10 +4114,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const { handleStop } = useRunStop({
     isRunningRef,
     runStartGuardRef,
-    rp2040GdbLastLogRef,
-    rp2040WirelessLastLogRef,
-    rp2040UartMicroPythonBoardsRef,
-    rp2040UartSilentWarnedBoardsRef,
     runLagTelemetryLastStateRef,
     runLagTelemetryLastLogRef,
     runFpsTelemetryLastLogRef,
@@ -4519,7 +4321,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             // not from `code` alone — without the file, firmware is empty.
             // Order: file+buffer first, active second — never setCode alone.
             const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
-              /(arduino|rp2040|pico)/i.test(String(c?.type || "")),
+              /(arduino)/i.test(String(c?.type || "")),
             );
             const boardId = boards[0]?.id || "uno1";
             const inoPath = `project/${boardId}/${boardId}.ino`;
@@ -4635,7 +4437,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let compileProbe = null;
         try {
           const boards = (componentsRef.current || []).filter((c) =>
-            /(arduino|rp2040|pico)/i.test(String(c?.type || "")),
+            /(arduino)/i.test(String(c?.type || "")),
           );
           compileProbe = boards.map((b) => {
             let mainLen = -1;
@@ -5197,8 +4999,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           generateTeacherKey={generateTeacherKey}
           openFirmwareDownloadDialog={openFirmwareDownloadDialog}
           openFirmwareUploadDialog={openFirmwareUploadDialog}
-          rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled}
-          setRp2040DebugTelemetryEnabled={setRp2040DebugTelemetryEnabled}
           componentTelemetryEnabled={componentTelemetryEnabled}
           setComponentTelemetryEnabled={setComponentTelemetryEnabled}
           deepSiliconDebuggingEnabled={deepSiliconDebuggingEnabled}
@@ -5703,7 +5503,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 serialBoardOptions={serialBoardOptions}
                 serialBoardLabels={serialBoardLabels}
                 serialBoardKinds={serialBoardKinds}
-                serialBoardSourceModes={rp2040BoardSourceModes}
                 serialBaudRate={serialBaudRate}
                 setSerialBaudRate={updateGlobalBaudRate}
                 serialBaudOptions={serialBaudOptions}

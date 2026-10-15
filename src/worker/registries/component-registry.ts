@@ -1,11 +1,7 @@
 import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
-import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
-import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic';
-import { PicoLogic } from '../pico-logic';
-import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
@@ -70,7 +66,7 @@ import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-s
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
 
-import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
+import { UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
 
 import { KeypadLogic } from '../protocol-handlers/keypad';
@@ -92,14 +88,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
-    'openhw-esp32': Esp32Logic,
-    'openhw-esp32-cam': Esp32CamLogic,
-    'wokwi-esp32-cam': Esp32CamLogic,
-    'esp32-cam': Esp32CamLogic,
-    'wokwi-raspberry-pi-pico': PicoLogic,
-    'openhw-raspberry-pi-pico': PicoLogic,
-    'wokwi-raspberry-pi-pico-w': PicoWLogic,
-    'openhw-raspberry-pi-pico-w': PicoWLogic,
+
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
     'wokwi-slide-switch': SlideSwitchLogic,
@@ -239,8 +228,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
     'openhw-attiny85': BaseComponent,
-    'openhw-pico': PicoLogic,
-    'openhw-pico-w': PicoWLogic,
+
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
@@ -373,6 +361,7 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-stepper-motor': [{ id: 'A-' }, { id: 'A+' }, { id: 'B+' }, { id: 'B-' }],
     'openhw-stm32-blue-pill (frontend)': [{ id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'PA8' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PA15' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: '5V' }, { id: 'GND' }, { id: '3V3' }, { id: 'GND.2' }, { id: 'GND.3' }, { id: '3V3.2' }, { id: 'RST' }, { id: 'PB11' }, { id: 'PB10' }, { id: 'PB1' }, { id: 'PB0' }, { id: 'PA7' }, { id: 'PA6' }, { id: 'PA5' }, { id: 'PA4' }, { id: 'PA3' }, { id: 'PA2' }, { id: 'PA1' }, { id: 'PA0' }, { id: 'PC15' }, { id: 'PC14' }, { id: 'PC13' }, { id: 'VBAT' }],
     'openhw-stm32-bluepill': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f4': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-text': [],
     'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-wifi-ap': [],
@@ -382,14 +371,6 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-led': [{ id: 'A' }, { id: 'K' }],
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-esp32': [{ id: 'EN' }, { id: 'VP' }, { id: 'VN' }, { id: '34' }, { id: '35' }, { id: '32' }, { id: '33' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '14' }, { id: '12' }, { id: '13' }, { id: 'GND.2' }, { id: 'VIN' }, { id: '23' }, { id: '22' }, { id: '1' }, { id: '3' }, { id: '21' }, { id: '19' }, { id: '18' }, { id: '5' }, { id: '17' }, { id: '16' }, { id: '4' }, { id: '2' }, { id: '15' }, { id: 'GND.1' }, { id: '3V3' }],
-    'openhw-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'wokwi-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
@@ -502,8 +483,6 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
     'wokwi-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
     'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
     'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],

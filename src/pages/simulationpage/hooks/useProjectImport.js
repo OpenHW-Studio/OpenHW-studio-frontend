@@ -10,7 +10,6 @@ import {
 } from "../projectUtils";
 import {
   normalizeBoardKind,
-  normalizeRp2040Env,
   createDefaultMainCode,
   resolveComponentAttrString,
 } from "../utils/hardwareUtils";
@@ -106,11 +105,7 @@ export function useProjectImport({
         if (importedBoards.length > 0) {
           normalizedFiles = importedBoards.map((bc, idx) => {
             const boardKind = normalizeBoardKind(bc.type);
-            const rp2040Mode =
-              boardKind === "rp2040"
-                ? normalizeRp2040Env(resolveComponentAttrString(bc?.attrs, "env", "native"))
-                : "native";
-            const fileName = getDefaultMainFileName(boardKind, bc.id, { rp2040Mode });
+            const fileName = getDefaultMainFileName(boardKind, bc.id, {});
             const path = `project/${bc.id}/${fileName}`;
             return {
               id: path,
@@ -122,7 +117,7 @@ export function useProjectImport({
               content:
                 idx === 0
                   ? meta.code
-                  : createDefaultMainCode(boardKind, bc.id, { rp2040Mode }),
+                  : createDefaultMainCode(boardKind, bc.id, {}),
               dirty: false,
             };
           });

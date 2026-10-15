@@ -11,7 +11,7 @@
  * teacher-key duration are preserved verbatim.
  * Verify via run-start + teacher-key + neopixel-matrix checks.
  */
-import { allocateStateSab, SabCommandWriter, SabEventReader, SabSerialRing } from "../../../worker/sab/layout.ts";
+import { allocateStateSab, SabCommandWriter, SabEventReader, SabSerialRing, SAB_BOARD_SERIAL_STRIDE_B, SAB_SERIAL_RING_B, SAB_DEBUG_BYTES } from "../../../worker/sab/layout.ts";
 
 export function postWorkerStartMessage(worker, args, ctx) {
   const {
@@ -22,11 +22,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
     options,
     buildSimulationJsonPayload,
     boardHexMap,
-    boardPythonMap,
-    boardPythonFilesMap,
-    boardRuntimeEnvMap,
     boardBaudMap,
-    rp2040DebugTelemetryEnabled,
     simulationSpeed,
     componentTelemetryEnabled,
     isBooting,
@@ -141,6 +137,12 @@ export function postWorkerStartMessage(worker, args, ctx) {
           sabSerialRxOffset: alloc.serialRxOffset,
           sabSerialTxOffset: alloc.serialTxOffset,
           sabDisplayDescOffset: alloc.displayDescOffset,
+          // v2 per-board regions: each board worker binds ONLY its own
+          // serial pair + debug region (no cross-board ring contention).
+          sabBoardSerialBase: alloc.boardSerialBase,
+          sabBoardDebugBase: alloc.boardDebugBase,
+          sabNumBoards: alloc.numBoards,
+          sabBoardIds: alloc.boardIds,
           boardPinMaps,
           networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
           hex: result.hex,
@@ -150,21 +152,10 @@ export function postWorkerStartMessage(worker, args, ctx) {
           customLogics: customLogics,
           boardHexMap:
             Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
-          boardPythonMap:
-            Object.keys(boardPythonMap).length > 0 ? boardPythonMap : undefined,
-          boardPythonFilesMap:
-            Object.keys(boardPythonFilesMap).length > 0
-              ? boardPythonFilesMap
-              : undefined,
-          boardRuntimeEnvMap:
-            Object.keys(boardRuntimeEnvMap).length > 0
-              ? boardRuntimeEnvMap
-              : undefined,
           boardBaudMap:
             Object.keys(boardBaudMap).length > 0 ? boardBaudMap : undefined,
           baudRate: selectedRunBaud,
-          debugRp2040: rp2040DebugTelemetryEnabled,
-          debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
+          debugSyncHeartbeat: false,
           speed: simulationSpeed,
           telemetryEnabled:
             componentTelemetryEnabled && !isBooting && !isCompiling,
@@ -221,6 +212,26 @@ export function postWorkerStartMessage(worker, args, ctx) {
       window.__sabDebugOffset = alloc.debugOffset;
       window.__sabDisplayDescOffset = alloc.displayDescOffset;
       window.__sabBoardPinMaps = boardPinMaps;
+      // v2 per-board serial/debug regions (indexed by boardIdx). Main keeps
+      // one ring handle per board for TX poll + RX push without contention.
+      try {
+        const nBoards = Math.max(1, Number(alloc.numBoards) || 1);
+        const serialBase = Number(alloc.boardSerialBase) || 0;
+        const debugBase = Number(alloc.boardDebugBase) || 0;
+        window.__sabBoardSerialRings = [];
+        window.__sabBoardDebugOffsets = [];
+        for (let bi = 0; bi < nBoards; bi++) {
+          const rxOff = serialBase + bi * SAB_BOARD_SERIAL_STRIDE_B;
+          const txOff = rxOff + 8 + SAB_SERIAL_RING_B;
+          window.__sabBoardSerialRings.push({
+            boardId: (alloc.boardIds || [])[bi] || '',
+            rx: serialBase ? new SabSerialRing(sab, rxOff) : null,
+            tx: serialBase ? new SabSerialRing(sab, txOff) : null,
+            rxOffset: rxOff, txOffset: txOff,
+          });
+          window.__sabBoardDebugOffsets.push(debugBase + bi * SAB_DEBUG_BYTES);
+        }
+      } catch { window.__sabBoardSerialRings = []; window.__sabBoardDebugOffsets = []; }
       try {
         window.__sabSerialRxPush = (text) => {
           if (!serialRxRing) return false;
@@ -228,6 +239,20 @@ export function postWorkerStartMessage(worker, args, ctx) {
           if (!s) return false;
           for (let i = 0; i < s.length; i++) serialRxRing.pushByte(s.charCodeAt(i) & 0xff);
           return true;
+        };
+        // v2 per-board RX push: UI serial input targets ONE board's ring.
+        // Falls back to the legacy shared ring when board maps are absent.
+        window.__sabSerialRxPushToBoard = (boardId, text) => {
+          try {
+            const list = window.__sabBoardSerialRings || [];
+            const entry = list.find((e) => String(e?.boardId) === String(boardId));
+            const ring = (entry && entry.rx) || serialRxRing;
+            if (!ring) return false;
+            const s = String(text ?? "");
+            if (!s) return false;
+            for (let i = 0; i < s.length; i++) ring.pushByte(s.charCodeAt(i) & 0xff);
+            return true;
+          } catch { return false; }
         };
       } catch { /* helper never breaks START */ }
     }

@@ -26,13 +26,12 @@ export async function compileFallbackBoard(args, ctx) {
     appendConsoleEntry,
     logSerial,
     logCompileSummary,
-    registerGdbArtifact,
   } = ctx;
   let { result } = ctx;
         if (!result) {
           const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
           const fallbackKind = normalizeBoardKind(board);
-          const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
+          const engine = 'arduino-cli';
 
           const libFile = (projectFiles || []).find(f => f.path.endsWith('/library.txt') || f.name === 'library.txt');
           const librariesTxt = libFile
@@ -54,11 +53,9 @@ export async function compileFallbackBoard(args, ctx) {
               fqbn: fallbackFqbn,
               target: fallbackKind,
               libraries_txt: librariesTxt,
-              ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
-              artifacts: fallbackKind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+              artifacts: ['hex', 'elf'],
             });
             setCachedHex(cacheStr, board, result);
-            registerGdbArtifact(board || "default", fallbackKind, result);
           }
           logCompileSummary(result, null, fallbackKind);
         }

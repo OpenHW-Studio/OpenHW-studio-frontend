@@ -42,12 +42,15 @@
  *     +0 u16 compSlot | +2 u16 code | +4 f32 v0 | +8 f32 v1
  *     +12 u32 cyclesLo | +16 u32 cyclesHi | +20 u32 wallMs
  *     +24 u32 reserved ×2
- *   SERIAL RINGS: two SPSC byte rings (rx/tx, SAB_SERIAL_RING_B each) after
- *     the telemetry region: [head u32 | tail u32 | bytes]. Bytes only —
- *     strings assemble on main off-tick. (Allocated on demand via
- *     SabSerialRing.create(); absent = postMessage serial path.)
- *   DEBUG REGION: SAB_DEBUG_BYTES at debugOffset (worker-written, UI read-only,
- *     valid only while paused/halted — mirrors DebugService.snapshot()):
+ *   SERIAL RINGS: per-board SPSC byte-ring PAIRS (rx+tx, SAB_SERIAL_RING_B
+ *     each) after the telemetry region: [head u32 | tail u32 | bytes].
+ *     Board i's pair lives at serialBase + i*SAB_BOARD_SERIAL_STRIDE_B.
+ *     Bytes only — strings assemble on main off-tick.
+ *     (Allocated on demand via SabSerialRing.create(); absent = postMessage
+ *     serial path.)
+ *   DEBUG REGIONS: per-board SAB_DEBUG_BYTES at debugBase + i*SAB_DEBUG_BYTES
+ *     (worker-written, UI read-only, valid only while paused/halted —
+ *     mirrors DebugService.snapshot()):
  *     +0 u32 pc | +4 u32 sp | +8 u32 cyclesLo | +12 u32 cyclesHi
  *     +16 u32 breakReason | +20 u32 halted
  *   DISPLAY DESCRIPTORS: SAB_DISPLAY_MAX × 16 B at displayDescOffset
@@ -58,7 +61,7 @@
  *   Display VRAM stays in its own SABs (routeDisplayFrames) — NEVER packed here.
  */
 
-export const SAB_LAYOUT_VERSION = 1;
+export const SAB_LAYOUT_VERSION = 2;
 export const SAB_MAGIC = 0x4f485753;
 
 export const SAB_HEADER_BYTES = 64;
@@ -74,6 +77,8 @@ export const SAB_BOARD_RECORD_B = 16;
 
 // Serial byte rings, SPSC per direction (§10.4): head u32 | tail u32 | bytes.
 export const SAB_SERIAL_RING_B = 4096;
+// Per-board serial stride: rx pair + tx pair per board (v2 multi-board).
+export const SAB_BOARD_SERIAL_STRIDE_B = (8 + SAB_SERIAL_RING_B) * 2;
 
 // Debug region (§10.7 DEBUG REGION): pc/sp/cycles/breakReason/halted.
 export const SAB_DEBUG_BYTES = 24;
@@ -149,10 +154,15 @@ export interface SabAlloc {
     boardTableOffset: number;
     pinBitWords: number;
     analogBase: number;
-    serialRxOffset: number;
-    serialTxOffset: number;
-    debugOffset: number;
+    serialRxOffset: number; // legacy: board 0 pair (kept for compat)
+    serialTxOffset: number; // legacy: board 0 pair (kept for compat)
+    debugOffset: number; // legacy: board 0 region (kept for compat)
     displayDescOffset: number;
+    // Per-board regions (v2): parallel arrays indexed by boardIdx.
+    boardSerialBase: number; // rx+tx pair per board, 0 = absent
+    boardDebugBase: number; // SAB_DEBUG_BYTES per board, 0 = absent
+    numBoards: number;
+    boardIds: string[];
 }
 
 export interface SabBoardPinMap {
@@ -201,8 +211,13 @@ export const SAB_EVT_CODE_RUN_EVENT = 7;
  * Allocate + zero-init the state SAB (full §10.4 map).
  * boardPinMaps partitions the pin region per board (multi-board); omit for
  * single-board runs (pin region stays 0-length — postMessage pins path).
- * Serial/debug/display regions are laid out but zero-filled; writers attach
+ * Serial/debug regions are laid out but zero-filled; writers attach
  * on demand (absent = postMessage fallback — same rule as everything else).
+ *
+ * v2 multi-board: each board gets its OWN serial ring pair + debug region
+ * (boardSerialBase / boardDebugBase, indexed by boardIdx). The legacy
+ * serialRxOffset/serialTxOffset/debugOffset aliases mirror board 0 so
+ * single-board readers keep working unchanged.
  */
 export function allocateStateSab(
     componentIds: string[],
@@ -210,6 +225,7 @@ export function allocateStateSab(
     boardPinMaps: SabBoardPinMap[] = [],
 ): SabAlloc {
     const numComponents = componentIds.length;
+    const numBoards = Math.max(1, Math.min(SAB_BOARD_MAX, boardPinMaps.length || 1));
     // Pin region: 1 bit per digital pin (u32 words) + f32 per pin (analog).
     let pinCount = 0;
     for (const b of boardPinMaps) pinCount += Math.max(0, b.pins.length);
@@ -218,9 +234,12 @@ export function allocateStateSab(
     const boardTableLen = SAB_BOARD_MAX * SAB_BOARD_RECORD_B;
     const compRegionLen = numComponents * SAB_SLOT_STRIDE_B;
     const telemetryRegionLen = telemetryCapacity * SAB_TELEMETRY_RECORD_B;
-    const serialLen = (8 + SAB_SERIAL_RING_B) * 2; // rx + tx, each head+tail+bytes
+    // v2: per-board serial pairs + per-board debug regions.
+    const boardSerialLen = numBoards * SAB_BOARD_SERIAL_STRIDE_B;
+    const boardDebugLen = numBoards * SAB_DEBUG_BYTES;
+    const serialLen = boardSerialLen; // legacy aliases point into board 0
     const total = SAB_HEADER_BYTES + boardTableLen + pinRegionLen + compRegionLen
-        + telemetryRegionLen + serialLen + SAB_DEBUG_BYTES
+        + telemetryRegionLen + serialLen + boardDebugLen
         + SAB_DISPLAY_MAX * SAB_DISPLAY_RECORD_B;
     const bufferSize = Math.max(4096, Math.ceil(total / 4096) * 4096);
     const buffer = new SharedArrayBuffer(bufferSize);
@@ -237,10 +256,12 @@ export function allocateStateSab(
     const pinBase = boardTableOffset + boardTableLen;
     const compOff = pinBase + pinRegionLen;
     const teleOff = compOff + compRegionLen;
-    const serialRxOffset = teleOff + telemetryRegionLen;
-    const serialTxOffset = serialRxOffset + 8 + SAB_SERIAL_RING_B;
-    const debugOffset = serialTxOffset + 8 + SAB_SERIAL_RING_B;
-    const displayDescOffset = debugOffset + SAB_DEBUG_BYTES;
+    const boardSerialBase = teleOff + telemetryRegionLen;
+    const serialRxOffset = boardSerialBase; // board 0 rx (compat)
+    const serialTxOffset = boardSerialBase + 8 + SAB_SERIAL_RING_B; // board 0 tx (compat)
+    const boardDebugBase = boardSerialBase + boardSerialLen;
+    const debugOffset = boardDebugBase; // board 0 debug (compat)
+    const displayDescOffset = boardDebugBase + boardDebugLen;
     u32[SAB_H_PIN_OFF] = pinBase;
     u32[SAB_H_PIN_LEN] = pinRegionLen;
     u32[SAB_H_COMP_OFF] = compOff;
@@ -265,11 +286,29 @@ export function allocateStateSab(
     componentIds.forEach((id, i) => { offsets[id] = i; });
     const cmdBuffer = SabCommandWriter.create();
     const evtBuffer = SabEventWriter.create();
+    const boardIds = boardPinMaps.slice(0, numBoards).map((b) => String(b.boardId));
     return {
         buffer, offsets, numComponents, bufferSize, cmdBuffer, evtBuffer,
         boardTableOffset, pinBitWords, analogBase,
         serialRxOffset, serialTxOffset, debugOffset, displayDescOffset,
+        boardSerialBase, boardDebugBase, numBoards, boardIds,
     };
+}
+
+/**
+ * Per-board region offsets (v2): serial rx/tx pair + debug region for the
+ * board at boardIdx. Used by board workers so each engine writes ONLY its
+ * own rings (no cross-board contention on shared head/tail words).
+ */
+export function boardSerialOffsets(alloc: Pick<SabAlloc, 'boardSerialBase'>, boardIdx: number): { rx: number; tx: number } {
+    const base = Number((alloc as any)?.boardSerialBase) || 0;
+    const rx = base + Math.max(0, boardIdx) * SAB_BOARD_SERIAL_STRIDE_B;
+    return { rx, tx: rx + 8 + SAB_SERIAL_RING_B };
+}
+
+export function boardDebugOffset(alloc: Pick<SabAlloc, 'boardDebugBase'>, boardIdx: number): number {
+    const base = Number((alloc as any)?.boardDebugBase) || 0;
+    return base + Math.max(0, boardIdx) * SAB_DEBUG_BYTES;
 }
 
 export function readSabHeader(buffer: SharedArrayBuffer | ArrayBuffer) {

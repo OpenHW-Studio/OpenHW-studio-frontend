@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { normalizeBoardKind, resolveComponentAttrString } from "../utils/hardwareUtils";
+import { normalizeBoardKind } from "../utils/hardwareUtils";
 import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
 import {
   compileCode,
@@ -62,8 +62,7 @@ export function useHardwareUpload({
         }
         const sourceCode = compileUnit.mainCode || '';
         const cacheKeyBoard = `${kind}:${boardComp.id}`;
-        const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-        const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
+        const buildEngine = 'arduino-cli';
 
         const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
         const librariesTxt = libFile
@@ -88,9 +87,8 @@ export function useHardwareUpload({
             fqbn,
             target: kind,
             libraries_txt: librariesTxt,
-            ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
             // Hardware flash needs the runnable image; keep elf for verify.
-            artifacts: kind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+            artifacts: ['hex', 'elf'],
           });
           setCachedHex(cacheSource, cacheKeyBoard, compiled);
         }

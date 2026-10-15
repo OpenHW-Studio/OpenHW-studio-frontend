@@ -8,8 +8,6 @@ function F1MenuOverlayBase({
   generateTeacherKey,
   openFirmwareDownloadDialog,
   openFirmwareUploadDialog,
-  rp2040DebugTelemetryEnabled,
-  setRp2040DebugTelemetryEnabled,
   componentTelemetryEnabled,
   setComponentTelemetryEnabled,
   deepSiliconDebuggingEnabled,
@@ -215,15 +213,6 @@ function F1MenuOverlayBase({
             <span className="text-xs font-bold font-mono">{respectExitSide ? 'ON' : 'OFF'}</span>
           </Btn>
 
-          <Btn
-            onClick={() => {
-              setRp2040DebugTelemetryEnabled?.((prev) => !prev);
-              closeMenu();
-            }}
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-          >
-            {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
-          </Btn>
           <Btn
             onClick={() => {
               setShowSpeedDialog?.(true);

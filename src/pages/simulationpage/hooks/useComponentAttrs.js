@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { normalizeBoardKind, normalizeRp2040Env } from "../utils/hardwareUtils";
+import { normalizeBoardKind } from "../utils/hardwareUtils";
 
 /**
  * Component attribute/rename domain, extracted verbatim from
@@ -33,10 +33,7 @@ export function useComponentAttrs({
           if (c.id === id) {
             let newW = c.w;
             let newH = c.h;
-            const nextValue =
-              key === "env" && normalizeBoardKind(c.type) === "rp2040"
-                ? normalizeRp2040Env(value)
-                : value;
+            const nextValue = value;
             if (
               c.type === "wokwi-neopixel-matrix" ||
               c.type === "openhw-neopixel-matrix"

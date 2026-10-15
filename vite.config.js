@@ -77,7 +77,13 @@ export default defineConfig(({ mode }) => {
           // here and sw.js precaches it at install time.
           const engineRe = [
             /^assets\/simulation\.worker-.*\.js$/,
+            /^assets\/board\.worker-.*\.js$/,
             /^assets\/avr-runner-.*\.js$/,
+            /^assets\/arm-runner-.*\.js$/,
+            /^assets\/pico-runner-.*\.js$/,
+            /^assets\/esp32-runner-.*\.js$/,
+            /^assets\/stm32f1-runner-.*\.js$/,
+            /^assets\/stm32f4-runner-.*\.js$/,
             /^assets\/rp2040-runner-.*\.js$/,
             /^assets\/execute-.*\.js$/,
             /^assets\/logic-.*\.js$/,

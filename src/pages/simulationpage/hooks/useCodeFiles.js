@@ -1,21 +1,15 @@
 import { useCallback } from "react";
 import {
   normalizeBoardKind,
-  isRp2040PythonEnv,
 } from "../utils/hardwareUtils";
 import { arrayBufferToBase64 } from "../utils/simulatorUtils";
 import {
   fileExt,
   isFileDisabled,
 } from "../../../utils/projectCompilerUtils";
-import { toBoardRelativePath } from "../projectUtils";
 import {
   UF2_PAYLOAD_PREFIX,
-  DEFAULT_PICO_MICROPYTHON_UF2_URL,
-  DEFAULT_PICO_CIRCUITPYTHON_UF2_URL,
   ROOT_UPLOADABLE_EXTENSIONS,
-  RP2040_NATIVE_ALLOWED_EXTENSIONS,
-  RP2040_MICROPYTHON_ALLOWED_EXTENSIONS,
 } from "../constants/simulatorConstants";
 
 /**
@@ -32,16 +26,12 @@ import {
  */
 export function useCodeFiles({
   projectFileMap,
-  projectFiles,
   boardComponentMap,
-  rp2040BoardSourceModes,
   activeCodeFile,
   setProjectFiles,
   setOpenCodeTabs,
   setActiveCodeFileId,
   appendConsoleEntry,
-  micropythonUf2PayloadRef,
-  circuitPythonUf2PayloadRef,
 }) {
     const downloadCodeFile = useCallback(
       (fileId) => {
@@ -57,84 +47,6 @@ export function useCodeFiles({
       },
       [projectFileMap],
     );
-
-    const getBoardFirmwareAssets = useCallback(
-      (boardId) => {
-        const boardFiles = projectFiles
-          .filter((f) => f.path.startsWith(`project/${boardId}/`))
-          .filter((f) => !isFileDisabled(f.path));
-        const uf2File = boardFiles.find(
-          (f) =>
-            fileExt(f.path) === ".uf2" &&
-            typeof f.content === "string" &&
-            f.content.trim(),
-        );
-        const pyFiles = boardFiles
-          .filter((f) => fileExt(f.path) === ".py")
-          .map((f) => ({
-            path: toBoardRelativePath(boardId, f.path),
-            name: f.name,
-            content: String(f.content || ""),
-          }));
-
-        const mainPy =
-          pyFiles.find((f) => f.name.toLowerCase() === "main.py") ||
-          pyFiles[0] ||
-          null;
-
-        let uf2Payload = null;
-        if (uf2File?.content) {
-          const raw = String(uf2File.content).trim();
-          uf2Payload = raw.startsWith(UF2_PAYLOAD_PREFIX)
-            ? raw
-            : `${UF2_PAYLOAD_PREFIX}${raw}`;
-        }
-
-        return { uf2Payload, mainPy, pythonFiles: pyFiles };
-      },
-      [projectFiles],
-    );
-
-    const fetchDefaultMicroPythonUf2Payload = useCallback(async () => {
-      if (micropythonUf2PayloadRef.current)
-        return micropythonUf2PayloadRef.current;
-
-      const response = await fetch(
-        `${DEFAULT_PICO_MICROPYTHON_UF2_URL}?v=uart0`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(
-          `Unable to fetch default MicroPython UF2 (${response.status})`,
-        );
-      }
-
-      const buffer = await response.arrayBuffer();
-      const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-      micropythonUf2PayloadRef.current = payload;
-      return payload;
-    }, []);
-
-    const fetchDefaultCircuitPythonUf2Payload = useCallback(async () => {
-      if (circuitPythonUf2PayloadRef.current)
-        return circuitPythonUf2PayloadRef.current;
-
-      const version = encodeURIComponent(DEFAULT_PICO_CIRCUITPYTHON_VERSION);
-      const response = await fetch(
-        `${DEFAULT_PICO_CIRCUITPYTHON_UF2_URL}?v=${version}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(
-          `Unable to fetch default CircuitPython UF2 (${response.status})`,
-        );
-      }
-
-      const buffer = await response.arrayBuffer();
-      const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-      circuitPythonUf2PayloadRef.current = payload;
-      return payload;
-    }, []);
 
     const resolveFolderFilePolicy = useCallback(
       (parentPath = "project") => {
@@ -155,30 +67,15 @@ export function useCodeFiles({
         const boardId = boardMatch[1];
         const boardComp = boardComponentMap.get(boardId);
         const boardKind = normalizeBoardKind(boardComp?.type || "");
-        if (boardKind !== "rp2040") {
-          return {
-            parent: normalizedParent,
-            boardId,
-            boardKind,
-            rp2040Mode: "native",
-            defaultExt: ".ino",
-            allowedExtensions: RP2040_NATIVE_ALLOWED_EXTENSIONS,
-          };
-        }
-
-        const rp2040Mode = rp2040BoardSourceModes[boardId] || "native";
         return {
           parent: normalizedParent,
           boardId,
           boardKind,
-          rp2040Mode,
-          defaultExt: isRp2040PythonEnv(rp2040Mode) ? ".py" : ".ino",
-          allowedExtensions: isRp2040PythonEnv(rp2040Mode)
-            ? RP2040_MICROPYTHON_ALLOWED_EXTENSIONS
-            : RP2040_NATIVE_ALLOWED_EXTENSIONS,
+          defaultExt: ".ino",
+          allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
         };
       },
-      [boardComponentMap, rp2040BoardSourceModes],
+      [boardComponentMap],
     );
 
     const createCodeFile = useCallback(
@@ -209,16 +106,7 @@ export function useCodeFiles({
         ).toLowerCase();
 
         if (!folderPolicy.allowedExtensions.has(safeExt)) {
-          if (folderPolicy.boardKind === "rp2040") {
-            const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode)
-              ? ".py"
-              : ".ino";
-            alert(
-              `RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" is disabled for this env.`,
-            );
-          } else {
-            alert(`Unsupported file type: ${safeExt}`);
-          }
+          alert(`Unsupported file type: ${safeExt}`);
           return null;
         }
 
@@ -316,16 +204,7 @@ export function useCodeFiles({
             ).toLowerCase();
 
             if (!folderPolicy.allowedExtensions.has(safeExt)) {
-              if (folderPolicy.boardKind === "rp2040") {
-                const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode)
-                  ? ".py"
-                  : ".ino";
-                alert(
-                  `RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" cannot be uploaded in this env.`,
-                );
-              } else {
-                alert(`Unsupported file type: ${safeExt}`);
-              }
+              alert(`Unsupported file type: ${safeExt}`);
               return;
             }
 
@@ -375,9 +254,6 @@ export function useCodeFiles({
 
   return {
     downloadCodeFile,
-    getBoardFirmwareAssets,
-    fetchDefaultMicroPythonUf2Payload,
-    fetchDefaultCircuitPythonUf2Payload,
     resolveFolderFilePolicy,
     createCodeFile,
     createCodeTab,

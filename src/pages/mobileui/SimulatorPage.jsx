@@ -534,11 +534,17 @@ const GROUP_COLORS = {
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  stm32f1: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  stm32f4: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
 };
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
   rp2040: '115200',
+  esp32: '115200',
+  stm32f1: '115200',
+  stm32f4: '115200',
 };
 
 const SERIAL_LINE_ENDINGS = {
@@ -551,23 +557,24 @@ const SERIAL_LINE_ENDINGS = {
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
   rp2040: 'rp2040:rp2040:rpipico',
+  esp32: 'esp32:esp32:esp32',
+  stm32f1: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
+  stm32f4: 'STMicroelectronics:stm32:GenF4:pnum=DISCO_F407VG',
 };
 
 const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
   rp2040: 'Raspberry Pi Pico',
+  esp32: 'ESP32 DevKit',
+  stm32f1: 'STM32F1 Blue Pill',
+  stm32f4: 'STM32F4 Discovery',
 };
 
 const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
-const DEFAULT_PICO_MICROPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/micropython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/circuitpython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_VERSION = '8.2.7';
 const DISABLED_FILE_SUFFIX = '.disabled';
 const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
 const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml', '.py', '.uf2']);
-const RP2040_NATIVE_ALLOWED_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp', '.txt', '.json', '.xml', '.uf2']);
-const RP2040_MICROPYTHON_ALLOWED_EXTENSIONS = new Set(['.py', '.txt', '.json', '.xml', '.uf2']);
+const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml']);
 
 function boardKindToDisplayName(kind) {
   const normalized = normalizeBoardKind(kind);
@@ -690,31 +697,9 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-function normalizeRp2040Env(source) {
-  const value = String(source || '').trim().toLowerCase();
-  if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
-  if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython') return 'circuitpython';
-  if (value.startsWith('circuitpython')) return 'circuitpython';
-  if (value === 'py' || value === 'python') return 'micropython';
-  if (value.startsWith('micropython')) return 'micropython';
-  return 'native';
-}
 
-function isRp2040PythonEnv(source) {
-  const env = normalizeRp2040Env(source);
-  return env === 'micropython' || env === 'circuitpython';
-}
 
-function getRp2040PythonEntryFileName(source) {
-  return normalizeRp2040Env(source) === 'circuitpython' ? 'code.py' : 'main.py';
-}
 
-function mapRp2040EnvForLegacyContextMenu(source) {
-  const env = normalizeRp2040Env(source);
-  if (env === 'micropython') return 'micropython-20241129-v1.24.1';
-  if (env === 'circuitpython') return `circuitpython-${DEFAULT_PICO_CIRCUITPYTHON_VERSION}`;
-  return '';
-}
 
 function resolveComponentIdFormat(type) {
   const rawType = String(type || '').toLowerCase();
@@ -722,13 +707,6 @@ function resolveComponentIdFormat(type) {
   if (rawType.includes('arduino') && rawType.includes('uno')) {
     return { prefix: 'uno', separator: '' };
   }
-  if (rawType.includes('pico-w') || rawType.includes('picow')) {
-    return { prefix: 'picow', separator: '' };
-  }
-  if (rawType.includes('rp2040') || rawType.includes('pico')) {
-    return { prefix: 'pico', separator: '' };
-  }
-
   let cleanType = rawType;
   if (cleanType.startsWith('openhw-')) {
     cleanType = cleanType.slice(7);
@@ -773,6 +751,10 @@ function allocateComponentId(type, usedIdsInput) {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  if (s.includes('nano')) return 'arduino_nano';
+  if (s.includes('stm32f4') || s.includes('f407') || s.includes('discovery') || s.includes('f4')) return 'stm32f4';
+  if (s.includes('stm32f1') || s.includes('bluepill') || s.includes('blue-pill') || s.includes('103') || s.includes('stm32')) return 'stm32f1';
+  if (s.includes('esp32')) return 'esp32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
 }
@@ -826,36 +808,17 @@ function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
 }
 
 function resolveBoardFqbnForComponent(boardComp, boardKind) {
-  const type = String(boardComp?.type || '').toLowerCase();
-  if (type.includes('pico-w') || type.includes('picow')) {
-    return 'rp2040:rp2040:rpipicow';
-  }
+  void boardComp;
   return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 
 function createDefaultMainCode(boardKind, boardId, options = {}) {
-  const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-
-  if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
-    return `# ${boardId} MicroPython script\nfrom machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`;
-  }
-  if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
-    return `# ${boardId} CircuitPython script\nimport time\nimport board\nimport digitalio\n\nled = digitalio.DigitalInOut(board.LED)\nled.direction = digitalio.Direction.OUTPUT\n\nwhile True:\n  led.value = not led.value\n  time.sleep(0.5)\n`;
-  }
-  if (boardKind === 'rp2040') {
-    return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
-  }
+  void boardKind; void options;
   return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
 }
 
 function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  if (boardKind === 'rp2040') {
-    const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-    if (isRp2040PythonEnv(rp2040Mode)) {
-      return getRp2040PythonEntryFileName(rp2040Mode);
-    }
-    return `${boardId}.ino`;
-  }
+  void boardKind; void options;
   return `${boardId}.ino`;
 }
 
@@ -1036,10 +999,6 @@ function normalizeImportedCircuitData(rawComponents, rawConnections) {
       const attrs = component.attrs && typeof component.attrs === 'object'
         ? { ...component.attrs }
         : {};
-      if (normalizeBoardKind(type) === 'rp2040') {
-        attrs.env = normalizeRp2040Env(resolveComponentAttrString(attrs, 'env', 'native'));
-      }
-
       return {
         ...component,
         id,
@@ -1120,197 +1079,10 @@ function normalizeImportedCircuitData(rawComponents, rawConnections) {
   return { components: normalizedComponents, wires: normalizedWires };
 }
 
-function isRp2040CoreMissingError(err) {
-  const msg = String(err?.message || err || '').toLowerCase();
-  return msg.includes("platform 'rp2040:rp2040' not found")
-    || msg.includes('platform rp2040:rp2040 is not found')
-    || msg.includes('platform not installed');
-}
 
-function looksLikeMicroPythonSource(source) {
-  const text = String(source || '').trim();
-  if (!text) return false;
-  const lower = text.toLowerCase();
-
-  return lower.includes('from machine import')
-    || lower.includes('import machine')
-    || lower.includes('machine.pin(')
-    || lower.includes('while true:')
-    || lower.includes('sleep_ms(')
-    || lower.includes('sleep_us(');
-}
 
 /**
  * Best-effort converter: takes a simple Arduino blink sketch and returns
- * a MicroPython equivalent. Extracts the LED pin from #define / const,
- * and delay values from delay() calls. Falls back gracefully.
- */
-function arduinoBlinkToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-
-  // Extract LED pin number: #define LED <n> or const int LED = <n> or similar
-  const pinMatch =
-    src.match(/#define\s+\w*LED\w*\s+(\d+)/i) ||
-    src.match(/const\s+\w+\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/int\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/LED_BUILTIN\b/);
-
-  let pinExpr;
-  if (pinMatch && pinMatch[1]) {
-    pinExpr = pinMatch[1]; // bare numeric pin string, e.g. "20"
-  } else if (src.includes('LED_BUILTIN')) {
-    pinExpr = "'LED'"; // MicroPython Pico built-in LED
-  } else {
-    // Try to find any pin used with pinMode or digitalWrite
-    const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
-      src.match(/digitalWrite\s*\(\s*(\d+)/);
-    pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
-  }
-
-  // Extract delay values (ms) from delay() calls (skip delayMicroseconds)
-  const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
-  const delayOn = delayMatches[0] ?? 1000;
-  const delayOff = delayMatches[1] ?? delayOn;
-
-  // Numeric pin → bare int; quoted string stays as is
-  const pinArg = /^\d+$/.test(String(pinExpr)) ? Number(pinExpr) : pinExpr;
-
-  return (
-    `# Auto-converted from Arduino sketch for ${boardId}\n` +
-    `from machine import Pin\n` +
-    `from time import sleep_ms\n` +
-    `\n` +
-    `led = Pin(${pinArg}, Pin.OUT)\n` +
-    `\n` +
-    `while True:\n` +
-    `    led.value(1)   # LED ON\n` +
-    `    sleep_ms(${delayOn})\n` +
-    `    led.value(0)   # LED OFF\n` +
-    `    sleep_ms(${delayOff})\n`
-  );
-}
-
-function arduinoSerialToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-  if (!/\bSerial1?\s*\.\s*println\s*\(/.test(src)) return '';
-
-  const printMatches = [...src.matchAll(/\bSerial1?\s*\.\s*println\s*\(([^)]*)\)\s*;/g)]
-    .map((m) => String(m[1] || '').trim())
-    .filter(Boolean);
-  if (printMatches.length === 0) return '';
-
-  const pyLiteral = (expr) => {
-    const e = String(expr || '').trim();
-    if (/^"[\s\S]*"$/.test(e) || /^'[\s\S]*'$/.test(e)) return e;
-    if (/^[0-9.+\-*/ ()]+$/.test(e)) return `str(${e})`;
-    return `str(${JSON.stringify(e)})`;
-  };
-
-  const setupMsg = pyLiteral(printMatches[0]);
-  const loopMsg = pyLiteral(printMatches[1] || printMatches[0]);
-  const delayMatch = src.match(/\bdelay\s*\(\s*(\d+)\s*\)/i);
-  const loopDelay = delayMatch ? Math.max(1, Number(delayMatch[1])) : 1000;
-
-  return [
-    `# Auto-converted Serial sketch for ${boardId}`,
-    'from time import sleep_ms',
-    '',
-    `print(${setupMsg})`,
-    '',
-    'while True:',
-    `  print(${loopMsg})`,
-    `  sleep_ms(${loopDelay})`,
-    '',
-  ].join('\n');
-}
-
-function prepareRp2040SketchForSimulation(sourceCode) {
-  const source = String(sourceCode || '');
-  if (!source.trim()) return source;
-  if (!/\bSerial1?\b/.test(source)) return source;
-  if (/OPENHW_SIM_SERIAL_REWRITE/.test(source)) return source;
-
-  const hasBlockingSerialWaitCondition = (condition) => {
-    const cond = String(condition || '');
-    if (!/!\s*Serial1?\b/.test(cond)) return false;
-    // Keep loops like !Serial1.available() intact; only strip plain readiness waits.
-    if (/!\s*Serial1?\s*(?:\.|\[)/.test(cond)) return false;
-    return true;
-  };
-
-  const stripBlockingSerialWaits = (text) => String(text || '')
-    // Many Arduino RP2040 sketches block forever in simulation with
-    // while (!Serial) { ... } because USB CDC is not attached.
-    .replace(/\bwhile\s*\(([^)]*)\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*(?!\{|;)[^;\n]*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ));
-
-  const rewritten = stripBlockingSerialWaits(source.replace(/\bSerial\b(?!1)/g, 'Serial1'));
-  if (rewritten === source) return source;
-
-  const serialShim = [
-    '#ifdef ARDUINO_ARCH_RP2040',
-    '// OPENHW_SIM_SERIAL_REWRITE: route Serial monitor traffic to UART0 (GP0/GP1)',
-    '// and prevent blocking while(!Serial...) waits in simulator mode.',
-    '#endif',
-    '',
-  ].join('\n');
-
-  return `${serialShim}${rewritten}`;
-}
-
-const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
-
-function resolveRp2040SourceMode({
-  configuredMode,
-  activePrefersIno,
-  activePrefersPy,
-  hasNativeSketch,
-  hasPythonSource,
-  prefersNativeFromSyntax = false,
-}) {
-  const mode = String(configuredMode || 'auto').toLowerCase();
-
-  if (mode === 'cp' || mode === 'circuitpy' || mode === 'circuitpython') {
-    return 'cp';
-  }
-
-  if (mode === 'py' || mode === 'python' || mode === 'micropython') {
-    return 'py';
-  }
-
-  if (mode === 'ino' || mode === 'native' || mode === 'none') return 'ino';
-
-  if (activePrefersIno) return 'ino';
-  if (activePrefersPy) return mode === 'cp' ? 'cp' : 'py';
-
-  if (hasNativeSketch || prefersNativeFromSyntax) return 'ino';
-  if (hasPythonSource) return mode === 'cp' ? 'cp' : 'py';
-  return 'ino';
-}
-
 function resolveComponentAttrString(attrs, key, fallback = '') {
   const raw = attrs?.[key];
   if (typeof raw === 'string') return raw;
@@ -1324,47 +1096,10 @@ function resolveComponentAttrString(attrs, key, fallback = '') {
   return String(raw);
 }
 
-function ensureMicroPythonSerialProbe(sourceCode, boardId) {
-  const script = String(sourceCode || '').trim();
-  const marker = 'OpenHW RP2040 UART0 ready';
-  if (script.includes(marker)) return script;
 
-  const probe = `print("${marker}: ${boardId}")`;
-  if (!script) return `${probe}\n`;
-  return `${probe}\n${script}\n`;
-}
-
-function applyRp2040MicroPythonCompat(sourceCode) {
-  const script = String(sourceCode || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
-  if (!script) return script;
-  if (script.includes('OPENHW_RP2040_SLEEP_COMPAT')) return script;
-
-  const needsSleepCompat = /\btime\.sleep_ms\s*\(|\bsleep_ms\s*\(/.test(script);
-  if (!needsSleepCompat) return script;
-
-  const prelude = [
-    '# OPENHW_RP2040_SLEEP_COMPAT',
-    'def _openhw_sleep_ms(ms):',
-    '    ms = int(ms)',
-    '    if ms <= 0:',
-    '        return',
-    '    for _ in range(ms * 500):',
-    '        pass',
-    '',
-  ].join('\n');
-
-  const rewritten = script
-    .replace(/\btime\.sleep_ms\s*\(/g, '_openhw_sleep_ms(')
-    .replace(/\bsleep_ms\s*\(/g, '_openhw_sleep_ms(');
-
-  return `${prelude}\n${rewritten}\n`;
-}
 
 function isProgrammableBoardType(type) {
-  return /(arduino|rp2040|pico)/i.test(String(type || ''));
+  return /(arduino)/i.test(String(type || ''));
 }
 
 
@@ -1718,10 +1453,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     'openhw-arduino-nano': 'nano',
     'wokwi-attiny85': 'attiny85',
     'openhw-attiny85': 'attiny85',
-    'wokwi-raspberry-pi-pico': 'pico',
-    'openhw-pico': 'pico',
-    'wokwi-raspberry-pi-pico-w': 'pico-w',
-    'openhw-pico-w': 'pico-w',
     'wokwi-power-supply': 'power-supply',
     'openhw-power-supply': 'power-supply',
     'wokwi-battery': 'battery',
@@ -1958,14 +1689,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       return 'nl';
     }
   });
-  const [rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled] = useState(() => {
-    try {
-      const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
-      return saved === '1' || saved === 'true' || saved === 'on';
-    } catch (e) {
-      return false;
-    }
-  });
   const [hardwareBoardId, setHardwareBoardId] = useState('');
   const [hardwareSerialTargetId, setHardwareSerialTargetId] = useState(null);
   const [hardwareStatus, setHardwareStatus] = useState('Not connected');
@@ -2001,7 +1724,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter(c => /(arduino|rp2040|pico)/i.test(c.type))
+      .filter(c => /(arduino)/i.test(c.type))
       .map(c => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
@@ -2032,7 +1755,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -2065,21 +1788,13 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
-  const boardComponents = useMemo(() => components.filter(c => /(arduino|rp2040|pico)/i.test(c.type)), [components]);
+  const boardComponents = useMemo(() => components.filter(c => /(arduino)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
     boardComponents.forEach((component) => {
       map.set(component.id, component);
     });
     return map;
-  }, [boardComponents]);
-  const rp2040BoardSourceModes = useMemo(() => {
-    const modes = {};
-    boardComponents.forEach((component) => {
-      if (normalizeBoardKind(component.type) !== 'rp2040') return;
-      modes[component.id] = normalizeRp2040Env(resolveComponentAttrString(component?.attrs, 'env', 'native'));
-    });
-    return modes;
   }, [boardComponents]);
   const firmwareBoardOptions = useMemo(() => {
     return boardComponents
@@ -2140,13 +1855,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const workerRef = useRef(null)
   const lastCompiledRef = useRef(null)
-  const micropythonUf2PayloadRef = useRef(null)
-  const circuitPythonUf2PayloadRef = useRef(null)
-  const rp2040DebugLastLogRef = useRef(new Map())
-  const rp2040WirelessLastLogRef = useRef(new Map())
-  const rp2040GdbLastLogRef = useRef(new Map())
-  const rp2040UartMicroPythonBoardsRef = useRef(new Set())
-  const rp2040UartSilentWarnedBoardsRef = useRef(new Set())
   const runStartGuardRef = useRef(false)
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
@@ -2182,10 +1890,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const getComponentStateAttrs = (comp) => {
     let attrs = { ...comp.attrs };
-
-    if (normalizeBoardKind(comp.type) === 'rp2040') {
-      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
-    }
 
     // Remote OOP state takes priority
     const remoteState = oopStates[comp.id];
@@ -3632,8 +3336,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     'openhw-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
     'wokwi-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
     'openhw-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
-    'wokwi-raspberry-pi-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
-    'openhw-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
     'wokwi-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
     'openhw-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
     'wokwi-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
@@ -3771,14 +3473,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   }, [serialLineEnding]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('openhw.rp2040.debugTelemetry', rp2040DebugTelemetryEnabled ? '1' : '0');
-    } catch (e) {
-      // no-op: storage may be unavailable in restricted contexts
-    }
-  }, [rp2040DebugTelemetryEnabled]);
-
-  useEffect(() => {
     if (serialBoardFilter === 'all') return;
     if (!serialBoardOptions.includes(serialBoardFilter)) {
       setSerialBoardFilter(serialBoardOptions.length > 1 ? serialBoardOptions[1] : 'all');
@@ -3841,9 +3535,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
-        const rp2040Mode = kind === 'rp2040'
-          ? normalizeRp2040Env(resolveComponentAttrString(bc?.attrs, 'env', 'native'))
-          : 'native';
 
         for (let i = 0; i < result.length; i += 1) {
           const file = result[i];
@@ -3854,7 +3545,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           }
         }
 
-        const expectedMainName = getDefaultMainFileName(kind, bc.id, { rp2040Mode });
+        const expectedMainName = getDefaultMainFileName(kind, bc.id, {});
         const expectedMainPath = `${basePath}/${expectedMainName}`;
         const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
         if (!result.some((file) => file.id === expectedMainPath) && result.some((file) => file.id === expectedMainDisabledPath)) {
@@ -3865,12 +3556,11 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
           const ext = baseFileExt(file.path);
-          if (kind !== 'rp2040') return ext === '.ino';
-          return isRp2040PythonEnv(rp2040Mode) ? ext === '.py' : ext === '.ino';
+          return ext === '.ino';
         });
 
         if (!hasEnabledMainForMode) {
-          const defaultContent = createDefaultMainCode(kind, bc.id, { rp2040Mode });
+          const defaultContent = createDefaultMainCode(kind, bc.id, {});
           upsert({
             id: expectedMainPath,
             path: expectedMainPath,
@@ -3883,23 +3573,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           });
         }
 
-        if (kind === 'rp2040') {
-          const boardFilePaths = result
-            .filter((file) => file.path.startsWith(`${basePath}/`))
-            .map((file) => file.path);
-
-          boardFilePaths.forEach((pathLike) => {
-            const ext = baseFileExt(pathLike);
-            const disabled = isFileDisabled(pathLike);
-            const shouldDisable = isRp2040PythonEnv(rp2040Mode)
-              ? ARDUINO_CODE_EXTENSIONS.has(ext)
-              : ext === '.py';
-
-            if (shouldDisable && !disabled) {
-              replaceFilePath(pathLike, `${pathLike}${DISABLED_FILE_SUFFIX}`);
-            }
-          });
-        }
       });
 
       const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
@@ -5099,9 +4772,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       if (c.id === id) {
         let newW = c.w;
         let newH = c.h;
-        const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
-          ? normalizeRp2040Env(value)
-          : value;
+        const nextValue = value;
         if (c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix') {
           const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
           const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
@@ -5335,59 +5006,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     };
   }, [projectFiles, getBoardMainCode, activeCodeFileId, code]);
 
-  const getBoardFirmwareAssets = useCallback((boardId) => {
-    const boardFiles = projectFiles
-      .filter((f) => f.path.startsWith(`project/${boardId}/`))
-      .filter((f) => !isFileDisabled(f.path));
-    const uf2File = boardFiles.find((f) => fileExt(f.path) === '.uf2' && typeof f.content === 'string' && f.content.trim());
-    const pyFiles = boardFiles
-      .filter((f) => fileExt(f.path) === '.py')
-      .map((f) => ({
-        path: toBoardRelativePath(boardId, f.path),
-        name: f.name,
-        content: String(f.content || ''),
-      }));
-
-    const mainPy = pyFiles.find((f) => f.name.toLowerCase() === 'main.py') || pyFiles[0] || null;
-
-    let uf2Payload = null;
-    if (uf2File?.content) {
-      const raw = String(uf2File.content).trim();
-      uf2Payload = raw.startsWith(UF2_PAYLOAD_PREFIX) ? raw : `${UF2_PAYLOAD_PREFIX}${raw}`;
-    }
-
-    return { uf2Payload, mainPy, pythonFiles: pyFiles };
-  }, [projectFiles]);
-
-  const fetchDefaultMicroPythonUf2Payload = useCallback(async () => {
-    if (micropythonUf2PayloadRef.current) return micropythonUf2PayloadRef.current;
-
-    const response = await fetch(`${DEFAULT_PICO_MICROPYTHON_UF2_URL}?v=uart0`, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Unable to fetch default MicroPython UF2 (${response.status})`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-    micropythonUf2PayloadRef.current = payload;
-    return payload;
-  }, []);
-
-  const fetchDefaultCircuitPythonUf2Payload = useCallback(async () => {
-    if (circuitPythonUf2PayloadRef.current) return circuitPythonUf2PayloadRef.current;
-
-    const version = encodeURIComponent(DEFAULT_PICO_CIRCUITPYTHON_VERSION);
-    const response = await fetch(`${DEFAULT_PICO_CIRCUITPYTHON_UF2_URL}?v=${version}`, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Unable to fetch default CircuitPython UF2 (${response.status})`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
-    circuitPythonUf2PayloadRef.current = payload;
-    return payload;
-  }, []);
-
   const resolveFolderFilePolicy = useCallback((parentPath = 'project') => {
     const normalizedParent = String(parentPath || 'project').trim() || 'project';
     const boardMatch = normalizedParent.match(/^project\/([^/]+)(?:\/|$)/);
@@ -5396,7 +5014,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         parent: normalizedParent,
         boardId: '',
         boardKind: 'root',
-        rp2040Mode: 'native',
         defaultExt: '.ino',
         allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
       };
@@ -5405,29 +5022,14 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     const boardId = boardMatch[1];
     const boardComp = boardComponentMap.get(boardId);
     const boardKind = normalizeBoardKind(boardComp?.type || '');
-    if (boardKind !== 'rp2040') {
-      return {
-        parent: normalizedParent,
-        boardId,
-        boardKind,
-        rp2040Mode: 'native',
-        defaultExt: '.ino',
-        allowedExtensions: RP2040_NATIVE_ALLOWED_EXTENSIONS,
-      };
-    }
-
-    const rp2040Mode = rp2040BoardSourceModes[boardId] || 'native';
     return {
       parent: normalizedParent,
       boardId,
       boardKind,
-      rp2040Mode,
-      defaultExt: isRp2040PythonEnv(rp2040Mode) ? '.py' : '.ino',
-      allowedExtensions: isRp2040PythonEnv(rp2040Mode)
-        ? RP2040_MICROPYTHON_ALLOWED_EXTENSIONS
-        : RP2040_NATIVE_ALLOWED_EXTENSIONS,
+      defaultExt: '.ino',
+      allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
     };
-  }, [boardComponentMap, rp2040BoardSourceModes]);
+  }, [boardComponentMap]);
 
   const createCodeFile = useCallback((requestedName, openAfterCreate = false, customParent = null) => {
     const cleaned = String(requestedName || '').trim();
@@ -5453,12 +5055,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     const safeExt = (ext.replace(/[^a-zA-Z0-9.]/g, '') || defaultExt).toLowerCase();
 
     if (!folderPolicy.allowedExtensions.has(safeExt)) {
-      if (folderPolicy.boardKind === 'rp2040') {
-        const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode) ? '.py' : '.ino';
-        alert(`RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" is disabled for this env.`);
-      } else {
-        alert(`Unsupported file type: ${safeExt}`);
-      }
+      alert(`Unsupported file type: ${safeExt}`);
       return null;
     }
 
@@ -5542,12 +5139,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         const safeExt = (ext.replace(/[^a-zA-Z0-9.]/g, '') || '.ino').toLowerCase();
 
         if (!folderPolicy.allowedExtensions.has(safeExt)) {
-          if (folderPolicy.boardKind === 'rp2040') {
-            const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode) ? '.py' : '.ino';
-            alert(`RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" cannot be uploaded in this env.`);
-          } else {
-            alert(`Unsupported file type: ${safeExt}`);
-          }
+          alert(`Unsupported file type: ${safeExt}`);
           return;
         }
 
@@ -5907,9 +5499,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       const boardKind = normalizeBoardKind(targetBoardComp.type);
 
       // Format validation
-      if (boardKind !== 'rp2040' && parsed.ext === '.uf2') {
-        throw new Error(`Board ${targetBoardId} (${boardKind}) does not support .uf2 files. Please use a .hex file.`);
-      }
       if (!parsed.payload) {
         throw new Error('Firmware file is empty.');
       }
@@ -6536,7 +6125,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     } else if (arbState.source !== normalizedSource) {
       const recentlyAccepted = (nowMs - Number(arbState.lastAcceptedAt || 0)) <= 240;
       // Keep one ingress stream active per board for a short window to avoid
-      // USB/UART mirrored duplicate output bursts from RP2040 firmware.
+      // USB/UART mirrored duplicate output bursts from firmware.
       if (recentlyAccepted) {
         return;
       }
@@ -6615,8 +6204,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     }
     const sourceCode = compileUnit.mainCode || '';
     const cacheKeyBoard = `${kind}:${boardComp.id}`;
-    const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-    const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
+    const buildEngine = 'arduino-cli';
     const cacheSource = [
       sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
@@ -6633,8 +6221,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         sketchName: compileUnit.sketchName,
         fqbn,
         target: kind,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-        artifacts: kind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+        artifacts: ['hex', 'elf'],
       });
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
@@ -6747,10 +6334,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       appendConsoleEntry('info', '✅ Circuit validated. Initializing simulation...', 'simulator');
 
       appendConsoleEntry('info', 'Run requested.', 'simulator');
-      rp2040GdbLastLogRef.current.clear();
-      rp2040WirelessLastLogRef.current.clear();
-      rp2040UartMicroPythonBoardsRef.current.clear();
-      rp2040UartSilentWarnedBoardsRef.current.clear();
       serialIngressArbitrationRef.current.clear();
       serialPausedQueueRef.current = [];
       runComponentUpdateCountsRef.current = {};
@@ -6769,11 +6352,8 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         ? serialBoardFilter
         : '';
       const boardHexMap = {};
-      const boardPythonMap = {};
-      const boardPythonFilesMap = {};
-      const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino|rp2040|pico)/i.test(c.type));
+      const programmableBoards = components.filter(c => /(arduino)/i.test(c.type));
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -6812,181 +6392,30 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             appendConsoleEntry('warn', `Board ${boardComp.id} is set to use uploaded firmware, but none is assigned. Falling back to code editor.`, 'simulator');
           }
 
-          const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
           const activeFilePath = String(activeCodeFile?.path || '');
           const activeFileExt = fileExt(activeFilePath);
           const activeFileContent = String(code || '');
           const activeBoardFile = activeFilePath.startsWith(`project/${boardComp.id}/`) ? activeCodeFile : null;
           const activeFileTargetsBoard = !!activeBoardFile || singleProgrammableBoardId === boardComp.id;
           const activeBoardExt = activeBoardFile ? fileExt(activeBoardFile.path) : '';
-          const activePythonSource = activeFileExt === '.py'
-            && activeFileTargetsBoard
-            && !isFileDisabled(activeFilePath)
-            ? (activeBoardFile ? String(activeBoardFile.content || '') : activeFileContent)
-            : '';
           const boardEnabledFiles = projectFiles
             .filter((f) => f.path.startsWith(`project/${boardComp.id}/`))
             .filter((f) => !isFileDisabled(f.path));
-          const boardEnabledPyFiles = boardEnabledFiles.filter((f) => fileExt(f.path) === '.py');
-          const pythonSource = activePythonSource || String(firmwareAssets.mainPy?.content || '');
-          const hasPythonSource = boardEnabledPyFiles.some((f) => String(f.content || '').trim()) || !!pythonSource.trim();
-          const activePrefersIno = activeFileExt === '.ino' && activeFileTargetsBoard;
-          const activePrefersPy = activeFileExt === '.py' && activeFileTargetsBoard;
           const preferredMainPath = activeBoardExt === '.ino' && activeBoardFile && !isFileDisabled(activeBoardFile.path)
             ? activeBoardFile.path : '';
           const compileUnit = getBoardCompileFiles(boardComp.id, preferredMainPath);
           const compileSource = useBlocklyCode
             ? blocklyGeneratedCode
-            : (activeFileExt === '.py' && activeFileTargetsBoard
-              ? (String(activeCodeFile?.content || '') || String(code || ''))
-              : (compileUnit.mainCode || getBoardMainCode(boardComp.id) || String(code || '')));
+            : (compileUnit.mainCode || getBoardMainCode(boardComp.id) || String(code || ''));
 
-          if (kind !== 'rp2040' && !compileUnit.hasMainFile) {
+          if (!compileUnit.hasMainFile) {
             boardsWithoutCompilableSketch.push(boardComp.id);
             continue;
           }
 
-          // ── RP2040: emulate UF2 on rp2040js and boot user files from flash filesystem ──
-          if (kind === 'rp2040') {
-            const configuredEnv = normalizeRp2040Env(resolveComponentAttrString(boardComp?.attrs, 'env', 'native'));
-            boardRuntimeEnvMap[boardComp.id] = configuredEnv;
-
-            const configuredMode = configuredEnv === 'native' ? 'ino' : configuredEnv;
-            const configuredBuilder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-            const hasNativeSketch = compileUnit.hasMainFile || (activePrefersIno && !!compileSource.trim());
-            const hasExplicitPython = activePrefersPy || hasPythonSource;
-            const prefersNativeFromSyntax = /\bvoid\s+setup\s*\(|\bvoid\s+loop\s*\(|#include\s*</.test(String(compileSource || ''));
-            const selectedSourceMode = resolveRp2040SourceMode({
-              configuredMode,
-              activePrefersIno,
-              activePrefersPy,
-              hasNativeSketch,
-              hasPythonSource: hasExplicitPython,
-              prefersNativeFromSyntax,
-            });
-            const useMicroPythonPath = selectedSourceMode === 'py';
-            const useCircuitPythonPath = selectedSourceMode === 'cp';
-            const usePythonPath = useMicroPythonPath || useCircuitPythonPath;
-
-            if (selectedSourceMode === 'ino' && !hasNativeSketch) {
-              const msg = `RP2040 source mode is set to .ino for ${boardComp.id}, but no enabled .ino sketch was found.`;
-              appendConsoleEntry('warn', msg, 'simulator');
-              logSerial(msg, 'var(--orange)');
-              boardsWithoutCompilableSketch.push(boardComp.id);
-              continue;
-            }
-
-            if (usePythonPath) {
-              const runtimeEnv = useCircuitPythonPath ? 'circuitpython' : 'micropython';
-              const entryFileName = getRp2040PythonEntryFileName(runtimeEnv);
-              const firmwareEntryPy = runtimeEnv === 'circuitpython'
-                ? (firmwareAssets.pythonFiles || []).find((f) => String(f.name || '').toLowerCase() === 'code.py')
-                : firmwareAssets.mainPy;
-
-              let pyToRun = String(firmwareEntryPy?.content || '').trim() || pythonSource.trim();
-              if (!pyToRun && looksLikeMicroPythonSource(compileSource)) {
-                pyToRun = compileSource;
-              }
-              if (!pyToRun && runtimeEnv === 'micropython') {
-                pyToRun = arduinoSerialToMicroPython(compileSource, boardComp.id);
-              }
-              if (!pyToRun && runtimeEnv === 'micropython') {
-                pyToRun = arduinoBlinkToMicroPython(compileSource, boardComp.id);
-              }
-              if (!pyToRun) {
-                pyToRun = createDefaultMainCode('rp2040', boardComp.id, { rp2040Mode: runtimeEnv });
-              }
-
-              if (runtimeEnv === 'micropython') {
-                pyToRun = applyRp2040MicroPythonCompat(pyToRun);
-              }
-
-              const runtimeFiles = {};
-              boardEnabledFiles.forEach((fileObj) => {
-                const ext = fileExt(fileObj.path);
-                if (!ext) return;
-                if (ext === '.uf2') return;
-                if (ARDUINO_CODE_EXTENSIONS.has(ext)) return;
-
-                const relPath = toBoardRelativePath(boardComp.id, fileObj.path);
-                if (!relPath) return;
-
-                const fileContent = fileObj.id === activeCodeFileId
-                  ? String(code || '')
-                  : String(fileObj.content || '');
-                runtimeFiles[relPath] = fileContent;
-              });
-
-              if (!String(runtimeFiles[entryFileName] || '').trim()) {
-                runtimeFiles[entryFileName] = pyToRun;
-              }
-
-              const rp2040Firmware = firmwareAssets.uf2Payload
-                || (runtimeEnv === 'circuitpython'
-                  ? await fetchDefaultCircuitPythonUf2Payload()
-                  : await fetchDefaultMicroPythonUf2Payload());
-              boardHexMap[boardComp.id] = rp2040Firmware;
-              boardPythonMap[boardComp.id] = pyToRun;
-              boardPythonFilesMap[boardComp.id] = runtimeFiles;
-
-              const runtimeLabel = runtimeEnv === 'circuitpython' ? 'CircuitPython' : 'MicroPython';
-              appendConsoleEntry(
-                'info',
-                `RP2040 running via rp2040js + ${runtimeLabel} flash filesystem on ${boardComp.id} (env: ${configuredEnv}).`,
-                'simulator'
-              );
-              if (!result) result = { hex: rp2040Firmware || '' };
-              continue;
-            }
-
-            const nativeCompileSource = prepareRp2040SketchForSimulation(compileSource);
-            if (nativeCompileSource !== compileSource) {
-              appendConsoleEntry('info', `RP2040: routed Serial output to UART0 monitor for ${boardComp.id}.`, 'simulator');
-            }
-
-            const cacheKeyBoard = `${kind}:${boardComp.id}`;
-            const builder = configuredBuilder;
-            const cacheSource = [
-              RP2040_SIM_PROTOCOL_VERSION,
-              builder,
-              configuredMode,
-              targetFqbn,
-              nativeCompileSource,
-              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-            ].join('\n/*__SPLIT__*/\n');
-
-            appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
-            let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-            if (compiled) {
-              logSerial(`Using cached compilation for ${boardComp.id}...`);
-            } else {
-              logSerial(`Compiling ${boardComp.id}...`);
-              try {
-                compiled = await compileCode({
-                  code: nativeCompileSource,
-                  files: compileUnit.files,
-                  sketchName: compileUnit.sketchName,
-                  fqbn: targetFqbn,
-                  target: kind,
-                  builder,
-                  artifacts: ['uf2', 'elf'],
-                });
-                setCachedHex(cacheSource, cacheKeyBoard, compiled);
-              } catch (compileErr) {
-                if (isRp2040CoreMissingError(compileErr)) {
-                  appendConsoleEntry('error', `RP2040 core is not installed for ${boardComp.id}. Native .ino mode cannot run without Arduino-Pico core.`, 'simulator');
-                }
-                throw compileErr;
-              }
-            }
-
-            boardHexMap[boardComp.id] = compiled.hex;
-            logCompileSummary(compiled, boardComp, kind);
-            registerGdbArtifact(boardComp.id, kind, compiled);
-            appendConsoleEntry('info', `RP2040 native firmware compiled and running on ${boardComp.id}.`, 'simulator');
-            if (!result) result = compiled;
-            continue;
-          }
+          // ── Per-family compile: arduino sketch → board firmware ──
+          // uno/nano → hex, rp2040 → uf2, esp32/stm32 → bin. Runners
+          // auto-detect the payload shape at boot.
 
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
           const cacheSource = [
@@ -7001,6 +6430,11 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
+            const artifacts =
+              kind === 'rp2040' ? ['uf2', 'elf'] :
+              kind === 'esp32' ? ['bin', 'elf'] :
+              (kind === 'stm32f1' || kind === 'stm32f4') ? ['bin', 'elf'] :
+              ['hex', 'elf'];
             try {
               compiled = await compileCode({
                 code: compileSource,
@@ -7008,7 +6442,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
                 target: kind,
-                artifacts: ['hex', 'elf'],
+                artifacts,
               });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
@@ -7040,7 +6474,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       if (!result) {
         const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
         const fallbackKind = normalizeBoardKind(board);
-        const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
+        const engine = 'arduino-cli';
         const cacheStr = [finalCode, engine].join('\n/*__SPLIT__*/\n');
         appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
 
@@ -7055,8 +6489,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             code: finalCode,
             fqbn: fallbackFqbn,
             target: fallbackKind,
-            ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
-            artifacts: fallbackKind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+            artifacts: ['hex', 'elf'],
           });
           setCachedHex(cacheStr, board, result);
           registerGdbArtifact(board || 'default', fallbackKind, result);
@@ -7080,284 +6513,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           handleStop();
           return;
         }
-        if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
-          const incomingBoardId = String(msg.boardId || '').trim();
-          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
-          const resolvedBoardId = hasKnownBoard
-            ? incomingBoardId
-            : (singleBoardFallback || incomingBoardId || 'default');
-
-          const metrics = msg.metrics || {};
-          const reason = String(msg.reason || 'tick');
-          const pc = Number(metrics.pc);
-          const sp = Number(metrics.sp);
-          const gp20 = !!metrics.gp20;
-          const gp25 = !!metrics.gp25;
-          const tx = Number(metrics.serialTxBytes || 0);
-          const rx = Number(metrics.serialRxBytes || 0);
-          const inq = Number(metrics.serialInputQueue || 0);
-          const cycles = Number(metrics.cycles || 0);
-          const steps = Number(metrics.stepCount || 0);
-          const stall = Number(metrics.pcStallTicks || 0);
-          const running = !!metrics.running;
-          const entry = metrics.entry && typeof metrics.entry === 'object' ? metrics.entry : null;
-          const ledId = String(metrics.ledId || '').trim();
-          const ledOn = typeof metrics.ledOn === 'boolean' ? metrics.ledOn : null;
-          const ledAnodeV = Number.isFinite(Number(metrics.ledAnodeV)) ? Number(metrics.ledAnodeV) : null;
-          const ledCathodeV = Number.isFinite(Number(metrics.ledCathodeV)) ? Number(metrics.ledCathodeV) : null;
-          const ledDeltaV = Number.isFinite(Number(metrics.ledDeltaV)) ? Number(metrics.ledDeltaV) : null;
-          const primask = !!metrics.primask;
-          const stepsSinceLastEmit = Number(metrics.stepsSinceLastEmit || 0);
-
-          const pcHex = Number.isFinite(pc) ? `0x${(pc >>> 0).toString(16)}` : 'n/a';
-          const spHex = Number.isFinite(sp) ? `0x${(sp >>> 0).toString(16)}` : 'n/a';
-          const entryVectorHex = Number.isFinite(Number(entry?.vectorBase))
-            ? `0x${(Number(entry.vectorBase) >>> 0).toString(16)}`
-            : 'n/a';
-          const entryResolvedHex = Number.isFinite(Number(entry?.resolvedPC))
-            ? `0x${(Number(entry.resolvedPC) >>> 0).toString(16)}`
-            : 'n/a';
-
-          const debugBoardComp = components.find((c) => c.id === resolvedBoardId)
-            || boardComponents.find((b) => b.id === resolvedBoardId);
-          const isRp2040DebugBoard = normalizeBoardKind(debugBoardComp?.type || '') === 'rp2040';
-          const startupFallbackEntry = reason === 'start' && !!entry?.usedFallback;
-          if (startupFallbackEntry && isRp2040DebugBoard) {
-            appendConsoleEntry('warn', `RP2040 startup vector fallback detected on ${resolvedBoardId}; automatic recovery is disabled in deterministic mode.`, 'simulator');
-            logSerial(`RP2040 startup fallback on ${resolvedBoardId}. Automatic recovery is disabled in deterministic mode.`, 'var(--orange)');
-          }
-
-          const isUartMicroPythonBoard = rp2040UartMicroPythonBoardsRef.current.has(resolvedBoardId);
-          const queueDrained = inq <= 0;
-          const shouldWarnUartSilent = reason === 'tick'
-            && isUartMicroPythonBoard
-            && tx === 0
-            && rx >= 512
-            && (queueDrained || rx >= 2048)
-            && stall >= 3
-            && cycles >= 120_000_000
-            && !rp2040UartSilentWarnedBoardsRef.current.has(resolvedBoardId);
-
-          if (shouldWarnUartSilent) {
-            rp2040UartSilentWarnedBoardsRef.current.add(resolvedBoardId);
-            appendConsoleEntry(
-              'warn',
-              `RP2040 MicroPython UART injection appears silent on ${resolvedBoardId} (tx=0, rx=${rx}, inq=${inq}, stall=${stall}). Check script startup logs and wiring.`,
-              'simulator'
-            );
-            logSerial(
-              `RP2040 ${resolvedBoardId}: UART injection is silent (tx=0, rx=${rx}, inq=${inq}). Verify script startup and board wiring.`,
-              'var(--orange)'
-            );
-          }
-
-          const prev = rp2040DebugLastLogRef.current.get(resolvedBoardId) || null;
-          const now = Date.now();
-          const changed = !prev
-            || prev.pcHex !== pcHex
-            || prev.gp20 !== gp20
-            || prev.gp25 !== gp25
-            || prev.tx !== tx
-            || prev.rx !== rx
-            || prev.ledOn !== ledOn
-            || prev.ledDeltaV !== ledDeltaV
-            || reason !== 'tick';
-
-          const highPins = Array.isArray(metrics.highPins) ? metrics.highPins : [];
-          const highPinsLabel = highPins.length > 0
-            ? `${highPins.slice(0, 12).join(',')}${highPins.length > 12 ? ',+' : ''}`
-            : '-';
-          const pinBitmap = typeof metrics.pinBitmap === 'string' ? metrics.pinBitmap : '';
-
-          if (changed || now - (prev?.ts || 0) > 2500) {
-            const line = [
-              `RP2040 dbg ${resolvedBoardId}`,
-              `reason=${reason}`,
-              `run=${running ? '1' : '0'}`,
-              `pc=${pcHex}`,
-              `sp=${spHex}`,
-              `cyc=${cycles}`,
-              `steps=${steps}`,
-              `gp20=${gp20 ? 'H' : 'L'}`,
-              `gp25=${gp25 ? 'H' : 'L'}`,
-              `uart=${metrics.activeUart ?? 'n/a'}`,
-              `usb=${metrics.usbCdcReady ? '1' : '0'}`,
-              `tx=${tx}`,
-              `rx=${rx}`,
-              `inq=${inq}`,
-              `stall=${stall}`,
-              `pri=${primask ? '1' : '0'}`,
-              `dSteps=${stepsSinceLastEmit}`,
-              `high=${highPinsLabel}`,
-              pinBitmap ? `pins=${pinBitmap}` : '',
-              entry ? `entry=${entryVectorHex}->${entryResolvedHex}${entry.usedFallback ? ':fallback' : ''}${entry.strategy ? `:${entry.strategy}` : ''}` : '',
-              entry && Number.isFinite(Number(entry.probe0100SP))
-                ? `probe0100=sp:0x${(Number(entry.probe0100SP) >>> 0).toString(16)},pc:0x${(Number(entry.probe0100PC) >>> 0).toString(16)}`
-                : '',
-              entry && Number.isFinite(Number(entry.probe0000SP))
-                ? `probe0000=sp:0x${(Number(entry.probe0000SP) >>> 0).toString(16)},pc:0x${(Number(entry.probe0000PC) >>> 0).toString(16)}`
-                : '',
-              ledId ? `led=${ledId}:${ledOn === null ? 'n/a' : (ledOn ? 'on' : 'off')}` : '',
-              ledAnodeV !== null ? `vA=${ledAnodeV.toFixed(2)}` : '',
-              ledCathodeV !== null ? `vK=${ledCathodeV.toFixed(2)}` : '',
-              ledDeltaV !== null ? `dV=${ledDeltaV.toFixed(2)}` : '',
-              metrics.lastGpioPin ? `lastPin=${metrics.lastGpioPin}` : '',
-            ].filter(Boolean).join(' | ');
-
-            const warn = reason === 'fault' || stall > 180;
-            appendConsoleEntry(warn ? 'warn' : 'info', line, 'debug');
-            rp2040DebugLastLogRef.current.set(resolvedBoardId, {
-              ts: now,
-              pcHex,
-              gp20,
-              gp25,
-              tx,
-              rx,
-              ledOn,
-              ledDeltaV,
-            });
-          }
-
-          return;
-        }
-        if (msg.type === 'debug' && msg.category === 'rp2040-wireless-stub') {
-          const incomingBoardId = String(msg.boardId || '').trim();
-          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
-          const resolvedBoardId = hasKnownBoard
-            ? incomingBoardId
-            : (singleBoardFallback || incomingBoardId || 'default');
-
-          const wireless = msg.wireless && typeof msg.wireless === 'object' ? msg.wireless : {};
-          const mode = String(wireless.mode || 'compat-stub');
-          const status = String(wireless.status || (mode === 'off' ? 'off' : 'booting'));
-          const connected = !!wireless.connected;
-          const ssid = String(wireless.ssid || '');
-          const ip = String(wireless.ip || '');
-          const note = String(wireless.note || '');
-
-          setOopStates((prev) => ({
-            ...prev,
-            [resolvedBoardId]: {
-              ...(prev[resolvedBoardId] || {}),
-              wirelessMode: mode,
-              wirelessStatus: status,
-              wirelessConnected: connected,
-              wirelessSsid: ssid,
-              wirelessIp: ip,
-              wirelessNote: note,
-            },
-          }));
-
-          const signature = `${mode}:${status}:${connected ? '1' : '0'}:${ssid}:${ip}`;
-          const lastSignature = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
-          if (lastSignature !== signature) {
-            const line = [
-              `Pico W wireless ${resolvedBoardId}`,
-              `mode=${mode}`,
-              `status=${status}`,
-              `connected=${connected ? '1' : '0'}`,
-              `ssid=${ssid || '-'}`,
-              `ip=${ip || '-'}`,
-              note,
-            ].filter(Boolean).join(' | ');
-            appendConsoleEntry(connected || status === 'off' ? 'info' : 'warn', line, 'debug');
-            rp2040WirelessLastLogRef.current.set(resolvedBoardId, signature);
-          }
-          return;
-        }
-        if (msg.type === 'debug' && msg.category === 'rp2040-gdb') {
-          const incomingBoardId = String(msg.boardId || '').trim();
-          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
-          const resolvedBoardId = hasKnownBoard
-            ? incomingBoardId
-            : (singleBoardFallback || incomingBoardId || 'default');
-
-          const gdb = msg.gdb && typeof msg.gdb === 'object' ? msg.gdb : {};
-          const status = String(gdb.status || 'unknown');
-          const reason = String(msg.reason || status);
-          const detail = String(gdb.detail || gdb.lastError || '').trim();
-          const signature = `${reason}:${status}:${detail}`;
-          const lastSignature = rp2040GdbLastLogRef.current.get(resolvedBoardId);
-
-          if (lastSignature !== signature) {
-            const line = [
-              `RP2040 GDB ${resolvedBoardId}`,
-              `status=${status}`,
-              `reason=${reason}`,
-              detail,
-            ].filter(Boolean).join(' | ');
-
-            const level = (status === 'error' || status === 'closed') ? 'warn' : 'info';
-            appendConsoleEntry(level, line, 'debug');
-            rp2040GdbLastLogRef.current.set(resolvedBoardId, signature);
-          }
-          return;
-        }
-        if (msg.type === 'debug' && msg.category === 'rp2040-spi') {
-          const incomingBoardId = String(msg.boardId || '').trim();
-          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
-          const resolvedBoardId = hasKnownBoard
-            ? incomingBoardId
-            : (singleBoardFallback || incomingBoardId || 'default');
-
-          const spi = msg.spi && typeof msg.spi === 'object' ? msg.spi : {};
-          const reason = String(msg.reason || 'spi');
-          const bus = String(spi.bus || 'spi?');
-          const byte = Number(spi.byte ?? Number.NaN);
-          const byteIndex = Number(spi.byteIndex ?? Number.NaN);
-          const frameBytes = Number(spi.frameBytes ?? Number.NaN);
-          const deviceCount = Number(spi.deviceCount || 0);
-          const txBytes = Number(spi.txBytes || 0);
-          const txTransactions = Number(spi.txTransactions || 0);
-          const deviceIds = Array.isArray(spi.deviceIds) ? spi.deviceIds.join(',') : '';
-          const framePreview = Array.isArray(spi.framePreview) ? spi.framePreview.slice(0, 8).map((v) => `0x${Number(v).toString(16).padStart(2, '0')}`).join(',') : '';
-          const command = Number.isFinite(Number(spi.command)) ? `cmd=0x${Number(spi.command).toString(16).padStart(2, '0')}` : '';
-          const powerOn = spi.powerOn === undefined ? '' : `powerOn=${spi.powerOn ? 1 : 0}`;
-          const writeCount = Number.isFinite(Number(spi.writeCount)) ? `writeCount=${Number(spi.writeCount)}` : '';
-          const fill = Number.isFinite(Number(spi.vramFillPercentage)) ? `fill=${Number(spi.vramFillPercentage)}` : '';
-          const role = spi.role ? `role=${String(spi.role)}` : '';
-          const boardPin = spi.boardPin ? `boardPin=${String(spi.boardPin)}` : '';
-          const componentPin = spi.componentPin ? `pin=${String(spi.componentPin)}` : '';
-          const isHigh = spi.isHigh === undefined ? '' : `isHigh=${spi.isHigh ? 1 : 0}`;
-          const voltage = Number.isFinite(Number(spi.voltage)) ? `voltage=${Number(spi.voltage).toFixed(1)}` : '';
-          const buses = Array.isArray(spi.buses) ? `buses=${spi.buses.join(',')}` : '';
-
-          const line = [
-            `RP2040 SPI ${resolvedBoardId}`,
-            `reason=${reason}`,
-            `bus=${bus}`,
-            Number.isFinite(byte) ? `byte=0x${byte.toString(16).padStart(2, '0')}` : '',
-            Number.isFinite(byteIndex) ? `index=${byteIndex}` : '',
-            Number.isFinite(frameBytes) ? `frameBytes=${frameBytes}` : '',
-            `devices=${deviceCount}`,
-            `txBytes=${txBytes}`,
-            `txFrames=${txTransactions}`,
-            command,
-            powerOn,
-            writeCount,
-            fill,
-            role,
-            boardPin,
-            componentPin,
-            isHigh,
-            voltage,
-            buses,
-            framePreview ? `preview=${framePreview}` : '',
-            deviceIds ? `ids=${deviceIds}` : '',
-          ].filter(Boolean).join(' | ');
-
-          appendConsoleEntry('info', line, 'debug');
-          return;
-        }
         if (msg.type === 'sync_heartbeat') {
-          if (!rp2040DebugTelemetryEnabled) {
-            return;
-          }
-
           const boardId = String(msg.boardId || 'default').trim() || 'default';
           const frameId = Number(msg.frameId || 0);
 
@@ -7394,10 +6550,10 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             : 'unknown';
           appendConsoleEntry(
             'error',
-            `RP2040 runtime fault on ${msg.boardId || 'board'} at ${pcHex}: ${msg.reason || 'invalid execution state'}`,
+            `Runtime fault on ${msg.boardId || 'board'} at ${pcHex}: ${msg.reason || 'invalid execution state'}`,
             'simulator'
           );
-          logSerial('Simulation stopped due to RP2040 runtime fault.', 'var(--red)');
+          logSerial('Simulation stopped due to runtime fault.', 'var(--red)');
           handleStop();
           return;
         }
@@ -7585,23 +6741,15 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         components: components,
         customLogics: customLogics,
         boardHexMap: Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
-        boardPythonMap: Object.keys(boardPythonMap).length > 0 ? boardPythonMap : undefined,
-        boardPythonFilesMap: Object.keys(boardPythonFilesMap).length > 0 ? boardPythonFilesMap : undefined,
-        boardRuntimeEnvMap: Object.keys(boardRuntimeEnvMap).length > 0 ? boardRuntimeEnvMap : undefined,
         boardBaudMap: Object.keys(boardBaudMap).length > 0 ? boardBaudMap : undefined,
         baudRate: selectedRunBaud,
-        debugRp2040: rp2040DebugTelemetryEnabled,
-        debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
+        debugSyncHeartbeat: false,
         speed: simulationSpeed,
       });
 
       runStartGuardRef.current = false;
     } catch (err) {
       runStartGuardRef.current = false;
-      rp2040GdbLastLogRef.current.clear();
-      rp2040WirelessLastLogRef.current.clear();
-      rp2040UartMicroPythonBoardsRef.current.clear();
-      rp2040UartSilentWarnedBoardsRef.current.clear();
       setIsRunning(false);
       setIsCompiling(false);
       setRunStartedAtMs(null);
@@ -7615,10 +6763,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const handleStop = () => {
     const wasRunning = isRunning;
     runStartGuardRef.current = false;
-    rp2040GdbLastLogRef.current.clear();
-    rp2040WirelessLastLogRef.current.clear();
-    rp2040UartMicroPythonBoardsRef.current.clear();
-    rp2040UartSilentWarnedBoardsRef.current.clear();
 
     if (wasRunning) {
       const componentSummary = Object.entries(runComponentUpdateCountsRef.current)
@@ -8458,7 +7602,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
       // ── Title block ───────────────────────────────────────────────────────
       const TBY = FY2, TBH2 = SH - OM - GL - FY2, divW = FW / 3;
-      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : 'Raspberry Pi Pico';
+      const boardLabel = 'Arduino Uno';
       const dateStr = new Date().toISOString().slice(0, 10);
       borderSVG += `
         <rect x="${FX1}" y="${TBY}" width="${FW}" height="${TBH2}" fill="white" stroke="#cc0000" stroke-width="1"/>
@@ -8571,7 +7715,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     setComponents(normalizedComponents);
     setWires(normalizedConnections);
 
-    const importedBoards = normalizedComponents.filter((c) => /(arduino|rp2040|pico)/i.test(c.type));
+    const importedBoards = normalizedComponents.filter((c) => /(arduino)/i.test(c.type));
     let normalizedFiles = normalizeProjectFiles(Array.isArray(meta?.projectFiles) ? meta.projectFiles : []);
 
     // Backward compatibility: older exports stored only top-level `code`.
@@ -8579,10 +7723,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       if (importedBoards.length > 0) {
         normalizedFiles = importedBoards.map((bc, idx) => {
           const boardKind = normalizeBoardKind(bc.type);
-          const rp2040Mode = boardKind === 'rp2040'
-            ? normalizeRp2040Env(resolveComponentAttrString(bc?.attrs, 'env', 'native'))
-            : 'native';
-          const fileName = getDefaultMainFileName(boardKind, bc.id, { rp2040Mode });
+          const fileName = getDefaultMainFileName(boardKind, bc.id, {});
           const path = `project/${bc.id}/${fileName}`;
           return {
             id: path,
@@ -8591,7 +7732,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             kind: 'code',
             boardId: bc.id,
             boardKind,
-            content: idx === 0 ? meta.code : createDefaultMainCode(boardKind, bc.id, { rp2040Mode }),
+            content: idx === 0 ? meta.code : createDefaultMainCode(boardKind, bc.id, {}),
             dirty: false,
           };
         });
@@ -10711,7 +9852,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             boardComponentMap={boardComponentMap}
             onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
             serialBoardKinds={serialBoardKinds}
-            serialBoardSourceModes={rp2040BoardSourceModes}
+            serialBoardSourceModes={{}}
             theme={theme}
             projectName={currentProjectName}
             editingDisabled={liveEditingDisabled}
@@ -10782,7 +9923,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             serialPlotLabelsRef={serialPlotLabelsRef}
             theme={theme}
             serialBoardKinds={serialBoardKinds}
-            serialBoardSourceModes={rp2040BoardSourceModes}
+            serialBoardSourceModes={{}}
             serialSendTarget={serialSendTarget}
             setSerialSendTarget={setSerialSendTarget}
             showSendTargetMenu={showSendTargetMenu}
@@ -11384,15 +10525,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
               >
                 Board Firmware Manager
               </Btn>
-              <Btn
-                onClick={() => {
-                  setRp2040DebugTelemetryEnabled((prev) => !prev);
-                  setShowF1Menu(false);
-                }}
-                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-              >
-                {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
-              </Btn>
+
               <Btn
                 onClick={() => {
                   setShowSpeedDialog(true);

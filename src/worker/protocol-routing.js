@@ -1,12 +1,16 @@
 import {
-  PICO_SOFTSERIAL_PINS,
-  PICO_UART_SOURCE_PINS,
   UNO_SOFTSERIAL_PINS,
   UNO_UART_PINS,
+  PICO_UART_PINS,
+  PICO_SOFTSERIAL_PINS,
+  ESP32_UART_PINS,
+  ESP32_SOFTSERIAL_PINS,
+  STM32F1_UART_PINS,
+  STM32F4_UART_PINS,
 } from './board-profiles';
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|rp2040|pico)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico|esp32|stm32)/i.test(String(type || ''));
 }
 
 export function endpointAliases(endpoint) {
@@ -31,45 +35,31 @@ function withAliases(boardId, pins) {
   return Array.from(new Set(out));
 }
 
-function normalizeUartSource(source) {
-  const s = String(source || 'uart0').toLowerCase();
-  if (s === 'uart1' || s === 'serial1' || s === '1') return 'uart1';
-  if (s === 'usb' || s === 'cdc' || s === 'serialusb') return 'usb';
-  return 'uart0';
-}
-
 export function getUartSources(boardType) {
+  // STM32F4 exposes usart1-6 (+7/8 on F407); the runner bridges uart0→usart1
+  // today, so advertise uart0+uart1 and let routing resolve wired pairs.
   const t = String(boardType || '').toLowerCase();
-  if (t.includes('rp2040') || t.includes('pico')) {
-    return ['uart0', 'uart1'];
-  }
+  if (t.includes('stm32')) return ['uart0', 'uart1'];
+  if (t.includes('esp32')) return ['uart0'];
   return ['uart0'];
 }
 
 export function getUartPinCandidates(boardType, source = 'uart0') {
+  void source;
   const t = String(boardType || '').toLowerCase();
-
-  if (t.includes('rp2040') || t.includes('pico')) {
-    const selectedSource = normalizeUartSource(source);
-    if (selectedSource === 'uart1') return PICO_UART_SOURCE_PINS.uart1;
-    if (selectedSource === 'usb') {
-      // USB CDC is not tied to board pin endpoints, so use UART0 pins as a
-      // conservative compatibility fallback for wiring checks.
-      return PICO_UART_SOURCE_PINS.uart0;
-    }
-    return PICO_UART_SOURCE_PINS.uart0;
+  if (t.includes('esp32')) return ESP32_UART_PINS;
+  if (t.includes('stm32')) {
+    if (t.includes('f4') || t.includes('407') || t.includes('discovery')) return STM32F4_UART_PINS;
+    return STM32F1_UART_PINS;
   }
-
+  if (t.includes('rp2040') || t.includes('pico')) return PICO_UART_PINS;
   return UNO_UART_PINS;
 }
 
 export function getSoftwareSerialPinCandidates(boardType) {
   const t = String(boardType || '').toLowerCase();
-
-  if (t.includes('rp2040') || t.includes('pico')) {
-    return PICO_SOFTSERIAL_PINS;
-  }
-
+  if (t.includes('esp32')) return ESP32_SOFTSERIAL_PINS;
+  if (t.includes('rp2040') || t.includes('pico')) return PICO_SOFTSERIAL_PINS;
   // Arduino UNO / default: SoftwareSerial(11,10) => RX=11, TX=10
   return UNO_SOFTSERIAL_PINS;
 }

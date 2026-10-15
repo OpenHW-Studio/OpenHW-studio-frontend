@@ -40,6 +40,9 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Cycle-accurate AVR simulation powered by avr8js. Standard reference board.'
   },
 
+  // Board UI stays visible while execution is AVR-only: the svg/manifest/ui
+  // artwork returns from the emulator shells; CPU/runner logic for these
+  // boards returns from scratch later (pico-emu / esp32-emu / stm32f1-emu).
   'openhw-raspberry-pi-pico': {
     status: 'verified',
     summary: 'Dual-core ARM Cortex-M0+ RP2040 @ 133 MHz',
@@ -97,6 +100,9 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Camera sensor frame emulation under active development.'
   },
 
+
+
+
   'openhw-arduino-nano': {
     hide: true,
     status: 'in-development',
@@ -136,6 +142,7 @@ export const COMPONENT_STATUS_CONFIG = {
     limitations: ['ARM backend runner connection'],
     notes: 'Cortex-M3 simulation backend is currently being linked to the web emulator.'
   },
+
 
   // Audio Components
   'openhw-sph0645': {

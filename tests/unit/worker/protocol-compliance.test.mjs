@@ -13,58 +13,70 @@ import { describe, test } from 'vitest';
 describe('protocol compliance', () => {
   test('protocol compliance', () => {
     assert.equal(isProgrammableBoardType('openhw-arduino-uno'), true);
-    assert.equal(isProgrammableBoardType('openhw-esp32-devkit'), true);
+    assert.equal(isProgrammableBoardType('openhw-arduino-nano'), true);
+    assert.equal(isProgrammableBoardType('openhw-pico'), true);
+    assert.equal(isProgrammableBoardType('openhw-esp32'), true);
+    assert.equal(isProgrammableBoardType('openhw-stm32-bluepill'), true);
+    assert.equal(isProgrammableBoardType('openhw-stm32f4'), true);
     assert.equal(isProgrammableBoardType('custom-sensor'), false);
 
     const aliases = endpointAliases('board1:D1');
     assert.equal(aliases.includes('board1:1'), true);
 
-    const esp = getUartPinCandidates('esp32');
-    assert.equal(esp.tx.includes('TX0'), true);
-    assert.equal(esp.rx.includes('RX0'), true);
+    // Per-family UART pin tables (routing layer for inter-board UART).
+    const uno = getUartPinCandidates('arduino');
+    assert.equal(uno.tx.includes('TX0'), true);
+    assert.equal(uno.rx.includes('RX0'), true);
+    assert.deepEqual(getUartSources('arduino'), ['uart0']);
 
-    const picoUart0 = getUartPinCandidates('rp2040', 'uart0');
-    const picoUart1 = getUartPinCandidates('rp2040', 'uart1');
-    assert.equal(picoUart0.tx.includes('GP0'), true);
-    assert.equal(picoUart1.tx.includes('GP4'), true);
-    assert.deepEqual(getUartSources('rp2040'), ['uart0', 'uart1']);
+    const pico = getUartPinCandidates('openhw-pico');
+    assert.equal(pico.tx.includes('GP0'), true);
+    assert.equal(pico.rx.includes('GP1'), true);
+
+    const esp = getUartPinCandidates('openhw-esp32');
+    assert.equal(esp.tx.includes('GPIO1'), true);
+    assert.equal(esp.rx.includes('GPIO3'), true);
+
+    const f1 = getUartPinCandidates('openhw-stm32-bluepill');
+    assert.equal(f1.tx.includes('PA9'), true);
+    assert.equal(f1.rx.includes('PA10'), true);
+
+    const f4 = getUartPinCandidates('openhw-stm32f4');
+    assert.equal(f4.tx.includes('PA9'), true);
+    assert.equal(f4.rx.includes('PA10'), true);
 
     const links = new Set([
       'A:TX0->B:RX0',
       'A:D1->B:D0',
-      'P1:GP4->P2:GP5',
-      'P1:GP0->U1:D0',
     ]);
     const areConnected = (a, b) => links.has(`${a}->${b}`);
 
-    const connected = areBoardsUartConnected('A', 'esp32', 'B', 'arduino', areConnected);
+    const connected = areBoardsUartConnected('A', 'arduino', 'B', 'arduino', areConnected);
     assert.equal(connected, true);
 
-    const disconnected = areBoardsUartConnected('A', 'rp2040', 'B', 'stm32', () => false);
+    const disconnected = areBoardsUartConnected('A', 'arduino', 'B', 'arduino', () => false);
     assert.equal(disconnected, false);
 
-    const picoUart0Disconnected = areBoardsUartConnected('P1', 'rp2040', 'P2', 'rp2040', areConnected, 'uart0');
-    assert.equal(picoUart0Disconnected, false);
-
-    const picoUart1Connected = areBoardsUartConnected('P1', 'rp2040', 'P2', 'rp2040', areConnected, 'uart1');
-    assert.equal(picoUart1Connected, true);
-
-    const picoRoute = resolveUartRoute('P1', 'rp2040', 'P2', 'rp2040', areConnected, 'uart1');
-    assert.equal(picoRoute.connected, true);
-    assert.equal(picoRoute.targetSource, 'uart1');
-
-    const picoToUnoRoute = resolveUartRoute('P1', 'rp2040', 'U1', 'arduino', areConnected, 'uart0');
-    assert.equal(picoToUnoRoute.connected, true);
-    assert.equal(picoToUnoRoute.targetSource, 'uart0');
+    const unoRoute = resolveUartRoute('A', 'arduino', 'B', 'arduino', areConnected, 'uart0');
+    assert.equal(unoRoute.connected, true);
+    assert.equal(unoRoute.targetSource, 'uart0');
 
     const softLinks = new Set([
       'U1:10->U2:11',
-      'P1:GP10->P2:GP11',
-      'U1:D10->P2:D11',
     ]);
     const areSoftConnected = (a, b) => softLinks.has(`${a}->${b}`);
     assert.equal(areBoardsSoftSerialConnected('U1', 'arduino', 'U2', 'arduino', areSoftConnected), true);
-    assert.equal(areBoardsSoftSerialConnected('P1', 'rp2040', 'P2', 'rp2040', areSoftConnected), true);
-    assert.equal(areBoardsSoftSerialConnected('U1', 'arduino', 'P2', 'rp2040', areSoftConnected), true);
+
+    // Cross-family UART route: Uno TX0 wired to Pico GP1 (RX).
+    const xLinks = new Set(['UNO:TX0->PICO:GP1']);
+    const xAreConnected = (a, b) => xLinks.has(`${a}->${b}`);
+    const xRoute = resolveUartRoute('UNO', 'openhw-arduino-uno', 'PICO', 'openhw-pico', xAreConnected, 'uart0');
+    assert.equal(xRoute.connected, true);
+    assert.equal(xRoute.targetSource, 'uart0');
+
+    // Pico TX (GP0) wired to ESP32 RX (GPIO3).
+    const peLinks = new Set(['PICO:GP0->ESP:GPIO3']);
+    const peConnected = (a, b) => peLinks.has(`${a}->${b}`);
+    assert.equal(areBoardsUartConnected('PICO', 'openhw-pico', 'ESP', 'openhw-esp32', peConnected), true);
   });
 });

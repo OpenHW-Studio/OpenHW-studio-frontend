@@ -6,11 +6,6 @@ void normalizeBoardKind;
  * head (re-entry guard, BLOCKING validation gate, telemetry/log ref reset,
  * baud resolution, per-board maps, programmable-board scan).
  *
- * NOTE on selectedRunBoardId: computed verbatim but never consumed
- * downstream (dead value in the original) — still computed + returned so
- * future readers see the same shape. singleProgrammableBoardId feeds the
- * per-board loop's active-file targeting.
- *
  * Returns null when the run must abort (guard/validation), else the
  * preflight bag. Early `return`s become `{ aborted: true }` so handleRun
  * keeps its exact console/guard semantics. Verify via double-run +
@@ -31,10 +26,6 @@ export async function runPreflight(args, ctx) {
     setIsCompiling,
     setRunStartedAtMs,
     setRunDurationSec,
-    rp2040GdbLastLogRef,
-    rp2040WirelessLastLogRef,
-    rp2040UartMicroPythonBoardsRef,
-    rp2040UartSilentWarnedBoardsRef,
     serialIngressArbitrationRef,
     serialPausedQueueRef,
     runComponentUpdateCountsRef,
@@ -76,10 +67,6 @@ export async function runPreflight(args, ctx) {
         );
 
         appendConsoleEntry("info", "Run requested.", "simulator");
-        rp2040GdbLastLogRef.current.clear();
-        rp2040WirelessLastLogRef.current.clear();
-        rp2040UartMicroPythonBoardsRef.current.clear();
-        rp2040UartSilentWarnedBoardsRef.current.clear();
         serialIngressArbitrationRef.current.clear();
         serialPausedQueueRef.current = [];
         runComponentUpdateCountsRef.current = {};

@@ -4,12 +4,18 @@ export const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
   arduino_nano: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  stm32f1: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  stm32f4: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
 };
 
 export const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
   arduino_nano: '9600',
   rp2040: '115200',
+  esp32: '115200',
+  stm32f1: '115200',
+  stm32f4: '115200',
 };
 
 export const SERIAL_LINE_ENDINGS = {
@@ -23,12 +29,18 @@ export const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
   arduino_nano: 'arduino:avr:nano:cpu=atmega328old',
   rp2040: 'rp2040:rp2040:rpipico',
+  esp32: 'esp32:esp32:esp32',
+  stm32f1: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
+  stm32f4: 'STMicroelectronics:stm32:GenF4:pnum=DISCO_F407VG',
 };
 
 export const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
   arduino_nano: 'Arduino Nano (Old Bootloader)',
   rp2040: 'Raspberry Pi Pico',
+  esp32: 'ESP32 DevKit',
+  stm32f1: 'STM32F1 Blue Pill',
+  stm32f4: 'STM32F4 Discovery',
 };
 
 export const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';

@@ -31,8 +31,13 @@
 
 // Layout constants mirrored from worker/sab/layout.ts (plain JS copy so this
 // util stays importable without TS compilation in tests).
+// SAB v2 (per-board serial/debug regions) is backward-compatible for readers:
+// the v2 allocator keeps every offset this reader uses (pin/comp/telemetry
+// regions, slots, rings) at the same derivation, and only appends per-board
+// regions + new alloc fields. Accept v1 and v2 buffers.
 const SAB_MAGIC = 0x4f485753;
-const SAB_LAYOUT_VERSION = 1;
+const SAB_LAYOUT_VERSION_MIN = 1;
+const SAB_LAYOUT_VERSION_MAX = 2;
 const SAB_HEADER_BYTES = 64;
 const SAB_SLOT_STRIDE_B = 64;
 const SAB_H_MAGIC = 0;
@@ -71,7 +76,8 @@ function isSabUsable(buffer) {
   try {
     const u32 = new Uint32Array(buffer);
     if (u32.length < SAB_HEADER_BYTES / 4) return false;
-    return u32[SAB_H_MAGIC] === SAB_MAGIC && u32[SAB_H_VERSION] === SAB_LAYOUT_VERSION;
+    const version = u32[SAB_H_VERSION] >>> 0;
+    return u32[SAB_H_MAGIC] === SAB_MAGIC && version >= SAB_LAYOUT_VERSION_MIN && version <= SAB_LAYOUT_VERSION_MAX;
   } catch {
     return false;
   }

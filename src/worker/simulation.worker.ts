@@ -84,6 +84,50 @@ self.onerror = (msg, url, line, col, error) => {
 let runner: BoardRunner | null = null;
 let boardRunners: Map<string, BoardRunner> = new Map();
 let boardTypes: Map<string, string> = new Map();
+// Per-board compute workers (SAB-native): boardId → Worker running
+// board.worker.ts with exactly one runner. Heavy engines (Xtensa WASM,
+// Emscripten RP2040, Rust STM32 cores) tick on these threads; the legacy
+// in-process boardRunners map stays as fallback (AVR + degraded mode).
+// A board lives in EXACTLY one of the two maps.
+let boardWorkers: Map<string, Worker> = new Map();
+let boardWorkerTypes: Map<string, string> = new Map();
+let boardWorkerReady: Map<string, boolean> = new Map();
+// Async aggregation for board-worker DEBUG_SNAPSHOT / DEBUG_READ_MEM: the
+// parent collects one reply per board worker, then posts the merged message
+// once (same shape as the in-process paths). Entries expire with the run.
+let pendingBoardSnapshots: Map<string, any> = new Map();
+let pendingBoardSnapshotWant = 0;
+let pendingBoardMem: Map<string, number[]> = new Map();
+let pendingBoardMemWant = 0;
+let pendingBoardMemAddr = 0;
+let pendingBoardMemLen = 0;
+
+function maybeFlushBoardSnapshotBatch(): void {
+    if (pendingBoardSnapshots.size < pendingBoardSnapshotWant) return;
+    const out: Record<string, any> = {};
+    if (mode === 'single' && runner) {
+        try { out['single'] = (runner as any)?.getDebugSnapshot?.() ?? null; } catch { out['single'] = null; }
+    } else {
+        for (const [id, br] of boardRunners) {
+            try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
+        }
+    }
+    for (const [id, snap] of pendingBoardSnapshots) out[id] = snap;
+    postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: out });
+    pendingBoardSnapshots.clear();
+    pendingBoardSnapshotWant = 0;
+}
+
+function maybeFlushBoardMemBatch(): void {
+    if (pendingBoardMem.size < pendingBoardMemWant) return;
+    let mem: number[] = [];
+    for (const arr of pendingBoardMem.values()) {
+        if (Array.isArray(arr) && arr.length) { mem = arr; break; }
+    }
+    postMessage({ type: 'DEBUG_MEM', addr: pendingBoardMemAddr, len: pendingBoardMemLen, mem });
+    pendingBoardMem.clear();
+    pendingBoardMemWant = 0;
+}
 let mode: 'single' | 'multi' = 'single';
 let pinToNet: Map<string, number> = new Map();
 let boardSerialOutput: Map<string, string> = new Map();
@@ -130,10 +174,6 @@ const DISPLAY_TYPE_MAP: Record<string, string> = {
     'openhw-ssd1306-oled': 'ssd1306',
 };
 
-const RP2040_LOGICAL_FLASH_BYTES = 2 * 1024 * 1024;
-const RP2040_MICROPYTHON_FS_OFFSET = 0xA0000;
-const RP2040_CIRCUITPYTHON_FS_OFFSET = 0x100000;
-const RP2040_LITTLEFS_BLOCK_SIZE = 4096;
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code: string, label: string) {
@@ -323,463 +363,6 @@ function emitSyncHeartbeat(boardId: string, stateObj: any) {
     });
 }
 
-type Rp2040RuntimeEnv = 'native' | 'micropython' | 'circuitpython';
-
-function normalizeRp2040RuntimeEnv(source: unknown): Rp2040RuntimeEnv {
-    const value = String(source || '').trim().toLowerCase();
-    if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
-    if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython' || value.startsWith('circuitpython')) {
-        return 'circuitpython';
-    }
-    if (value === 'py' || value === 'python' || value === 'micropython' || value.startsWith('micropython')) {
-        return 'micropython';
-    }
-    return 'native';
-}
-
-function isRp2040PythonRuntimeEnv(env: Rp2040RuntimeEnv): boolean {
-    return env === 'micropython' || env === 'circuitpython';
-}
-
-function getRp2040PythonFsOffset(env: Rp2040RuntimeEnv): number {
-    return env === 'circuitpython'
-        ? RP2040_CIRCUITPYTHON_FS_OFFSET
-        : RP2040_MICROPYTHON_FS_OFFSET;
-}
-
-function getRp2040PythonFsBytes(env: Rp2040RuntimeEnv): number {
-    const offset = getRp2040PythonFsOffset(env);
-    return Math.max(0, RP2040_LOGICAL_FLASH_BYTES - offset);
-}
-
-function getRp2040PythonEntryFileName(env: Rp2040RuntimeEnv): string {
-    return env === 'circuitpython' ? 'code.py' : 'main.py';
-}
-
-function normalizeRp2040RuntimePath(pathLike: unknown): string {
-    const normalized = String(pathLike || '')
-        .replace(/\\/g, '/')
-        .replace(/^\/+/, '')
-        .trim();
-    if (!normalized) return '';
-
-    const parts = normalized
-        .split('/')
-        .map((part) => part.trim())
-        .filter((part) => part && part !== '.' && part !== '..');
-
-    return parts.join('/');
-}
-
-function collectRp2040RuntimeFiles(
-    boardId: string,
-    env: Rp2040RuntimeEnv,
-    boardPythonFilesMap: any,
-    boardPythonMap: any
-): Array<{ path: string; data: string }> {
-    const filesByPath = new Map<string, string>();
-    const addFile = (rawPath: unknown, rawContent: unknown) => {
-        const path = normalizeRp2040RuntimePath(rawPath);
-        if (!path) return;
-        const content = typeof rawContent === 'string'
-            ? rawContent
-            : String(rawContent ?? '');
-        filesByPath.set(path, content);
-    };
-
-    const fromMap = boardPythonFilesMap?.[boardId];
-    if (Array.isArray(fromMap)) {
-        for (const entry of fromMap) {
-            if (!entry || typeof entry !== 'object') continue;
-            addFile((entry as any).path, (entry as any).content ?? (entry as any).data);
-        }
-    } else if (fromMap && typeof fromMap === 'object') {
-        for (const [filePath, content] of Object.entries(fromMap)) {
-            addFile(filePath, content);
-        }
-    }
-
-    const fallbackScript = typeof boardPythonMap?.[boardId] === 'string'
-        ? String(boardPythonMap[boardId] || '')
-        : '';
-    if (fallbackScript.trim()) {
-        const entryFile = getRp2040PythonEntryFileName(env);
-        const existing = String(filesByPath.get(entryFile) || '');
-        if (!existing.trim()) {
-            filesByPath.set(entryFile, fallbackScript);
-        }
-    }
-
-    return Array.from(filesByPath.entries()).map(([path, data]) => ({ path, data }));
-}
-
-function buildCircuitPythonInjectedScript(runtimeFiles: Array<{ path: string; data: string }>): string {
-    const files = Array.isArray(runtimeFiles) ? runtimeFiles : [];
-    if (files.length === 0) return '';
-
-    const normalizeModuleName = (runtimePath: string): string | null => {
-        const normalized = normalizeRp2040RuntimePath(runtimePath);
-        if (!normalized || !normalized.toLowerCase().endsWith('.py')) return null;
-        if (normalized.includes('/')) return null;
-        const stem = normalized.slice(0, -3);
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(stem)) return null;
-        if (stem === 'code' || stem === 'main') return null;
-        return stem;
-    };
-
-    const escapeRegExp = (value: string): string => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    const mainFile = files.find((file) => String(file.path || '').toLowerCase() === 'code.py')
-        || files.find((file) => String(file.path || '').toLowerCase() === 'main.py')
-        || files.find((file) => String(file.path || '').toLowerCase().endsWith('.py'))
-        || null;
-    if (!mainFile) return '';
-
-    let mainSource = String(mainFile.data || '');
-    const lines: string[] = [];
-
-    for (const file of files) {
-        const moduleName = normalizeModuleName(String(file.path || ''));
-        if (!moduleName) continue;
-
-        const importFromPattern = new RegExp(`^\\s*from\\s+${escapeRegExp(moduleName)}\\s+import\\s+.*$`, 'gm');
-        const importModulePattern = new RegExp(`^\\s*import\\s+${escapeRegExp(moduleName)}\\s*$`, 'gm');
-        mainSource = mainSource.replace(importFromPattern, '');
-        mainSource = mainSource.replace(importModulePattern, '');
-
-        lines.push(String(file.data || ''));
-        lines.push('');
-    }
-
-    lines.push(mainSource);
-    lines.push('');
-    return lines.join('\n');
-}
-
-function appendBoardSerialOutput(boardId: string, chunk: string) {
-    const id = String(boardId || '').trim();
-    if (!id || !chunk) return;
-    const prev = boardSerialOutput.get(id) || '';
-    const merged = `${prev}${chunk}`;
-    boardSerialOutput.set(id, merged.length > 8192 ? merged.slice(-8192) : merged);
-}
-
-function scheduleCircuitPythonInject(
-    target: BoardRunner,
-    boardId: string,
-    runtimeFiles: Array<{ path: string; data: string }>,
-    delayMs = 1800,
-) {
-    const script = buildCircuitPythonInjectedScript(runtimeFiles);
-    if (!script.trim()) return;
-
-    let transportSource: 'usb' | 'uart0' = 'usb';
-
-    const sendByte = (byte: number) => {
-        const targetAny = target as any;
-        if (typeof targetAny.serialRxByteFromSource === 'function') {
-            targetAny.serialRxByteFromSource(byte & 0xff, transportSource);
-        } else if (typeof targetAny.serialRxByte === 'function') {
-            targetAny.serialRxByte(byte & 0xff);
-        } else if (typeof targetAny.serialRx === 'function') {
-            targetAny.serialRx(String.fromCharCode(byte & 0xff));
-        }
-    };
-
-    const streamText = (text: string, chunkSize = 24, everyMs = 4) => {
-        const bytes = Array.from(String(text || ''), (ch) => ch.charCodeAt(0) & 0xff);
-        if (bytes.length === 0) return;
-
-        let index = 0;
-        const streamId = setInterval(() => {
-            const end = Math.min(index + chunkSize, bytes.length);
-            for (let i = index; i < end; i++) sendByte(bytes[i]);
-            index = end;
-            if (index >= bytes.length) {
-                clearInterval(streamId);
-            }
-        }, Math.max(1, Number(everyMs || 1)));
-        registerInjectTimer(boardId, streamId);
-    };
-
-    const startAt = Date.now();
-    let injected = false;
-    const pollId = setInterval(() => {
-        if (injected) return;
-
-        const usbReady = !!(target as any)?.usbCdcReady;
-        const waitedMs = Date.now() - startAt;
-        if (!usbReady && waitedMs < Math.max(9000, Number(delayMs || 0))) {
-            return;
-        }
-
-        transportSource = usbReady ? 'usb' : 'uart0';
-
-        injected = true;
-        clearInterval(pollId);
-
-        // Enter raw REPL first; send script only after prompt appears.
-        streamText('x\r\u0003\u0003', 1, 18);
-        const subId = setTimeout(() => {
-            streamText('\u0001', 1, 18);
-        }, 120);
-        registerInjectTimer(boardId, subId);
-
-        const rawPromptStartedAt = Date.now();
-        let scriptDispatched = false;
-        const dispatchScript = () => {
-            if (scriptDispatched) return;
-            scriptDispatched = true;
-            streamText(`${script}\n\u0004`, 24, 4);
-            // On completion, we can clear the session tracking for this board
-            // but we use a small delay to ensure any remaining streams finish.
-            const doneId = setTimeout(() => clearInjectSession(boardId), 2000);
-            registerInjectTimer(boardId, doneId);
-        };
-
-        const rawPromptPollId = setInterval(() => {
-            if (scriptDispatched) {
-                clearInterval(rawPromptPollId);
-                return;
-            }
-
-            const waitedMs = Date.now() - rawPromptStartedAt;
-            const serialText = boardSerialOutput.get(String(boardId || '').trim()) || '';
-            if (/raw REPL; CTRL-B to exit/.test(serialText)) {
-                dispatchScript();
-                clearInterval(rawPromptPollId);
-                return;
-            }
-
-            if (waitedMs >= 2200) {
-                dispatchScript();
-                clearInterval(rawPromptPollId);
-            }
-        }, 80);
-        registerInjectTimer(boardId, rawPromptPollId);
-    }, 120);
-    registerInjectTimer(boardId, pollId);
-}
-
-async function buildRp2040FlashPartitions(
-    boardId: string,
-    env: Rp2040RuntimeEnv,
-    boardPythonFilesMap: any,
-    boardPythonMap: any
-): Promise<Array<{ offset: number; data: Uint8Array }> | undefined> {
-    if (!isRp2040PythonRuntimeEnv(env)) return undefined;
-
-    const runtimeFiles = collectRp2040RuntimeFiles(boardId, env, boardPythonFilesMap, boardPythonMap);
-    if (runtimeFiles.length === 0) return undefined;
-
-    const fsOffset = getRp2040PythonFsOffset(env);
-    const fsBytes = getRp2040PythonFsBytes(env);
-    if (fsBytes <= 0) return undefined;
-
-    const image = env === 'circuitpython'
-        ? buildFatFsImage(runtimeFiles, {
-            sizeBytes: fsBytes,
-            volumeLabel: 'CIRCUITPY',
-        })
-        : await buildLittleFsImage(runtimeFiles, {
-            sizeBytes: fsBytes,
-            blockSize: RP2040_LITTLEFS_BLOCK_SIZE,
-        });
-    if (!image || image.length === 0) return undefined;
-
-    return [{
-        offset: fsOffset,
-        data: image,
-    }];
-}
-
-function buildMicroPythonPastePayload(scriptSource: string): string {
-    const normalized = String(scriptSource || '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .split('\n')
-        .map((line) => line.replace(/\u0004/g, ''))
-        .join('\r\n');
-    // Ctrl-C, Ctrl-C, Ctrl-E (paste mode), script, Ctrl-D (execute)
-    return `\u0003\u0003\u0005${normalized}\r\n\u0004`;
-}
-
-function buildMicroPythonRawPayload(scriptSource: string): string {
-    const normalized = String(scriptSource || '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .split('\n')
-        .map((line) => line.replace(/\u0004/g, ''))
-        .join('\n');
-    // Ctrl-A (raw REPL), script, Ctrl-D (execute).
-    // Do not prepend Ctrl-C here: probe kicks already interrupt to prompt,
-    // and extra Ctrl-C bytes can leak into execution as KeyboardInterrupt.
-    return `\u0001${normalized}\n\u0004`;
-}
-
-function buildMicroPythonReplProbe(boardId: string): string {
-    void boardId;
-    // Non-interrupting probe: nudge REPL to emit a prompt without injecting
-    // Ctrl-C, which can otherwise break user scripts with KeyboardInterrupt.
-    return '\r\n';
-}
-
-/**
- * Waits until the MicroPython REPL '>>>' prompt appears on the board UART,
- * then sends the script once via raw-REPL mode. Falls back after `timeoutMs` ms.
- *
- * Works by monkey-patching the runner's onStateUpdate to sniff serial bytes
- * from the cpu.uart[0] callback, without interfering with the existing flow.
- */
-function scheduleMicroPythonInject(
-    target: BoardRunner,
-    boardId: string,
-    pyScript: string,
-    baudOverride: number,
-    timeoutMs = 12000
-): void {
-    const rawPayload = buildMicroPythonRawPayload(pyScript);
-    const replProbePayload = buildMicroPythonReplProbe(boardId);
-    const startedAt = Date.now();
-    let uartBuf = '';
-    let finalized = false;
-    let probeTimer: any = null;
-    let timeoutGuard: any = null;
-    let injectedOnce = false;
-    let restoreUart0OnByte: (() => void) | null = null;
-
-    const clearTimers = () => {
-        if (probeTimer) {
-            clearInterval(probeTimer);
-            probeTimer = null;
-        }
-        if (timeoutGuard) {
-            clearTimeout(timeoutGuard);
-            timeoutGuard = null;
-        }
-    };
-
-    const finalize = () => {
-        if (finalized) return;
-        finalized = true;
-        clearTimers();
-        if (restoreUart0OnByte) {
-            restoreUart0OnByte();
-            restoreUart0OnByte = null;
-        }
-        // Small delay to ensure any remaining logic finishes before clearing map
-        setTimeout(() => clearInjectSession(boardId), 100);
-    };
-
-    const sendProbe = () => {
-        if (finalized) return;
-        if (!target) return;
-
-        // Keep REPL responsive and request a prompt.
-        target.setSerialBaudRate(baudOverride);
-        target.serialRx(replProbePayload);
-    };
-
-    const sendRawOnce = () => {
-        if (finalized || injectedOnce) return;
-        if (!target) return;
-
-        injectedOnce = true;
-        // Drop stale probe bytes so raw payload starts cleanly.
-        const targetAny = target as any;
-        if (Array.isArray(targetAny?.serialBuffer)) {
-            targetAny.serialBuffer.length = 0;
-        }
-        target.setSerialBaudRate(baudOverride);
-        target.serialRx(rawPayload);
-        finalize();
-    };
-
-    const shouldForceInjectFromBootTraffic = () => {
-        const targetAny = target as any;
-        const waitedMs = Date.now() - startedAt;
-        if (waitedMs < 2200) return false;
-
-        const txBytes = Number(targetAny?.debugSerialTxBytes || 0);
-        const activeUart = Number(targetAny?.activeUartIndex ?? -1);
-        const usbReady = !!targetAny?.usbCdcReady;
-
-        // USB-first MicroPython builds can expose prompt/output on USB CDC while
-        // uart[0] prompt sniffing stays quiet. Use tx activity as readiness signal.
-        if (txBytes >= 64 && (activeUart === 2 || usbReady)) return true;
-        if (txBytes >= 192) return true;
-        return false;
-    };
-
-    // Sniff UART output by wrapping the cpu uart onByte callback.
-    // rp2040js exposes cpu.uart[0].onByte – we chain onto it.
-    const patchUart = () => {
-        const cpu = (target as any).cpu;
-        if (!cpu?.uart?.[0]) return false;
-        const prev = cpu.uart[0].onByte;
-        const patched = (value: number) => {
-            if (prev) prev(value);
-            if (finalized) return;
-
-            uartBuf += String.fromCharCode(value);
-            if (uartBuf.length > 32) uartBuf = uartBuf.slice(-32);
-
-            if (uartBuf.includes('>>>')) {
-                sendRawOnce();
-            }
-        };
-        cpu.uart[0].onByte = patched;
-        restoreUart0OnByte = () => {
-            if ((cpu as any)?.uart?.[0]?.onByte === patched) {
-                cpu.uart[0].onByte = prev;
-            }
-        };
-        registerInjectRestore(boardId, restoreUart0OnByte);
-        return true;
-    };
-
-    // The cpu may not be initialised exactly when we schedule, retry briefly.
-    let patchAttempts = 0;
-    const tryPatch = () => {
-        if (finalized) return;
-        if (patchUart()) return; // success
-        if (++patchAttempts < 10) {
-            const patchId = setTimeout(tryPatch, 50);
-            registerInjectTimer(boardId, patchId);
-        }
-    };
-    tryPatch();
-
-    // Initial kick after boot; only probes here, no script payload yet.
-    const bootstrapId = setTimeout(() => {
-        if (finalized) return;
-        sendProbe();
-    }, 1400);
-    registerInjectTimer(boardId, bootstrapId);
-
-    // Repeat probe while waiting for prompt; inject once when detected.
-    probeTimer = setInterval(() => {
-        if (finalized) {
-            clearTimers();
-            return;
-        }
-        if (shouldForceInjectFromBootTraffic()) {
-            sendRawOnce();
-            return;
-        }
-        sendProbe();
-    }, 2800);
-    registerInjectTimer(boardId, probeTimer);
-
-    // Final guard: if prompt sniff fails, inject exactly once anyway.
-    timeoutGuard = setTimeout(() => {
-        if (!finalized) {
-            sendRawOnce();
-        }
-    }, timeoutMs);
-    registerInjectTimer(boardId, timeoutGuard);
-}
-
 function stopAllRunners() {
     if (runner) {
         runner.stop();
@@ -787,6 +370,18 @@ function stopAllRunners() {
     }
     boardRunners.forEach((r) => r.stop());
     boardRunners.clear();
+    // Terminate per-board compute workers (their runners stop with them).
+    boardWorkers.forEach((w) => {
+        try { w.postMessage({ type: 'STOP' }); } catch { /* ignore */ }
+        try { w.terminate(); } catch { /* ignore */ }
+    });
+    boardWorkers.clear();
+    boardWorkerTypes.clear();
+    boardWorkerReady.clear();
+    pendingBoardSnapshots.clear();
+    pendingBoardSnapshotWant = 0;
+    pendingBoardMem.clear();
+    pendingBoardMemWant = 0;
     boardTypes.clear();
     pinToNet.clear();
     boardSerialOutput.clear();
@@ -849,14 +444,6 @@ function areConnected(pinA: string, pinB: string): boolean {
     const netA = pinToNet.get(pinA);
     const netB = pinToNet.get(pinB);
     return netA !== undefined && netA === netB;
-}
-
-function resolveRp2040ExecutableRanges(boardComp: any, boardExecutableRangesMap: any): any[] | undefined {
-    const boardId = String(boardComp?.id || '').trim();
-    const fromMap = boardId ? boardExecutableRangesMap?.[boardId] : undefined;
-    const fromAttrs = boardComp?.attrs?.rp2040ExecutableRanges;
-    const candidate = fromMap ?? fromAttrs;
-    return Array.isArray(candidate) ? candidate : undefined;
 }
 
 let dmaWarned = false;
@@ -1218,8 +805,8 @@ function isSoftSerialLabel(label: string): boolean {
 }
 
 function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart0') {
-    const sourceRunner = boardRunners.get(sourceBoardId);
-    const sourceType = boardTypes.get(sourceBoardId) || '';
+    const sourceRunner = boardRunners.get(sourceBoardId) ?? null;
+    const sourceType = boardTypes.get(sourceBoardId) || boardWorkerTypes.get(sourceBoardId) || '';
     const sourceBaud = sourceRunner?.getSerialBaudRate?.() ?? 9600;
     const fromSoftSerial = isSoftSerialLabel(sourceLabel);
 
@@ -1241,6 +828,26 @@ function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart
             } else {
                 targetRunner.serialRxByte(value);
             }
+        }
+    }
+
+    // Board-worker targets: same routing decision, delivery via SERIAL_RX
+    // postMessage (their RX ring is the same shared SAB, this is the wakeup).
+    for (const [targetBoardId, targetWorker] of boardWorkers.entries()) {
+        if (targetBoardId === sourceBoardId) continue;
+        const targetType = boardWorkerTypes.get(targetBoardId) || '';
+        const uartRoute = fromSoftSerial
+            ? { connected: false, targetSource: null as string | null }
+            : resolveUartRoute(sourceBoardId, sourceType, targetBoardId, targetType, areConnected, sourceLabel);
+        const softLinked = areBoardsSoftSerialConnected(sourceBoardId, sourceType, targetBoardId, targetType, areConnected);
+        if (uartRoute.connected || softLinked) {
+            try {
+                targetWorker.postMessage({
+                    type: 'SERIAL_RX',
+                    bytes: [value & 0xff],
+                    source: uartRoute.connected ? (uartRoute.targetSource || 'uart0') : 'softserial',
+                });
+            } catch { /* ignore */ }
         }
     }
 }
@@ -1348,15 +955,10 @@ const coreMessageHandler = async (e: MessageEvent) => {
 
     // ── Smart Prefetching ─────────────────────────────────────────────────────
     if (data.type === 'PRELOAD_RUNNERS') {
-        const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
-        for (const board of boards) {
-            const type = String(board.type || '');
-            if (/pico|rp2040/i.test(type)) {
-                import('./runners/rp2040-runner.ts').catch(() => {});
-            } else {
-                import('./runners/avr-runner.ts').catch(() => {});
-            }
-        }
+        // Board-specific runners (pico-emu, esp32-emu, stm32f4-emu,
+        // stm32f1-emu) prefetch from scratch here. AVR is the only bundled
+        // runner; prefetch it unconditionally.
+        import('./runners/avr-runner.ts').catch(() => {});
         return;
     }
 
@@ -1414,20 +1016,14 @@ const coreMessageHandler = async (e: MessageEvent) => {
             wires,
             customLogics,
             boardHexMap,
-            boardPythonMap,
-            boardPythonFilesMap,
-            boardRuntimeEnvMap,
             baudRate,
             boardBaudMap,
-            boardExecutableRangesMap,
-            debugRp2040,
             debugSyncHeartbeat,
             speed,
             telemetryEnabled,
             telemetryMode,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
-        const rp2040DebugEnabled = !!debugRp2040;
         activeTelemetryEnabled = !!telemetryEnabled;
         activeTelemetryMode = telemetryMode || 'detail';
         activeTelemetryWatchedParamsMap = data.watchedParamsMap || {};
@@ -1476,45 +1072,33 @@ const coreMessageHandler = async (e: MessageEvent) => {
             const singleBoardComp = programmableBoards[0] || null;
             const singleBoardType = String(singleBoardComp?.type || 'openhw-arduino-uno');
             const singleBoardId = singleBoardComp?.id;
-            const pyScript = singleBoardId ? String(boardPythonMap?.[singleBoardId] || '') : '';
-            const singleBoardIsRp2040 = /(rp2040|pico)/i.test(singleBoardType);
-            const singleBoardExecutableRanges = resolveRp2040ExecutableRanges(singleBoardComp, boardExecutableRangesMap);
-            const singleBoardRuntimeEnv: Rp2040RuntimeEnv = singleBoardIsRp2040
-                ? normalizeRp2040RuntimeEnv(boardRuntimeEnvMap?.[singleBoardId] ?? singleBoardComp?.attrs?.env)
-                : 'native';
-            const singleBoardRuntimeFiles = singleBoardIsRp2040 && singleBoardId && singleBoardRuntimeEnv !== 'native'
-                ? collectRp2040RuntimeFiles(singleBoardId, singleBoardRuntimeEnv, boardPythonFilesMap, boardPythonMap)
-                : [];
-
-            const singleBoardFlashPartitions = singleBoardIsRp2040 && singleBoardId
-                ? await buildRp2040FlashPartitions(singleBoardId, singleBoardRuntimeEnv, boardPythonFilesMap, boardPythonMap)
-                : undefined;
-
-            if (singleBoardIsRp2040 && singleBoardRuntimeEnv !== 'native' && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)) {
-                console.warn(`[Worker] RP2040 Python filesystem unavailable for ${singleBoardId}; falling back where possible.`);
-            }
-
-            const shouldInjectPythonOverUart = singleBoardIsRp2040
-                && singleBoardRuntimeEnv !== 'native'
-                && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
-                && !!pyScript.trim();
-
             console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
             try {
+                // Single-board firmware: boardHexMap wins (UF2/bin/hex/ELF or
+                // PYSCRIPT: sentinel), else the legacy top-level hex blob.
+                const singleRaw = (singleBoardId && (boardHexMap as any)?.[singleBoardId])
+                    || (singleBoardComp as any)?.attrs?.firmwareHex
+                    || (singleBoardComp as any)?.attrs?.hex
+                    || hex;
+                let singleHex = singleRaw;
+                let singlePyScript = '';
+                if (typeof singleRaw === 'string' && singleRaw.startsWith('PYSCRIPT:')) {
+                    singlePyScript = singleRaw.slice('PYSCRIPT:'.length);
+                    singleHex = '';
+                }
                 runner = await createRunnerForBoard(
                     singleBoardType,
-                    hex,
+                    typeof singleHex === 'string' ? singleHex : hex,
                     components,
                     wires,
                     (stateObj) => postRunnerState(stateObj, singleBoardId || 'default'),
                     {
                         boardId: singleBoardId,
+                        pyScript: singlePyScript,
                         serialBaudRate: Number(boardBaudMap?.[singleBoardId] ?? baudRate ?? 9600),
-                        debugEnabled: singleBoardIsRp2040 && rp2040DebugEnabled,
-                        debugIntervalMs: singleBoardIsRp2040 && rp2040DebugEnabled ? 1200 : 0,
+                        debugEnabled: false,
+                        debugIntervalMs: 0,
                         speed: initialSpeed,
-                        // Pass pyScript metadata so the worker can inject over UART0 after boot.
-                        pyScript: typeof pyScript === 'string' ? pyScript : '',
                         sessionId: data.networkRoomCode || '',
                         onByteTransmit: ({ boardId, value, char, source }) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
@@ -1525,9 +1109,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                                     String(source || 'uart'));
                             } catch { /* tap never breaks serial */ }
                         },
-                        rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
-                        rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
-                        rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
                         telemetryEnabled: activeTelemetryEnabled,
                         telemetryMode: activeTelemetryMode,
                         telemetryWatchedParams: activeTelemetryWatchedParamsMap,
@@ -1607,22 +1188,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
             if (singleBoardId) {
                 boardTypes.set(singleBoardId, singleBoardType);
                 boardSerialOutput.set(singleBoardId, '');
-                if (shouldInjectPythonOverUart && (runner as any)?.cpu?.uart?.[0]) {
-                    scheduleMicroPythonInject(
-                        runner!,
-                        singleBoardId,
-                        pyScript,
-                        Number(boardBaudMap?.[singleBoardId] ?? 115200)
-                    );
-                }
-                if (
-                    singleBoardIsRp2040
-                    && singleBoardRuntimeEnv === 'circuitpython'
-                    && singleBoardRuntimeFiles.length > 0
-                    && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
-                ) {
-                    scheduleCircuitPythonInject(runner!, singleBoardId, singleBoardRuntimeFiles);
-                }
             }
             // NOTE: single-board START already initializes teacher-key capture
             // inline above (isTeacherKeyCapture branch); no extra helper needed.
@@ -1634,119 +1199,146 @@ const coreMessageHandler = async (e: MessageEvent) => {
         mode = 'multi';
         buildNetIndex(wires || []);
 
-        const uartInjectionScripts = new Map<string, string>();
-        const circuitPythonInjectionFiles = new Map<string, Array<{ path: string; data: string }>>();
-
+        // v2 boardIdx: board workers bind their OWN serial/debug regions by
+        // index into sabBoardSerialBase/sabBoardDebugBase. Order follows the
+        // START boardPinMaps so main-thread readers agree.
+        const boardIdToIdx = new Map<string, number>();
+        try {
+            const ids = (data as any).sabBoardIds;
+            if (Array.isArray(ids)) ids.forEach((id: any, i: number) => boardIdToIdx.set(String(id), i));
+        } catch { /* fall back to loop order */ }
+        let multiIdx = 0;
         for (const boardComp of programmableBoards) {
-            const fwHex = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
-            const executableRanges = resolveRp2040ExecutableRanges(boardComp, boardExecutableRangesMap);
-            
-            // Inject the sessionId into the board's attrs so the component logic (like PicoWLogic) can access it
+            const rawFw = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
+            // MicroPython sentinel: boardHexMap carries `PYSCRIPT:<code>`.
+            // Split into pyScript (runner injects over REPL) + empty firmware
+            // (runner boots the bundled MP image).
+            let fwHex = rawFw;
+            let pyScript = '';
+            if (typeof rawFw === 'string' && rawFw.startsWith('PYSCRIPT:')) {
+                pyScript = rawFw.slice('PYSCRIPT:'.length);
+                fwHex = '';
+            }
             if (!boardComp.attrs) {
                 boardComp.attrs = {};
             }
             boardComp.attrs.sessionId = data.networkRoomCode || '';
 
             if (typeof fwHex !== 'string' || !fwHex.trim()) {
-                console.warn(`[Worker] Skipping board ${boardComp.id}: no board-specific firmware available.`);
-                continue;
+                // Empty + no micropython script → nothing to boot. With a
+                // script, the runner boots the bundled MP image instead.
+                if (!pyScript.trim()) {
+                    console.warn(`[Worker] Skipping board ${boardComp.id}: no board-specific firmware available.`);
+                    continue;
+                }
             }
             const runnerComponents = [boardComp, ...sharedPeripheralComponents];
-            const pyScript = String(boardPythonMap?.[boardComp.id] || '');
-            const isRp2040Board = /(rp2040|pico)/i.test(String(boardComp.type || ''));
-            const rp2040RuntimeEnv: Rp2040RuntimeEnv = isRp2040Board
-                ? normalizeRp2040RuntimeEnv(boardRuntimeEnvMap?.[boardComp.id] ?? boardComp?.attrs?.env)
-                : 'native';
-            const rp2040RuntimeFiles = isRp2040Board && rp2040RuntimeEnv !== 'native'
-                ? collectRp2040RuntimeFiles(boardComp.id, rp2040RuntimeEnv, boardPythonFilesMap, boardPythonMap)
-                : [];
-            const rp2040FlashPartitions = isRp2040Board
-                ? await buildRp2040FlashPartitions(boardComp.id, rp2040RuntimeEnv, boardPythonFilesMap, boardPythonMap)
-                : undefined;
+            const boardType = String(boardComp.type || '');
+            const boardIdx = boardIdToIdx.has(boardComp.id) ? boardIdToIdx.get(boardComp.id)! : multiIdx;
+            const runnerOptions = {
+                boardId: boardComp.id,
+                pyScript,
+                boardIdx,
+                serialBaudRate: Number(boardBaudMap?.[boardComp.id] ?? baudRate ?? 9600),
+                debugEnabled: false,
+                debugIntervalMs: 0,
+                speed: initialSpeed,
+                sessionId: data.networkRoomCode || '',
+                onByteTransmit: ({ boardId, value, char, source }: any) => {
+                    appendBoardSerialOutput(String(boardId || ''), String(char || ''));
+                    postMessage({ type: 'serial', data: char, boardId, value, source });
+                    try {
+                        agentRecorder.pushSerial(
+                            String(boardId || ''), String(char || ''),
+                            String(source || 'uart0'));
+                    } catch { /* tap never breaks serial */ }
+                    routeUartByte(boardId, value, source || 'uart0');
+                },
+                sab: data.sab,
+                sabOffsets: data.sabOffsets,
+                cmdBuffer: (data as any).cmdBuffer,
+                evtBuffer: (data as any).evtBuffer,
+                // Full-map geometry (§10.4): same as single-board path.
+                sabGeometry: (data as any).sabGeometry,
+                sabDebugOffset: (data as any).sabDebugOffset,
+                sabSerialRxOffset: (data as any).sabSerialRxOffset,
+                sabSerialTxOffset: (data as any).sabSerialTxOffset,
+                sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
+                // v2 per-board regions: this runner binds only its own.
+                sabBoardSerialBase: (data as any).sabBoardSerialBase,
+                sabBoardDebugBase: (data as any).sabBoardDebugBase,
+                sabNumBoards: (data as any).sabNumBoards,
+                boardPinMaps: (data as any).boardPinMaps,
+            };
 
-            if (isRp2040Board && rp2040RuntimeEnv !== 'native' && (!rp2040FlashPartitions || rp2040FlashPartitions.length === 0)) {
-                console.warn(`[Worker] RP2040 Python filesystem unavailable for ${boardComp.id}; falling back where possible.`);
-            }
-            if (
-                isRp2040Board
-                && rp2040RuntimeEnv !== 'native'
-                && (!rp2040FlashPartitions || rp2040FlashPartitions.length === 0)
-                && pyScript.trim()
-            ) {
-                uartInjectionScripts.set(boardComp.id, pyScript);
-            }
-            if (
-                isRp2040Board
-                && rp2040RuntimeEnv === 'circuitpython'
-                && rp2040RuntimeFiles.length > 0
-                && (!rp2040FlashPartitions || rp2040FlashPartitions.length === 0)
-            ) {
-                circuitPythonInjectionFiles.set(boardComp.id, rp2040RuntimeFiles);
+            // Heavy engines (ARM boards) tick on a dedicated compute Worker
+            // so one board's WASM burst never starves the others. AVR stays
+            // in-process (cheap, synchronous, needs direct instance access
+            // for INTERACT/physics). Degraded mode (no Worker): in-process.
+            const useBoardWorker = !/arduino|avr|mega|nano|attiny/i.test(boardType) && typeof Worker !== 'undefined';
+            if (useBoardWorker) {
+                const bw = new Worker(new URL('./board.worker.ts', import.meta.url), { type: 'module' });
+                const targetId = boardComp.id;
+                const targetType = boardType;
+                bw.onmessage = (evt: MessageEvent) => {
+                    const msg = (evt as any)?.data || {};
+                    if (msg.type === 'ready') {
+                        boardWorkerReady.set(targetId, true);
+                    } else if (msg.type === 'state') {
+                        postRunnerState(msg.state, targetId);
+                    } else if (msg.type === 'uart-tx') {
+                        appendBoardSerialOutput(targetId, String(msg.char || ''));
+                        postMessage({ type: 'serial', data: msg.char, boardId: targetId, value: msg.value, source: msg.source });
+                        try {
+                            agentRecorder.pushSerial(targetId, String(msg.char || ''), String(msg.source || 'uart0'));
+                        } catch { /* tap never breaks serial */ }
+                        routeUartByte(targetId, msg.value, msg.source || 'uart0');
+                    } else if (msg.type === 'interact-miss') {
+                        console.warn(`[Worker] INTERACT target not found in board worker ${targetId}: ${msg.compId}`);
+                    } else if (msg.type === 'debug-snapshot') {
+                        pendingBoardSnapshots.set(`${targetId}`, msg.snapshot ?? null);
+                        maybeFlushBoardSnapshotBatch();
+                    } else if (msg.type === 'debug-mem') {
+                        pendingBoardMem.set(`${targetId}`, Array.isArray(msg.mem) ? msg.mem : []);
+                        maybeFlushBoardMemBatch();
+                    } else if (msg.type === 'error') {
+                        postMessage({ type: 'error', message: `Board ${targetId}: ${msg.message}` });
+                    }
+                };
+                bw.postMessage({
+                    type: 'BOARD_START',
+                    boardIdx,
+                    boardId: targetId,
+                    boardType: targetType,
+                    firmware: typeof fwHex === 'string' ? fwHex : '',
+                    pyScript,
+                    components: runnerComponents,
+                    wires,
+                    // NOTE: cmd/evt buffers stay with the parent (MPSC ring);
+                    // board workers get control via postMessage fan-out.
+                    options: { ...runnerOptions, onByteTransmit: undefined, cmdBuffer: undefined, evtBuffer: undefined },
+                });
+                boardWorkers.set(boardComp.id, bw);
+                boardWorkerTypes.set(boardComp.id, boardType);
+                boardWorkerReady.set(boardComp.id, false);
+                boardSerialOutput.set(boardComp.id, '');
+                multiIdx++;
+                continue;
             }
 
             const boardRunner = await createRunnerForBoard(
-                String(boardComp.type || ''),
+                boardType,
                 typeof fwHex === 'string' ? fwHex : '',
                 runnerComponents,
                 wires,
                 (stateObj) => postRunnerState(stateObj, boardComp.id),
-                {
-                    boardId: boardComp.id,
-                    serialBaudRate: Number(boardBaudMap?.[boardComp.id] ?? baudRate ?? 9600),
-                    debugEnabled: /(rp2040|pico)/i.test(String(boardComp.type || '')) && rp2040DebugEnabled,
-                    debugIntervalMs: /(rp2040|pico)/i.test(String(boardComp.type || '')) && rp2040DebugEnabled ? 1200 : 0,
-                    speed: initialSpeed,
-                    pyScript: typeof pyScript === 'string' ? pyScript : '',
-                    sessionId: data.networkRoomCode || '',
-                    onByteTransmit: ({ boardId, value, char, source }) => {
-                        appendBoardSerialOutput(String(boardId || ''), String(char || ''));
-                        postMessage({ type: 'serial', data: char, boardId, value, source });
-                        try {
-                            agentRecorder.pushSerial(
-                                String(boardId || ''), String(char || ''),
-                                String(source || 'uart0'));
-                        } catch { /* tap never breaks serial */ }
-                        routeUartByte(boardId, value, source || 'uart0');
-                    },
-                    rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
-                    rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
-                    rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
-                    sab: data.sab,
-                    sabOffsets: data.sabOffsets,
-                    cmdBuffer: (data as any).cmdBuffer,
-                    evtBuffer: (data as any).evtBuffer,
-                    // Full-map geometry (§10.4): same as single-board path.
-                    sabGeometry: (data as any).sabGeometry,
-                    sabDebugOffset: (data as any).sabDebugOffset,
-                    sabSerialRxOffset: (data as any).sabSerialRxOffset,
-                    sabSerialTxOffset: (data as any).sabSerialTxOffset,
-                    sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
-                    boardPinMaps: (data as any).boardPinMaps,
-                }
+                runnerOptions,
             );
 
             boardRunners.set(boardComp.id, boardRunner);
             boardTypes.set(boardComp.id, String(boardComp.type || ''));
             boardSerialOutput.set(boardComp.id, '');
-        }
-
-        for (const [boardId, pyScript] of uartInjectionScripts.entries()) {
-            const target = boardRunners.get(boardId);
-            if (!target) continue;
-            if ((target as any)?.cpu?.uart?.[0]) {
-                scheduleMicroPythonInject(
-                    target,
-                    boardId,
-                    pyScript,
-                    Number(boardBaudMap?.[boardId] ?? 115200)
-                );
-            }
-        }
-
-        for (const [boardId, runtimeFiles] of circuitPythonInjectionFiles.entries()) {
-            const target = boardRunners.get(boardId);
-            if (!target) continue;
-            scheduleCircuitPythonInject(target, boardId, runtimeFiles);
+            multiIdx++;
         }
 
         boardRunners.forEach((br) => {
@@ -1813,6 +1405,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
     } else if (data.type === 'DEBUG_HALT') {
         // Debug control-plane (ring-first; postMessage fallback when no rings).
         // HALT freezes run loops via DebugService; runners check budgets/ticks.
+        // Board workers don't drain the shared cmd ring (MPSC race), so the
+        // parent fans HALT out as an explicit DEBUG_CMD + mirrors it locally.
         try {
             if (sabDebugService) {
                 (sabDebugService as any).halt?.();
@@ -1822,6 +1416,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
         for (const r of targets) {
             try { (r as any)?.pause?.(); } catch { /* ignore */ }
         }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'halt' }); } catch { /* ignore */ }
+        });
         postMessage({ type: 'DEBUG_STATE', halted: true });
         return;
     } else if (data.type === 'DEBUG_RESUME') {
@@ -1834,6 +1431,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
         for (const r of targets) {
             try { (r as any)?.resume?.(); } catch { /* ignore */ }
         }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'resume' }); } catch { /* ignore */ }
+        });
         postMessage({ type: 'DEBUG_STATE', halted: false });
         return;
     } else if (data.type === 'DEBUG_STEP') {
@@ -1862,19 +1462,36 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 }
             } catch { /* ignore */ }
         }
+        // Board workers never drain the shared ring, so STEP always fans out
+        // explicitly (their own DebugService logs it for determinism).
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'step', cycles: n, snapshot: true }); } catch { /* ignore */ }
+        });
         // Snapshot refresh so the panel shows the advanced pc/cycles.
+        // Board-worker snapshots arrive async and merge via
+        // maybeFlushBoardSnapshotBatch; count them first.
+        pendingBoardSnapshotWant = boardWorkers.size;
+        pendingBoardSnapshots.clear();
         try {
-            const snap = (mode === 'single' && runner)
-                ? ((runner as any)?.getDebugSnapshot?.() ?? null)
-                : (() => {
-                    const out: Record<string, any> = {};
-                    for (const [id, br] of boardRunners) {
-                        try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
-                    }
-                    return out;
-                })();
-            postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: snap });
+            if (mode === 'single' && runner) {
+                pendingBoardSnapshots.set('single', (runner as any)?.getDebugSnapshot?.() ?? null);
+            } else {
+                for (const [id, br] of boardRunners) {
+                    try { pendingBoardSnapshots.set(id, (br as any)?.getDebugSnapshot?.() ?? null); } catch { pendingBoardSnapshots.set(id, null); }
+                }
+            }
         } catch { /* ignore */ }
+        if (pendingBoardSnapshotWant === 0) {
+            try {
+                const out: Record<string, any> = {};
+                for (const [id, snap] of pendingBoardSnapshots) out[id] = snap;
+                postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: out });
+            } catch { /* ignore */ }
+            pendingBoardSnapshots.clear();
+            return;
+        }
+        // In-process part posts immediately; board parts merge in.
+        // To keep one message shape, hold until the batch completes.
         return;
     } else if (data.type === 'DEBUG_WATCH') {
         // Pin watchpoint add. Authoritative path is the command ring
@@ -1896,6 +1513,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
             for (const r of targets) {
                 try { (r as any)?.addPinWatch?.(pin, expectHigh); } catch { /* ignore */ }
             }
+            boardWorkers.forEach((bw) => {
+                try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'watch', pin, expectHigh }); } catch { /* ignore */ }
+            });
         }
         // Echo current watch list so the panel stays in sync.
         try {
@@ -1917,6 +1537,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
         for (const r of targets) {
             try { (r as any)?.removePinWatch?.(pin); } catch { /* ignore */ }
         }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'unwatch', pin }); } catch { /* ignore */ }
+        });
         return;
     } else if (data.type === 'DEBUG_PC_BREAK') {
         // PC breakpoint add (§10.7): chunk-boundary checked in run loops,
@@ -1939,6 +1562,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     }
                 } catch { /* ignore */ }
             }
+            boardWorkers.forEach((bw) => {
+                try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'pcbreak', pc }); } catch { /* ignore */ }
+            });
         }
         return;
     } else if (data.type === 'DEBUG_PC_BREAK_CLEAR') {
@@ -1959,6 +1585,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 }
             } catch { /* ignore */ }
         }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'pcbreak-clear' }); } catch { /* ignore */ }
+        });
         return;
     } else if (data.type === 'DEBUG_READ_MEM') {
         const addr = Number((data as any)?.addr || 0) >>> 0;
@@ -1980,26 +1609,61 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 } catch { /* ignore */ }
             }
         }
-        postMessage({ type: 'DEBUG_MEM', addr, len, mem: mem || [] });
+        if (mem) {
+            postMessage({ type: 'DEBUG_MEM', addr, len, mem });
+            return;
+        }
+        // Board workers own their memories: fan out, merge first non-empty.
+        pendingBoardMem.clear();
+        pendingBoardMemWant = boardWorkers.size;
+        pendingBoardMemAddr = addr;
+        pendingBoardMemLen = len;
+        if (pendingBoardMemWant === 0) {
+            postMessage({ type: 'DEBUG_MEM', addr, len, mem: [] });
+            return;
+        }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'readmem', addr, len }); } catch { /* ignore */ }
+        });
         return;
     } else if (data.type === 'DEBUG_SNAPSHOT') {
-        const snap = (mode === 'single' && runner)
-            ? ((runner as any)?.getDebugSnapshot?.() ?? null)
-            : (() => {
-                const out: Record<string, any> = {};
-                for (const [id, br] of boardRunners) {
-                    try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
+        // Board-worker snapshots arrive async; merge with in-process ones.
+        pendingBoardSnapshotWant = boardWorkers.size;
+        pendingBoardSnapshots.clear();
+        if (pendingBoardSnapshotWant === 0) {
+            const snap = (mode === 'single' && runner)
+                ? ((runner as any)?.getDebugSnapshot?.() ?? null)
+                : (() => {
+                    const out: Record<string, any> = {};
+                    for (const [id, br] of boardRunners) {
+                        try { out[id] = (br as any)?.getDebugSnapshot?.() ?? null; } catch { out[id] = null; }
+                    }
+                    return out;
+                })();
+            let digest: string | null = null;
+            try {
+                const svc = sabDebugService as any;
+                if (svc && typeof svc.replayDigest === 'function') {
+                    digest = svc.replayDigest();
                 }
-                return out;
-            })();
-        let digest: string | null = null;
+            } catch { digest = null; }
+            postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: snap, digest });
+            return;
+        }
+        boardWorkers.forEach((bw) => {
+            try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'snapshot' }); } catch { /* ignore */ }
+        });
+        // In-process snapshots merge when the batch flushes.
         try {
-            const svc = sabDebugService as any;
-            if (svc && typeof svc.replayDigest === 'function') {
-                digest = svc.replayDigest();
+            if (mode === 'single' && runner) {
+                pendingBoardSnapshots.set('single', (runner as any)?.getDebugSnapshot?.() ?? null);
+            } else {
+                for (const [id, br] of boardRunners) {
+                    try { pendingBoardSnapshots.set(id, (br as any)?.getDebugSnapshot?.() ?? null); } catch { pendingBoardSnapshots.set(id, null); }
+                }
             }
-        } catch { digest = null; }
-        postMessage({ type: 'DEBUG_SNAPSHOT', snapshot: snap, digest });
+        } catch { /* ignore */ }
+        maybeFlushBoardSnapshotBatch();
         return;
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
@@ -2070,6 +1734,14 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     runQuickBurst(boardRunner);
                 }
             }
+            // Board workers own their instances; delegate so ARM boards get
+            // the event + a fresh emit (their tick keeps running).
+            if (boardWorkers.size > 0) {
+                for (const bw of boardWorkers.values()) {
+                    try { bw.postMessage({ type: 'INTERACT_EVT', compId: data.compId, event: data.event }); } catch { /* ignore */ }
+                }
+                delivered = true;
+            }
             if (!delivered) {
                 console.warn(`[Worker] INTERACT target not found in any runner: ${data.compId}`);
             }
@@ -2123,6 +1795,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 runner.setSpeed(nextSpeed);
             } else {
                 boardRunners.forEach((br) => br.setSpeed(nextSpeed));
+                boardWorkers.forEach((bw) => {
+                    try { bw.postMessage({ type: 'SET_SPEED', speed: nextSpeed }); } catch { /* ignore */ }
+                });
             }
         }
     } else if (data.type === 'SET_COMPONENT_TELEMETRY') {
@@ -2158,6 +1833,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     (br as any).forceEmitState();
                 }
             });
+            // Board workers emit on their own cadence via SAB + state
+            // wakeups; nothing to flush over the wire.
         }
     } else if (data.type === 'GET_SAB_STATS') {
         // T5 bench gate readout for Playwright: steady-frame components bytes,
@@ -2183,8 +1860,12 @@ const coreMessageHandler = async (e: MessageEvent) => {
             runner.setSerialBaudRate(parsedBaud);
         } else if (data.targetBoardId) {
             const target = boardRunners.get(data.targetBoardId);
-            if (!target) return;
-            target.setSerialBaudRate(parsedBaud);
+            if (target) {
+                target.setSerialBaudRate(parsedBaud);
+            } else {
+                // Board-worker target: no baud setter on the wire; the next
+                // routeUartByte syncs it. Track locally and no-op.
+            }
         } else {
             boardRunners.forEach((boardRunner) => {
                 boardRunner.setSerialBaudRate(parsedBaud);
@@ -2202,16 +1883,25 @@ const coreMessageHandler = async (e: MessageEvent) => {
             runner.serialRx(data.data);
         } else {
             if (data.targetBoardId) {
-                if (!boardRunners.has(data.targetBoardId)) {
-                    return;
+                const target = boardRunners.get(data.targetBoardId);
+                if (target) {
+                    if (data.baudRate) target.setSerialBaudRate(Number(data.baudRate));
+                    target.serialRx(data.data);
+                } else {
+                    // Board-worker target: single SERIAL_STR string (the
+                    // runner drains it into its UART; no per-byte fan-out).
+                    const bw = boardWorkers.get(data.targetBoardId);
+                    if (bw) {
+                        try { bw.postMessage({ type: 'SERIAL_STR', data: String(data.data ?? '') }); } catch { /* ignore */ }
+                    }
                 }
-                const target = boardRunners.get(data.targetBoardId)!;
-                if (data.baudRate) target.setSerialBaudRate(Number(data.baudRate));
-                target.serialRx(data.data);
             } else {
                 boardRunners.forEach((boardRunner) => {
                     if (data.baudRate) boardRunner.setSerialBaudRate(Number(data.baudRate));
                     boardRunner.serialRx(data.data);
+                });
+                boardWorkers.forEach((bw) => {
+                    try { bw.postMessage({ type: 'SERIAL_STR', data: String(data.data ?? '') }); } catch { /* ignore */ }
                 });
             }
         }
@@ -2223,6 +1913,11 @@ const coreMessageHandler = async (e: MessageEvent) => {
             boardRunners.forEach((boardRunner) => {
                 if (typeof boardRunner.reset === 'function') boardRunner.reset();
                 else if (boardRunner.cpu) boardRunner.cpu.reset();
+            });
+            // Board workers: engines reset in place (no re-BOOT, no
+            // firmware reload). Their runners keep ticking afterwards.
+            boardWorkers.forEach((bw) => {
+                try { bw.postMessage({ type: 'DEBUG_CMD', cmd: 'reset' }); } catch { /* ignore */ }
             });
         }
         if (syncValidationEnabled) {
@@ -2282,140 +1977,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 });
             }
         }
-    } else if (data.type === 'esp32:i2c:transaction') {
-        if (mode === 'single' && runner) {
-            if (typeof (runner as any).syncI2cTransaction === 'function') {
-                (runner as any).syncI2cTransaction(data.addr, data.data);
-            }
-        } else {
-            const targetBoardId = data.boardId;
-            if (targetBoardId) {
-                const target = boardRunners.get(targetBoardId);
-                if (target && typeof (target as any).syncI2cTransaction === 'function') {
-                    (target as any).syncI2cTransaction(data.addr, data.data);
-                }
-            } else {
-                boardRunners.forEach(br => {
-                    if (typeof (br as any).syncI2cTransaction === 'function') {
-                        (br as any).syncI2cTransaction(data.addr, data.data);
-                    }
-                });
-            }
-        }
-    } else if (data.type === 'esp32:pwm:sync') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncPwm === 'function') {
-            (target as any).syncPwm(data.channel, data.duty_pct);
-        }
-    } else if (data.type === 'esp32:spi:batch') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncSpiBatch === 'function') {
-            (target as any).syncSpiBatch(data.b64);
-        }
-    } else if (data.type === 'esp32:neopixel:sync') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncNeopixel === 'function') {
-            (target as any).syncNeopixel(data.channel, data.pixels);
-        }
-    } else if (data.type === 'esp32:adc:sync') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncAdc === 'function') {
-            (target as any).syncAdc(data.channel, data.val);
-        }
-
-    // ── DAC ──────────────────────────────────────────────────────────────────
-    } else if (data.type === 'DAC_SYNC' || data.type === 'esp32:dac:sync') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncDac === 'function') {
-            (target as any).syncDac(data.pin, data.val);
-        }
-
-    // ── Serial output (QEMU backend → serial monitor) ─────────────────────
-    } else if (data.type === 'SERIAL_OUTPUT') {
-        // Forward raw text to main thread for the serial monitor panel
-        postMessage({ type: 'serial', data: data.text, source: 'backend' });
-
-    // ── GPIO Routing / RMT/LEDC pin mapping ───────────────────────────────
-    } else if (data.type === 'GPIO_ROUTING') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncGpioRouting === 'function') {
-            (target as any).syncGpioRouting(data.gpio, data.signal_id);
-        }
-    } else if (data.type === 'GPIO_ROUTING_CLEAR') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).clearGpioRouting === 'function') {
-            (target as any).clearGpioRouting(data.gpio);
-        }
-
-    // ── LEDC PWM ──────────────────────────────────────────────────────────
-    } else if (data.type === 'LEDC_SYNC') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncLedc === 'function') {
-            (target as any).syncLedc(data.channel, data.duty_pct);
-        }
-
-    } else if (data.type === 'LEDC_ATTACH') {
-        // ledcAttachPin() called — update channel→pin map in runner
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).ledcAttachPin === 'function') {
-            (target as any).ledcAttachPin(data.pin, data.channel);
-        }
-
-    } else if (data.type === 'PCNT_INIT') {
-        // pcntInit() called — store unit→pin mapping via gpioRouting
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncGpioRouting === 'function') {
-            (target as any).syncGpioRouting(data.pin, `pcnt_${data.unit}`);
-        }
-
-    // ── TWAI / CAN Bus ────────────────────────────────────────────────────
-    } else if (data.type === 'TWAI_TX') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncTwai === 'function') {
-            (target as any).syncTwai(data.id, data.dlc, data.data);
-        }
-
-    // ── RMT / IR Pulses ───────────────────────────────────────────────────
-    } else if (data.type === 'RMT_PULSE') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncRmt === 'function') {
-            (target as any).syncRmt(data.channel, data.pulses);
-        }
-
-    // ── Serial RX (component → UART RX) ──────────────────────────────────
-    } else if (data.type === 'esp32:uart:rx') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncSerialRx === 'function') {
-            (target as any).syncSerialRx(data.channel ?? 0, data.data);
-        }
-
-    // ── PCNT pulse count injection ────────────────────────────────────────
-    } else if (data.type === 'esp32:pcnt:sync') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncPcnt === 'function') {
-            (target as any).syncPcnt(data.unit, data.count);
-        }
-
-    // -- I2S Audio (PCM samples from firmware via sim_i2s_write) --------------
-    // Forward raw event to main thread for Web Audio playback in SimulatorPage.jsx.
-    // The worker does NOT play audio (no AudioContext in workers).
-    } else if (data.type === 'I2S_AUDIO') {
-        postMessage({
-            type:       'I2S_AUDIO',
-            boardId:    data.boardId,
-            port:       data.port,
-            sampleRate: data.sampleRate,
-            bits:       data.bits,
-            pcm_b64:    data.pcm_b64,
-        });
-
-    } else if (data.type === 'SLEEP_START') {
-        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
-        if (target && typeof (target as any).syncSleep === 'function') {
-            (target as any).syncSleep(data.duration_us ?? 0);
-        }
-        // Also notify main thread to show sleeping badge
-        postMessage({ type: 'sim:sleep', boardId: data.boardId, duration_us: data.duration_us });
     } else if (String(data.type || '').startsWith('AGENT_')) {
         // Agent trace plane (§11 R2): watch-scoped recorder control.
         // Pre-v2 transport (postMessage); v2 re-points at the SAB ring.
@@ -2462,7 +2023,7 @@ self.onmessage = async (e) => {
     }
 
     if (isInitializingRunners && (
-        String(data.type || '').startsWith('esp32:') ||
+
         data.type === 'GPIO_SYNC' ||
         data.type === 'SERIAL_INPUT' ||
         data.type === 'GDB_INPUT' ||

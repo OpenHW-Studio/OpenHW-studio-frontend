@@ -3,15 +3,21 @@ import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
 import { compileCode } from "../../../services/simulatorService.js";
 
 /**
- * Generic per-board compile domain, extracted verbatim from SimulatorPage.jsx
- * handleRun > per-board loop tail (non-RP2040 boards: AVR only now that
- * ESP32/STM32 workers were removed).
+ * Generic per-board compile domain: arduino sketches for every board family.
  * (library.txt read, shared-cache key, compileCode, cache write,
  *  boardHexMap + first-firmware-wins result.)
  *
+ * Artifact + firmware-payload contract per board family:
+ *   uno/nano  → artifacts ['hex','elf'], boardHexMap = compiled.hex (Intel HEX text)
+ *   rp2040    → artifacts ['uf2','elf'], boardHexMap = compiled.hex (UF2BASE64:…)
+ *   esp32     → artifacts ['bin','elf'], boardHexMap = base64 .bin (raw, no prefix)
+ *   stm32f1/4 → artifacts ['bin','elf'], boardHexMap = base64 .bin (raw, no prefix)
+ * Runners auto-detect (ELF magic / ':' HEX / raw bin) so payload shape drifts
+ * don't break boot. MicroPython boards skip compile: the runner boots the
+ * bundled MP image + injects main.py over the REPL (see runners + gap docs).
+ *
  * Pure function of (args, ctx); returns { result }. Mutations flow through
  * ctx.boardHexMap.
- * Verify via AVR run checks.
  */
 export async function compileGenericBoard(args, ctx) {
   const {
@@ -29,7 +35,6 @@ export async function compileGenericBoard(args, ctx) {
     appendConsoleEntry,
     logSerial,
     logCompileSummary,
-    registerGdbArtifact,
   } = ctx;
   let { result } = ctx;
             const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
@@ -55,6 +60,13 @@ export async function compileGenericBoard(args, ctx) {
               logSerial(`Using cached compilation for ${boardComp.id}...`);
             } else {
               logSerial(`Compiling ${boardComp.id}...`);
+              // Per-family artifacts: the backend registry decides supported
+              // names; arduino-cli emits them from the installed core.
+              const artifacts =
+                kind === 'rp2040' ? ['uf2', 'elf'] :
+                kind === 'esp32' ? ['bin', 'elf'] :
+                (kind === 'stm32f1' || kind === 'stm32f4') ? ['bin', 'elf'] :
+                ['hex', 'elf'];
               try {
                 compiled = await compileCode({
                   code: compileSource,
@@ -63,8 +75,7 @@ export async function compileGenericBoard(args, ctx) {
                   fqbn: targetFqbn,
                   target: kind,
                   libraries_txt: librariesTxt,
-                  // Uno simulator runs the .hex, GDB needs the .elf.
-                  artifacts: ['hex', 'elf'],
+                  artifacts,
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -74,7 +85,6 @@ export async function compileGenericBoard(args, ctx) {
 
             boardHexMap[boardComp.id] = compiled.hex;
             logCompileSummary(compiled, boardComp, kind);
-            registerGdbArtifact(boardComp.id, kind, compiled);
             if (!result) result = compiled;
 
   return { result };

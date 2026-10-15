@@ -17,17 +17,16 @@ import {
  * Per-board loop prologue domain, extracted verbatim from SimulatorPage.jsx
  * handleRun > per-board loop head.
  * (fqbn + baud map, uploaded-firmware shortcut incl. UF2/HEX label +
- *  first-firmware-wins, active-file/python-source/compile-unit resolution,
- *  non-RP2040 no-sketch guard.)
+ *  first-firmware-wins, active-file/compile-unit resolution, no-sketch
+ *  guard.)
  *
- * Returns { disposition, kind, targetFqbn, firmwareAssets, activeFileExt,
- * activeBoardFile, activeFileTargetsBoard, boardEnabledFiles, pythonSource,
- * hasPythonSource, activePrefersIno, activePrefersPy, compileUnit,
+ * Returns { disposition, kind, targetFqbn, activeFileExt,
+ * activeBoardFile, activeFileTargetsBoard, boardEnabledFiles, compileUnit,
  * compileSource, result } — disposition is "continue" when the board is
  * fully handled (caller must `continue`), else "fallthrough".
  * `result` passthrough preserves first-firmware-wins. The baud write and
  * the no-sketch push flow through ctx maps. Verify via uploaded-firmware
- * + missing-sketch + python-source run checks.
+ * + missing-sketch run checks.
  */
 export function resolveBoardLoopPrologue(args, ctx) {
   const {
@@ -47,7 +46,6 @@ export function resolveBoardLoopPrologue(args, ctx) {
     boardsWithoutCompilableSketch,
     getBoardCompileFiles,
     getBoardMainCode,
-    getBoardFirmwareAssets,
     normalizeFirmwareFileName,
     appendConsoleEntry,
   } = ctx;
@@ -100,10 +98,8 @@ export function resolveBoardLoopPrologue(args, ctx) {
               );
             }
 
-            const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
             const activeFilePath = String(activeCodeFile?.path || "");
             const activeFileExt = fileExt(activeFilePath);
-            const activeFileContent = String(code || "");
             const activeBoardFile = activeFilePath.startsWith(
               `project/${boardComp.id}/`,
             )
@@ -114,29 +110,9 @@ export function resolveBoardLoopPrologue(args, ctx) {
             const activeBoardExt = activeBoardFile
               ? fileExt(activeBoardFile.path)
               : "";
-            const activePythonSource =
-              activeFileExt === ".py" &&
-                activeFileTargetsBoard &&
-                !isFileDisabled(activeFilePath)
-                ? activeBoardFile
-                  ? String(activeBoardFile.content || "")
-                  : activeFileContent
-                : "";
             const boardEnabledFiles = projectFiles
               .filter((f) => f.path.startsWith(`project/${boardComp.id}/`))
               .filter((f) => !isFileDisabled(f.path));
-            const boardEnabledPyFiles = boardEnabledFiles.filter(
-              (f) => fileExt(f.path) === ".py",
-            );
-            const pythonSource =
-              activePythonSource || String(firmwareAssets.mainPy?.content || "");
-            const hasPythonSource =
-              boardEnabledPyFiles.some((f) => String(f.content || "").trim()) ||
-              !!pythonSource.trim();
-            const activePrefersIno =
-              activeFileExt === ".ino" && activeFileTargetsBoard;
-            const activePrefersPy =
-              activeFileExt === ".py" && activeFileTargetsBoard;
             const preferredMainPath =
               activeBoardExt === ".ino" &&
                 activeBoardFile &&
@@ -147,15 +123,43 @@ export function resolveBoardLoopPrologue(args, ctx) {
               boardComp.id,
               preferredMainPath,
             );
+            // MicroPython path: a board whose env attr is micropython (or
+            // whose sketch is a main.py) skips arduino compile entirely. The
+            // runner boots the bundled MP image and injects the script over
+            // the REPL. boardHexMap carries a sentinel the runner detects.
+            const boardEnv = String(
+              resolveComponentAttrString(boardComp?.attrs, 'env', 'arduino'),
+            ).toLowerCase();
+            const hasMainPy = boardEnabledFiles.some(
+              (f) => fileExt(f.path) === '.py' && String(f.content || '').trim(),
+            );
+            const mainPyFile = boardEnabledFiles.find(
+              (f) => /(^|\/)main\.py$/i.test(f.path) && String(f.content || '').trim(),
+            ) || boardEnabledFiles.find(
+              (f) => fileExt(f.path) === '.py' && String(f.content || '').trim(),
+            );
+            const wantsMicroPython = boardEnv.includes('micropython') || boardEnv === 'py' || (!!mainPyFile && !compileUnit.hasMainFile);
+            if (wantsMicroPython && mainPyFile) {
+              const pyScript = String(mainPyFile.content || '');
+              boardHexMap[boardComp.id] = `PYSCRIPT:${pyScript}`;
+              appendConsoleEntry(
+                'info',
+                `Using MicroPython script (${mainPyFile.name || 'main.py'}) for ${boardCompToDisplayName(boardComp, kind)} — no compile needed.`,
+                'simulator',
+              );
+              if (!result) {
+                result = { hex: boardHexMap[boardComp.id], artifactName: mainPyFile.name || 'main.py', micropython: true };
+              }
+              return { disposition: 'continue', result };
+            }
+
             const compileSource = useBlocklyCode
               ? blocklyGeneratedCode
-              : activeFileExt === ".py" && activeFileTargetsBoard
-                ? String(activeCodeFile?.content || "") || String(code || "")
-                : compileUnit.mainCode ||
+              : compileUnit.mainCode ||
                 getBoardMainCode(boardComp.id) ||
                 String(code || "");
 
-            if (kind !== "rp2040" && !compileUnit.hasMainFile) {
+            if (!compileUnit.hasMainFile) {
               boardsWithoutCompilableSketch.push(boardComp.id);
               return { disposition: "continue", result };
             }
@@ -164,15 +168,10 @@ export function resolveBoardLoopPrologue(args, ctx) {
     disposition: "fallthrough",
     kind,
     targetFqbn,
-    firmwareAssets,
     activeFileExt,
     activeBoardFile,
     activeFileTargetsBoard,
     boardEnabledFiles,
-    pythonSource,
-    hasPythonSource,
-    activePrefersIno,
-    activePrefersPy,
     compileUnit,
     compileSource,
     result,

@@ -14,7 +14,7 @@ const FRONTEND = path.resolve(__dirname, '..');
 const EMU_COMPONENTS = path.resolve(FRONTEND, '../openhw-studio-emulator/src/components');
 const REGISTRY_TS = path.join(FRONTEND, 'src/worker/registries/component-registry.ts');
 
-const BOARD_PIN_CONSTANTS = new Set(['UNO_BOARD_PINS', 'PICO_BOARD_PINS']);
+const BOARD_PIN_CONSTANTS = new Set(['UNO_BOARD_PINS']);
 
 function loadManifests() {
   const out = new Map(); // type -> [ids]

@@ -114,6 +114,13 @@ export function useRunControls({
             if (w && typeof w.enqueueSerial === "function") {
               viaRing = !!w.enqueueSerial(payload, Date.now());
             }
+            // v2: push into the TARGET board's own RX ring when known, so
+            // serial input never lands in another board's buffer. Falls back
+            // to the legacy shared ring (board 0) when maps are absent.
+            if (!viaRing && typeof window !== "undefined"
+              && typeof window.__sabSerialRxPushToBoard === "function") {
+              viaRing = !!window.__sabSerialRxPushToBoard(targetBoardId || "all", payload);
+            }
             if (!viaRing && typeof window !== "undefined"
               && typeof window.__sabSerialRxPush === "function") {
               viaRing = !!window.__sabSerialRxPush(payload);
