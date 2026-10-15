@@ -964,6 +964,48 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 }
             } catch { /* input sampling never breaks the tick */ }
         }
+        // Static rails: board-to-board wires (rail → input pin) have no
+        // component endpoint, so the loop above skips them (compId ===
+        // boardId filters both ends). Without this, a pin wired to 3V3
+        // reads 0 forever (observed: F1 PB0→3V3 reads 0, DHT all-NaN).
+        // Rails are stiff drivers — re-asserted every tick like
+        // component inputs. Output-wins applies via the peeker where the
+        // engine offers one; otherwise the rail wins (a real
+        // output-vs-rail contention is a short anyway).
+        if (typeof this.engine.setGpioInput === 'function') {
+            try {
+                const byNet = new Map<number, string[]>();
+                for (const [node, net] of this.pinToNet) {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) !== this.boardId) continue;
+                    const p = node.slice(sep + 1);
+                    let arr = byNet.get(net);
+                    if (!arr) { arr = []; byNet.set(net, arr); }
+                    arr.push(p);
+                }
+                const isLowRail = (p: string) => /^(GND|AGND)([._]?\d*)?$/i.test(p);
+                const isHighRail = (p: string) => /^(3V3|3\.3V|5V|VCC)([._]?\d*)?$/i.test(p);
+                for (const pins of byNet.values()) {
+                    let railHigh: boolean | null = null;
+                    for (const p of pins) {
+                        if (isLowRail(p)) { railHigh = false; break; }
+                        if (isHighRail(p)) { railHigh = true; break; }
+                    }
+                    if (railHigh === null) continue;
+                    for (const p of pins) {
+                        if (isLowRail(p) || isHighRail(p)) continue;
+                        try {
+                            if (peeker) {
+                                const s = peeker(p);
+                                if (s && s.driving) continue; // engine drives: output wins
+                            }
+                        } catch { /* sampler failure never blocks input */ }
+                        try { this.engine.setGpioInput!(p, railHigh); } catch { /* ignore */ }
+                    }
+                }
+            } catch { /* rail drive never breaks the tick */ }
+        }
         // OUTPUT half: engine-driven levels → publishGpio on change.
         if (!sampler) return;
         try {
