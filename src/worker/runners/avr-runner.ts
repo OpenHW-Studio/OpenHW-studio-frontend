@@ -2443,12 +2443,39 @@ export class AVRRunner {
     private dispatchOptionalProtocols(pinId: string, isHigh: boolean, cycles: number) {
         this.dispatchOptionalPwm(pinId, isHigh, cycles);
         this.dispatchOptionalOneWire(pinId, isHigh, cycles);
+        this.dispatchOptionalNeoPixel(pinId, isHigh, cycles);
         // Debug pin watchpoints (§10.7): edge check on every board-pin edge.
         // checkPinWatch is baseline-then-edge (first call seeds, no false hit)
         // and emits WATCH_HIT into the event ring on match. Never breaks tick.
         try {
             (this.debugService as any)?.checkPinWatch?.(String(pinId), !!isHigh, Number(cycles) || 0);
         } catch { /* ignore */ }
+    }
+
+    private dispatchOptionalNeoPixel(pinId: string, isHigh: boolean, cycles: number) {
+        // WS2812 decoding needs EVERY GPIO edge with true cycle stamps
+        // (sub-microsecond bit timing + 25µs reset gap). The tick-level
+        // electrical fan-out collapses sub-tick edges to one batch stamp
+        // (or none, when idle state is unchanged), so no frame ever
+        // decodes without this per-edge lane. Capability probe only —
+        // no per-component special-casing (same pattern as PWM/OneWire).
+        const key = String(pinId || '').toUpperCase();
+        for (const endpoint of this.getProtocolEndpointsForArduinoPin(key)) {
+            const inst = endpoint.inst as any;
+            if (!inst || typeof inst.getNeoPixelPinName !== 'function') continue;
+            let din: unknown = null;
+            try {
+                din = inst.getNeoPixelPinName();
+            } catch {
+                continue;
+            }
+            if (endpoint.pinId !== din) continue;
+            try {
+                inst.onPinStateChange(endpoint.pinId, isHigh, cycles);
+            } catch {
+                /* edge delivery never breaks the tick */
+            }
+        }
     }
 
     private netHasResistor = new Set<number>();

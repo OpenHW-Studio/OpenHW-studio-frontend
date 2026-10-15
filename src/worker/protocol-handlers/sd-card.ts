@@ -342,8 +342,13 @@ export class SDCardLogic extends SPIProtocol {
         this.storage[pbr + 511] = 0xaa;
         const fatBase = (1 + 1) * S;
         // FAT copies: media + EOF markers, README at cluster 2 (EOF).
+        // All other entries MUST be zero (free): the region starts life as
+        // 0xFF (flash-erased), which FAT reads as 0xFFFF = used/EOF, so
+        // cluster allocation finds no free space and every file write
+        // returns 0 bytes — exactly the live WROTE:0 seen before this.
         for (let copy = 0; copy < 2; copy += 1) {
             const base = fatBase + copy * fatSectors * S;
+            for (let i = 0; i < fatSectors * S; i += 1) this.storage[base + i] = 0x00;
             this.storage[base] = 0xf8;
             this.storage[base + 1] = 0xff;
             this.storage[base + 2] = 0xff;
@@ -538,6 +543,16 @@ export class SDCardLogic extends SPIProtocol {
             // window. A ready card MUST report power-up complete — stacks
             // reject OCRs with bit31 clear even after ACMD41 went ready.
             this.queueResponse([0x00, 0xc0, 0xff, 0x80, 0x00]);
+            return;
+        }
+
+        if (command === 13) {
+            // SEND_STATUS (R2 = R1 + status). Arduino's blocking
+            // writeBlock() requires cardCommand(CMD13, 0) === 0 AND the
+            // following status byte === 0; anything else aborts the write
+            // with SD_CARD_ERROR_WRITE_PROGRAMMING, so every cache flush
+            // (dir entries, FAT, file data) silently failed before this.
+            this.queueResponse([0x00, 0x00]);
             return;
         }
 

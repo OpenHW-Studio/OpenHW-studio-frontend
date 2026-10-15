@@ -124,8 +124,24 @@ describe('whole-registry component sweep (headless harness)', () => {
 
         // SPI: CS assert, 4-byte exchange, CS deassert. Covers MOSI/MISO
         // parts plus DN/SCLK-style write-only displays (Nokia 5110).
+        // ePaper needs its DC line driven: command 0x24 (DC low) then RAM
+        // bytes (DC high) — proves vram ingestion, not just traffic.
         const spiish = caps.has('spi-target') || Object.keys(inst.pins || {}).some((p) => /^(MOSI|MISO|DIN|SDI|DN|SCLK)$/i.test(p));
-        if (spiish && typeof inst.onSPIByte === 'function') {
+        if (/epaper/i.test(type) && typeof inst.onSPIByte === 'function') {
+          try {
+            if (inst.pins?.VCC) inst.setPinVoltage('VCC', 5.0);
+            if (inst.pins?.GND) inst.setPinVoltage('GND', 0.0);
+            const cs = typeof inst.getCSPinName === 'function' ? inst.getCSPinName() : 'CS';
+            inst.onPinStateChange('DC', false, cyc);
+            inst.onPinStateChange(cs, false, cyc);
+            inst.onSPIByte(0x24);
+            inst.onPinStateChange(cs, true, cyc);
+            inst.onPinStateChange('DC', true, cyc);
+            inst.onPinStateChange(cs, false, cyc);
+            for (let i = 0; i < 16; i += 1) inst.onSPIByte(0x00);
+            inst.onPinStateChange(cs, true, cyc);
+          } catch { /* optional */ }
+        } else if (spiish && typeof inst.onSPIByte === 'function') {
           const cs = typeof inst.getCSPinName === 'function' ? inst.getCSPinName() : 'CS';
           try { inst.onPinStateChange(cs, false, cyc); } catch { /* optional */ }
           inst.onSPIByte(0x9f);
@@ -284,6 +300,14 @@ describe('whole-registry component sweep (headless harness)', () => {
             const fb = inst.fb;
             const fbStr = inst.state?.fbStr;
             if (((fb && [...fb].some((b) => b !== 0)) || (typeof fbStr === 'string' && /[1-9a-f]/i.test(fbStr))) && Number(st1.spiRxBytes || 0) > 0) tier = 'content';
+          } else if (/epaper/i.test(type)) {
+            try {
+              const vram = inst.vram || inst.state?.vram;
+              if (vram && [...vram.slice(0, 16)].every((b) => b === 0)) {
+                tier = 'content';
+                tiers.content.push(`${type}: vram-ingest-16B`);
+              }
+            } catch { /* optional */ }
           } else if (type.includes('tm1637')) {
             const d = inst.state?.digits;
             if (Array.isArray(d) && d.some((x) => x !== 0)) tier = 'content';

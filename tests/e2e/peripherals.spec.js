@@ -12,6 +12,12 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       if (url.includes('/compile')) return route.continue();
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
+    page.on('console', (msg) => {
+      try {
+        const t = `[${msg.type()}] ${msg.text()}`;
+        if (/AVRRunner DBG|inst id=(sd1|neo1|tm1|mx1|nk1|seg1|lc1|spk1|ep1) |SD-DIAG|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
+      } catch { /* ignore */ }
+    });
   });
 
   async function boot(page, circuit) {
@@ -54,10 +60,11 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
   test('ESP32-CAM shows the device webcam', async ({ page }) => {
     await boot(page, {
       components: [
-        { id: 'cam1', type: 'openhw-esp32-cam', attrs: { camMode: 'real' }, x: 100, y: 100 },
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'cam1', type: 'openhw-esp32-cam', attrs: { camMode: 'real' }, x: 450, y: 100 },
       ],
       wires: [],
-      code: 'void setup(){Serial.begin(115200);Serial.println("CAM_READY");}\nvoid loop(){Serial.println("CAM_TICK");delay(1000);}\n',
+      code: 'void setup(){Serial.begin(9600);Serial.println("CAM_READY");}\nvoid loop(){Serial.println("CAM_TICK");delay(1000);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
       forMs: 16000, serialNeedle: 'CAM_READY', telemetryMode: 'detail',
@@ -97,6 +104,10 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     const neo = (verdict.telemetry || []).find((t) => t.id === 'neo1');
     expect(neo).toBeTruthy();
     console.log('NEO telemetry:', JSON.stringify({ summary: String(neo.summary || '').slice(0, 200) }));
+    // Content proof: firmware lights pixel 0 red + pixel 1 green.
+    const ncustom = neo.details?.custom || neo.details?.metrics?.custom || {};
+    console.log('NEO custom:', JSON.stringify(ncustom).slice(0, 200));
+    expect(Number(ncustom.activePixels || 0)).toBeGreaterThanOrEqual(2);
     await page.screenshot({ path: 'test-results/senses-neo.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
@@ -131,6 +142,39 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     expect(fb.length).toBeGreaterThan(0);
     expect(/[^0]/.test(fb)).toBe(true);
     await page.screenshot({ path: 'test-results/senses-nokia.png' });
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('ePaper shows RAM-written data over raw SPI', async ({ page }) => {
+    await boot(page, {
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'ep1', type: 'openhw-ePaperDisplay', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'uno1:11', to: 'ep1:DIN' },
+        { from: 'uno1:13', to: 'ep1:CLK' },
+        { from: 'uno1:8', to: 'ep1:CS' },
+        { from: 'uno1:7', to: 'ep1:DC' },
+        { from: 'uno1:6', to: 'ep1:RST' },
+        { from: 'uno1:5V', to: 'ep1:VCC' },
+        { from: 'uno1:gnd_1', to: 'ep1:GND' },
+      ],
+      code: '#include <SPI.h>\nvoid wcmd(uint8_t c){digitalWrite(7,LOW);digitalWrite(8,LOW);SPI.transfer(c);digitalWrite(8,HIGH);}\nvoid wdat(uint8_t d){digitalWrite(7,HIGH);digitalWrite(8,LOW);SPI.transfer(d);digitalWrite(8,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("EP_READY");SPI.begin();pinMode(8,OUTPUT);pinMode(7,OUTPUT);pinMode(6,OUTPUT);digitalWrite(6,LOW);delay(10);digitalWrite(6,HIGH);wcmd(0x24);for(int i=0;i<64;i++)wdat(0x00);}\nvoid loop(){Serial.println("EP_TICK");delay(1000);}\n',
+    });
+    const verdict = await page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 14000, selectTelemetry: ['ep1'], serialNeedle: 'EP_READY', telemetryMode: 'detail',
+    }));
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    const ep = (verdict.telemetry || []).find((t) => t.id === 'ep1');
+    expect(ep).toBeTruthy();
+    // Content proof: 0x24 RAM-write command + 64 black bytes ingested.
+    const ecustom = ep.details?.custom || ep.details?.metrics?.custom || {};
+    console.log('EPAPER custom:', JSON.stringify(ecustom).slice(0, 200));
+    expect(Number(ecustom.ramPointer || 0)).toBeGreaterThanOrEqual(64);
+    await page.screenshot({ path: 'test-results/senses-epaper.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
@@ -187,7 +231,8 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     expect(tm).toBeTruthy();
     const digits = ((verdict.liveOop || {}).tm1 || {}).digits;
     console.log('TM1637 digits:', JSON.stringify(digits));
-    expect(Array.isArray(digits) && digits.some((x) => x !== 0)).toBe(true);
+    // All four segment bytes latch: 0='0x3F', 1='0x06', 2='0x5B', 3='0x4F'.
+    expect(digits).toEqual([0x3f, 0x06, 0x5b, 0x4f]);
     await page.screenshot({ path: 'test-results/senses-tm.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
@@ -268,14 +313,16 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
         { from: 'uno1:5V', to: 'sd1:VCC' },
         { from: 'uno1:gnd_1', to: 'sd1:GND' },
       ],
-      code: '#include <SPI.h>\n#include <SD.h>\nvoid setup(){Serial.begin(9600);Serial.println("SD_READY");if(!SD.begin(4)){Serial.println("SD_FAIL");return;}File f=SD.open("t.txt",FILE_WRITE);f.println("sdhi");f.close();File r=SD.open("t.txt");while(r.available())Serial.write(r.read());r.close();Serial.println("SD_DONE");}\nvoid loop(){Serial.println("SD_TICK");delay(2000);}\n',
+      code: '#include <SPI.h>\n#include <SD.h>\nvoid setup(){Serial.begin(9600);Serial.println("SD_READY");if(!SD.begin(4)){Serial.println("SD_FAIL");return;}File ro=SD.open("README.TXT");Serial.print("ROpen:");Serial.println(!!ro);Serial.print("RAvail:");Serial.println(ro.available());while(ro.available())Serial.write(ro.read());ro.close();Serial.println("RO_DONE");File f=SD.open("t.txt",FILE_WRITE);Serial.print("FOPEN_W:");Serial.println(!!f);if(!f){Serial.println("SD_FAIL");return;}Serial.print("WROTE:");Serial.println(f.println("sdhi"));f.close();File r=SD.open("t.txt");Serial.print("FOPEN_R:");Serial.println(!!r);Serial.print("AVAIL:");Serial.println(r.available());while(r.available())Serial.write(r.read());r.close();Serial.println("SD_DONE");}\nvoid loop(){Serial.println("SD_TICK");delay(2000);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 18000, selectTelemetry: ['sd1'], serialNeedle: 'SD_READY', telemetryMode: 'detail',
+      forMs: 22000, selectTelemetry: ['sd1'], serialNeedle: 'SD_READY', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
-    console.log('SD serial:', JSON.stringify((verdict.serial || '').slice(0, 300)));
+    console.log('SD serial:', JSON.stringify((verdict.serial || '').slice(0, 600)));
+    // Pre-existing README must read back through the FAT walk.
+    expect((verdict.serial || '').includes('OpenHW')).toBe(true);
     // File content echoed back through the firmware's own read.
     expect((verdict.serial || '').includes('sdhi')).toBe(true);
     expect((verdict.serial || '').includes('SD_DONE')).toBe(true);

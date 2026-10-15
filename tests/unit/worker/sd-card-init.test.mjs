@@ -60,6 +60,18 @@ describe('SD card SPI init (Arduino SD.begin compatible)', () => {
     const accepted = sd.onSPIByte(0xff);
     sd.onPinStateChange('CS', true, 2);
     assert.equal(accepted & 0x1f, 0x05);
+    // Arduino blocking writeBlock(): waitNotBusy (0xFF = ready) then CMD13
+    // SEND_STATUS must return R1=0x00 AND status=0x00, else the write is
+    // rejected with SD_CARD_ERROR_WRITE_PROGRAMMING (every cache flush
+    // failed live before CMD13 was implemented).
+    const busy = sd.onSPIByte(0xff);
+    sd.onPinStateChange('CS', true, 2);
+    assert.equal(busy, 0xff);
+    sd.onPinStateChange('CS', false, 3);
+    for (const b of [0x40 | 13, 0, 0, 0, 0, 0x01]) sd.onSPIByte(b);
+    assert.equal(sd.onSPIByte(0xff), 0x00);
+    assert.equal(sd.onSPIByte(0xff), 0x00);
+    sd.onPinStateChange('CS', true, 4);
     // CMD17 block 100: R1 then data token then our payload.
     sd.onPinStateChange('CS', false, 1);
     for (const b of [0x40 | 17, 0, 0, 0, 100, 0x01]) sd.onSPIByte(b);
@@ -136,5 +148,12 @@ describe('SD card SPI init (Arduino SD.begin compatible)', () => {
     // Free directory entries read back as 0x00 (creation stops at index 1).
     const e1 = (2 + 2 * fatSectors) * 512 + 32;
     assert.equal(mem[e1], 0x00);
+    // FAT free space: cluster 3 and the last FAT entry read 0x0000, so
+    // allocation finds free clusters and file writes persist (live WROTE:0
+    // before this was a fully-0xFFFF FAT).
+    const fat1 = 2 * 512;
+    assert.equal(mem[fat1 + 6] | (mem[fat1 + 7] << 8), 0x0000);
+    const fatEnd = fat1 + fatSectors * 512 - 2;
+    assert.equal(mem[fatEnd] | (mem[fatEnd + 1] << 8), 0x0000);
   });
 });

@@ -55,6 +55,7 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { EPaperLogic } from '@openhw/emulator/src/components/openhw-ePaperDisplay/logic';
 import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
 import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-module/logic';
 
@@ -136,6 +137,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
+    'openhw-ePaperDisplay': EPaperLogic,
     'wokwi-sd-card': SDCardLogic,
     'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
