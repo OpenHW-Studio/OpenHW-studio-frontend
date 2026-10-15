@@ -276,6 +276,22 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 let readEvents = 0; // I2cRead events drained since last clear
                 let lastAddr = 0;
                 let pointerBytes: number[] = [];
+                // Persistent staging (take-ahead-of-staging fix): takes run
+                // in the take batch against the PREVIOUS drain's queue, so
+                // anything staged during transfer T lands post-takes (proven:
+                // MPU6050 14B burst, 17 exact bytes staged, guest reads all
+                // fallback). Known-long bursts (learned takes > 3) therefore
+                // stage at T-1's STOP for the same-pointer next transfer.
+                // Per-pointer learned take counts keep depth exact (queue ==
+                // guest-remaining, so the BTF tail arms correctly). Short
+                // reads (N<=2: chip-ID/UT) and bare (model-less) addresses
+                // keep the exact legacy clear+topUp protocol untouched.
+                let stagedKey = ''; // `addr:pointer` the queue currently holds
+                let stagedPtrNum = 0; // model pointer staged for stagedKey
+                let writeSeen = false; // a pointer byte arrived this transfer
+                let evCount = 0;    // I2cRead events this transfer (takes-1)
+                const learned: Record<string, number> = {}; // key -> takes
+                const COLD_STAGE = 4; // first-of-pointer depth (today's BURST)
                 const BURST = 4;
                 const hasClear = typeof mcu.i2c1.clearRx === 'function';
                 // Pure model peek (no stream disturbance): first claimant in
@@ -311,6 +327,28 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     try { mcu.i2c1.clearRx(); } catch { /* ignore */ }
                     injected = 0; readEvents = 0;
                 };
+                // Model-served? A claimant offering onI2CReadRequest for this
+                // address means takes can be served positionally from the
+                // model image (no stream disturbance — pure compute).
+                const servedAt = (addr7: number): boolean => {
+                    try { return peekModel(addr7, 0, 1).length > 0; } catch { return false; }
+                };
+                // Stage the model image head for `key` (`addr:pointer`):
+                // clears first so positions stay exact (append-after-
+                // leftovers would shift the head). Count defaults to the
+                // learned take count (exact depth => BTF arms right).
+                const stageImage = (addr7: number, pointer: number, key: string): void => {
+                    try {
+                        const n = Math.max(1, Math.min(64, learned[key] || COLD_STAGE));
+                        const peek = peekModel(addr7, pointer, n);
+                        if (peek.length === 0) { stagedKey = ''; return; }
+                        safeClear();
+                        try { mcu.i2c1.injectRx(peek); } catch { /* ignore */ }
+                        injected = peek.length;
+                        stagedKey = key;
+                        stagedPtrNum = pointer & 0xff;
+                    } catch { /* staging never breaks the bus */ }
+                };
                 const topUp = () => {
                     try {
                         // -1: the address-phase preload stages one byte
@@ -320,6 +358,24 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         while (outstanding < BURST) {
                             mcu.i2c1.injectRx([br.read() & 0xff]);
                             injected++; outstanding++;
+                        }
+                    } catch { /* prefill never breaks the bus */ }
+                };
+                // Positional top-up for a cold (pointer-changed) model-
+                // served transfer: takes-so-far = preload (1) + reloads
+                // (evCount), so the next needed image position is
+                // ptr0 + 1 + evCount. Exact positions keep the head
+                // aligned while the transfer spans batches (waiters).
+                const topUpPositional = (addr7: number, ptr0: number) => {
+                    try {
+                        let outstanding = injected - readEvents - 1;
+                        if (outstanding < 0) outstanding = 0;
+                        let pos = (ptr0 + 1 + evCount) & 0xff;
+                        while (outstanding < BURST) {
+                            const peek = peekModel(addr7, pos, 1);
+                            if (peek.length === 0) break;
+                            try { mcu.i2c1.injectRx([peek[0]]); } catch { break; }
+                            injected++; outstanding++; pos = (pos + 1) & 0xff;
                         }
                     } catch { /* prefill never breaks the bus */ }
                 };
@@ -334,15 +390,47 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     br.start(Number(addr) & 0x7f, readPhase);
                     busIdle = false;
                     lastAddr = Number(addr) & 0x7f;
+                    // Live-read flag (see stepBudget slices): a repeated
+                    // START opens the RX phase; a write START or STOP
+                    // closes it.
+                    try { (this as any).f1I2cReadActive = readPhase; } catch { /* flag never breaks start */ }
                     if (!readPhase) {
-                        // Write phase: kill previous leftovers, stay out of
-                        // the model's stream (it rebuilds at read-START).
+                        // Write phase: a new transfer begins. Model-served
+                        // addresses keep persistent staging (the takes run
+                        // pre-drain — clearing here would empty the queue
+                        // the take batch reads); bare addresses keep the
+                        // legacy kill-leftovers behavior.
                         readActive = false;
                         pointerBytes = [];
-                        safeClear();
+                        writeSeen = false;
+                        evCount = 0;
+                        if (!servedAt(lastAddr)) safeClear();
                     } else if (hasClear) {
                         readActive = true;
-                        armBurst();
+                        evCount = 0;
+                        const key = `${lastAddr}:${writeSeen ? (pointerBytes[0] & 0xff) : -1}`;
+                        // Short transfers (learned depth <= 3: N<=2 reads
+                        // like chip-ID/UT) keep the exact legacy protocol
+                        // (clear + bridge prefill): their waiter timing is
+                        // proven, and persistence would only reshuffle
+                        // their N=2 POS tail. Persistence engages for
+                        // known-long bursts only.
+                        const depth = learned[key] || COLD_STAGE;
+                        const served = servedAt(lastAddr);
+                        if (served && depth > 3 && key === stagedKey) {
+                            // Warm long: the STOP-staged image is already
+                            // queued ahead of the take batch — consume it.
+                        } else if (served && depth > 3) {
+                            // Cold long: replace staging post-hoc (sets up
+                            // the next same-pointer transfer; this one's
+                            // takes already ran). Waiters spanning batches
+                            // get positional top-ups below.
+                            const ptr0 = writeSeen ? (pointerBytes[0] & 0xff) : 0;
+                            stageImage(lastAddr, ptr0, writeSeen ? key : `${lastAddr}:-1`);
+                        } else {
+                            stagedKey = '';
+                            armBurst();
+                        }
                     } else {
                         // Legacy facade without clearRx: unbounded prefill
                         // (BTF-tail caveat applies).
@@ -356,22 +444,33 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try { mcu.i2c1.onWrite = (byte: number) => { try {
                     br.write(Number(byte) & 0xff);
-                    // Early arm from the just-drained pointer: the read half
-                    // usually executes in a later batch, so this lands first.
+                    // Pointer bookkeeping + early stage: the first write
+                    // byte is the register pointer. Long bursts stage the
+                    // learned image when it names a new image (waiters'
+                    // takes run in later batches and see it); short reads
+                    // keep the exact legacy peek-4 early-arm (proven: it
+                    // carries BMP180's first bytes). Same-pointer writes
+                    // leave persistent staging untouched.
                     // PEEK (pure compute) — never br.read() here, the model
                     // stream only rebuilds at read-START.
-                    if (!readActive && hasClear) {
+                    if (!readActive && !writeSeen) {
                         pointerBytes.push(Number(byte) & 0xff);
-                        if (pointerBytes.length >= 1) {
-                            const peek = peekModel(lastAddr, pointerBytes[0], BURST);
-                            if (peek.length > 0) {
-                                try {
+                        writeSeen = true;
+                        try {
+                            const ptr0 = pointerBytes[0] & 0xff;
+                            const key = `${lastAddr}:${ptr0}`;
+                            if (servedAt(lastAddr) && (learned[key] || COLD_STAGE) > 3) {
+                                if (key !== stagedKey) stageImage(lastAddr, ptr0, key);
+                            } else {
+                                const peek = peekModel(lastAddr, ptr0, BURST);
+                                if (peek.length > 0) {
                                     safeClear();
-                                    mcu.i2c1.injectRx(peek);
+                                    try { mcu.i2c1.injectRx(peek); } catch { /* ignore */ }
                                     injected = peek.length;
-                                } catch { /* prefill never breaks the bus */ }
+                                }
+                                stagedKey = '';
                             }
-                        }
+                        } catch { /* staging never breaks writes */ }
                     }
                 } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try {
@@ -384,14 +483,41 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     mcu.i2c1.onRead = () => {
                         try {
                             readEvents++;
-                            if (readActive && hasClear) topUp();
+                            evCount++;
+                            // Model-served staging (stagedKey set) gets the
+                            // positional top-up (exact image positions even
+                            // mid-transfer); bare addresses keep the legacy
+                            // bridge top-up. Both only fire while the queue
+                            // runs low, so exact staging is never disturbed.
+                            if (readActive && hasClear) {
+                                if (stagedKey !== '') topUpPositional(lastAddr, stagedPtrNum);
+                                else topUp();
+                            }
                             return 0xff;
                         } catch { return 0xff; }
                     };
                 } catch { /* ignore */ }
                 try { mcu.i2c1.onStop = () => { try {
                     br.stop(); busIdle = true; readActive = false;
-                    safeClear();
+                    try { (this as any).f1I2cReadActive = false; } catch { /* ignore */ }
+                    // Learn + pre-stage: takes this transfer = reload
+                    // events (one I2cRead per take-with-reload) + the
+                    // eventless address-phase preload. Known-long bursts
+                    // stage the learned image now (ahead of the next
+                    // same-pointer take batch — the take-ahead fix);
+                    // short transfers keep the legacy clear.
+                    try {
+                        const kp = writeSeen ? (pointerBytes[0] & 0xff) : -1;
+                        const key = `${lastAddr}:${kp}`;
+                        learned[key] = Math.max(1, Math.min(64, evCount + 1));
+                        if (servedAt(lastAddr) && hasClear && learned[key] > 3) {
+                            const ptr0 = writeSeen ? (pointerBytes[0] & 0xff) : 0;
+                            stageImage(lastAddr, ptr0, writeSeen ? key : `${lastAddr}:-1`);
+                        } else {
+                            stagedKey = '';
+                            safeClear();
+                        }
+                    } catch { try { safeClear(); } catch { /* ignore */ } }
                 } catch { /* ignore */ } }; } catch { /* ignore */ }
             }
             // SPI: per-DR-write transfers grouped by 2ms sim gaps (mirrors
@@ -586,6 +712,26 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     self.mcu = await STM32F1.fromBin(fw.data as Uint8Array, mkOpts());
                 }
                 self.mcu.usart1.onData = (b: number) => { txQueue.push(b & 0xff); };
+                // Watchdog-reboot arm (see stepBudget): the facade reports
+                // WdogReset bus events here; the flag survives only until
+                // the next stopped chunk consumes it into an NRST reboot.
+                // Single writer (per boot, fresh facade): the drain sys-
+                // wiring must NOT assign onWdogReset or it clobbers this.
+                // Also emits the F1WDOG_RST sys-cell marker (was wired in
+                // the drain; folded here so marker + flag stay together).
+                try {
+                    (self.mcu as any).onWdogReset = (w: number) => {
+                        try { (self as any).f1WdogFired = true; } catch { /* ignore */ }
+                        try {
+                            const tag = `F1WDOG_RST:${Number(w) | 0}\n`;
+                            for (let i = 0; i < tag.length; i++) {
+                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1sys'); } catch { break; }
+                            }
+                        } catch { /* marker never breaks the drain */ }
+                    };
+                } catch { /* older facades */ }
+                try { (self as any).f1WdogFired = false; } catch { /* ignore */ }
+                try { (self as any).f1I2cReadActive = false; } catch { /* ignore */ }
                 // Nucleo USART2 (PA2/PA3 ST-Link VCP): same TX queue, tagged
                 // uart1 in the monitor via emitTxByte source below. Guarded —
                 // older facade builds expose usart1 only.
@@ -642,11 +788,19 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     // and the model's ACK schedule; slice + drain mid-tick
                     // (see dhtFineEngaged/stepDhtFine).
                     if (self.dhtFineEngaged()) return self.stepDhtFine(n);
-                    self.lastStepSlice = 20000;
+                    // NOTE: I2C live-read slicing (1K chunks while a read is
+                    // active) was tried here but reverted: takes run ahead
+                    // of staging at ANY batch granularity (proven down to
+                    // 128-instr slices), so slicing only reshuffles timing
+                    // without fixing anything — and it perturbs sensitive
+                    // tails (proven: BMP180 N=2 POS tail goes stale-dupe).
+                    // Persistent staging (above) is the fix; keep 20K.
+                    const sliceSize = 20000;
+                    self.lastStepSlice = sliceSize;
                     let coarseTotal = 0;
                     let remaining = n;
                     while (remaining > 0) {
-                        const c = Math.min(20000, remaining);
+                        const c = Math.min(sliceSize, remaining);
                         let r: any = null;
                         try { r = self.mcu.execute(c); } catch { break; }
                         // Delta contract (see retiredDelta): the facade
@@ -654,16 +808,34 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         // return to simCycleCount, so accumulate retired.
                         coarseTotal += self.retiredDelta(Number(r?.instCount), c);
                         try { self.softSerialFlushPendingArm(); } catch { /* ignore */ }
-                        // Throttled mid-chunk service (see NOTE above): full
-                        // rate while a one-wire model may be on the board.
-                        const needService = self.f1DhtPresent !== false || (self.f1ChunkCount & 3) === 0;
+                        // Mid-chunk service: full rate (pre-speed-lane behavior)
+                        // until the DHT nan regression is root-caused; the
+                        // throttled condition stays parked below.
+                        const needService = true; // self.f1DhtPresent !== false || (self.f1ChunkCount & 3) === 0;
                         self.f1ChunkCount++;
                         if (needService) {
                             try { self.drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
                             try { self.pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
                         }
                         remaining -= c;
-                        if (r?.stopped) break;
+                        if (r?.stopped) {
+                            // Watchdog reboot (silicon NRST semantics): the
+                            // engine latches stopped on an IWDG/WWDG reset;
+                            // hardware reboots into setup(), so reboot in
+                            // place (UART history kept: the 2nd READY is the
+                            // proof). A non-watchdog stop still breaks.
+                            let rebooted = false;
+                            try {
+                                if ((self as any).f1WdogFired && self.mcu) {
+                                    (self as any).f1WdogFired = false;
+                                    try { (self.mcu as any)._emu?.reset?.(); } catch { /* nrst never breaks */ }
+                                    try { self.f1TickRaw = 0; self.f1TickApplied = 0; } catch { /* ignore */ }
+                                    try { (self as any).f1I2cReadActive = false; } catch { /* ignore */ }
+                                    rebooted = true;
+                                }
+                            } catch { /* reboot never breaks stepping */ }
+                            if (!rebooted) break;
+                        }
                         // Mid-tick WAKE: a DHT edge landed in this chunk —
                         // hand the remainder to fine slicing now instead of
                         // waiting for the next tick (the 55us ACK window
@@ -917,7 +1089,6 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     try {
                         if (mcuS && !((self as any).f1SysWired)) {
                             (self as any).f1SysWired = true;
-                            try { mcuS.onWdogReset = (w: number) => { try { say('F1WDOG_RST:' + w); } catch { /* ignore */ } }; } catch { /* ignore */ }
                             try { mcuS.onRtcAlarm = (a: number) => { try { say('F1RTC_ALARM:' + a); } catch { /* ignore */ } }; } catch { /* ignore */ }
                             try { mcuS.onExtiEdge = (l: number) => { try { say('F1EXTI_EDGE:' + l); } catch { /* ignore */ } }; } catch { /* ignore */ }
                             try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'f1itm'); } catch { /* ignore */ } }; } catch { /* ignore */ }
@@ -1099,14 +1270,23 @@ export class Stm32f1Runner extends ArmRunnerBase {
                             }
                             case 'setupCfg':
                                 try { emu.usbInjectSetup(new Uint8Array([0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0xFF, 0x00])); } catch { fail('setup inject'); break; }
-                                st.phase = 'takeCfg'; st.waits = 0;
+                                st.phase = 'takeCfg'; st.waits = 0; st.cfg = null;
                                 break;
                             case 'takeCfg': {
+                                // Control data stage can span IN packets (the
+                                // 67B config descriptor arrives 64+3: EP0
+                                // max-packet is 64). Accumulate across drains
+                                // until the full descriptor is in, then run
+                                // the status-OUT — like every real host.
                                 const r = takeIn(0);
-                                if (Array.isArray(r)) {
-                                    const total = (r[2] | (r[3] << 8)) >>> 0;
-                                    if (r[1] !== 2 || total !== 67 || r.length !== 67 || r[4] !== 2) fail('bad config desc');
-                                    else { outZlp(0); st.phase = 'setupLang'; st.waits = 0; }
+                                if (Array.isArray(r) && r.length) {
+                                    st.cfg = (st.cfg || []).concat(r);
+                                    if (st.cfg.length >= 67) {
+                                        const c = st.cfg.slice(0, 67);
+                                        const total = (c[2] | (c[3] << 8)) >>> 0;
+                                        if (c[1] !== 2 || total !== 67 || c[4] !== 2) fail('bad config desc');
+                                        else { outZlp(0); st.phase = 'setupLang'; st.waits = 0; st.cfg = null; }
+                                    }
                                 } else if (bump()) fail('config desc timeout');
                                 break;
                             }

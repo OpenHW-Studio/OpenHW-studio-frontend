@@ -123,41 +123,11 @@ export const ComponentContextMenu = ({
       }
     }
 
-    // STM32F4 clock preset (virtual time compression): divides the guest
-    // SysTick reload so virtual ms cost fewer host instructions. The F4
-    // runner honors board attr tickMHz (default = chip clock = untouched).
-    if (kind.includes('stm32f4')) {
-      const t = String(comp.type || '').toLowerCase();
-      const baseMHz = t.includes('429') ? 180 : (t.includes('401') ? 84 : (t.includes('411') ? 100 : 168));
-      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
-      const presets = [baseMHz, ...[84, 42, 24].filter((v) => v < baseMHz)];
-      menus.push({
-        label: 'Clock',
-        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
-        options: presets.map((mhz) => ({
-          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
-          active: String(currentTick) === String(mhz),
-          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
-        })),
-      });
-    }
-
-    // F1 clock preset: runner honors board attr tickMHz via SysTick
-    // divider (72 Full / 36 / 24 / 12). Default untouched.
-    if (kind.includes('stm32f1') || kind.includes('stm32f103') || kind.includes('maple') || kind.includes('bluepill')) {
-      const baseMHz = 72;
-      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
-      const presets = [baseMHz, 36, 24, 12];
-      menus.push({
-        label: 'Clock',
-        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
-        options: presets.map((mhz) => ({
-          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
-          active: String(currentTick) === String(mhz),
-          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
-        })),
-      });
-    }
+    // STM32F4 Clock menu REMOVED (proven inert 2026-10-10): the wasm
+    // SysTick period is instruction-count driven and does not follow LOAD
+    // via periphWrite at any preset (div 1/2/4/7/21 all pace 26 virt-ms/s).
+    // The runner attr path stays dormant default-off; do not re-add presets
+    // without a pace-table proving effect.
 
 
     // Pico clock preset: runner honors board attr tickMHz via

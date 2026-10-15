@@ -7004,6 +7004,8 @@ function nanosMultiplier() {
   return targetFreq >= native ? 1 : native / targetFreq;
 }
 var _dbgUserCodeNotified = false;
+var _dbgRunNotified = false;
+var _dbgStage2Notified = false;
 var _writeSABCount = 0;
 function writeSABState() {
   if (!ctrl) return;
@@ -7019,6 +7021,15 @@ function writeSABState() {
   ctrl[SAB_IDLE] = chip?.coresIdle ? 1 : 0;
   if (DEBUG_BOOT && !_dbgUserCodeNotified && chip) {
     const pc = ctrl[SAB_PC];
+    // OPENHW MIRROR INSTRUMENT (app-start hunt): one-shot second-stage
+    // marker. 0x4007xxxx-0x4008xxxx is IRAM where the second-stage
+    // bootloader runs (entry 0x400805b4); ROM lives below 0x40070000 and
+    // the app cache above 0x400C0000 (USER CODE below). [WASM-INIT] token
+    // passes the central console filter; sparse (fires once).
+    if (!_dbgStage2Notified && pc >= 1074233344 && pc < 1074433536) {
+      console.log(`[WASM-INIT] SECOND-STAGE at nanos=${n} PC=0x${pc.toString(16).padStart(8, "0")}`);
+      _dbgStage2Notified = true;
+    }
     if (pc >= 1074593792 && pc < 1074790400) {
       console.log(`[DBG] USER CODE ENTERED at nanos=${n} PC=0x${pc.toString(16).padStart(8, "0")}`);
       _dbgUserCodeNotified = true;
@@ -8033,6 +8044,8 @@ function processCommand(cmd) {
   switch (cmd) {
     case CMD_RUN:
       ctrl[SAB_STATUS] = 0;
+      // OPENHW MIRROR INSTRUMENT (app-start hunt): one-shot RUN marker.
+      if (!_dbgRunNotified) { console.log(`[WASM-INIT] RUN received`); _dbgRunNotified = true; }
       runSimChunk();
       return true;
     case CMD_RESET:
@@ -8976,6 +8989,9 @@ async function onMessage(type, data) {
         errMsg.fill(0);
       }
       if (debugSab) debugData = new Uint32Array(debugSab);
+      // OPENHW MIRROR INSTRUMENT (app-start hunt): sparse init markers.
+      // [WASM-INIT] token passes the central console filter ([DBG] does not).
+      console.log(`[WASM-INIT] INIT chip=${chipType} flash=${flash ? flash.length : 0} rom=${rom ? rom.length : 0}`);
       const ChipClass = chipConstructors[chipType];
       if (!ChipClass) {
         setError("Unknown chip: " + chipType);
@@ -9126,6 +9142,7 @@ async function onMessage(type, data) {
           ctrl[SAB_CPU_FREQ] = !cf || cf === "max" ? native : cf === "auto" ? 8e6 : Number(cf) * 1e6;
         }
         writeSABState();
+        console.log(`[WASM-INIT] READY entering commandLoop`);
         send({ type: "ready", memoryRegions: getMemorySABs(chip), engineMode, chipInfo: { board: chip.board || "esp32", flashSizeMB: chip._flashSizeMB, psramSizeMB: chip._psramSizeMB, psramType: chip._psramType, cpuFrequency: 16e7, _nativeFrequency: chip._nativeFrequency }, msgId });
         if (config.simMode === "blocking") {
           setTimeout(() => blockingCommandLoop(), 0);
@@ -9133,6 +9150,9 @@ async function onMessage(type, data) {
           setTimeout(() => commandLoop(), 0);
         }
       } catch (err) {
+        // OPENHW MIRROR INSTRUMENT: init failures previously surfaced only
+        // err.message via setError (no stack, no site). Log both.
+        try { console.error(`[WASM-INIT] INIT FAILED:`, err && err.stack ? err.stack : String((err && err.message) || err)); } catch { /* logging never breaks init */ }
         setError(err.message);
         send({ type: "ready", memoryRegions: {}, msgId });
         if (config.simMode === "blocking") {

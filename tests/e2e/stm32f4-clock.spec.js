@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-// F4 pace honesty + clock preset (Disco + MAX7219 over SPI1 + tickMHz:24):
-// the runner's simTimeMs is now step-counted (pace pill reads real data),
-// and the tickMHz attr divides the guest SysTick reload (div=7) so virtual
-// milliseconds cost fewer host instructions. The sketch prints millis()
-// (serial proof of guest-time advance) and mirrors changing millis bytes
-// onto the matrix (display proof). Asserts: F4CLK marker, ≥3 strictly
-// increasing MILLIS samples, matrix telemetry alive.
+// F4 pace honesty (Disco + MAX7219 over SPI1): simTimeMs is step-counted
+// (pace pill reads real data). The sketch prints millis() (serial proof of
+// guest-time advance) and mirrors changing millis bytes onto the matrix
+// (display proof). NOTE (2026-10-10, preset sweep): the tickMHz divider is
+// INERT on F4 — divided LOAD lands but the wasm period doesn't follow, so
+// tickMHz:24 is kept only as the write-receipt path (F4CLK marker), with NO
+// acceleration claim. Asserts: exact +2000 loop steps, spread, matrix alive.
 const CODE = '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(PA4,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(PA4,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("F4CLK_READY");delay(300);SPI.begin();SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE0));pinMode(PA4,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("F4CLK_DRAWN");}\nvoid loop(){unsigned long m=millis();Serial.print("MILLIS:");Serial.println(m);wr(0x03,(m>>8)&0xFF);wr(0x04,m&0xFF);delay(2000);}\n';
 
-test.describe('F4 clock preset (pace + millis advance)', () => {
+test.describe('F4 pace honesty (millis advance on matrix)', () => {
   test.setTimeout(240000);
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/**', async (route) => {

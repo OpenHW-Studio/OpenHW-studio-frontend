@@ -140,10 +140,12 @@ Connectivity extras not in the main tables:
 - PROOF STANDARD (new): every board proves guest-time advance — pace specs
   assert monotonic millis + divider markers vs wall elapsed, alongside the
   serial needle. Speed is a main test now, not an observation.
-- F4 clock presets: board attr `tickMHz` (168/84/42/24, per-chip Full in the
-  Clock context menu) divides the SysTick reload; PWM telemetry rescaled.
-  Opt-in, default untouched. Applies on next Run (Stop+Run); mid-run changes
-wait for reboot since runners snapshot attrs at boot. ESP32 same pattern next.
+- F4 tickMHz divider: PROVEN INERT 2026-10-10 (preset sweep div 1/2/4/7/21:
+  identical 26 virt-ms/s; wasm period doesn't follow LOAD). Menu removed;
+  attr path dormant default-off. F1/Pico/ESP32 dividers share the design and
+  are UNVERIFIED for effect — no acceleration claims until pace tables prove
+  them (Pico set_clock and ESP32 nanos-scaler are engine-honored by code
+  reading, still unproven live).
 
 ## Deliberately out of scope (engine-limited)
 
