@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, memo, Suspense } from 'react';
 import { useEditorStore } from '../store/useEditorStore';
+import { applyOpenHwThemes } from '../../../utils/monacoConfig';
 
 // Perf (bundle-split): Monaco (~1MB via @monaco-editor/react + monaco-editor)
 // must NOT ride the initial SimulatorPage chunk. It loads on demand the first
@@ -49,6 +50,12 @@ const RightPanelEditor = memo(({
     }, 300);
     return () => clearTimeout(timeout);
   }, [localCode, activeCodeFileId, setFileContent, setCode]);
+
+  const handleBeforeMount = useCallback((monaco) => {
+    // Sync: themes must exist BEFORE first paint, otherwise Monaco renders
+    // the default light theme (white editor in dark mode).
+    applyOpenHwThemes(monaco);
+  }, []);
 
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -117,6 +124,7 @@ const RightPanelEditor = memo(({
               modified={localCode}
               language={editorLanguage}
               theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
+              beforeMount={handleBeforeMount}
               options={{ ...editorOptions, readOnly: true }}
             />
           </Suspense>
@@ -128,6 +136,7 @@ const RightPanelEditor = memo(({
             language={editorLanguage}
             theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
             value={localCode}
+            beforeMount={handleBeforeMount}
             onMount={handleEditorMount}
             onChange={v => {
               if (editorOptions?.readOnly) return;

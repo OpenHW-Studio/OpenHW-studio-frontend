@@ -11,15 +11,16 @@ let configuredPromise = null;
  * ensureMonacoConfigured() instead — first call configures, later calls
  * reuse the same promise.
  */
-export const configureMonaco = () => {
-  if (configuredPromise) return configuredPromise;
-  loader.config({
-    // You can specify a CDN here if you want to avoid bundling workers,
-    // but for stability we'll let @monaco-editor/react handle it.
-  });
-
-  configuredPromise = loader.init().then((monaco) => {
-    // Define a custom theme that matches our CSS variables
+/**
+ * Theme definitions shared by every Monaco instance (simulator code tab +
+ * component editor). Must be applied synchronously in `beforeMount` —
+ * defining them async in `onMount` races first paint and Monaco falls back
+ * to the default light theme (white editor in dark mode).
+ */
+export const applyOpenHwThemes = (monaco) => {
+  if (!monaco?.editor?.defineTheme) return;
+  try {
+    // defineTheme overwrites, so re-applying on every mount is safe.
     monaco.editor.defineTheme('openhw-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -67,6 +68,21 @@ export const configureMonaco = () => {
         'editorIndentGuide.activeBackground': '#0284c7',
       },
     });
+  } catch (_) {
+    // Theme define never blocks the editor.
+  }
+};
+
+export const configureMonaco = () => {
+  if (configuredPromise) return configuredPromise;
+  loader.config({
+    // You can specify a CDN here if you want to avoid bundling workers,
+    // but for stability we'll let @monaco-editor/react handle it.
+  });
+
+  configuredPromise = loader.init().then((monaco) => {
+    // Define a custom theme that matches our CSS variables
+    applyOpenHwThemes(monaco);
     return monaco;
   }).catch((err) => {
     // Allow retry on failure (e.g. offline CDN worker fetch).

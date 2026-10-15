@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 // getJSZip()/getBabel — ZIP import/export and transpile preview are
 // click-gated, never needed at route paint.
 import { getBabel, getBabelSync, getJSZip } from './simulationpage/utils/exportUtils.js'
+import { applyOpenHwThemes } from '../utils/monacoConfig.js'
 
 // Perf (bundle-split): Babel is lazy — s5() renders synchronously so it can't
 // await. The route mounts long before step 5 is reached, so preload on mount
@@ -1551,6 +1552,10 @@ export default function ComponentEditorPage() {
     return () => observer.disconnect();
   }, []);
 
+  // beforeMount on every Monaco instance: themes must exist BEFORE first
+  // paint or Monaco falls back to the default light theme in dark mode.
+  const monacoBeforeMount = useCallback((monaco) => { applyOpenHwThemes(monaco); }, []);
+
   const commonMonacoOptions = useMemo(() => ({
     fontSize: 13,
     fontFamily: "'JetBrains Mono', monospace",
@@ -2244,6 +2249,7 @@ export default function ComponentEditorPage() {
                 <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                   <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                     <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                       height="100%"
                       language={svgMode === 'react' ? 'typescript' : 'xml'}
                       theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2774,6 +2780,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
             <div style={{ flex:1, overflow:'auto' }}>
               <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                 <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                   height="100%"
                   language="typescript"
                   theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2942,6 +2949,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
            <div style={{ height: s6EditorHeight, minHeight: 320, maxHeight: '75vh', overflow: 'auto' }}>
               <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                 <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                   height="100%"
                   language={codeLangId === 'tsx' ? 'typescript' : codeLangId}
                   theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2998,6 +3006,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', minHeight: 340 }}>
             <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
               <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                 height={s7EditorHeight}
                 language="typescript"
                 theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -3078,6 +3087,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
         <div style={{ flex:1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
             <MonacoEditor
+                      beforeMount={monacoBeforeMount}
               height="100%"
               language="html"
               theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}

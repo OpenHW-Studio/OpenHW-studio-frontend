@@ -131,6 +131,14 @@ function maybeFlushBoardMemBatch(): void {
 let mode: 'single' | 'multi' = 'single';
 let pinToNet: Map<string, number> = new Map();
 let boardSerialOutput: Map<string, string> = new Map();
+
+// Append-only per-board serial mirror (cap 8k chars). The SAB TX ring is the
+// fast path; this Map is the debuggable record (plotter/serial history).
+function appendBoardSerialOutput(boardId: string, chunk: string) {
+    const id = String(boardId || '').trim() || 'default';
+    const merged = (boardSerialOutput.get(id) || '') + String(chunk ?? '');
+    boardSerialOutput.set(id, merged.length > 8192 ? merged.slice(-8192) : merged);
+}
 let syncValidationEnabled = false;
 let syncFrameByBoard: Map<string, number> = new Map();
 let syncSnapshotByBoard: Map<string, {
