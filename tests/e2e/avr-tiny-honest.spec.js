@@ -201,6 +201,46 @@ test.describe('ATtiny85 honest-substitution cells', () => {
     await page.waitForTimeout(2000);
   });
 
+  test('Tiny RTC-stand-in DS1307 ticks (Uno-class TWI model, virtual A4/A5)', async ({ page }) => {
+    const verdict = await runCell(page, {
+      comps: [{ id: 'rtc1', type: 'openhw-ds1307-rtc', attrs: {}, x: 450, y: 120 }],
+      wires: [
+        { from: `${B}:5V`, to: 'rtc1:VCC' },
+        { from: `${B}:GND`, to: 'rtc1:GND' },
+        { from: `${B}:A4`, to: 'rtc1:SDA' },
+        { from: `${B}:A5`, to: 'rtc1:SCL' },
+      ],
+      code: '#include <Wire.h>\nbyte rdsec(){Wire.beginTransmission(0x68);Wire.write(0x00);Wire.endTransmission(false);Wire.requestFrom(0x68,1);return Wire.read();}\nvoid setup(){Serial.begin(9600);Serial.println("TINY_RTC_READY");Wire.begin();Serial.print("T0:");Serial.println(rdsec(),HEX);delay(2200);Serial.print("T1:");Serial.println(rdsec(),HEX);}\nvoid loop(){Serial.println("TINY_RTC_TICK");delay(2000);}\n',
+      needle: 'TINY_RTC_READY', telemetry: ['rtc1'],
+    });
+    const t0 = /T0:([0-9A-Fa-f]+)/.exec(verdict.serial || '')?.[1];
+    const t1 = /T1:([0-9A-Fa-f]+)/.exec(verdict.serial || '')?.[1];
+    expect(t0).toBeTruthy(); expect(t1).toBeTruthy();
+    expect(t0).not.toBe(t1);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('Tiny SD-stand-in file round-trip (Uno-class SPI model, P-routed pins)', async ({ page }) => {
+    const verdict = await runCell(page, {
+      comps: [{ id: 'sd1', type: 'openhw-sd-card', attrs: {}, x: 450, y: 120 }],
+      wires: [
+        { from: `${B}:P3`, to: 'sd1:MOSI' },
+        { from: `${B}:P1`, to: 'sd1:MISO' },
+        { from: `${B}:P0`, to: 'sd1:SCK' },
+        { from: `${B}:P2`, to: 'sd1:CS' },
+        { from: `${B}:5V`, to: 'sd1:VCC' },
+        { from: `${B}:GND`, to: 'sd1:GND' },
+      ],
+      code: '#include <SPI.h>\n#include <SD.h>\nvoid setup(){Serial.begin(9600);Serial.println("TINY_SD_READY");if(!SD.begin(2)){Serial.println("TINY_SD_FAIL");return;}File f=SD.open("t.txt",FILE_WRITE);if(!f){Serial.println("TINY_SD_FAIL");return;}Serial.print("TINY_WROTE:");Serial.println(f.println("tinyhi"));f.close();File r=SD.open("t.txt");while(r.available())Serial.write(r.read());r.close();Serial.println("TINY_SD_DONE");}\nvoid loop(){Serial.println("TINY_SD_TICK");delay(2000);}\n',
+      needle: 'TINY_SD_READY', telemetry: ['sd1'],
+    });
+    expect(verdict.serial || '').toContain('tinyhi');
+    expect(verdict.serial || '').toContain('TINY_SD_DONE');
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
   test('Tiny DHT22 on P2 (bit-bang, P-routed)', async ({ page }) => {
     const verdict = await runCell(page, {
       comps: [{ id: 'dht1', type: 'openhw-dht22', attrs: {}, x: 450, y: 120 }],

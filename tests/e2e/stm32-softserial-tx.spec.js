@@ -27,13 +27,19 @@ test.describe('F1 SoftwareSerial TX', () => {
       code,
     }), CODE);
     expect(setup.ok).toBe(true);
+    // Needle is the LOOP print, not the setup HELLO: the page arbitrates
+    // one serial source per 240ms window (useSerialIngress) and the boot
+    // burst (uart0 first) masks a setup-once softserial line (proven F1-wide
+    // alongside the marker-steals-setup hunt). Loop TICKs prove the same
+    // TX-decode path deterministically.
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 20000, serialNeedle: 'F1SS_TX_HELLO', telemetryMode: 'detail',
+      forMs: 20000, serialNeedle: 'F1SS_TX_TICK', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     console.log('F1SS verdict:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
     console.log('F1SS serial head:', (verdict.serial || '').slice(0, 200));
     expect(verdict.pass).toBe(true);
+    expect(verdict.serial || '').toContain('F1SS_TX_TICK');
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });

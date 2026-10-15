@@ -51,13 +51,14 @@ DHT22 (micros() 1ms-quantized), I2S (SPI2 block unrouted).
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | openhw-arduino-uno | FULL | PARTIAL (TX only, RX parked) | FULL (OLED/LCD/sensors) | FULL (FD host+MFRC522+TFT) | FULL | FULL | ABSENT | ABSENT | FULL | FULL (DS1307) | FULL (AB/CD) | NO-GO (no controller on silicon) | FULL (loopback) | FULL (TX+RX) | FULL (DS18B20+DHT22) | PARTIAL (NEC envelope, no 38kHz carrier) | ABSENT | ABSENT | FULL | FULL (two-Uno) | FULL (OLED/TFT/MAX7219/LCD/NeoPixel) |
 | openhw-arduino-mega | FULL | FULL (TX) | FULL (OLED+sensors) | FULL (MAX7219+FD host) | FULL (range) | FULL | ABSENT | ABSENT | FULL | FULL (T0/T1) | FULL | NO-GO (no controller on silicon) | FULL (loopback) | FULL (40 frames) | FULL | FULL (NEC) | ABSENT | ABSENT | FULL | FULL (master) | FULL (OLED/MAX7219) |
-| openhw-arduino-nano | FULL | FULL (TX) | FULL (OLED) | FULL (MAX7219) | FULL (range) | FULL | ABSENT | ABSENT | FULL | FULL | FULL | NO-GO (no controller on silicon) | NONE | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | FULL | NONE | FULL (OLED/MAX7219) |
-| openhw-attiny85 | PARTIAL (Uno-compiled binary; NO UART silicon, no native tiny core) | PARTIAL (TX) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | FULL | ABSENT | ABSENT | FULL (P2) | NONE | FULL | NONE | NONE | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | NONE | NONE | NONE |
+| openhw-arduino-nano | FULL | FULL (TX) | FULL (OLED) | FULL (MAX7219) | FULL (range) | FULL | ABSENT | ABSENT | FULL | FULL | FULL | NO-GO (no controller on silicon) | FULL (loopback) | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | FULL | FULL (master) | FULL (OLED/MAX7219) |
+| openhw-attiny85 | PARTIAL (Uno-compiled binary; NO UART silicon, no native tiny core) | PARTIAL (TX) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | FULL | ABSENT | ABSENT | FULL (P2) | PARTIAL (DS1307 stand-in) | FULL | NONE | NONE | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | PARTIAL (stand-in) | NO-GO (no UART silicon) | PARTIAL (stand-in OLED+MAX7219) |
 
 Specs: avr-eeprom, avr-i2s, avr-inmp441, avr-dht22, avr-mcp2518fd, avr-modbus,
 avr-softserial-tx, avr-softproto, avr-control, board-input, board-family-sweep,
 cluster-d, peripherals, protocol-transactions, display-verify, human-senses,
-spi-delivery-disc, i2c-ack-disc.
+spi-delivery-disc, i2c-ack-disc, avr-mega-nano, avr-mega-periph, avr-nano-periph,
+avr-tiny-honest, avr-wdt.
 
 ## Pico (survey-verified 2026-10-09; W/ETH share the base die)
 
@@ -122,7 +123,7 @@ Pico `Pico-emu/*.c`, runners in `src/worker/runners/`.)
 |---|---|---|---|---|---|---|---|---|---|
 | STM32F1 | NONE (crc.rs) | ABSENT (no RNG silicon) | ABSENT | NONE (iwdg+wwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE (bkp.rs) | NONE (rcc.rs) | NONE (swd.rs; bootloader.rs) |
 | STM32F4 | NONE (crc.rs) | NONE (rng.rs) | NONE (hash+cryp.rs) | NONE (iwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE | NONE | NONE (dbgmcu; ITM/DWT) |
-| AVR | ABSENT | ABSENT | ABSENT | NONE (no runner WDT) | NONE | NONE | EEPROM covered in main table | PARTIAL (arch-clocks: mega) | ABSENT |
+| AVR | ABSENT | ABSENT | ABSENT | PARTIAL (Uno+Nano reboot+ISR; Mega vector absent, Tiny deferred) | PARTIAL (Mega+Nano/328P exact-count; Tiny INT0 unproven) | NONE | EEPROM covered in main table | PARTIAL (mega+nano+tiny gate cells) | ABSENT |
 | Pico | ABSENT | NONE (ROSC jitter, no cell) | NONE on RP2350 (real SHA-256 silicon); ABSENT on RP2040 | NONE | NONE (nvic.c) | NONE | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M33; clocks.c) | NONE (gdb.c) |
 | ESP32 | NONE | NONE (rng in rmt_rng_math.rs) | NONE (aes+rsa+sha_ecc_key.rs) | NONE (timers.rs MWDT) | NONE | NONE (ULP present, unproven) | NONE (partition_table+NVS) | NONE (clock(s).rs) | NONE (gdb_session) |
 | micro:bit v2 | ABSENT | NONE (nRF RNG+TEMP) | ABSENT | NONE | NONE (PPI+GPIOTE) | NONE | NONE (NVMC-backed NVS) | NONE | ABSENT |
