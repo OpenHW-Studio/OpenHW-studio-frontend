@@ -11,7 +11,12 @@ import {
 } from './board-profiles';
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(type || ''));
+  const s = String(type || '');
+  // Camera component shells (openhw-esp32-cam) share a family token but
+  // are NOT boards: classifying them as boards spawns an esp32-emu engine
+  // that dies on "Unknown chip", taking the real board's run down with it.
+  if (/-cam/i.test(s)) return false;
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(s);
 }
 
 export function endpointAliases(endpoint) {

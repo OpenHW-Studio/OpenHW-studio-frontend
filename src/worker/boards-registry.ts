@@ -37,6 +37,9 @@ export interface BoardFamily {
   firmware: string[];
   /** Verified engine limits. */
   limits: BoardLimit[];
+  /** Substring rules that veto a match (component shells sharing a
+    family token, e.g. openhw-esp32-cam is not an ESP32 board). */
+  exclude?: string[];
 }
 
 const NO_LIMITS: BoardLimit[] = [];
@@ -135,6 +138,10 @@ export const BOARD_FAMILIES: BoardFamily[] = [
   {
     family: 'esp32',
     match: ['esp32'],
+    // openhw-esp32-cam is a camera *component* shell, not a board —
+    // without this it claims the esp32-emu engine and dies on
+    // "Unknown chip: esp32-cam", taking the UNO run down with it.
+    exclude: ['-cam'],
     railVoltage: 3.3,
     engine: 'esp32-emu',
     runner: 'runners/esp32-runner.ts',
@@ -319,6 +326,7 @@ export const UNKNOWN_BOARD_FAMILY: BoardFamily = {
 export function matchBoardFamily(boardType: string): BoardFamily {
   const t = String(boardType || '').toLowerCase();
   for (const fam of BOARD_FAMILIES) {
+    if (Array.isArray(fam.exclude) && fam.exclude.some((e) => e && t.includes(e))) continue;
     for (const m of fam.match) {
       if (m && t.includes(m)) return fam;
     }

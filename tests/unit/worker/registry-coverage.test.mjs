@@ -43,4 +43,11 @@ describe('registry coverage is CI-required (plan Phase 4 seed)', () => {
       }
     }
   });
+
+  test('component shells sharing a family token are not boards', () => {
+    // openhw-esp32-cam claimed the esp32-emu engine and died on
+    // "Unknown chip: esp32-cam", taking the UNO run down with it.
+    assert.equal(matchBoardFamily('openhw-esp32-cam').family, 'unknown');
+    assert.equal(matchBoardFamily('openhw-esp32').family, 'esp32');
+  });
 });

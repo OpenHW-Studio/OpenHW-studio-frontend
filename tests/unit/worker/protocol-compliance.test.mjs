@@ -19,6 +19,8 @@ describe('protocol compliance', () => {
     assert.equal(isProgrammableBoardType('openhw-stm32-bluepill'), true);
     assert.equal(isProgrammableBoardType('openhw-stm32f4'), true);
     assert.equal(isProgrammableBoardType('custom-sensor'), false);
+    // Camera shells share a family token but are components, not boards.
+    assert.equal(isProgrammableBoardType('openhw-esp32-cam'), false);
 
     const aliases = endpointAliases('board1:D1');
     assert.equal(aliases.includes('board1:1'), true);
