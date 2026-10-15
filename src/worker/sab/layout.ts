@@ -1,5 +1,8 @@
 /**
- * SAB layout v1 — single source of truth (§12.2/§12.3 T5).
+ * SAB layout v3 — single source of truth (§12.2/§12.3 T5).
+ * v3 appends the protocol-lane ring AFTER display descriptors; every
+ * v1/v2 offset is bit-identical (header words 14/15 point at the new
+ * region, zero on older allocs). Readers accept v1..v3.
  *
  * One global SharedArrayBuffer per run, transferred once at START.
  * Worker = sole writer of sim state. Main/render/WASM = readers (poll, never block).
@@ -42,6 +45,10 @@
  *     +0 u16 compSlot | +2 u16 code | +4 f32 v0 | +8 f32 v1
  *     +12 u32 cyclesLo | +16 u32 cyclesHi | +20 u32 wallMs
  *     +24 u32 reserved ×2
+ *   PROTOCOL RING (v3, appended after display descriptors): capacity ×
+ *     32 B records (hal/protocol-frames codec: bus/flags/address/v0/v1/
+ *     cycles/wallMs): [head u32 | reserved u32 | records]. Lossy
+ *     overwrite-oldest; readers account skips from head.
  *   SERIAL RINGS: per-board SPSC byte-ring PAIRS (rx+tx, SAB_SERIAL_RING_B
  *     each) after the telemetry region: [head u32 | tail u32 | bytes].
  *     Board i's pair lives at serialBase + i*SAB_BOARD_SERIAL_STRIDE_B.
@@ -61,7 +68,7 @@
  *   Display VRAM stays in its own SABs (routeDisplayFrames) — NEVER packed here.
  */
 
-export const SAB_LAYOUT_VERSION = 2;
+export const SAB_LAYOUT_VERSION = 3;
 export const SAB_MAGIC = 0x4f485753;
 
 export const SAB_HEADER_BYTES = 64;
@@ -107,6 +114,17 @@ export const SAB_H_COMP_OFF = 10;
 export const SAB_H_COMP_LEN = 11;
 export const SAB_H_TELEMETRY_OFF = 12;
 export const SAB_H_TELEMETRY_LEN = 13;
+// v3: protocol-lane ring (fixed 32 B records, plan §11.1). Appended AFTER
+// display descriptors so every v1/v2 offset is bit-identical; old readers
+// see zeros here and treat the region as absent.
+export const SAB_H_PROTO_OFF = 14;
+export const SAB_H_PROTO_LEN = 15;
+
+// Protocol ring: head u32 + reserved u32, then capacity × 32 B records
+// (same footprint as telemetry records; encode via hal/protocol-frames).
+export const SAB_PROTO_CAPACITY = 256;
+export const SAB_PROTO_RECORD_B = 32;
+export const SAB_PROTO_HEAD_B = 8;
 
 export const SAB_FLAG_RUNNING = 1 << 0;
 export const SAB_FLAG_TELEMETRY_ON = 1 << 1;
@@ -163,6 +181,9 @@ export interface SabAlloc {
     boardDebugBase: number; // SAB_DEBUG_BYTES per board, 0 = absent
     numBoards: number;
     boardIds: string[];
+    // Protocol-lane ring (v3, appended last): base + byte length, 0 = absent.
+    protoBase: number;
+    protoLen: number;
 }
 
 export interface SabBoardPinMap {
@@ -223,6 +244,7 @@ export function allocateStateSab(
     componentIds: string[],
     telemetryCapacity = SAB_TELEMETRY_CAPACITY,
     boardPinMaps: SabBoardPinMap[] = [],
+    protoCapacity = SAB_PROTO_CAPACITY,
 ): SabAlloc {
     const numComponents = componentIds.length;
     const numBoards = Math.max(1, Math.min(SAB_BOARD_MAX, boardPinMaps.length || 1));
@@ -238,9 +260,12 @@ export function allocateStateSab(
     const boardSerialLen = numBoards * SAB_BOARD_SERIAL_STRIDE_B;
     const boardDebugLen = numBoards * SAB_DEBUG_BYTES;
     const serialLen = boardSerialLen; // legacy aliases point into board 0
+    // v3: protocol ring appended LAST (see below); declare here so total
+    // includes it.
+    const protoLen = SAB_PROTO_HEAD_B + Math.max(0, protoCapacity) * SAB_PROTO_RECORD_B;
     const total = SAB_HEADER_BYTES + boardTableLen + pinRegionLen + compRegionLen
         + telemetryRegionLen + serialLen + boardDebugLen
-        + SAB_DISPLAY_MAX * SAB_DISPLAY_RECORD_B;
+        + SAB_DISPLAY_MAX * SAB_DISPLAY_RECORD_B + protoLen;
     const bufferSize = Math.max(4096, Math.ceil(total / 4096) * 4096);
     const buffer = new SharedArrayBuffer(bufferSize);
     const u32 = new Uint32Array(buffer);
@@ -262,12 +287,16 @@ export function allocateStateSab(
     const boardDebugBase = boardSerialBase + boardSerialLen;
     const debugOffset = boardDebugBase; // board 0 debug (compat)
     const displayDescOffset = boardDebugBase + boardDebugLen;
+    // v3: protocol ring appended LAST — all earlier offsets unchanged.
+    const protoBase = displayDescOffset + SAB_DISPLAY_MAX * SAB_DISPLAY_RECORD_B;
     u32[SAB_H_PIN_OFF] = pinBase;
     u32[SAB_H_PIN_LEN] = pinRegionLen;
     u32[SAB_H_COMP_OFF] = compOff;
     u32[SAB_H_COMP_LEN] = compRegionLen;
     u32[SAB_H_TELEMETRY_OFF] = teleOff;
     u32[SAB_H_TELEMETRY_LEN] = telemetryRegionLen;
+    u32[SAB_H_PROTO_OFF] = protoBase;
+    u32[SAB_H_PROTO_LEN] = protoLen;
     // Board table: hash boardId, record bit/analog bases per board.
     let bitCursor = 0;
     let analogCursor = 0;
@@ -292,6 +321,7 @@ export function allocateStateSab(
         boardTableOffset, pinBitWords, analogBase,
         serialRxOffset, serialTxOffset, debugOffset, displayDescOffset,
         boardSerialBase, boardDebugBase, numBoards, boardIds,
+        protoBase, protoLen,
     };
 }
 
@@ -651,6 +681,45 @@ export class SabStateWriter {
         else flags &= ~SAB_FLAG_TELEMETRY_ON;
         Atomics.store(this.u32, SAB_H_FLAGS, flags);
         Atomics.add(this.u32, SAB_H_FRAME_SEQ, 1);
+    }
+}
+
+/**
+ * Protocol-lane ring writer (worker side, plan §11.1, v3).
+ * Fixed 32 B records (encode with hal/protocol-frames); head-only lossy
+ * ring like telemetry: overwrite-oldest, reader accounts skips from head.
+ * Region base/len come from the header (words 14/15); base 0 = absent
+ * (v1/v2 buffers) and every push is a silent no-op.
+ */
+export class SabProtocolWriter {
+    private base: number;
+    private capacity: number;
+    constructor(readonly buffer: SharedArrayBuffer, base = 0) {
+        let resolvedBase = Number(base) || 0;
+        let len = 0;
+        try {
+            const u32 = new Uint32Array(buffer);
+            if (!resolvedBase) resolvedBase = u32[SAB_H_PROTO_OFF] || 0;
+            len = u32[SAB_H_PROTO_LEN] || 0;
+        } catch { resolvedBase = 0; len = 0; }
+        this.base = resolvedBase;
+        this.capacity = len > SAB_PROTO_HEAD_B ? Math.floor((len - SAB_PROTO_HEAD_B) / SAB_PROTO_RECORD_B) : 0;
+    }
+
+    /** Append one 32 B record; false when the region is absent. */
+    push(record: Uint8Array): boolean {
+        if (!this.base || this.capacity <= 0) return false;
+        try {
+            const bytes = record instanceof Uint8Array ? record : new Uint8Array(0);
+            if (bytes.length < SAB_PROTO_RECORD_B) return false;
+            const u32 = new Uint32Array(this.buffer, this.base, 2);
+            const head = Atomics.load(u32, 0);
+            const idx = ((head % this.capacity) + this.capacity) % this.capacity;
+            new Uint8Array(this.buffer, this.base + SAB_PROTO_HEAD_B + idx * SAB_PROTO_RECORD_B, SAB_PROTO_RECORD_B)
+                .set(bytes.subarray(0, SAB_PROTO_RECORD_B));
+            Atomics.store(u32, 0, head + 1);
+            return true;
+        } catch { return false; }
     }
 }
 

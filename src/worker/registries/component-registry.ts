@@ -1322,6 +1322,29 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
 /** River telemetry schema version (plan §5.5): additive evolution only. */
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
+/**
+ * Validate a collected telemetry payload against the schema contract
+ * (plan §5.5, Phase 3 seed): versioned when present, never silently
+ * misshapen. Disabled telemetry (`{}`) is valid by design.
+ */
+export function validateTelemetrySchema(payload: any): { ok: boolean; reasons: string[] } {
+    const reasons: string[] = [];
+    if (payload === null || payload === undefined || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { ok: false, reasons: ['telemetry payload must be a plain object'] };
+    }
+    if (Object.keys(payload).length === 0) return { ok: true, reasons: [] }; // disabled telemetry
+    if (!('schemaVersion' in payload)) {
+        reasons.push('missing schemaVersion (collect via collectComponentTelemetry)');
+    } else if ((payload as any).schemaVersion !== TELEMETRY_SCHEMA_VERSION) {
+        reasons.push(`unsupported schemaVersion ${(payload as any).schemaVersion}, want ${TELEMETRY_SCHEMA_VERSION}`);
+    }
+    const data = (payload as any).telemetryData;
+    if (data !== undefined && (typeof data !== 'object' || data === null || Array.isArray(data))) {
+        reasons.push('telemetryData must be an object when present');
+    }
+    return { ok: reasons.length === 0, reasons };
+}
+
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
         const targetFreq = (cpu as any)?.clock?.frequency || (cpu as any)?.freq || 16_000_000;

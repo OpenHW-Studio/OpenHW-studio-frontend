@@ -119,6 +119,10 @@ export class SabTransport implements SimTransport {
     }
   }
 
+  publishFrame(simTimeMs: number, telemetryOn: boolean): void {
+    try { this.opts.stateWriter?.publishFrame(simTimeMs, telemetryOn); } catch { /* ignore */ }
+  }
+
   emitEvent(event: RiverEnvelope): void {
     const w = this.opts.evtWriter;
     if (!w) return;
@@ -180,6 +184,10 @@ export class MessageTransport implements SimTransport {
 
   publishTelemetryRecords(records: Array<{ slot: number; code: number; v0: number; v1: number; cycles: number }>): void {
     this.emit('telemetry', '', { records: [...(records || [])] });
+  }
+
+  publishFrame(simTimeMs: number, telemetryOn: boolean): void {
+    this.emit('state', '', { frame: true, simTimeMs, telemetryOn });
   }
 
   emitEvent(event: RiverEnvelope): void {

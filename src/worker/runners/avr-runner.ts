@@ -3,8 +3,12 @@ import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config,
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
-import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, sabKindForType } from '../sab/layout.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, SabProtocolWriter, sabKindForType } from '../sab/layout.ts';
 import { DebugService } from '../debug/service.ts';
+import { SabTransport } from '../hal/transport.ts';
+import type { SimTransport } from '../hal/types.ts';
+import { encodeProtocolRecord, PROTO_BUS_SPI, i2cRecord } from '../hal/protocol-frames.ts';
+import { matchBoardFamily } from '../boards-registry.ts';
 import { 
     BoardRunner, 
     AVRRunnerOptions, 
@@ -101,6 +105,14 @@ export class AVRRunner {
     private sabSerialRx: SabSerialRing | null = null;
     private sabDisplayWriter: SabDisplayWriter | null = null;
     private sabPinIndex: Map<string, number> = new Map();
+    // Transport facade (plan §5.4): publish paths migrate here; physics
+    // (netlist, repropagate, peripheral adapters) stays AVR-owned.
+    private transport: SimTransport | null = null;
+    // Protocol-lane writer (plan §11.1): I2C/SPI transaction summaries.
+    // Null when the region is absent (pre-v3 buffers); every push guarded.
+    private sabProtoWriter: SabProtocolWriter | null = null;
+    // Board type for registry lookups (capabilities/limits/HAL surface).
+    private boardType = '';
     // Command/event rings + debug service (§10.4/§10.7). All optional:
     // absent buffers → postMessage control path unchanged (fallback).
     private cmdReader: SabCommandReader | null = null;
@@ -123,6 +135,7 @@ export class AVRRunner {
         this.circuitDirty = true;
         const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'openhw-arduino-uno_0';
+        this.boardType = String((options as any)?.boardType || (componentsDef || []).find((c: any) => String(c?.id) === String(this.boardId))?.type || '');
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         const isMega = this.boardId.toLowerCase().includes('mega');
@@ -167,9 +180,9 @@ export class AVRRunner {
         this.usart.onByteTransmit = (value) => {
             const char = String.fromCharCode(value);
             this.pulseBoardLed('1');
-            // Serial TX ring (§10.4): bytes ride the ring when bound; the
-            // postMessage path below stays authoritative (overflow/strings).
-            try { (this as any).sabSerialTx?.pushByte(value & 0xff); } catch { /* ignore */ }
+            // Serial TX via transport (SAB ring when bound; postMessage path
+            // below stays authoritative on overflow/strings).
+            try { (this.transport as SimTransport | null)?.publishSerial(this.boardId, [value & 0xff], 'uart0'); } catch { /* ignore */ }
             if (this.onByteTransmitCb) {
                 this.onByteTransmitCb({ boardId: this.boardId, value, char, source: 'uart0' });
             } else {
@@ -251,6 +264,25 @@ export class AVRRunner {
             if (this.sab && (this.cmdReader || this.evtWriter)) {
                 this.debugService = new DebugService(this.sab as SharedArrayBuffer, { ...this.sabOffsets }, this.evtWriter);
             }
+            // Transport facade + protocol writer (plan §5.4/§11.1). Built
+            // AFTER all rings attach so it binds the final handles; same
+            // writers, same order — behavior identical to direct calls.
+            try {
+                if (this.sab) {
+                    (this as any).sabProtoWriter = new SabProtocolWriter(this.sab as SharedArrayBuffer);
+                    (this as any).transport = new SabTransport({
+                        buffer: this.sab as SharedArrayBuffer,
+                        pinIndex: (this as any).sabPinIndex,
+                        pinWriter: (this as any).sabPinWriter || undefined,
+                        stateWriter: (this as any).sabWriter || undefined,
+                        serialTx: (this as any).sabSerialTx || undefined,
+                        evtWriter: this.evtWriter || undefined,
+                        cmdReader: this.cmdReader || undefined,
+                        railVoltage: 5.0,
+                        clock: () => performance.now(),
+                    });
+                }
+            } catch { (this as any).transport = null; (this as any).sabProtoWriter = null; }
         } catch { this.cmdReader = null; this.evtWriter = null; this.debugService = null; }
 
         // Instantiate components
@@ -313,6 +345,9 @@ export class AVRRunner {
         const runnerOnStateUpdate = this.onStateUpdate.bind(this);
         const runnerBoardId = this.boardId;
         const runnerGetSimulatedTimeMs = this.getSimulatedTimeMs.bind(this);
+        // Protocol-lane writer handle (null when region absent; every push
+        // below is guarded so pre-v3 buffers behave exactly as before).
+        const runnerProtoWriter = (this as any).sabProtoWriter as SabProtocolWriter | null;
 
         // Setup I2C Hooks bridging AVRTWI events to BaseComponents
         class TWIAdapter {
@@ -320,7 +355,7 @@ export class AVRRunner {
             private activeSlave: BaseComponent | null = null;
             private currentBuffer: number[] = [];
 
-            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
+            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>, private simCycles: () => number) { }
 
             start(repeated: boolean) {
                 this.currentBuffer = [];
@@ -350,6 +385,14 @@ export class AVRRunner {
                         isWrite,
                         timestamp: runnerGetSimulatedTimeMs()
                     });
+                    // Protocol-lane record (plan §11.1): same transaction as
+                    // a fixed 32 B summary; silent no-op when region absent.
+                    try {
+                        runnerProtoWriter?.push(i2cRecord(
+                            address, data.length, !isWrite,
+                            this.activeSlave !== null, this.simCycles(),
+                        ));
+                    } catch { /* never break sim */ }
                 }
 
                 this.activeSlave = null;
@@ -402,7 +445,7 @@ export class AVRRunner {
             }
         }
 
-        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances, () => this.cpu?.cycles ?? 0);
 
         let spiTransactionBytes: number[] = [];
         let lastSpiTime = 0;
@@ -411,12 +454,23 @@ export class AVRRunner {
         this.spi.onByte = (value: number) => {
             const nowMs = this.getSimulatedTimeMs();
             if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                const frame = [...spiTransactionBytes];
                 this.onStateUpdate({
                     type: 'protocol:spi',
                     boardId: this.boardId,
-                    data: [...spiTransactionBytes],
+                    data: frame,
                     timestamp: lastSpiTime
                 });
+                // Protocol-lane record (plan §11.1): command/first byte,
+                // length, last byte; guarded no-op when region absent.
+                try {
+                    runnerProtoWriter?.push(encodeProtocolRecord({
+                        bus: PROTO_BUS_SPI, flags: 0,
+                        address: frame[0] ?? 0, v0: frame.length,
+                        v1: frame.length ? frame[frame.length - 1] : 0,
+                        cycles: this.cpu?.cycles ?? 0, wallMs: Date.now(),
+                    }));
+                } catch { /* never break sim */ }
                 spiTransactionBytes = [];
             }
             lastSpiTime = nowMs;
@@ -514,6 +568,14 @@ export class AVRRunner {
                     }
                 };
             }
+            // Runner-agnostic board-drive service (plan §5.3): same effect
+            // as the closure above, routed through the public driveInput
+            // path so components stop depending on AVR-only handles.
+            if (!(inst as any)._driveBoardPin) {
+                (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
+                    try { this.driveInput(boardPin, isHigh); } catch { /* ignore */ }
+                };
+            }
             // Expose runner ref so DHT22 can resolve board pin from netlist
             if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
                 (inst as any)._simCpu._avrRunner = this;
@@ -529,6 +591,73 @@ export class AVRRunner {
     getSimulatedTimeMs() {
         if (!this.cpu) return 0;
         return Math.floor(((this.cpu.cycles - this.cpuCyclesAtStart) / 16_000_000) * 1000);
+    }
+
+    // ── Board HAL surface (plan §5.1) ──────────────────────────────────
+    // Read-only capability + sampling surface over existing AVR state.
+    // driveInput reuses the component input path (port set + repropagate),
+    // the same mechanism DHT22/OneWire already use via _setAvrPinDirect.
+    // Callers must check sampleOutput().driving first and never drive a
+    // firmware-driven pin (output wins — same rule as every other runner).
+    railVoltage(): number {
+        return 5.0;
+    }
+
+    boardPins(): string[] {
+        return [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+    }
+
+    pinAliases(pin: string): string[] {
+        const raw = String(pin || '');
+        const out = new Set<string>([raw]);
+        if (/^D\d+$/i.test(raw)) out.add(raw.substring(1));
+        else if (/^\d+$/.test(raw)) out.add(`D${raw}`);
+        return Array.from(out);
+    }
+
+    boardCapabilities(): string[] {
+        return matchBoardFamily(this.boardType || this.boardId).capabilities;
+    }
+
+    boardLimits(): Array<{ code: string; detail: string }> {
+        return matchBoardFamily(this.boardType || this.boardId).limits;
+    }
+
+    sampleOutput(pin: string): { level: number; driving: boolean } | null {
+        const clean = String(pin || '').replace(/^D/i, '');
+        let port: AVRIOPort | null = null;
+        let bit = -1;
+        const num = parseInt(clean, 10);
+        if (!isNaN(num)) {
+            if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
+            else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
+        } else if (clean.startsWith('A')) {
+            const parsed = parseInt(clean.slice(1), 10);
+            if (!isNaN(parsed)) { port = this.portC; bit = parsed; }
+        }
+        if (!port || bit < 0 || !this.cpu) return null;
+        let state: PinState;
+        try { state = port.pinState(bit); } catch { return null; }
+        const driving = state === PinState.High || state === PinState.Low;
+        const level = driving
+            ? (state === PinState.High ? 1 : 0)
+            : (state === PinState.InputPullUp ? 1 : 0);
+        return { level, driving };
+    }
+
+    driveInput(pin: string, high: boolean): void {
+        const cleanPin = String(pin || '').replace(/^D/i, '');
+        const num = parseInt(cleanPin, 10);
+        try {
+            if (!isNaN(num)) {
+                if (num >= 8 && num <= 13) this.portB?.setPin(num - 8, high);
+                else if (num >= 0 && num <= 7) this.portD?.setPin(num, high);
+            } else if (cleanPin.startsWith('A')) {
+                const bit = parseInt(cleanPin.slice(1), 10);
+                if (!isNaN(bit)) this.portC?.setPin(bit, high);
+            }
+            if (typeof this.repropagateAllVoltages === 'function') this.repropagateAllVoltages();
+        } catch { /* input inject never breaks sim */ }
     }
 
     setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
@@ -596,7 +725,7 @@ export class AVRRunner {
         const byte = value & 0xff;
         const char = String.fromCharCode(byte);
         this.pulseBoardLed('1');
-        try { (this as any).sabSerialTx?.pushByte(byte); } catch { /* ignore */ }
+        try { (this.transport as SimTransport | null)?.publishSerial(this.boardId, [byte], 'softserial'); } catch { /* ignore */ }
         if (this.onByteTransmitCb) {
             this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'softserial' });
         } else {
@@ -1770,6 +1899,11 @@ export class AVRRunner {
                     if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
                         (inst as any)._simCpu._avrRunner = this;
                     }
+                    if (!(inst as any)._driveBoardPin) {
+                        (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
+                            try { this.driveInput(boardPin, isHigh); } catch { /* ignore */ }
+                        };
+                    }
                     inst.update(this.cpu!.cycles, this.currentWires, this.instances as any);
                     if (inst.stateChanged) {
                         anyStateChanged = true;
@@ -1916,16 +2050,26 @@ export class AVRRunner {
             // Respect the component's sync policy to avoid overloading the UI
             if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
 
-            // SAB publish (§12.3 T5): numeric slot write, zero postMessage bytes.
-            if (this.sabWriter && inst.sabSlot >= 0) {
+            // SAB publish (§12.3 T5) via transport: numeric slot writes, zero
+            // postMessage bytes. Same values/order as the direct calls.
+            const slotFrames: Array<{ id: string; slot: number; version: number; kind: number; f: number[]; i: number[] }> = [];
+            const teleRecords: Array<{ slot: number; code: number; v0: number; v1: number; cycles: number }> = [];
+            if ((this.transport as SimTransport | null) && inst.sabSlot >= 0) {
                 try {
                     const ui = typeof (inst as any).uiState === 'function' ? (inst as any).uiState() : null;
                     const f = ui?.f ? Object.values(ui.f).map(Number) : [];
                     const i = ui?.i ? Object.values(ui.i).map(Number) : [];
-                    this.sabWriter.writeSlot(inst.sabSlot, (inst as any).stateVersion || 0, sabKindForType(inst.type), 0, f as number[], i as number[]);
+                    slotFrames.push({
+                        id: inst.id, slot: inst.sabSlot,
+                        version: (inst as any).stateVersion || 0,
+                        kind: sabKindForType(inst.type), f, i,
+                    });
                     dirtySlots.push(inst.sabSlot);
                     if ((inst as any).telemetryEnabled && (f.length > 0 || i.length > 0)) {
-                        this.sabWriter.pushTelemetry(inst.sabSlot, sabKindForType(inst.type), Number(f[0] || 0), Number(i[0] || 0), cyclesNow);
+                        teleRecords.push({
+                            slot: inst.sabSlot, code: sabKindForType(inst.type),
+                            v0: Number(f[0] || 0), v1: Number(i[0] || 0), cycles: cyclesNow,
+                        });
                         anyTelemetry = true;
                     } else if ((inst as any).telemetryEnabled) {
                         anyTelemetry = true;
@@ -1934,6 +2078,10 @@ export class AVRRunner {
             } else if ((inst as any).telemetryEnabled) {
                 anyTelemetry = true;
             }
+            try {
+                (this.transport as SimTransport | null)?.publishComponentSlots(slotFrames);
+                (this.transport as SimTransport | null)?.publishTelemetryRecords(teleRecords);
+            } catch { /* SAB write never breaks sim */ }
 
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
@@ -1955,9 +2103,7 @@ export class AVRRunner {
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
         msg.simTimeMs = this.getSimulatedTimeMs();
-        if (this.sabWriter) {
-            try { this.sabWriter.publishFrame(msg.simTimeMs, anyTelemetry); } catch { /* never break sim */ }
-        }
+        try { (this.transport as SimTransport | null)?.publishFrame(msg.simTimeMs, anyTelemetry); } catch { /* never break sim */ }
 
         this.lastStateEmitCycle = this.cpu.cycles;
         this.lastStateEmitTime = now;
@@ -2018,17 +2164,11 @@ export class AVRRunner {
     private propagateBoardPin(pinId: string, isHigh: boolean) {
         const voltage = isHigh ? 5.0 : 0.0;
         const endpoints = this.getProtocolEndpointsForArduinoPin(pinId);
-        // Pin bitfield publish (§10.4): board pin order fixed at START.
-        // Aliases (D13/13) share one index when the map lists either form.
+        // Pin bitfield publish via transport (§10.4): board pin order fixed
+        // at START. Aliases (D13/13) share one index when the map lists
+        // either form.
         try {
-            const idx = (this as any).sabPinIndex as Map<string, number> | undefined;
-            const bit = idx?.get(String(pinId))
-                ?? idx?.get(String(pinId).replace(/^D/i, ""))
-                ?? idx?.get(`D${pinId}`);
-            if (typeof bit === "number") {
-                (this as any).sabPinWriter?.writeDigital(bit, !!isHigh);
-                (this as any).sabPinWriter?.writeAnalog(bit, isHigh ? 5.0 : 0.0);
-            }
+            (this.transport as SimTransport | null)?.publishPins(this.boardId, { [pinId]: !!isHigh });
         } catch { /* pin publish never breaks propagation */ }
 
         const boardInst = this.instances.get(this.boardId);

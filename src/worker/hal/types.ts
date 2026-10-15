@@ -82,6 +82,8 @@ export interface SimTransport {
     publishSerial(boardId: string, bytes: number[], source: string): void;
     publishComponentSlots(frames: Array<{ id: string; slot: number; version: number; kind: number; f: number[]; i: number[] }>): void;
     publishTelemetryRecords(records: Array<{ slot: number; code: number; v0: number; v1: number; cycles: number }>): void;
+    /** Bump the frame sequence after a flush (SAB frameSeq / message marker). */
+    publishFrame(simTimeMs: number, telemetryOn: boolean): void;
     emitEvent(event: RiverEnvelope): void;
     drainCommands(max: number): RiverEnvelope[];
 }

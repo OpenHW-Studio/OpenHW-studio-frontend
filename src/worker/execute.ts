@@ -80,7 +80,7 @@ export async function createRunnerForBoard(
         return new RetroRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
     }
     const { AVRRunner } = await import('./runners/avr-runner.ts');
-    return new AVRRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
+    return new AVRRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
 }
 
 // 100% backward compatibility re-exports

@@ -517,6 +517,14 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 const slot = this.sabOffsets[cDef.id];
                 inst.sabSlot = Number.isFinite(Number(slot)) ? Number(slot) : -1;
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                // Runner-agnostic board-drive service (plan §5.3): component
+                // → engine input injection without board-type branches.
+                // Engines without input injection simply ignore the call.
+                if (!(inst as any)._driveBoardPin) {
+                    (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
+                        try { this.engine.setGpioInput?.(String(boardPin), !!isHigh); } catch { /* ignore */ }
+                    };
+                }
                 this.instances.set(cDef.id, inst);
             } catch { /* skip bad component */ }
         }

@@ -9,6 +9,7 @@ import { getComponentCapabilities } from '../../../src/worker/registries/compone
 import {
   allocateStateSab,
   boardSerialOffsets,
+  SAB_LAYOUT_VERSION,
   SabStateWriter,
   SabSerialRing,
 } from '../../../src/worker/sab/layout.ts';
@@ -83,10 +84,10 @@ describe('universal HAL registry and river accounting', () => {
       telemetryMax: 10,
       serialRings: [],
     });
-    assert.equal(river.header.version, 2);
+    assert.equal(river.header.version, SAB_LAYOUT_VERSION);
     assert.equal(river.pins.b1.bits.length, 1);
     assert.deepEqual(river.frames, []);
     assert.equal(river.telemetry.skipped, 0);
-    assert.deepEqual(river.skipped, { telemetry: 0, serial: 0 });
+    assert.deepEqual(river.skipped, { telemetry: 0, serial: 0, protocol: 0 });
   });
 });

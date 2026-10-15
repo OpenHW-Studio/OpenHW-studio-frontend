@@ -53,14 +53,14 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     limits: NO_LIMITS,
   },
   {
-    family: 'arduino_mega',
-    match: ['arduino-mega', 'mega'],
+    family: 'attiny85',
+    match: ['attiny85', 'attiny'],
     railVoltage: 5.0,
     engine: 'avr8js',
     runner: 'runners/avr-runner.ts',
-    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'softserial', 'i2c-target', 'spi-target', 'pwm', 'onewire'],
+    capabilities: ['digital-gpio', 'analog-adc'],
     firmware: ['arduino-sketch'],
-    limits: NO_LIMITS,
+    limits: [{ code: 'attiny-path-unverified', detail: 'Routes to AVRRunner by default; no live attiny85 verification yet.' }],
   },
   {
     family: 'arduino_mega',

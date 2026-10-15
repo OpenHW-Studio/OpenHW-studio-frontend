@@ -37,7 +37,7 @@
 // regions + new alloc fields. Accept v1 and v2 buffers.
 const SAB_MAGIC = 0x4f485753;
 const SAB_LAYOUT_VERSION_MIN = 1;
-const SAB_LAYOUT_VERSION_MAX = 2;
+const SAB_LAYOUT_VERSION_MAX = 3;
 const SAB_HEADER_BYTES = 64;
 const SAB_SLOT_STRIDE_B = 64;
 const SAB_H_MAGIC = 0;
@@ -250,6 +250,14 @@ function decodeSlotState(kind, f, i) {
 const SAB_TELEMETRY_RECORD_B = 32;
 const SAB_TELEMETRY_CAPACITY = 1024;
 const SAB_H_TELEMETRY_OFF = 12;
+
+// v3 protocol-lane ring (fixed 32 B records, see worker/sab/layout.ts +
+// worker/hal/protocol-frames.ts). Appended after display descriptors;
+// words are zero on v1/v2 allocs → region reads as absent.
+const SAB_H_PROTO_OFF = 14;
+const SAB_H_PROTO_LEN = 15;
+const SAB_PROTO_RECORD_B = 32;
+const SAB_PROTO_HEAD_B = 8;
 
 export function readTelemetryRing(buffer, sinceHead = 0, maxRecords = 64) {
   if (!isSabUsable(buffer)) return null;
@@ -466,6 +474,46 @@ export function createSabCursor() {
 }
 
 /**
+ * Read the protocol-lane ring (v3). Returns up to `maxRecords` newest
+ * records as decoded {bus, flags, address, v0, v1, cycles, wallMs} WITHOUT
+ * importing the TS codec (plain DataView read; field order mirrors
+ * worker/hal/protocol-frames.ts). Returns [] when the region is absent
+ * (v1/v2 buffers), null when the buffer itself is unusable.
+ */
+export function readProtocolRing(buffer, sinceHead = 0, maxRecords = 64) {
+  if (!isSabUsable(buffer)) return null;
+  try {
+    const u32 = new Uint32Array(buffer);
+    const protoBase = u32[SAB_H_PROTO_OFF] || 0;
+    const protoLen = u32[SAB_H_PROTO_LEN] || 0;
+    if (!protoBase || protoLen <= SAB_PROTO_HEAD_B) return [];
+    const capacity = Math.floor((protoLen - SAB_PROTO_HEAD_B) / SAB_PROTO_RECORD_B);
+    if (capacity <= 0) return [];
+    const head = Atomics.load(new Uint32Array(buffer, protoBase, 1), 0);
+    const start = Math.max(sinceHead, head - Math.min(maxRecords, capacity));
+    const out = [];
+    for (let h = start; h < head; h++) {
+      const idx = ((h % capacity) + capacity) % capacity;
+      const base = protoBase + SAB_PROTO_HEAD_B + idx * SAB_PROTO_RECORD_B;
+      const u16 = new Uint16Array(buffer, base, 2);
+      const addr = new Uint32Array(buffer, base + 4, 1)[0];
+      const f32 = new Float32Array(buffer, base + 8, 2);
+      const c32 = new Uint32Array(buffer, base + 16, 2);
+      const wall = new Uint32Array(buffer, base + 24, 1)[0];
+      out.push({
+        bus: u16[0], flags: u16[1], address: addr >>> 0,
+        v0: f32[0], v1: f32[1],
+        cycles: c32[0] + c32[1] * 4294967296, wallMs: wall >>> 0,
+      });
+    }
+    const skipped = Math.max(0, (head - sinceHead) - out.length);
+    return { records: out, head, skipped };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Apply polled SAB frames into the live-OOP mirror (same shape as the
  * postMessage path: liveOopStatesRef.current[compId] = state object).
  * Returns the list of changed compIds (caller notifies listeners).
@@ -522,6 +570,8 @@ export function readRiver(buffer, args = {}) {
     debugOffset = 0,
     displayDescOffset = 0,
     displayMax = SAB_DISPLAY_MAX,
+    protocolSinceHead = 0,
+    protocolMax = 64,
   } = args || {};
   try {
     const header = getSabDiag(buffer);
@@ -536,6 +586,7 @@ export function readRiver(buffer, args = {}) {
       serialSkipped += res.skipped;
     }
     const telemetry = readTelemetryRing(buffer, telemetrySinceHead, telemetryMax);
+    const protocol = readProtocolRing(buffer, protocolSinceHead, protocolMax);
     const debug = debugOffset > 0 ? readDebugRegion(buffer, debugOffset) : null;
     const displays = displayDescOffset > 0 ? readDisplayDescriptors(buffer, displayDescOffset, displayMax) : [];
     return {
@@ -544,11 +595,13 @@ export function readRiver(buffer, args = {}) {
       frames,
       serial,
       telemetry,
+      protocol,
       debug,
       displays,
       skipped: {
         telemetry: (telemetry && typeof telemetry === 'object' ? telemetry.skipped : 0) || 0,
         serial: serialSkipped,
+        protocol: (protocol && typeof protocol === 'object' ? protocol.skipped : 0) || 0,
       },
     };
   } catch {
