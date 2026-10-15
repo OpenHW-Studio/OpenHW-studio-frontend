@@ -136,7 +136,12 @@ async function runBarrierLoop(): Promise<void> {
             });
             if (next !== last) {
                 last = next;
-                await barrierYield();
+                // Hot path: NO yield here. The parent only posts the next
+                // sequence after collecting this ACK, so no new work can be
+                // pending yet — yielding would burn ~1-4ms of timer tax per
+                // quantum for nothing (observed: halved pace). The loop
+                // re-polls, finds no advance, and yields after the wait
+                // below, so control messages still land within ~one quantum.
                 continue;
             }
         } catch { /* poll never breaks the loop */ }

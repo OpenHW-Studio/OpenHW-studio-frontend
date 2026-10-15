@@ -777,11 +777,39 @@ function postRunnerState(stateObj: any, boardId: string) {
     const msg: any = { type: 'state', boardId: resolvedBoardId };
 
     if (stateObj.pins) msg.pins = stateObj.pins;
-    if (stateObj.components) msg.components = resolvedComponents;
     if (stateObj.simTimeMs) msg.simTimeMs = stateObj.simTimeMs;
     if ((stateObj as any).dirtySlots) msg.dirtySlots = (stateObj as any).dirtySlots;
     if ((stateObj as any)._emitSeq !== undefined) msg._emitSeq = (stateObj as any)._emitSeq;
     if ((stateObj as any)._emitTime !== undefined) msg._emitTime = (stateObj as any)._emitTime;
+    // Small channels pass through untouched (pins drive transition counts +
+    // plotter; analog/perf/neopixels/wifi are tiny). Only the components
+    // array shrinks — see below.
+    if ((stateObj as any).analog !== undefined) msg.analog = (stateObj as any).analog;
+    if ((stateObj as any).perf !== undefined) msg.perf = (stateObj as any).perf;
+    if ((stateObj as any).neopixels !== undefined) msg.neopixels = (stateObj as any).neopixels;
+    if ((stateObj as any).wifi !== undefined) msg.wifi = (stateObj as any).wifi;
+
+    // Dirty-notify + SAB-mirror (same shape as the single-board fast path):
+    // when the runner publishes slots into the shared SAB, the UI rAF
+    // reader already mirrors them into liveOop — so the components array
+    // shrinks to rich-selected detail only, and unselected traffic stays on
+    // SAB with zero postMessage bytes. Trace recording keeps full payloads.
+    const canShrinkMulti = !!(stateObj as any)?.sabFastPath && !isRecordingTrace;
+    if (canShrinkMulti) {
+        msg.sabWakeup = true;
+        msg.seq = (stateObj as any)._emitSeq ?? 0;
+        try {
+            const watched = activeTelemetryWatchedParamsMap || {};
+            const ids = Object.keys(watched);
+            if (Array.isArray(resolvedComponents) && ids.length > 0) {
+                const set = new Set(ids.map(String));
+                const rich = resolvedComponents.filter((c: any) => c && set.has(String(c.id)));
+                if (rich.length > 0) msg.components = rich;
+            }
+        } catch { /* shrink stays shrink on any failure */ }
+    } else if (stateObj.components) {
+        msg.components = resolvedComponents;
+    }
 
     if (isRecordingTrace) {
         handleRecorderState(msg, resolvedBoardId);
