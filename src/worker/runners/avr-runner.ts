@@ -294,6 +294,12 @@ export class AVRRunner {
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
+            // TEMP-DIAG sd-class (removed after isolation).
+            try {
+                if (String(cDef.type || '').includes('sd-card')) {
+                    console.warn(`[SD-DIAG] instantiate ${cDef.id} LogicClass=${(LogicClass as any)?.name} src=${((LogicClass as any)?.toString?.() || '').slice(0, 80)}`);
+                }
+            } catch { /* ignore */ }
             if (LogicClass) {
                 // Pins: manifest-of-record is the emulator manifest.json; the
                 // COMPONENT_PINS table is a stale fallback only (drift audit:
@@ -987,6 +993,25 @@ export class AVRRunner {
 
                 const [compId, compPin] = node.split(':');
                 const isMainBoard = compId === this.boardId || compId === 'arduino' || compId === 'uno' || compId === 'board';
+                // Alias-safe instance pin resolution (plan §5.3): the net
+                // layer normalizes power/numbering aliases (VCC→5V,
+                // GND_n→GND, D13→13), but component pin stores are keyed by
+                // manifest names. Writing the normalized label creates ghost
+                // pins (e.g. sd1:5V) while the real pin (sd1:VCC) stays at
+                // 0V — every power-gated model (SD, displays) then reads
+                // dead rails. Resolve to the real pin sharing this node.
+                const resolveInstPin = (inst: any, want: string): string => {
+                    try {
+                        if (!inst || !inst.pins || inst.pins[want] !== undefined) return want;
+                        for (const pid of Object.keys(inst.pins)) {
+                            try {
+                                const norm = normalizePin(`x:${pid}`).split(':')[1];
+                                if (norm === want) return pid;
+                            } catch { /* keep scanning */ }
+                        }
+                    } catch { /* fall through */ }
+                    return want;
+                };
 
                 // Do not allow passive back-propagation to overwrite constant board power reference pins (GND, 5V, 3V3, VIN)
                 if (isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
@@ -1038,8 +1063,9 @@ export class AVRRunner {
                     if (!isPassive) {
                         const railVoltage = lowImpRails.get(node)!;
                         if (railInst) {
-                            if (!railInst.pins[compPin]) railInst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                            railInst.setPinVoltage(compPin, railVoltage);
+                            const realPin = resolveInstPin(railInst, compPin);
+                            if (!railInst.pins[realPin]) railInst.pins[realPin] = { voltage: 0, mode: 'INPUT' };
+                            railInst.setPinVoltage(realPin, railVoltage);
                         }
                         return;
                     }
@@ -1064,8 +1090,9 @@ export class AVRRunner {
                     inst = this.instances.get(this.boardId);
                 }
                 if (inst) {
-                    if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                    inst.setPinVoltage(compPin, v);
+                    const realPin = resolveInstPin(inst, compPin);
+                    if (!inst.pins[realPin]) inst.pins[realPin] = { voltage: 0, mode: 'INPUT' };
+                    inst.setPinVoltage(realPin, v);
                     this.circuitDirty = true;
                     if (this.cpu && compId !== customCompId) {
                         inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
