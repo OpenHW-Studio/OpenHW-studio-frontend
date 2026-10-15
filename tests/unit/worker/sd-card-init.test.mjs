@@ -46,6 +46,58 @@ describe('SD card SPI init (Arduino SD.begin compatible)', () => {
     assert.ok((ocr & 0x40000000) !== 0, `OCR must show CCS/SDHC, got 0x${ocr.toString(16)}`);
   });
 
+  test('CMD24 write is accepted (0x05) and CMD17 reads it back', () => {
+    const sd = makeSD();
+    // CMD24 block 100: R1 must be 0x00 immediately after the frame.
+    sd.onPinStateChange('CS', false, 1);
+    for (const b of [0x40 | 24, 0, 0, 0, 100, 0x01]) sd.onSPIByte(b);
+    assert.equal(sd.onSPIByte(0xff), 0x00);
+    sd.onSPIByte(0xfe);
+    const payload = Array.from({ length: 512 }, (_, i) => i & 0xff);
+    for (const b of payload) sd.onSPIByte(b);
+    sd.onSPIByte(0x00);
+    sd.onSPIByte(0x00);
+    const accepted = sd.onSPIByte(0xff);
+    sd.onPinStateChange('CS', true, 2);
+    assert.equal(accepted & 0x1f, 0x05);
+    // CMD17 block 100: R1 then data token then our payload.
+    sd.onPinStateChange('CS', false, 1);
+    for (const b of [0x40 | 17, 0, 0, 0, 100, 0x01]) sd.onSPIByte(b);
+    const head = [];
+    for (let i = 0; i < 4; i += 1) head.push(sd.onSPIByte(0xff));
+    sd.onPinStateChange('CS', true, 2);
+    assert.ok(head.includes(0xfe), `expected data token 0xFE, got ${JSON.stringify(head)}`);
+  });
+
+  test('Arduino-style mount walk reaches README through CMD17 reads', () => {
+    const sd = makeSD();
+    // Full 512-byte block read: command, R1, clocks to token, payload, CRC.
+    const readBlock = (lba) => {
+      sd.onPinStateChange('CS', false, 1);
+      for (const b of [0x40 | 17, (lba >>> 24) & 0xff, (lba >>> 16) & 0xff, (lba >>> 8) & 0xff, lba & 0xff, 0x01]) sd.onSPIByte(b);
+      const r1 = sd.onSPIByte(0xff);
+      assert.equal(r1, 0x00);
+      let tok = 0xff;
+      for (let i = 0; i < 16 && tok === 0xff; i += 1) tok = sd.onSPIByte(0xff);
+      assert.equal(tok, 0xfe);
+      const data = [];
+      for (let i = 0; i < 512; i += 1) data.push(sd.onSPIByte(0xff));
+      sd.onSPIByte(0xff);
+      sd.onSPIByte(0xff);
+      sd.onPinStateChange('CS', true, 2);
+      return data;
+    };
+    const mbr = readBlock(0);
+    assert.equal(mbr[446 + 4], 0x06, 'MBR partition must be FAT16');
+    assert.equal(mbr[446], 0x00, 'MBR boot indicator must be 0x00');
+    assert.equal(mbr[510], 0x55);
+    assert.equal(mbr[511], 0xaa);
+    const pbr = readBlock(1);
+    assert.equal(pbr[510], 0x55);
+    assert.equal(pbr[511], 0xaa);
+    assert.equal(pbr[11] | (pbr[12] << 8), 512);
+  });
+
   test('storage carries a mountable FAT16 volume with README', () => {
     const sd = makeSD();
     const mem = sd.storage;
@@ -81,5 +133,8 @@ describe('SD card SPI init (Arduino SD.begin compatible)', () => {
     assert.ok(size > 0);
     const data = (2 + 2 * fatSectors + rootSectors) * 512;
     assert.equal(String.fromCharCode(...mem.slice(data, data + 6)), 'OpenHW');
+    // Free directory entries read back as 0x00 (creation stops at index 1).
+    const e1 = (2 + 2 * fatSectors) * 512 + 32;
+    assert.equal(mem[e1], 0x00);
   });
 });
