@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listHardwarePorts } from '../../services/simulatorService.js';
+import { getToken } from '../../services/authService.js';
 import { flashArduinoWebSerial } from '../../arduino/avrbroFlasher.js';
 
 export function useHardwareFlashing({
@@ -29,6 +30,13 @@ export function useHardwareFlashing({
   }, [hardwarePortPath, hardwareAvailablePorts]);
 
   const refreshHardwarePorts = useCallback(async () => {
+    // /api/compile/ports is auth-gated (physical USB/serial). Skip silently
+    // for guests — the tool only matters when an upload is attempted, and a
+    // 401 here just spams the console (was: console error on every mount).
+    if (!getToken()) {
+      setHardwareAvailablePorts([]);
+      return;
+    }
     setIsLoadingHardwarePorts(true);
     try {
       const ports = await listHardwarePorts(showAllHardwarePorts);
@@ -37,6 +45,11 @@ export function useHardwareFlashing({
         setHardwareStatus('No serial ports detected. Enable Show all serial ports or connect device.');
       }
     } catch (err) {
+      // 401 = session expired mid-page; stay silent, the auth guard handles it.
+      if (err?.response?.status === 401 || err?.status === 401) {
+        setHardwareAvailablePorts([]);
+        return;
+      }
       console.warn('[HardwarePorts] list failed:', err);
       setHardwareStatus(`Port scan failed: ${err?.message || 'Unknown error'}`);
     } finally {

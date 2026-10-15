@@ -153,7 +153,7 @@ import {
   ComponentValuePanel,
 } from "./ComponentContextMenu";
 import { CanvasSceneLayer } from "./components/CanvasSceneLayer";
-import { DisplayRenderProvider } from "./context/DisplayRenderContext";
+import { DisplayRenderProvider, ensureDisplayRenderContext } from "./context/DisplayRenderContext";
 import { CreateComponentModal } from "./components/CreateComponentModal";
 import { ComponentInspectorPanel } from "./components/ComponentInspectorPanel";
 import { GamificationGuidePanel } from "./components/GamificationGuidePanel";
@@ -559,8 +559,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     preloadEmulator();
     ensureEmulatorRegistry()
-      .then((ns) => {
+      .then(async (ns) => {
         emulatorRef.current = ns;
+        try {
+          await ensureDisplayRenderContext();
+        } catch (_) {}
         if (!protocolAnalyzerRef.current && ns?.ProtocolAnalyzer) {
           try {
             protocolAnalyzerRef.current = new ns.ProtocolAnalyzer();

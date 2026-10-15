@@ -69,6 +69,13 @@ async function injectOneBackendComponent({ id, files, React, Babel, logPrefix })
 
   const uiComponent = resolveUiExport(exportsUI);
   if (!uiComponent) return false;
+  // Static validation only — never invoke the component (hooks/context
+  // would crash outside React's renderer). See componentRegistry.js.
+  if (typeof uiComponent !== 'function') return false;
+  const b = exportsUI.BOUNDS;
+  if (b != null && (typeof b !== 'object' || !Number.isFinite(Number(b.w)) || !Number.isFinite(Number(b.h)))) {
+    return false;
+  }
 
   // Inject into catalog
   const newCatItem = { ...manifest };

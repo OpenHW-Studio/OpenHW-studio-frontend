@@ -91,27 +91,23 @@ export function injectComponentsIntoRegistry(comps) {
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
 
-      // ── Render-probe: catch stale/broken cached transpiled code before it ──
-      // reaches React's render tree. If the component throws synchronously
-      // (e.g. "can't access property BOUNDS, _constants is null"), we skip
-      // this entry. The IDB DB_VERSION bump will evict the stale cache so the
-      // next load fetches fresh, correct transpiled code automatically.
-      try {
-        const probeEl = React.createElement(uiComponent, {
-          state: {}, attrs: {}, isRunning: false,
-        });
-        // Render-probe: call directly to catch stale transpiled reference errors
-        if (typeof uiComponent === 'function') {
-          uiComponent({ state: {}, attrs: {}, isRunning: false });
-        }
-      } catch (probeErr) {
-        // If it throws a hook error, the component successfully ran up to the hook and is likely valid.
-        if (probeErr.message && probeErr.message.includes('Invalid hook call')) {
-          // Pass the probe safely
-        } else {
-          console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
-          continue;
-        }
+      // ── Static validation (no component invocation) ──
+      // Never CALL the UI here: calling a function component directly runs
+      // hooks outside React's renderer ("Invalid hook call") and crashes on
+      // context-dependent code (display UIs read useDisplayRenderWorker
+      // → null context → TypeError). Just verify the export + BOUNDS shape.
+      if (typeof uiComponent !== 'function') {
+        console.warn(`[ComponentCache] Skipping stale cached component "${id}" (UI export is not a function). Will re-fetch on next load.`);
+        continue;
+      }
+      const boundsOk = exportsUI.BOUNDS == null || (
+        typeof exportsUI.BOUNDS === 'object' &&
+        Number.isFinite(Number(exportsUI.BOUNDS.w)) &&
+        Number.isFinite(Number(exportsUI.BOUNDS.h))
+      );
+      if (!boundsOk) {
+        console.warn(`[ComponentCache] Skipping stale cached component "${id}" (BOUNDS missing/malformed). Will re-fetch on next load.`);
+        continue;
       }
 
       registry[manifest.type] = {

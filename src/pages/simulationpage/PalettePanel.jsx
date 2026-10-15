@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
 import { isComponentHidden, getComponentWarning } from './utils/componentVisibilityConfig';
+import { PalettePreviewGuard } from './components/PalettePreviewGuard';
 
 const PalettePanel = memo(({
   isPaletteHovered,
@@ -180,10 +181,21 @@ const PalettePanel = memo(({
                         </svg>
                       </div>
                     )}
-                    {/* Component SVG — absolutely centred in upper area, no inner box */}
+                    {/* Component SVG — absolutely centred in upper area, no inner box.
+                        Guarded: one bad dynamic UI can't unmount the whole page. */}
                     {hasUI ? (
                       <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
-                        {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false, isPalette: true })}
+                        <PalettePreviewGuard
+                          key={item.type}
+                          type={item.type}
+                          fallback={
+                            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+                            </div>
+                          }
+                        >
+                          {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false, isPalette: true })}
+                        </PalettePreviewGuard>
                       </div>
                     ) : (
                       <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: 'translate(-50%, -50%)' }}>

@@ -2,7 +2,15 @@
  * DisplayRenderProvider — wraps the simulator scene with the Render Worker reference.
  *
  * The context object (DisplayRenderContext) is defined in the emulator package
- * so that display component UIs can import the hook without cross-package issues.
+ * (openhw-studio-emulator/src/display/DisplayRenderContext.ts) so that display
+ * component UIs can import the hook without cross-package issues.
+ *
+ * This file intentionally does NOT create its own context: a second
+ * createContext() would be a different object, and emulator consumers would
+ * read null even inside the provider (palette previews, canvas, etc).
+ * The shared instance is obtained through the lazy emulator loader, which is
+ * also how PalettePanel resolves registry UIs — no static emulator import,
+ * so the SimulatorPage chunk stays split.
  *
  * Usage in SimulatorPage:
  *   <DisplayRenderProvider renderWorker={renderWorkerRef.current}>
@@ -11,13 +19,32 @@
  */
 
 import React from 'react';
-// Perf (bundle-split): tiny context shim, no emulator import. Behavior matches
-// the emulator's useDisplayRenderWorker: prefer window.__displayRenderWorker,
-// fall back to context, and stay in sync via display-render-worker-changed.
-export const DisplayRenderContext = React.createContext(null);
+import { getEmulator } from '../utils/emulatorLoader.js';
+
+let _sharedContext = null;
+
+const sharedContext = () => {
+    if (!_sharedContext) {
+        throw new Error(
+            'DisplayRenderContext used before emulator load — ' +
+            'call ensureEmulatorRegistry()/getEmulator() first.'
+        );
+    }
+    return _sharedContext;
+};
+
+// Resolved once the emulator chunk loads; safe to call repeatedly.
+export const ensureDisplayRenderContext = async () => {
+    if (!_sharedContext) {
+        const emulator = await getEmulator();
+        _sharedContext = emulator.DisplayRenderContext;
+    }
+    return _sharedContext;
+};
 
 export function useDisplayRenderWorker() {
-  const contextWorker = React.useContext(DisplayRenderContext);
+  const Ctx = _sharedContext;
+  const contextWorker = Ctx ? React.useContext(Ctx) : null;
   const [worker, setWorker] = React.useState(() => {
     if (typeof window !== 'undefined') {
       return window.__displayRenderWorker || contextWorker;
@@ -35,9 +62,11 @@ export function useDisplayRenderWorker() {
 }
 
 export function DisplayRenderProvider({ renderWorker, children }) {
+    if (!_sharedContext) return <>{children}</>;
+    const Ctx = _sharedContext;
     return (
-        <DisplayRenderContext.Provider value={renderWorker}>
+        <Ctx.Provider value={renderWorker}>
             {children}
-        </DisplayRenderContext.Provider>
+        </Ctx.Provider>
     );
 }
