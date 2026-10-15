@@ -161,9 +161,11 @@ export class PicoRunner extends ArmRunnerBase {
     // arms/re-feeds, expiry performs the silicon-true reboot by setting
     // the WDT TRIGGER bit via _picoemu_mem_write32 (the engine turns it
     // into the full watchdog reboot: peripherals + cores re-init,
-    // setup() re-runs — headless: 209 triggers → 209 boots). Bare
-    // _picoemu_reset() is NOT a reboot (cores-only; the guest wedges
-    // after the first reset — headless: 198 resets, 1 boot — and the
+    // setup() re-runs — headless: 209 triggers → 209 boots). While armed
+    // the poll also pins the guest clock every tick (reboots reset clocks
+    // to the 1MHz fast-forward default; unpinned timers warp ~200x and
+    // flood serial). Bare _picoemu_reset() is NOT a reboot (cores-only;
+    // the guest wedges after the first reset — headless: 198 resets, 1 boot — and the
     // wedged engine hangs the run). Additive-only (never fires until
     // firmware sets CTRL.ENABLE). Limitation: same-value periodic feeds
     // (watchdog_update rewrites the identical LOAD) are not observable
@@ -176,12 +178,12 @@ export class PicoRunner extends ArmRunnerBase {
     private wdtExpiredOnce = false;
     // Guest clock + slow-observe state (timing/pace honesty):
     // picoClockMHz mirrors every _picoemu_set_clock call (arch default
-    // 125 M0 / 150 M33, opt-in tickMHz attr) so the sim-time divisors
-    // track the engine rate. adcLastCode skips redundant ADC register
+    // 200 M0 / 150 M33 — toolchain truth, opt-in tickMHz attr) so the
+    // sim-time divisors track the engine rate. adcLastCode skips redundant ADC register
     // writes (idempotent sets — engine state identical). slowPollTick
     // gates ADC/PWM observation to every 4th tick (human-speed signals;
     // steady-state identical, see drivePicoADC/pollPicoPWM).
-    private picoClockMHz = 125;
+    private picoClockMHz = 200;
     private tickMHzOpt = '';
     private adcLastCode: Array<number | null> = [null, null, null];
     private slowPollTick = 0;
@@ -567,6 +569,15 @@ export class PicoRunner extends ArmRunnerBase {
             // Firmware-requested reboot (TRIGGER) is engine-owned — stay out.
             if ((ctrl & 0x80000000) !== 0) { this.wdtArmed = false; this.wdtExpiredOnce = false; return; }
             if ((ctrl & 0x40000000) === 0) { this.wdtArmed = false; this.wdtExpiredOnce = false; return; }
+            // While armed, pin the guest clock EVERY tick: an engine-side
+            // reboot (our TRIGGER path runs reset_runtime_peripherals →
+            // clocks back to the 1MHz fast-forward default) would otherwise
+            // leave timers warping ~200x — delay() elapses instantly, serial
+            // floods, and the page drowns. The re-arm edge is NOT a reliable
+            // reboot detector (fast boots complete between polls), so this
+            // is unconditional while armed. Idempotent (same MHz re-set);
+            // zero behavior change when never armed.
+            if (this.wdtArmed) { try { this.applyPicoClock(); } catch { /* clock never breaks tick */ } }
             const xfactor = this.arch === PICO_ARCH_M0 ? 2 : 1;
             const periodMs = Math.max(1, (load >>> 0) / (1000 * xfactor));
             const now = performance.now();
@@ -669,7 +680,17 @@ export class PicoRunner extends ArmRunnerBase {
                     console.warn('[PicoRunner] engine unavailable (test env?) — idle.');
                     return;
                 }
-                const wasmUrl = useFork ? '/wasm/picoemu-fork.wasm.wasm' : '/wasm/picoemu.wasm.wasm';
+                const wasmUrl = useFork
+                    ? '/wasm/picoemu-fork.wasm.wasm'
+                    // Stock runs: the MATCHED npm pair (glue + its own
+                    // wasm). The untracked public/wasm/picoemu.wasm.wasm
+                    // first-party file MISBINDS with the npm glue (proven
+                    // 2026-10-14 by glue×wasm pairing matrix, bare-worker:
+                    // npm+npm DONE; npm+first-party malloc→undefined (a
+                    // void export) then reset→OOB trap — and the glue
+                    // ignores the wasmBinary bytes, streaming instead from
+                    // locateFile, so the URL alone decides the build).
+                    : '/node_modules/pico-emu/picoemu.wasm.wasm';
                 let wasmBinary: ArrayBuffer | undefined;
                 try {
                     const r = await fetch(wasmUrl);
@@ -681,8 +702,13 @@ export class PicoRunner extends ArmRunnerBase {
                         // locateFile: the glue resolves its .wasm relative to
                         // import.meta.url (vite serves the glue from
                         // /src/... or /vendor/... where no .wasm sits, and the
-                        // HTML fallback then fails wasm magic). Point it at the
-                        // real public/wasm asset. wasmBinary above wins when set.
+                        // HTML fallback then fails wasm magic). Point it at
+                        // the MATCHED wasm for the loaded glue (stock runs:
+                        // the npm package twin — see wasmUrl note above;
+                        // a mismatched build misbinds exports). wasmBinary
+                        // above wins when the glue honors it (this glue
+                        // ignores it and streams from locateFile instead —
+                        // the URL alone decides the build).
                         locateFile: (f: string) => f === 'picoemu.wasm.wasm'
                             ? wasmUrl
                             : f,
@@ -716,7 +742,7 @@ export class PicoRunner extends ArmRunnerBase {
                     self.arch = self.resolveArch(payloadToU8(firmware));
                     self.mod._picoemu_init(self.arch);
                 }
-                // Guest clock: arch default (125 M0 / 150 M33), opt-in
+                // Guest clock: arch default (200 M0 / 150 M33), opt-in
                 // tickMHz attr — the engine honors it for guest timing
                 // (timers/SysTick/PWM divide by cycles_per_us).
                 self.applyPicoClock();
@@ -953,7 +979,12 @@ export class PicoRunner extends ArmRunnerBase {
     /** Guest clock in MHz for _picoemu_set_clock. Opt-in board attr
      *  `tickMHz` (integer 1–250, mirrors the engine web-UI clock
      *  dropdown) wins; otherwise `fallback` when given, else the arch
-     *  default (125 RP2040 / 150 RP2350). Absent/invalid attr leaves
+     *  default (200 RP2040 / 150 RP2350 — toolchain truth: arduino-cli
+     *  6.x builds option-less rpipico at 200MHz and rpipico2 at 150MHz
+     *  — first `freq` menu item — and the core reconfigures the PLL to
+     *  F_CPU at boot (cores/rp2040/main.cpp:92-114), while engine
+     *  timing follows ONLY set_clock (cpu.c timing_config), so the
+     *  runner must carry the F_CPU rate). Absent/invalid attr leaves
      *  the default untouched. */
     private resolvePicoClockMHz(fallback?: number): number {
         try {
@@ -961,7 +992,7 @@ export class PicoRunner extends ArmRunnerBase {
             if (Number.isFinite(v) && v >= 1 && v <= 250) return Math.max(1, Math.floor(v));
         } catch { /* fall through to default */ }
         if (typeof fallback === 'number' && Number.isFinite(fallback)) return fallback;
-        return this.arch === PICO_ARCH_M0 ? 125 : 150;
+        return this.arch === PICO_ARCH_M0 ? 200 : 150;
     }
 
     /** Record + apply the guest clock (see resolvePicoClockMHz). The
@@ -971,12 +1002,14 @@ export class PicoRunner extends ArmRunnerBase {
      *  derives sysclk from it (src/pwm.c:182); RV32 CLINT re-latches
      *  (src/picoemu_wasm.c picoemu_set_clock). Load-bearing, not
      *  cosmetic: picoemu_init resets the clock to 1MHz (fast-forward
-     *  default), so without this call guest timers would run 125x fast.
+     *  default), so without this call guest timers would run 200x fast
+     *  on M0 (150x on M33).
      *  picoClockMHz doubles as the sim-time divisor below. */
     private applyPicoClock(fallback?: number): void {
         try {
             const mhz = this.resolvePicoClockMHz(fallback);
             this.picoClockMHz = mhz;
+            try { console.log('[PicoRunner CRUMB] applyPicoClock mhz=', mhz, 'hasSetClock=', typeof this.mod?._picoemu_set_clock); } catch {}
             try { this.mod?._picoemu_set_clock?.(mhz); } catch { /* older builds */ }
         } catch { /* clock never breaks boot */ }
     }
@@ -1070,13 +1103,13 @@ export class PicoRunner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // 1x-real-time per ARCH clock (M0 125 / M33 150 / tickMHz opt-in):
+        // 1x-real-time per ARCH clock (M0 200 / M33 150 / tickMHz opt-in):
         // same code on different silicon must advance the same virtual ms.
         // A single flat budget made M33 boards lag M0 boards (~84 vs ~109).
         return Math.floor(deltaMs * 1000 * this.resolvePicoClockMHz() * this.speed);
     }
 
-    /** Board steps per microsecond: active guest clock (125 RP2040 /
+    /** Board steps per microsecond: active guest clock (200 RP2040 /
      *  150 RP2350 / tickMHz opt-in). Same override shape as F1/F4.
      *  NOTE the simCycleCount domain counts _picoemu_step returns, which
      *  are core-0 *instructions*, not cycles (docs/PICOEMU.md:
@@ -1099,7 +1132,7 @@ export class PicoRunner extends ArmRunnerBase {
             const m = Math.floor(Number(this.picoClockMHz) || 0);
             if (m >= 1 && m <= 1000) return m;
         } catch { /* fall through */ }
-        return this.arch === PICO_ARCH_M0 ? 125 : 150;
+        return this.arch === PICO_ARCH_M0 ? 200 : 150;
     }
 
     protected maxBudgetPerTick(): number {

@@ -9,8 +9,8 @@
  * nullable; -1 on bad index/full/empty). WASM exports are the same names
  * with a `_picoemu_` prefix.
  *
- * Why a pump instead of the GPIO path: a WS2812 bit is 1.25us (~156 core
- * cycles @125MHz) and a whole multi-pixel frame fits inside ONE runner
+ * Why a pump instead of the GPIO path: a WS2812 bit is 1.25us (~250 core
+ * cycles @200MHz) and a whole multi-pixel frame fits inside ONE runner
  * tick (2.5M steps/16ms), so per-tick whole-port GPIO polling
  * (sampleGpioOut) only ever sees the settled idle level — the 800kHz PIO
  * waveform is invisible there. The cell firmware therefore runs a small

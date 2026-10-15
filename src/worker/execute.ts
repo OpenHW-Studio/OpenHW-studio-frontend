@@ -35,6 +35,11 @@ function deriveOpts(
     if (ethLive) extra.ethLive = ethLive;
     const fixedFirmware = attrStr(attrs, 'firmware', 'fixedFirmware', 'fixed-firmware');
     if (fixedFirmware) extra.fixedFirmware = fixedFirmware;
+    // Guest-clock divider (Pico tickMHz + F1/F4 clock attrs share the
+    // opt-in shape): without this the runner never sees board attrs for
+    // the clock and every divider marker runs at the arch default.
+    const tickMHz = attrStr(attrs, 'tickMHz', 'boardTickMHz', 'board-tick-mhz', 'clockMHz', 'clock-mhz');
+    if (tickMHz) extra.tickMHz = tickMHz;
     if (Object.keys(extra).length === 0) return options as any;
     return { ...(options as any), ...extra } as any;
 }
