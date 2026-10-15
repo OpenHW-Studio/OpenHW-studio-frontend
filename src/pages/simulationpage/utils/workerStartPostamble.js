@@ -36,7 +36,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
     telemetryWatchedParamsMap,
     deepSiliconDebuggingEnabled,
   } = args;
-  const { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef } = ctx;
+  const { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef, sabTelemetryHydrateRef } = ctx;
         logSerial("Simulator started in Web Worker.");
 
         const neopixelWiring = components
@@ -193,6 +193,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
     if (sabOffsetsRef) sabOffsetsRef.current = componentSabOffsets;
     if (sabCursorRef) sabCursorRef.current = null;
     if (sabPollStatsRef) sabPollStatsRef.current = { polls: 0, frames: 0, slots: 0, lastSeq: -1 };
+    if (sabTelemetryHydrateRef) sabTelemetryHydrateRef.current = false;
     if (cmdBufferRef) cmdBufferRef.current = cmdBuffer;
     if (evtBufferRef) evtBufferRef.current = evtBuffer;
     if (cmdWriterRef) cmdWriterRef.current = cmdWriter;

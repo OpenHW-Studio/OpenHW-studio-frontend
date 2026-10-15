@@ -44,6 +44,10 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
     runLagTelemetryLastLogRef,
     solverMode,
     appendConsoleEntry,
+    sabTelemetryHydrateRef,
+    sabOffsetsRef,
+    stateSabRef,
+    requestTelemetryHydrate,
   } = ctx;
           if (msg.type === "state" && msg.pins) {
             const boardIdKey = String(msg.boardId || "default");
@@ -134,7 +138,20 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
           // T5: SAB wakeup fast path — slots already polled into the live-OOP
           // mirror by the rAF reader (sabReader.js). Skip the clone-heavy
           // components fan-out; telemetry still flows via the ring/ingest.
+          // Telemetry hydrate: the FIRST wakeup after START (seq 0/1) carries
+          // no components array, so seed the mirror + telemetry cache from
+          // the SAB slots directly (else getLatestTelemetry stays empty
+          // forever on the fast path — the SAB reader only writes raw slot
+          // numerics, never formatted telemetry entries).
           if (msg.type === "state" && msg.sabWakeup) {
+            try {
+              if (ctx.sabTelemetryHydrateRef && !ctx.sabTelemetryHydrateRef.current) {
+                ctx.sabTelemetryHydrateRef.current = true;
+                if (typeof ctx.requestTelemetryHydrate === "function") {
+                  ctx.requestTelemetryHydrate();
+                }
+              }
+            } catch { /* hydrate trigger never breaks ingest */ }
             const boardIdKey = String(msg.boardId || "default");
             if (Array.isArray(msg.dirtySlots)) {
               const counts = runComponentUpdateCountsRef.current;

@@ -168,6 +168,40 @@ export function pollSabFrames(buffer, offsets, cursor) {
   return out;
 }
 
+/**
+ * Raw slot read (no dirty check, no cursor, no flag clearing).
+ * For one-shot hydrate paths (telemetry seed after START) where the rAF
+ * poller may already have consumed dirty flags. Returns ALL slots with
+ * their current version/kind/state. Never returns null — [] when unusable.
+ */
+export function readAllSlots(buffer, offsets) {
+  if (!isSabUsable(buffer) || !offsets) return [];
+  let u32;
+  try {
+    u32 = new Uint32Array(buffer);
+  } catch {
+    return [];
+  }
+  const compBase = u32[SAB_H_COMP_OFF] || SAB_HEADER_BYTES;
+  const out = [];
+  for (const id of Object.keys(offsets)) {
+    const slot = Number(offsets[id]);
+    if (!Number.isFinite(slot) || slot < 0) continue;
+    const base = compBase + slot * SAB_SLOT_STRIDE_B;
+    try {
+      const version = u32[(base + SAB_SLOT_VERSION_OFF) >>> 2] >>> 0;
+      const u16 = new Uint16Array(buffer, base + SAB_SLOT_KIND_OFF, 2);
+      const kind = u16[0];
+      const f32 = new Float32Array(buffer, base + SAB_SLOT_F_OFF, 8);
+      const i32 = new Int32Array(buffer, base + SAB_SLOT_I_OFF, 4);
+      out.push({ id, slot, version, kind, state: decodeSlotState(kind, Array.from(f32), Array.from(i32)) });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
 const KIND_SENSOR = 4;
 const KIND_MOTOR = 6;
 
@@ -194,6 +228,12 @@ function decodeSlotState(kind, f, i) {
   }
   if (kind === KIND_MOTOR) {
     return { speed: f[0] || 0, angle: f[1] || 0, enabled: (i[0] || 0) !== 0, ...raw };
+  }
+  if (kind === KIND_DISPLAY) {
+    // Display numerics: i0=powerOn/displayOn dirty mirror; text lines stay
+    // on postMessage (variable length). powerOn covers ILI9341-style slots,
+    // displayOn covers SSD1306-style slots — both from i0.
+    return { powerOn: (i[0] || 0) !== 0, displayOn: (i[0] || 0) !== 0, ...raw };
   }
   return raw;
 }

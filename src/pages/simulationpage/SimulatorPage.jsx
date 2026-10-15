@@ -125,7 +125,7 @@ import { useHardwareUpload } from "./hooks/useHardwareUpload";
 import { useRunStop } from "./hooks/useRunStop";
 import { useRunControls } from "./hooks/useRunControls";
 import { useDebugControls } from "./hooks/useDebugControls";
-import { createAgentBackend } from "../../agent/backend.ts";
+import { createAgentBackend, resolveAgentTrace } from "../../agent/backend.ts";
 import { createAgentBridge, isAgentBridgeEnabled } from "../../agent/bridge.ts";
 import { AgentRecorder } from "../../agent/recorder.js";
 import { useRunTimingEffects } from "./hooks/useRunTimingEffects";
@@ -1541,6 +1541,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const sabOffsetsRef = useRef(null);
   const sabCursorRef = useRef(null);
   const sabPollStatsRef = useRef({ polls: 0, frames: 0, slots: 0, lastSeq: -1 });
+  // SAB telemetry hydrate guard (§12.3 T5 fix): the fast path carries no
+  // components array, so the first wakeup triggers one synthetic
+  // handleTelemetryStateMessage from SAB-slot data (see requestTelemetryHydrate
+  // below). Reset per run in the START postamble wiring.
+  const sabTelemetryHydrateRef = useRef(false);
   // Command/event ring handles (§10.4): SabCommandWriter (main→worker) +
   // SabEventReader (worker→main), bound at START in workerStartPostamble.
   const cmdWriterRef = useRef(null);
@@ -1769,6 +1774,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     handleTelemetryStateMessageRef.current = handleTelemetryStateMessage;
   }, [handleTelemetryStateMessage]);
+  // ALSO keep it fresh every render: the hydrate path (requestTelemetryHydrate)
+  // reads .current long after mount, and a mount-time-only assignment can go
+  // stale when useTelemetryManager returns a new callback identity.
+  handleTelemetryStateMessageRef.current = handleTelemetryStateMessage;
 
   const [saveDialogName, setSaveDialogName] = useState("");
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -3633,6 +3642,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     appendConsoleEntry,
     runCircuitValidation,
   });
+  // NOTE for future readers: handleRun is a PLAIN per-render const (NOT
+  // useCallback). Any mount-once closure (OpenHWE2E e2e object, agent
+  // backend ctx) that captures it directly goes stale and compiles empty
+  // firmware. Always go through window.__openhwRunRef (refreshed below).
   const handleRun = async (options = {}) => {
     try {
       // Perf: gate Run behind emulator readiness. The emulator chunk loads in
@@ -3923,6 +3936,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (debugControlsRef.current?.handleDebugMessage?.(msg)) return;
         } catch { /* debug feed never breaks ingest */ }
 
+        // ── Agent trace plane (AGENT_TRACE / AGENT_CAPTURE_STATE) ───────
+        // Resolves bridge requestWorkerTrace() waiters (see backend.ts).
+        // Import is static (top of file) so no tick cost; the call itself
+        // is a Map lookup + resolve.
+        try {
+          if ((msg?.type === 'AGENT_TRACE' || msg?.type === 'AGENT_CAPTURE_STATE')
+            && resolveAgentTrace(msg)) return;
+        } catch { /* agent feed never breaks ingest */ }
+
 
         if (
           msg.type === "state" ||
@@ -4059,6 +4081,60 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           runLagTelemetryLastLogRef,
           solverMode,
           appendConsoleEntry,
+          sabTelemetryHydrateRef,
+          sabOffsetsRef,
+          stateSabRef,
+          requestTelemetryHydrate: () => {
+            // One-shot hydrate: build a synthetic components array from the
+            // SAB slots (numeric uiState via sabReader decode) and feed it
+            // through the normal telemetry path. Runs once per run (guarded
+            // by sabTelemetryHydrateRef in workerStateIngest).
+            // NOTE: pollSabFrames only returns DIRTY slots — the rAF reader
+            // clears dirty flags as it polls, so by first-wakeup time the
+            // flags may already be consumed. Do a raw slot read instead
+            // (version/kind/f/i straight from the buffer, no dirty check).
+            try {
+              const sab = stateSabRef.current;
+              const offsets = sabOffsetsRef.current;
+              if (!sab || !offsets) return;
+              import("./utils/sabReader.js").then((mod) => {
+                try {
+                  const frames = (typeof mod.readAllSlots === "function")
+                    ? (mod.readAllSlots(sab, offsets) || [])
+                    : (mod.pollSabFrames(sab, offsets, mod.createSabCursor()) || []);
+                  if (!frames.length) return;
+                  // Component type string comes from the CANVAS components
+                  // array (id → type), NOT from slot-kind reverse mapping:
+                  // many types share one slotKind (e.g. kind 3 = every
+                  // display), so kind→type is ambiguous and produced wrong
+                  // labels (tft1 showed as openhw-7segment). Canvas ids are
+                  // authoritative here; kind is only the last resort.
+                  let idToType = null;
+                  try {
+                    idToType = {};
+                    for (const c of componentsRef.current || []) {
+                      if (c && c.id) idToType[String(c.id)] = c.type;
+                    }
+                  } catch { idToType = null; }
+                  const synth = {
+                    components: frames.map((fr) => ({
+                      id: fr.id,
+                      type: (idToType && idToType[fr.id] !== undefined)
+                        ? idToType[fr.id]
+                        : fr.kind,
+                      state: fr.state,
+                      telemetryData: {
+                        state: fr.state,
+                        _metrics: {},
+                        _heuristics: { status: "ok", summary: "OK" },
+                      },
+                    })),
+                  };
+                  handleTelemetryStateMessageRef.current(synth);
+                } catch { /* hydrate never breaks ingest */ }
+              }).catch(() => {});
+            } catch { /* ignore */ }
+          },
         });
 
         // ── Protocol observer (serial/I2C/SPI/…/I2S/flush) ────────────────
@@ -4120,7 +4196,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           deepSiliconDebuggingEnabled,
           logSerial,
         },
-        { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef },
+        { COMPONENT_REGISTRY, stateSabRef, sabOffsetsRef, sabCursorRef, sabPollStatsRef, cmdBufferRef, evtBufferRef, cmdWriterRef, evtReaderRef, sabTelemetryHydrateRef },
       );
 
 
@@ -4148,6 +4224,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   // ── Teacher-key capture + embed bridges ─────────────────────────────────────
   // Lives in hooks/useTeacherKeyCapture.js (identical cadence + shape).
+  // Live handleRun identity for the agent backend (see agent effect above).
+  // Assigned every render — backend reads through window.__openhwRunRef.
+  useEffect(() => {
+    try {
+      if (!window.__openhwRunRef) window.__openhwRunRef = { current: null };
+      window.__openhwRunRef.current = handleRun;
+    } catch { /* ignore */ }
+  });
   const { runFnRef, dispatchTeacherKeyCapture, generateTeacherKey } =
     useTeacherKeyCapture({
       handleRun,
@@ -4268,10 +4352,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const debugControlsRef = useRef(null);
   debugControlsRef.current = debugControls;
 
-  // ── AI agent system (§11 R2) ──────────────────────────────────────────
+  // ── AI agent system (§11 R2) + local E2E harness ─────────────────────
+  // (loop doc: openhw-studio-agent-relay/AGENT_LOOP.md)
   // Dev-only: bridge dials the localhost relay when ?agent=1 (or the
   // localStorage flag). Canvas/run/verify tools execute via AgentBackend
   // on live refs; window.OpenHWAgent exposes the same impl to the panel.
+  // window.OpenHWE2E (ALWAYS mounted, even without ?agent=1) is the
+  // one-call local loop for agents with repo+browser access: setup circuit
+  // + write board code + run + read serial/pins/telemetry + stop, with a
+  // verdict. See openhw-studio-agent-relay/AGENT_LOOP.md.
   const agentRecorderRef = useRef(null);
   if (!agentRecorderRef.current) agentRecorderRef.current = new AgentRecorder();
   const agentBackendRef = useRef(null);
@@ -4279,6 +4368,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     if (!isAgentBridgeEnabled() || agentBackendRef.current) return;
     try {
+      // runFnRef is declared below (teacher-key hook) — declare the binding
+      // here so the backend always sees the LIVE handleRun identity even
+      // though this effect runs once. Direct closure over handleRun would
+      // go stale after re-renders (new fn identity each render).
+      if (!window.__openhwRunRef) window.__openhwRunRef = { current: null };
       agentBackendRef.current = createAgentBackend({
         componentsRef,
         wiresRef,
@@ -4294,6 +4388,17 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         isRunningRef,
         codeRef: { get current() { return code; }, set current(v) { setCode(v); } },
         recorder: agentRecorderRef.current,
+        // Full-telemetry loop refs (relay AGENT_LOOP.md §1): real run/stop,
+        // serial + pins + live-OOP mirrors, telemetry selection.
+        // handleRunRef is a LIVE binding (getter) — never a stale closure.
+        handleRunRef: { get current() { return window.__openhwRunRef?.current || null; } },
+        handleStopRef: { get current() { return handleStop; } },
+        serialHistoryRef,
+        liveOopStatesRef,
+        renderPinsByBoardRef,
+        setSelectedTelemetryComponentIds,
+        setComponentTelemetryEnabled,
+        setTelemetryMode,
       });
       agentBridgeRef.current = createAgentBridge({ backend: agentBackendRef.current });
       agentBridgeRef.current.start();
@@ -4302,6 +4407,209 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       try { agentBridgeRef.current?.stop?.(); } catch { /* ignore */ }
       agentBackendRef.current = null;
       agentBridgeRef.current = null;
+    };
+  }, []);
+
+  // ── window.OpenHWE2E: one-call local loop ─────────────────────────────
+  // (doc: openhw-studio-agent-relay/AGENT_LOOP.md)
+  // ALWAYS mounted (no ?agent=1 gate): agents with repo+browser access call
+  // e2e.setupCircuit({components, wires, code}) → e2e.run({forMs,
+  // selectTelemetry, serialNeedle}) → verdict {pass, serial, pins,
+  // telemetry, errors}. Telemetry is read from window.OpenHWTelemetry
+  // (user requirement: board+component info is the debugging signal).
+  // Live mirrors so the mount-once e2e closure below always sees fresh
+  // values (the closure captures these refs, not the state values).
+  // ALSO exposed for debugging at window.__e2eLiveProbe (keys only).
+  const e2eLiveRef = useRef(null);
+  e2eLiveRef.current = {
+    setComponents, setWires, setProjectFiles, setActiveCodeFileId,
+    setOpenCodeTabs, setCode, openCodeFile,
+  };
+  useEffect(() => {
+    try {
+      window.__e2eLiveProbe = Object.fromEntries(
+        Object.entries(e2eLiveRef.current || {}).map(([k, v]) => [k, typeof v]),
+      );
+    } catch { /* ignore */ }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const live = () => e2eLiveRef.current || {};
+    // Live handleRun mirror: the mount-once e2e closure + the agent
+    // backend both need the CURRENT handleRun (plain const, re-created per
+    // render — a mount-time closure would capture firmware-less state and
+    // compile empty code forever). Refreshed every render.
+    if (!window.__openhwRunRef) window.__openhwRunRef = { current: null };
+    window.__openhwRunRef.current = handleRun;
+    const e2e = {
+      version: 3,
+      setupCircuit({ components: comps = [], wires: w = [], code: sketch = "" } = {}) {
+        // NOTE: all setters go through e2eLiveRef (refreshed every render),
+        // never the mount-time closure — zustand + useState setters are
+        // stable, but reading them via ref guards against HMR/StrictMode
+        // remounts holding dead dispatch fns.
+        const L = live();
+        const setComponents = L.setComponents || (() => {});
+        const setWires = L.setWires || (() => {});
+        try {
+          setComponents(Array.isArray(comps) ? comps : []);
+          setWires(Array.isArray(w) ? w : []);
+          if (typeof sketch === "string" && sketch) {
+            // Write the sketch via the STORE directly (single atomic path):
+            // the page has a code→file mirror effect ([code,
+            // activeCodeFileId] deps) that OVERWRITES a just-created file
+            // with the stale buffer on the next commit. setFileContent
+            // writes content + buffer atomically in ONE zustand set, then
+            // openCodeFile makes it active (its own buffer sync then sees
+            // matching content and the mirror becomes a no-op).
+            // handleRun compiles from projectFiles (getBoardCompileFiles),
+            // not from `code` alone — without the file, firmware is empty.
+            // Order: file+buffer first, active second — never setCode alone.
+            const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
+              /(arduino|rp2040|pico)/i.test(String(c?.type || "")),
+            );
+            const boardId = boards[0]?.id || "uno1";
+            const inoPath = `project/${boardId}/${boardId}.ino`;
+            try {
+              const store = useEditorStore.getState();
+              store.setProjectFiles((prev) => {
+                const list = Array.isArray(prev) ? [...prev] : [];
+                const idx = list.findIndex(
+                  (f) => f?.id === inoPath || f?.path === inoPath,
+                );
+                const base = {
+                  id: inoPath,
+                  path: inoPath,
+                  name: `${boardId}.ino`,
+                  kind: "code",
+                  language: "arduino",
+                  boardId,
+                  dirty: true,
+                };
+                if (idx >= 0) list[idx] = { ...list[idx], ...base, content: sketch };
+                else list.push({ ...base, content: sketch });
+                return list;
+              });
+              store.setFileContent(inoPath, sketch);
+              store.openCodeFile(inoPath);
+            } catch {
+              const L2 = live();
+              try {
+                (L2.setActiveCodeFileId || (() => {}))(inoPath);
+                (L2.setOpenCodeTabs || (() => {}))((prev) => {
+                  const list = Array.isArray(prev) ? [...prev] : [];
+                  return list.includes(inoPath) ? list : [...list, inoPath];
+                });
+                (L2.setCode || (() => {}))(sketch);
+              } catch { /* ignore */ }
+            }
+          }
+          return { ok: true, components: (comps || []).length, wires: (w || []).length, codeLen: String(sketch || "").length };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
+      async run({ forMs = 8000, selectTelemetry = [], serialNeedle = null, telemetryMode: mode = "detail" } = {}) {
+        // Stop any previous run FIRST and snapshot serial length AFTER the
+        // stop settles — otherwise a prior run's leftover serial rows leak
+        // into this verdict (serialHistory is append-only; stop() does not
+        // clear it). Stopped-state stop() is a safe no-op.
+        try { handleStop(); } catch { /* ignore */ }
+        await sleep(1500);
+        const serialMark = serialHistoryRef.current.length;
+        const t0 = Date.now();
+        try {
+          if (Array.isArray(selectTelemetry) && selectTelemetry.length) {
+            setSelectedTelemetryComponentIds(selectTelemetry);
+          }
+          try { setComponentTelemetryEnabled(true); } catch { /* ignore */ }
+          if (mode) { try { setTelemetryMode(mode); } catch { /* ignore */ } }
+          // Via the live mirror (see above) — never the mount-time closure.
+          const liveRun = window.__openhwRunRef?.current;
+          if (typeof liveRun === "function") await liveRun({});
+          else await handleRun({});
+          await sleep(Math.max(1000, Number(forMs) || 8000));
+          const serialNew = serialHistoryRef.current.slice(serialMark).map((e) => String(e?.text ?? e ?? ""));
+          const serialText = serialNew.join("");
+          const pins = JSON.parse(JSON.stringify(renderPinsByBoardRef.current || {}));
+          let telemetry = [];
+          try {
+            telemetry = (typeof window !== "undefined" && window.OpenHWTelemetry?.getLatestTelemetry?.()) || [];
+          } catch { telemetry = []; }
+          let pass = true;
+          const reasons = [];
+          if (serialNeedle && !serialText.includes(String(serialNeedle))) {
+            pass = false;
+            reasons.push(`serial missing needle: ${serialNeedle}`);
+          }
+          if (!serialText.trim()) {
+            pass = false;
+            reasons.push("no serial output captured");
+          }
+          return {
+            ok: true,
+            pass,
+            reasons,
+            wallMs: Date.now() - t0,
+            running: !!isRunningRef.current,
+            serial: serialText.slice(0, 4000),
+            serialLines: serialNew.length,
+            pins,
+            telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
+            telemetryCount: Array.isArray(telemetry) ? telemetry.length : 0,
+          };
+        } catch (err) {
+          return { ok: false, pass: false, reasons: [String(err?.message || err)], wallMs: Date.now() - t0 };
+        }
+      },
+      stop() {
+        try {
+          handleStop();
+          return { ok: true, running: !!isRunningRef.current };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
+      snapshot() {
+        let telemetry = [];
+        try {
+          telemetry = (typeof window !== "undefined" && window.OpenHWTelemetry?.getLatestTelemetry?.()) || [];
+        } catch { telemetry = []; }
+        // Debug side-channel for Playwright: what the compile unit sees.
+        // handleRun resolves firmware via getBoardCompileFiles(boardId) over
+        // projectFiles — expose the resolved mainCode length per board so a
+        // "compiled empty firmware" failure is diagnosable without guessing.
+        let compileProbe = null;
+        try {
+          const boards = (componentsRef.current || []).filter((c) =>
+            /(arduino|rp2040|pico)/i.test(String(c?.type || "")),
+          );
+          compileProbe = boards.map((b) => {
+            let mainLen = -1;
+            let hasMain = false;
+            try {
+              const unit = getBoardCompileFiles(String(b.id));
+              mainLen = String(unit?.mainCode || "").length;
+              hasMain = !!unit?.hasMainFile;
+            } catch { /* ignore */ }
+            return { boardId: String(b.id), mainLen, hasMain };
+          });
+        } catch { compileProbe = null; }
+        return {
+          running: !!isRunningRef.current,
+          components: (componentsRef.current || []).length,
+          wires: (wiresRef.current || []).length,
+          serialLines: serialHistoryRef.current.length,
+          pins: JSON.parse(JSON.stringify(renderPinsByBoardRef.current || {})),
+          telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
+          compileProbe,
+        };
+      },
+    };
+    window.OpenHWE2E = e2e;
+    return () => {
+      try { if (window.OpenHWE2E === e2e) delete window.OpenHWE2E; } catch { /* ignore */ }
     };
   }, []);
   const openComponentEditor = useCallback(() => {

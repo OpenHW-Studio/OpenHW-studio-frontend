@@ -12,6 +12,49 @@ import { AgentRecorder, evaluateAssertions } from './recorder.js';
  *
  * Nothing here imports ComponentEditorPage or TelemetryManager (§11.7).
  */
+/**
+ * Pending AGENT_TRACE waiters, keyed by reqId. SimulatorPage's worker
+ * onmessage resolves them (see AGENT_TRACE note in the START postamble).
+ */
+const traceWaiters = new Map();
+let traceReqSeq = 0;
+
+export function resolveAgentTrace(msg) {
+  try {
+    const waiter = traceWaiters.get(msg?.reqId);
+    if (!waiter) return false;
+    traceWaiters.delete(msg.reqId);
+    clearTimeout(waiter.timer);
+    waiter.resolve(msg);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function requestWorkerTrace(workerRef, { sinceSeq = 0, limit = 500, timeoutMs = 5000 } = {}) {
+  const worker = workerRef?.current;
+  // No worker yet (never ran, or stopped and torn down): empty trace, not an error.
+  if (!worker) {
+    return Promise.resolve({ ok: true, events: [], dropped: 0, simTimeMs: 0, cycles: 0, nextSeq: 0 });
+  }
+  const reqId = `tr-${Date.now()}-${(traceReqSeq += 1)}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      traceWaiters.delete(reqId);
+      resolve({ ok: false, error: 'trace timeout: worker did not answer AGENT_GET_TRACE' });
+    }, timeoutMs);
+    traceWaiters.set(reqId, { resolve, timer });
+    try {
+      worker.postMessage({ type: 'AGENT_GET_TRACE', sinceSeq, limit, reqId });
+    } catch (err) {
+      traceWaiters.delete(reqId);
+      clearTimeout(timer);
+      resolve({ ok: false, error: String(err?.message || err) });
+    }
+  });
+}
+
 export function createAgentBackend(ctx) {
   const {
     componentsRef,
@@ -25,6 +68,15 @@ export function createAgentBackend(ctx) {
     isRunningRef,
     codeRef,
     recorder,
+    // NEW (full-telemetry loop): same refs SimulatorPage already owns.
+    handleRunRef,
+    handleStopRef,
+    serialHistoryRef,
+    liveOopStatesRef,
+    renderPinsByBoardRef,
+    setSelectedTelemetryComponentIds,
+    setComponentTelemetryEnabled,
+    setTelemetryMode,
   } = ctx;
 
   const rec = recorder || new AgentRecorder();
@@ -180,20 +232,107 @@ export function createAgentBackend(ctx) {
       return { ok: true, boardId: args.boardId };
     },
 
+    // Full-telemetry run loop (relay AGENT_LOOP.md §1): setup is done by the
+    // caller (place/wire/setFirmware or the OpenHWE2E harness); here we arm
+    // the worker recorder + main-thread telemetry, run the REAL handleRun,
+    // wait, then return worker trace + main-thread telemetry + pins + serial.
     'agent.run': async (args) => {
-      const budgetMs = Math.max(500, Math.min(30000, Number(args?.capture?.budgetMs) || 3000));
-      rec.startCapture(args?.capture?.watch || { pins: [], serial: false, components: [] });
-      rec.pushRunEvent('STARTED', `budget ${budgetMs}ms sim-time`);
-      return { ok: true, runId: `run-${Date.now()}`, budgetMs, note: 'drive Run via UI handleRun; recorder armed' };
+      const budgetMs = Math.max(500, Math.min(30000, Number(args?.capture?.budgetMs) || Number(args?.forMs) || 3000));
+      const watch = args?.capture?.watch || {};
+      const selectIds = Array.isArray(args?.selectTelemetry)
+        ? args.selectTelemetry
+        : Array.isArray(watch.components)
+          ? watch.components.map((c) => String(c?.id || c)).filter(Boolean)
+          : [];
+      const serialNeedle = args?.serialNeedle ?? null;
+      const mode = args?.telemetryMode || 'detail';
+      // Live mirror first (refreshed every render by SimulatorPage), then
+      // the injected ref, then fail. Never cache the fn — handleRun is a
+      // plain per-render const and a stale copy compiles empty firmware.
+      const liveRun = (typeof window !== 'undefined' && window.__openhwRunRef?.current) || null;
+      const runFn = (typeof liveRun === 'function' && liveRun)
+        || handleRunRef?.current
+        || null;
+      if (typeof runFn !== 'function') {
+        return { ok: false, error: 'run unavailable: handleRun not ready' };
+      }
+      // Arm worker recorder (watch-scoped) + main-thread telemetry selection.
+      try {
+        workerRef?.current?.postMessage({ type: 'AGENT_START_CAPTURE', watch });
+      } catch { /* worker may not exist yet — handleRun creates it */ }
+      try {
+        if (selectIds.length && typeof setSelectedTelemetryComponentIds === 'function') {
+          setSelectedTelemetryComponentIds(selectIds);
+        }
+        if (typeof setComponentTelemetryEnabled === 'function') setComponentTelemetryEnabled(true);
+        if (mode && typeof setTelemetryMode === 'function') setTelemetryMode(mode);
+      } catch { /* telemetry arming never blocks the run */ }
+      // Stop any previous run first (same reason as OpenHWE2E.run: the
+      // serial history is append-only, so a stale mark would leak).
+      try {
+        const stopFn = handleStopRef?.current;
+        if (typeof stopFn === 'function') stopFn();
+      } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 1500));
+      const serialMark = serialHistoryRef?.current?.length || 0;
+      const t0 = Date.now();
+      try {
+        await runFn({});
+      } catch (err) {
+        return { ok: false, error: `handleRun threw: ${err?.message || err}` };
+      }
+      await new Promise((r) => setTimeout(r, budgetMs));
+      const traceRes = await requestWorkerTrace(workerRef, { sinceSeq: 0, limit: 500 });
+      const serialNew = (serialHistoryRef?.current || [])
+        .slice(serialMark)
+        .map((e) => String(e?.text ?? e ?? ''));
+      const serialText = serialNew.join('');
+      const pins = JSON.parse(JSON.stringify(renderPinsByBoardRef?.current || {}));
+      let telemetry = [];
+      try {
+        telemetry = (typeof window !== 'undefined' && window.OpenHWTelemetry?.getLatestTelemetry?.()) || [];
+      } catch { telemetry = []; }
+      let pass = true;
+      const reasons = [];
+      if (serialNeedle && !serialText.includes(String(serialNeedle))) {
+        pass = false;
+        reasons.push(`serial missing needle: ${serialNeedle}`);
+      }
+      if (!serialText.trim()) {
+        pass = false;
+        reasons.push('no serial output captured');
+      }
+      return {
+        ok: true,
+        pass,
+        reasons,
+        wallMs: Date.now() - t0,
+        running: !!isRunningRef?.current,
+        serial: serialText.slice(0, 4000),
+        serialLines: serialNew.length,
+        pins,
+        telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
+        telemetryCount: Array.isArray(telemetry) ? telemetry.length : 0,
+        trace: traceRes?.ok === false ? null : traceRes,
+        traceError: traceRes?.ok === false ? traceRes.error : null,
+        runId: `run-${t0}`,
+        budgetMs,
+      };
     },
 
     'agent.stop': async () => {
       rec.pushRunEvent('STOPPED', 'agent.stop');
       rec.stopCapture();
-      if (workerRef?.current && isRunningRef?.current) {
+      try {
+        workerRef?.current?.postMessage({ type: 'AGENT_STOP_CAPTURE' });
+      } catch { /* ignore */ }
+      const stopFn = handleStopRef?.current;
+      if (typeof stopFn === 'function') {
+        try { stopFn(); } catch { /* ignore */ }
+      } else if (workerRef?.current && isRunningRef?.current) {
         workerRef.current.postMessage({ type: 'STOP' });
       }
-      return { ok: true };
+      return { ok: true, running: !!isRunningRef?.current };
     },
 
     'agent.interact': async (args) => {
@@ -215,25 +354,58 @@ export function createAgentBackend(ctx) {
 
     'agent.startCapture': async (args) => {
       rec.startCapture(args.watch || {});
+      try {
+        workerRef?.current?.postMessage({ type: 'AGENT_START_CAPTURE', watch: args.watch || {} });
+      } catch { /* worker may not exist yet */ }
       return { ok: true };
     },
 
+    // Worker trace is authoritative (pins/serial/components with cycle
+    // stamps). Main-thread rec is the fallback when the worker is gone.
     'agent.getTrace': async (args) => {
-      const t = rec.getTrace(Number(args?.sinceSeq) || 0, Number(args?.limit) || 500);
-      return { ok: true, ...t };
+      const t = await requestWorkerTrace(workerRef, {
+        sinceSeq: Number(args?.sinceSeq) || 0,
+        limit: Number(args?.limit) || 500,
+      });
+      if (t?.ok === false && t?.events === undefined) {
+        const local = rec.getTrace(Number(args?.sinceSeq) || 0, Number(args?.limit) || 500);
+        return { ok: true, ...local, source: 'main-fallback', traceError: t.error };
+      }
+      return { ok: true, ...t, source: 'worker' };
     },
 
     'agent.assert': async (args) => {
-      const t = rec.getTrace(0, 500);
-      const verdicts = evaluateAssertions(args.assertions || [], t);
-      return { ok: true, verdicts, dropped: t.dropped };
+      // Assert against the WORKER trace (authoritative, cycle-stamped).
+      const t = await requestWorkerTrace(workerRef, { sinceSeq: 0, limit: 500 });
+      const trace = t?.events !== undefined ? t : rec.getTrace(0, 500);
+      const verdicts = evaluateAssertions(args.assertions || [], trace);
+      return { ok: true, verdicts, dropped: trace.dropped, source: t?.events !== undefined ? 'worker' : 'main-fallback' };
     },
 
+    // Full-telemetry snapshot: canvas model + serial + pins + component
+    // telemetry (formatted {id,type,summary,details,status} per selected
+    // component — the debugging signal) + live OOP states + worker trace.
     'agent.snapshot': async () => {
-      // Full-fidelity postMessage state is owned by grading; the bridge
-      // returns the canonical canvas model + trace head as evidence.
-      const t = rec.getTrace(0, 500);
-      return { ok: true, project: getProject(), traceHead: t.events.slice(0, 50), dropped: t.dropped };
+      const t = await requestWorkerTrace(workerRef, { sinceSeq: 0, limit: 50 });
+      const trace = t?.events !== undefined ? t : rec.getTrace(0, 50);
+      let telemetry = [];
+      try {
+        telemetry = (typeof window !== 'undefined' && window.OpenHWTelemetry?.getLatestTelemetry?.()) || [];
+      } catch { telemetry = []; }
+      return {
+        ok: true,
+        project: getProject(),
+        running: !!isRunningRef?.current,
+        serialLines: (serialHistoryRef?.current || []).length,
+        serialTail: (serialHistoryRef?.current || []).slice(-20).map((e) => String(e?.text ?? e ?? '')),
+        pins: JSON.parse(JSON.stringify(renderPinsByBoardRef?.current || {})),
+        liveOop: JSON.parse(JSON.stringify(liveOopStatesRef?.current || {})),
+        telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
+        telemetryCount: Array.isArray(telemetry) ? telemetry.length : 0,
+        traceHead: (trace.events || []).slice(0, 50),
+        dropped: trace.dropped,
+        traceSource: t?.events !== undefined ? 'worker' : 'main-fallback',
+      };
     },
 
     'agent.bridgeStatus': async () => ({
