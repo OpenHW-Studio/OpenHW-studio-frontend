@@ -110,6 +110,10 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     const ncustom = neo.details?.custom || neo.details?.metrics?.custom || {};
     console.log('NEO custom:', JSON.stringify(ncustom).slice(0, 200));
     expect(Number(ncustom.activePixels || 0)).toBeGreaterThanOrEqual(2);
+    // WASM proof: the frame decoded on the Rust WS2812 core.
+    const neoCore = ((verdict.liveOop || {}).neo1 || {}).core;
+    console.log('NEO core:', neoCore);
+    expect(neoCore).toBe('wasm');
     await page.screenshot({ path: 'test-results/senses-neo.png' });
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);

@@ -16,7 +16,11 @@ export function isProgrammableBoardType(type) {
   // are NOT boards: classifying them as boards spawns an esp32-emu engine
   // that dies on "Unknown chip", taking the real board's run down with it.
   if (/-cam/i.test(s)) return false;
-  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(s);
+  // ATtiny85 has no dedicated core/CPU in the sim; it runs Uno-compiled
+  // firmware on AVRRunner (documented attiny-path). It IS a programmable
+  // board for run routing — without this the run falls back to a ghost
+  // Uno id whose nets never touch the attiny pins.
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|mega|nano|attiny)/i.test(s);
 }
 
 export function endpointAliases(endpoint) {

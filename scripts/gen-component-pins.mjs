@@ -32,10 +32,20 @@ function loadManifests() {
 }
 
 function parseTable(src) {
-  // Extract the COMPONENT_PINS literal block (brace-balanced from its decl).
-  const start = src.indexOf('export const COMPONENT_PINS');
-  if (start < 0) throw new Error('COMPONENT_PINS decl not found');
-  const brace = src.indexOf('{', start);
+  // Extract the COMPONENT_PINS *values* block. NOTE: the decl at line ~291
+  // opens a Record<…, { … }> TYPE annotation whose body mirrors pin lists
+  // as types; the runtime values live in the second literal, which opens
+  // right after the `}[]> = {` line. Anchor there — the naive first-brace
+  // parse used to swallow the type as the block and no-op.
+  const valuesAnchor = src.indexOf('}[]> = {');
+  let brace;
+  if (valuesAnchor >= 0) {
+    brace = src.indexOf('{', valuesAnchor);
+  } else {
+    const start = src.indexOf('export const COMPONENT_PINS');
+    if (start < 0) throw new Error('COMPONENT_PINS decl not found');
+    brace = src.indexOf('{', start);
+  }
   let depth = 0;
   let end = -1;
   for (let i = brace; i < src.length; i++) {
@@ -50,12 +60,41 @@ function parseTable(src) {
 }
 
 function parseEntries(block) {
-  // Returns [{ key, raw, isConstRef }] for each 'type': ... entry.
+  // Returns [{ key, raw }] for each 'type': ... entry. Values are either
+  // bracket-balanced array literals (possibly multi-line) or const-ref
+  // expressions like UNO_BOARD_PINS.map((id: string) => ({ id })) whose
+  // parens defeat naive regexes — hence this scanner. Pin ids never
+  // contain brackets or escaped quotes, so light quote-tracking suffices.
   const entries = [];
-  const re = /'([^']+)':\s*((?:[A-Z_][A-Z0-9_]*\.map\([^)]*\)|(?:\[[^\]]*\]))),?/g;
+  const keyRe = /'([^']+)':\s*/g;
   let m;
-  while ((m = re.exec(block))) {
-    entries.push({ key: m[1], raw: m[2].trim() });
+  while ((m = keyRe.exec(block))) {
+    const key = m[1];
+    let i = m.index + m[0].length;
+    while (i < block.length && /\s/.test(block[i])) i++;
+    let raw = '';
+    if (block[i] === '[') {
+      let depth = 0;
+      let j = i;
+      let inStr = false;
+      for (; j < block.length; j++) {
+        const ch = block[j];
+        if (ch === "'") inStr = !inStr;
+        else if (!inStr && ch === '[') depth++;
+        else if (!inStr && ch === ']') {
+          depth--;
+          if (depth === 0) { j++; break; }
+        }
+      }
+      raw = block.slice(i, j).trim();
+      keyRe.lastIndex = j;
+    } else {
+      let j = block.indexOf('\n', i);
+      if (j < 0) j = block.length;
+      raw = block.slice(i, j).trim().replace(/,?\s*$/, '');
+      keyRe.lastIndex = j;
+    }
+    entries.push({ key, raw });
   }
   return entries;
 }

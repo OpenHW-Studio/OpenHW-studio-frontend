@@ -12,6 +12,9 @@ function boardLikeTypes() {
   return Object.keys(COMPONENT_PINS).filter((t) => {
     if (t.startsWith('wokwi-')) return false;
     if (/shield/i.test(t)) return false;
+    // Cam shells are components, not boards (asserted 'unknown' below):
+    // openhw-esp32-cam must not resolve to a runnable family.
+    if (/-cam$/i.test(t)) return false;
     return BOARD_TYPE_RE.test(t);
   });
 }

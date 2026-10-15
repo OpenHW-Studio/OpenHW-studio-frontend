@@ -39,6 +39,16 @@ export function normalizeEndpointPin(pinStr: string): string {
     if (upper === '3V3' || upper === '3V3_EN') {
       return `${compId}:3V3`;
     }
+    // Bare ATtiny P-pins (P0–P5) are Arduino-numbered GPIOs: P0 IS digital
+    // pin 0 (PB0). Merging lets Uno-compiled firmware drive attiny nets
+    // (the documented attiny-path substitution). Scoped to bare P+digits:
+    // Uno/Mega/Nano have no such pins; retro Pn already shares its Ln/Rn
+    // net conceptually; 74xx p-pins normalize identically on both wire
+    // ends so their junctions still match (no bare-digit pins exist there
+    // to collide with).
+    if (/^P\d{1,2}$/.test(upper)) {
+      return `${compId}:${upper.slice(1)}`;
+    }
   }
   return pinStr;
 }
