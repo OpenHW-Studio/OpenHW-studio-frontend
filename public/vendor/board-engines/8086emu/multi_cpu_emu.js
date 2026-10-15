@@ -89,8 +89,10 @@ export class Emulator {
         return v1;
     }
     /**
-     * Total clock cycles executed (machine cycles / T-states). Drives the
-     * cycle-accurate timers (8086 PIT, 8051 timers, 8085 8155 timer).
+     * Total clock cycles executed. All six ISAs now count: machine cycles /
+     * T-states for 8086/8085/8051, nominal per-instruction costs for
+     * 6502/Z80, single-cycle for rv32. Drives cycle-accurate timers and host
+     * sim-time stamps.
      * @returns {bigint}
      */
     cycles() {
@@ -405,7 +407,8 @@ export class Emulator {
         return ret;
     }
     /**
-     * Queue a key for the 8086's INT 21h keyboard reads (AH=01/06/07/08/0C).
+     * Read an I/O port byte (8085/8086: port space; 8051: P0-P3 pins;
+     * Z80: latch/CTC; rv32: 0xE0 = GPIO DATA, 0xE1 = DIR; 6502: use via_read).
      * @param {number} port
      * @returns {number}
      */
@@ -414,7 +417,8 @@ export class Emulator {
         return ret;
     }
     /**
-     * Write an I/O port byte (8085/8086: port space 0-255; 8051: P0-P3 pins).
+     * Write an I/O port byte (8085/8086: port space 0-255; 8051: P0-P3 pins;
+     * Z80: latch/CTC; rv32: 0xE0 injects GPIO input pins; 6502: use via_write).
      * @param {number} port
      * @param {number} val
      */
@@ -433,6 +437,16 @@ export class Emulator {
             wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         }
         return v1;
+    }
+    /**
+     * Inject external pin levels into an 8255 PPI input port (8086/8085).
+     * `port` is 0xE0 (A), 0xE1 (B) or 0xE2 (C). Input-mode bits read back
+     * the injected level while the firmware's output latch is untouched.
+     * @param {number} port
+     * @param {number} val
+     */
+    ppi_set_input(port, val) {
+        wasm.emulator_ppi_set_input(this.__wbg_ptr, port, val);
     }
     /**
      * Queue a type-ahead character for INT 21h/keyboard reads (8086).
@@ -724,7 +738,10 @@ export class Emulator {
         wasm.emulator_usart_rx(this.__wbg_ptr, v);
     }
     /**
-     * 8251 USART status / Rx push.
+     * 8251 USART status / Rx push — the universal serial hook, routed per
+     * ISA: 8086/8085/Z80 kit USART (ports 0x50/0x51), 6502 board ACIA
+     * ($5000/$5001), 8051 SBUF/SCON (bit1 = RI, bit2 = TI), rv32 board UART
+     * (0xF0000). `usart_rx` is the RX-inject call for every ISA.
      * @returns {number}
      */
     usart_status() {
@@ -857,10 +874,10 @@ if (Symbol.dispose) GfxInfo.prototype[Symbol.dispose] = GfxInfo.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_41e9ee4f547fc59a: function(arg0, arg1) {
+        __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbindgen_generic_0000000000000001: function(arg0, arg1) {
+        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
