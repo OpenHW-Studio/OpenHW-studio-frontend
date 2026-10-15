@@ -255,14 +255,10 @@ export class Esp32Runner extends ArmRunnerBase {
                         } catch { /* ignore */ }
                     }
                 } catch { /* ignore */ }
-                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}) }, flash, rom);
-                // 1.2.0 SAB boot: seed the MMU page table from flash AFTER
-                // init — without it the app image isn't executable-in-place
-                // and the ROM jumps to entry into silence (observed: entry
-                // 0x400805b4 then nothing). Guarded: older proxies lack it.
-                try {
-                    if (typeof (self.sim as any).seedMMU === 'function') await (self.sim as any).seedMMU(0);
-                } catch (e) { console.warn('[Esp32Runner] seedMMU failed:', e); }
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}) }, flash, rom);
+                // Identity MMU comes from init itself — do NOT seedMMU here:
+                // its rotated map corrupts the bootloader's partition/app
+                // reads (observed: stall at bootloader entry 0x400805b4).
                 try {
                     if (wasmBinary && typeof self.sim.loadWasm === 'function') {
                         await self.sim.loadWasm(wasmBinary);

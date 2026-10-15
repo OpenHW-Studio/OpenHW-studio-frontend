@@ -155,6 +155,19 @@ export class Stm32f1Runner extends ArmRunnerBase {
     private f1TickApplied = 0;
     private f1PwmTick = 0;
     private f1ChunkCount = 0;
+    // Per-boot skip gates + hot-loop caches (nets/instances/pins are
+    // constructor-fixed — buildNetlist runs once in the base constructor
+    // and instantiateComponents never adds mid-run — so freezing these per
+    // loadFirmware is predicate-identical to scanning live every tick):
+    //  - f1NeedsLevel: false when no component-only net has a
+    //    voltage-capable member (F4 f4NeedsLevel parity — the drain then
+    //    skips a proven no-op levelPassiveNets; fail-open while null).
+    //  - f1SpiCsPins: board pins sharing a net with an SPI slave CS pin
+    //    (the onTransfer core-CS pre-publish set, frozen).
+    //  - f1BoardPinsByNet: netId → board pin labels (publishGpio fan-out).
+    private f1NeedsLevel: boolean | null = null;
+    private f1SpiCsPins: string[] | null = null;
+    private f1BoardPinsByNet: Map<number, string[]> | null = null;
 
     // SoftSerial TX observer — PB7 @ 9600 baud (documented convention, shared
     // with tests/e2e/stm32-softserial.spec.js whose firmware bit-bangs
@@ -409,34 +422,51 @@ export class Stm32f1Runner extends ArmRunnerBase {
                             // per slave CS net and publish ahead of the bytes:
                             // assert(empty, harmless) → bytes → late LOW
                             // dedup-skipped → late HIGH closes the frame.
+                            // Board-pin set is per-boot cached (f1SpiCsPins,
+                            // same net-membership predicate as the legacy
+                            // scan below — nets/pins are constructor-fixed);
+                            // fail-open to the legacy full scan while null.
                             try {
-                                for (const inst of self.instances.values()) {
-                                    if (typeof (inst as any)?.onSPIByte !== 'function'
-                                        && typeof (inst as any)?.onSPIByteExchange !== 'function') continue;
-                                    const pins = (inst as any)?.pins || {};
-                                    for (const nm of Object.keys(pins)) {
-                                        if (!/^(cs|ss|ssel|nss|cs_n|nce|sda|ce)$/i.test(nm)) continue;
-                                        const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
-                                        if (net === undefined) continue;
-                                        for (const [node, netId] of self.pinToNet) {
-                                            if (netId !== net) continue;
-                                            const sep = node.indexOf(':');
-                                            if (sep < 0) continue;
-                                            if (node.slice(0, sep) !== self.boardId) continue;
-                                            const [port, n] = portPinFor(node.slice(sep + 1));
-                                            if (!port) continue;
-                                            let coreHigh: boolean | null = null;
-                                            try {
-                                                const r = (self.mcu as any)?.gpio?.pin?.(port, n)?.read?.();
-                                                if (typeof r === 'boolean') coreHigh = r;
-                                                else if (typeof r === 'number') coreHigh = r !== 0;
-                                            } catch { /* ignore */ }
-                                            if (coreHigh === null) continue;
-                                            const cur = (self.pinStates as any)?.[node.slice(sep + 1)];
-                                            if (cur !== !!coreHigh) {
-                                                try { (self as any).publishGpio(node.slice(sep + 1), !!coreHigh); } catch { /* ignore */ }
+                                let csPins: string[] | null = null;
+                                try { csPins = self.f1SpiCsPins; } catch { csPins = null; }
+                                if (!csPins) {
+                                    const found: string[] = [];
+                                    const seenCs = new Set<string>();
+                                    for (const inst of self.instances.values()) {
+                                        if (typeof (inst as any)?.onSPIByte !== 'function'
+                                            && typeof (inst as any)?.onSPIByteExchange !== 'function') continue;
+                                        const pins = (inst as any)?.pins || {};
+                                        for (const nm of Object.keys(pins)) {
+                                            if (!/^(cs|ss|ssel|nss|cs_n|nce|sda|ce)$/i.test(nm)) continue;
+                                            const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
+                                            if (net === undefined) continue;
+                                            for (const [node, netId] of self.pinToNet) {
+                                                if (netId !== net) continue;
+                                                const sep = node.indexOf(':');
+                                                if (sep < 0) continue;
+                                                if (node.slice(0, sep) !== self.boardId) continue;
+                                                const bp = node.slice(sep + 1);
+                                                const [port] = portPinFor(bp);
+                                                if (!port) continue;
+                                                if (!seenCs.has(bp)) { seenCs.add(bp); found.push(bp); }
                                             }
                                         }
+                                    }
+                                    csPins = found;
+                                }
+                                for (const bp of csPins) {
+                                    const [port, n] = portPinFor(bp);
+                                    if (!port) continue;
+                                    let coreHigh: boolean | null = null;
+                                    try {
+                                        const r = (self.mcu as any)?.gpio?.pin?.(port, n)?.read?.();
+                                        if (typeof r === 'boolean') coreHigh = r;
+                                        else if (typeof r === 'number') coreHigh = r !== 0;
+                                    } catch { /* ignore */ }
+                                    if (coreHigh === null) continue;
+                                    const cur = (self.pinStates as any)?.[bp];
+                                    if (cur !== !!coreHigh) {
+                                        try { (self as any).publishGpio(bp, !!coreHigh); } catch { /* ignore */ }
                                     }
                                 }
                             } catch { /* pre-publish never breaks transfer */ }
@@ -652,8 +682,15 @@ export class Stm32f1Runner extends ArmRunnerBase {
             drainUartOut(): number[] {
                 // Net leveling: model-driven pins (shift-register outputs
                 // etc.) fan out across component-only nets (engine owns
-                // board nets).
-                try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
+                // board nets). Per-boot gate (f1NeedsLevel, resolved in
+                // buildF1Caches — F4 f4NeedsLevel parity): a boot with no
+                // actionable net skips the per-drain O(pinToNet) regroup —
+                // the call is a proven no-op there. Fail-open while null.
+                try {
+                    if (self.f1NeedsLevel !== false) {
+                        levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any);
+                    }
+                } catch { /* never breaks drain */ }
                 // Clock preset (virtual time compression): board attr tickMHz
                 // (e.g. 24/36 on the 72MHz F1) divides the guest SysTick
                 // reload so virtual milliseconds cost fewer host instructions.
@@ -799,6 +836,18 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         try {
                             self.f1PwmTick++;
                             if ((self.f1PwmTick & 3) === 0) {
+                            // No-listener skip: with no onPWM observer on this
+                            // boot (per-boot f1PwmInsts cache) the TIM sweep
+                            // below is pure telemetry with no consumer — the
+                            // enabled()/frequency()/duty() reads are side-
+                            // effect-free, so skipping the ≤42-FFI sweep is
+                            // unobservable. Fail-open while the cache is null
+                            // (legacy path runs the sweep).
+                            let cachedListeners: any[] | null = null;
+                            try { cachedListeners = self.f1PwmInsts; } catch { cachedListeners = null; }
+                            if (cachedListeners !== null && cachedListeners.length === 0) {
+                                // No consumer — skip the sweep this round.
+                            } else {
                             const mcu = self.mcu as any;
                             if (mcu) {
                                 // Generalized: strongest duty across TIM1-7 drives
@@ -846,6 +895,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
                                         } catch { /* one instance never breaks pwm */ }
                                     }
                                 }
+                            }
                             }
                             }
                         } catch { /* PWM observe never breaks the drain */ }
@@ -966,9 +1016,19 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         }
                         try {
                             let chunk = '';
+                            // Post-enumeration skip: once the host machine
+                            // reaches done/dead, UART markers no longer move
+                            // the state machine (report below only re-fires
+                            // on link/rx change, and rx moves only via the
+                            // event-driven onUsbIn) — freezing st.uart keeps
+                            // the latched 'USB enum done' includes() result
+                            // identical while skipping the ≤1024-char rebuild
+                            // per drain.
+                            if (st.phase !== 'done' && st.phase !== 'dead') {
                             const qlen = Math.min(txQueue.length, 1024);
                             for (let i = 0; i < qlen; i++) chunk += String.fromCharCode(txQueue[i] & 0xff);
                             if (chunk) st.uart = (String(st.uart || '') + chunk).slice(-8000);
+                            }
                         } catch { /* markers are best-effort */ }
                         const uart: string = String(st.uart || '');
                         const say = (line: string) => {
@@ -1570,6 +1630,21 @@ export class Stm32f1Runner extends ArmRunnerBase {
         try {
             const net = this.pinToNet.get(`${this.boardId}:${pinId}`);
             if (net === undefined) return;
+            // Per-boot board-pin-by-net cache (same membership as the full
+            // scan — nets are constructor-fixed); fail-open to the legacy
+            // full-map scan while null.
+            let targets: string[] | null = null;
+            try { targets = this.f1BoardPinsByNet?.get(net) ?? null; } catch { targets = null; }
+            if (targets) {
+                for (const bPin of targets) {
+                    if (!bPin || bPin === pinId) continue;
+                    try {
+                        if (this.gpioPinIsOutput(bPin) === true) continue; // driven: output wins
+                    } catch { /* unknown mode: source wins */ }
+                    try { this.engine.setGpioInput?.(bPin, !!isHigh); } catch { /* ignore */ }
+                }
+                return;
+            }
             for (const [node, netId] of this.pinToNet) {
                 if (netId !== net) continue;
                 const sep = node.indexOf(':');
@@ -1850,7 +1925,80 @@ export class Stm32f1Runner extends ArmRunnerBase {
             }
             this.f1PwmInsts = pwm;
             this.f1DhtPresent = dht;
-        } catch { try { this.f1AdcCache = null; } catch { /* ignore */ } }
+            // Leveling gate (F4 f4NeedsLevel parity): a net is actionable
+            // only when no board node touches it AND at least one component
+            // member is voltage-capable. Same predicate the drain call
+            // evaluates per net — frozen per boot, fail-open (true).
+            try {
+                let need = false;
+                const seen = new Map<number, { board: boolean; cap: boolean }>();
+                for (const [node, netId] of (this.pinToNet as Map<string, number>)) {
+                    let e = seen.get(netId);
+                    if (!e) { e = { board: false, cap: false }; seen.set(netId, e); }
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) === this.boardId) { e.board = true; continue; }
+                    try {
+                        const inst = this.instances.get(node.slice(0, sep));
+                        if (inst && typeof (inst as any)?.getPinVoltage === 'function'
+                            && typeof (inst as any)?.setPinVoltage === 'function') e.cap = true;
+                    } catch { /* one node never breaks the gate */ }
+                }
+                for (const e of seen.values()) {
+                    if (!e.board && e.cap) { need = true; break; }
+                }
+                this.f1NeedsLevel = need;
+            } catch { try { this.f1NeedsLevel = true; } catch { /* ignore */ } }
+            // SPI CS board-pin set (onTransfer pre-publish): same
+            // instance/CS-name/net-membership predicate as the legacy
+            // per-transfer scan, frozen per boot.
+            try {
+                const found: string[] = [];
+                const seenCs = new Set<string>();
+                for (const inst of this.instances.values()) {
+                    try {
+                        if (typeof (inst as any)?.onSPIByte !== 'function'
+                            && typeof (inst as any)?.onSPIByteExchange !== 'function') continue;
+                        const pins = (inst as any)?.pins || {};
+                        for (const nm of Object.keys(pins)) {
+                            if (!/^(cs|ss|ssel|nss|cs_n|nce|sda|ce)$/i.test(nm)) continue;
+                            const net = (this.pinToNet as Map<string, number>).get(`${(inst as any)?.id}:${nm}`);
+                            if (net === undefined) continue;
+                            for (const [node, netId] of (this.pinToNet as Map<string, number>)) {
+                                if (netId !== net) continue;
+                                const sep = node.indexOf(':');
+                                if (sep < 0) continue;
+                                if (node.slice(0, sep) !== this.boardId) continue;
+                                const bp = node.slice(sep + 1);
+                                const [port] = portPinFor(bp);
+                                if (!port) continue;
+                                if (!seenCs.has(bp)) { seenCs.add(bp); found.push(bp); }
+                            }
+                        }
+                    } catch { /* one instance never breaks the cache */ }
+                }
+                this.f1SpiCsPins = found;
+            } catch { try { this.f1SpiCsPins = null; } catch { /* ignore */ } }
+            // Board fan-out map (publishGpio): netId → board pin labels.
+            try {
+                const byNet = new Map<number, string[]>();
+                for (const [node, netId] of (this.pinToNet as Map<string, number>)) {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) !== this.boardId) continue;
+                    const bp = node.slice(sep + 1);
+                    let arr = byNet.get(netId);
+                    if (!arr) { arr = []; byNet.set(netId, arr); }
+                    if (!arr.includes(bp)) arr.push(bp);
+                }
+                this.f1BoardPinsByNet = byNet;
+            } catch { try { this.f1BoardPinsByNet = null; } catch { /* ignore */ } }
+        } catch {
+            try { this.f1AdcCache = null; } catch { /* ignore */ }
+            try { this.f1NeedsLevel = null; } catch { /* ignore */ }
+            try { this.f1SpiCsPins = null; } catch { /* ignore */ }
+            try { this.f1BoardPinsByNet = null; } catch { /* ignore */ }
+        }
     }
 
     protected budgetForDelta(deltaMs: number): number {

@@ -1056,8 +1056,10 @@ export class PicoRunner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // pico-emu worker uses 2.5M steps / 16ms; match that cadence.
-        return Math.floor(deltaMs * 156250 * this.speed);
+        // 1x-real-time per ARCH clock (M0 125 / M33 150 / tickMHz opt-in):
+        // same code on different silicon must advance the same virtual ms.
+        // A single flat budget made M33 boards lag M0 boards (~84 vs ~109).
+        return Math.floor(deltaMs * 1000 * this.resolvePicoClockMHz() * this.speed);
     }
 
     /** Board steps per microsecond: active guest clock (125 RP2040 /

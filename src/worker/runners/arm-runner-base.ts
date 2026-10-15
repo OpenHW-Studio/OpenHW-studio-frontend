@@ -285,9 +285,40 @@ export abstract class ArmRunnerBase implements BoardRunner {
             const now = performance.now();
             const deltaMs = virtualDeltaMs !== undefined ? virtualDeltaMs : Math.max(0, now - this.lastTime);
             this.lastTime = now;
+            // Pace governor (Wokwi-style wall sync): budgets only set the
+            // rate — a fast engine (Pico C models, WFI fast-forward) would
+            // otherwise outrun wall clock. If virtual time leads wall×speed
+            // by >120ms, skip stepping this tick (drains, GPIO, telemetry
+            // still run). Slow engines never trigger it. Free-running cores
+            // (ESP32's SAB worker) advance on their own cadence and are not
+            // governed here — their pace comes from their own budget.
+            let governed = false;
+            try {
+                if (virtualDeltaMs === undefined) {
+                    if (!(this as any).paceWallAnchor) {
+                        (this as any).paceWallAnchor = now;
+                        try { (this as any).paceSimAnchor = Number(this.getSimulatedTimeMs()) || 0; } catch { (this as any).paceSimAnchor = 0; }
+                    }
+                    const wallElapsed = Math.max(0, now - Number((this as any).paceWallAnchor));
+                    let simElapsed = 0;
+                    try { simElapsed = Math.max(0, Number(this.getSimulatedTimeMs()) - Number((this as any).paceSimAnchor)); } catch { simElapsed = 0; }
+                    // Anchors are set on the first tick — which fires at page
+                    // load, long before Run (compile + idle included). Without
+                    // this, wallElapsed starts minutes ahead and the governor
+                    // can never engage. Rebase whenever hopelessly behind;
+                    // the lead cap below is unaffected.
+                    const target0 = wallElapsed * Math.max(0.05, Number(this.speed) || 1);
+                    if (simElapsed + 5000 < target0) {
+                        (this as any).paceWallAnchor = now;
+                        try { (this as any).paceSimAnchor = Number(this.getSimulatedTimeMs()) || 0; } catch { (this as any).paceSimAnchor = 0; }
+                    }
+                    const target = Math.max(0, now - Number((this as any).paceWallAnchor)) * Math.max(0.05, Number(this.speed) || 1);
+                    if (simElapsed - target > 120) governed = true;
+                }
+            } catch { governed = false; }
             // Budget scales with wall time × speed, capped so a stalled tab
             // can't burst the engine. Baselines per core clock (see runners).
-            const budget = Math.min(this.budgetForDelta(deltaMs), this.maxBudgetPerTick());
+            const budget = governed ? 0 : Math.min(this.budgetForDelta(deltaMs), this.maxBudgetPerTick());
             if (budget > 0 && !this.engine.isHalted?.()) {
                 let steps = 0;
                 try { steps = Number(this.engine.stepBudget(budget)) || 0; } catch { steps = 0; }

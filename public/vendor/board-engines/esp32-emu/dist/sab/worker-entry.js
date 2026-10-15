@@ -7628,6 +7628,35 @@ async function runSimChunk() {
         Atomics.store(ctrl, SAB_RESP, RESP_DONE);
         Atomics.store(ctrl, SAB_CMD, CMD_NONE);
       }
+      // OPENHW MIRROR PATCH (app-start wedge fix): service CMD_GET_TWAI_TX
+      // inline in runSimChunk, mirroring the processCommand case below
+      // (native_twai_get_tx ×5 into readResp, count in ARG1). The proxy
+      // busy-spins for RESP_DONE, and while RUN=1 the worker never returns
+      // to commandLoop — so without this the runner's TWAI-TX observer
+      // (every 20th pollBusTaps, unconditional) wedges the board worker
+      // ~200ms after run() and no UART is ever drained again (observed:
+      // 12 lines through entry 0x400805b4, then silence; engine keeps
+      // running unwatched). Read-only native getter, same class as the
+      // adjacent GET_LEDC/POLL_GPIO inline blocks — no silicon behavior
+      // invented. Propose upstream verbatim (esp32-emu worker-entry.js).
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_GET_TWAI_TX) {
+        try {
+          let written = 0;
+          const exp = chip?._wasmLoader?.exports;
+          if (readResp && exp?.native_twai_get_tx) {
+            try {
+              const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+              for (let i = 0; i < 5; i++) dv.setUint32(i * 4, exp.native_twai_get_tx(i) >>> 0, true);
+              written = 20;
+            } catch {
+            }
+          }
+          Atomics.store(ctrl, SAB_CMD_ARG1, written);
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
       if (Atomics.load(ctrl, SAB_CMD) === CMD_PRESS_RESET) {
         try {
           chip?.pressResetButton?.();

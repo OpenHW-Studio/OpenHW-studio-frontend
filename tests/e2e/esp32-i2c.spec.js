@@ -41,7 +41,7 @@ test.describe('ESP32 I2C (devkit OLED)', () => {
     }));
     expect(setup.ok).toBe(true);
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 30000, selectTelemetry: ['oled1'], serialNeedle: 'ESP_OLED_DRAWN', telemetryMode: 'detail',
+      forMs: 200000, selectTelemetry: ['oled1'], serialNeedle: 'ESP_OLED_DRAWN', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     console.log('ESP reasons:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);

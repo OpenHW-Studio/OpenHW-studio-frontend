@@ -243,7 +243,10 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
                 if (prev && Number.isFinite(prev.simMs) && Number.isFinite(prev.wallMs) && nowMs > prev.wallMs) {
                   const inst = (simMs - prev.simMs) / (nowMs - prev.wallMs);
                   if (inst >= 0 && inst < 10) {
-                    const ema = prev.ema === undefined ? inst : prev.ema * 0.7 + inst * 0.3;
+                    // Slow EMA: engine pace arrives in bursts (WFI
+                    // fast-forwards, host GC) — converge on the truth
+                    // without whiplash. Same fixed point, less jump.
+                    const ema = prev.ema === undefined ? inst : prev.ema * 0.85 + inst * 0.15;
                     store[boardIdKey] = { wallMs: nowMs, simMs, ema, at: nowMs };
                   } else {
                     store[boardIdKey] = { ...(prev || {}), at: nowMs };
