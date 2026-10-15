@@ -62,6 +62,8 @@ import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-m
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
+import { Logic as Inmp441Logic } from '@openhw/emulator/src/components/openhw-inmp441/logic';
+import { Logic as Sph0645Logic } from '@openhw/emulator/src/components/openhw-sph0645/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
@@ -190,11 +192,13 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-logic-analyzer': SimulationMonitorLogic,
     'openhw-ks2e-m-dc5': Ks2eLogic,
 
-    // I2S Audio Components
+    // I2S Audio Components (microphones use their real logic classes so
+    // mic_data/mic_error events engage the sim; DAC/amp stay on the
+    // fallback until a live consumer test needs them).
     'openhw-pcm5102': I2SProtocol,
     'openhw-max98357': I2SProtocol,
-    'openhw-inmp441': I2SProtocol,
-    'openhw-sph0645': I2SProtocol,
+    'openhw-inmp441': Inmp441Logic,
+    'openhw-sph0645': Sph0645Logic,
 
     // Sensors — custom components
     'DHT-22': DHT22Logic,
@@ -437,6 +441,7 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
     'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ePaperDisplay': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CLK' }, { id: 'CS' }, { id: 'DC' }, { id: 'RST' }, { id: 'BUSY' }],
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }],

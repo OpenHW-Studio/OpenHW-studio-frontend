@@ -294,12 +294,6 @@ export class AVRRunner {
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
-            // TEMP-DIAG sd-class (removed after isolation).
-            try {
-                if (String(cDef.type || '').includes('sd-card')) {
-                    console.warn(`[SD-DIAG] instantiate ${cDef.id} LogicClass=${(LogicClass as any)?.name} src=${((LogicClass as any)?.toString?.() || '').slice(0, 80)}`);
-                }
-            } catch { /* ignore */ }
             if (LogicClass) {
                 // Pins: manifest-of-record is the emulator manifest.json; the
                 // COMPONENT_PINS table is a stale fallback only (drift audit:
@@ -2460,7 +2454,8 @@ export class AVRRunner {
         // decodes without this per-edge lane. Capability probe only —
         // no per-component special-casing (same pattern as PWM/OneWire).
         const key = String(pinId || '').toUpperCase();
-        for (const endpoint of this.getProtocolEndpointsForArduinoPin(key)) {
+        const endpoints = this.getProtocolEndpointsForArduinoPin(key);
+        for (const endpoint of endpoints) {
             const inst = endpoint.inst as any;
             if (!inst || typeof inst.getNeoPixelPinName !== 'function') continue;
             let din: unknown = null;

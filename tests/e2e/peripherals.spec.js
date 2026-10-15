@@ -15,7 +15,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     page.on('console', (msg) => {
       try {
         const t = `[${msg.type()}] ${msg.text()}`;
-        if (/AVRRunner DBG|inst id=(sd1|neo1|tm1|mx1|nk1|seg1|lc1|spk1|ep1) |SD-DIAG|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
+        if (/AVRRunner DBG|inst id=(sd1|neo1|tm1|mx1|nk1|seg1|lc1|spk1|ep1) |SD-DIAG|NEO-LATCH|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
       } catch { /* ignore */ }
     });
   });
@@ -70,6 +70,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       forMs: 16000, serialNeedle: 'CAM_READY', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
+    console.log('CAM serial:', JSON.stringify((verdict.serial || '').slice(0, 300)), 'reasons:', JSON.stringify(verdict.reasons || []));
     expect(verdict.pass).toBe(true);
     // Human proof: a live <video> element streaming frames.
     const cam = await page.evaluate(() => {
@@ -104,6 +105,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     const neo = (verdict.telemetry || []).find((t) => t.id === 'neo1');
     expect(neo).toBeTruthy();
     console.log('NEO telemetry:', JSON.stringify({ summary: String(neo.summary || '').slice(0, 200) }));
+    console.log('NEO serial:', JSON.stringify((verdict.serial || '').slice(0, 300)));
     // Content proof: firmware lights pixel 0 red + pixel 1 green.
     const ncustom = neo.details?.custom || neo.details?.metrics?.custom || {};
     console.log('NEO custom:', JSON.stringify(ncustom).slice(0, 200));

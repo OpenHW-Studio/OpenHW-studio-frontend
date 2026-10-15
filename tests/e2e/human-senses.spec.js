@@ -244,8 +244,10 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
         wires: [
           { from: 'uno1:3v3', to: 'mic1:VDD' },
           { from: 'uno1:gnd_1', to: 'mic1:GND' },
+          { from: 'uno1:2', to: 'mic1:WS' },
+          { from: 'uno1:3', to: 'mic1:SCK' },
         ],
-        code: 'void setup(){Serial.begin(9600);Serial.println("MIC_READY");}\nvoid loop(){Serial.println("MIC_TICK");delay(1000);}\n',
+        code: 'void setup(){Serial.begin(9600);Serial.println("MIC_READY");pinMode(2,OUTPUT);pinMode(3,OUTPUT);}\nvoid loop(){for(int i=0;i<500;i++){digitalWrite(2,HIGH);delayMicroseconds(200);digitalWrite(2,LOW);delayMicroseconds(200);digitalWrite(3,HIGH);delayMicroseconds(50);digitalWrite(3,LOW);delayMicroseconds(50);}Serial.println("MIC_TICK");delay(500);}\n',
       }));
     expect(setup.ok).toBe(true);
 
