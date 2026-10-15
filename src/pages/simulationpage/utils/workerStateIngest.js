@@ -232,6 +232,27 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
               runLagTelemetryLastLogRef.current.get(boardIdKey) || null;
             const stateGapMs = prevState ? nowMs - prevState.ts : null;
             runLagTelemetryLastStateRef.current.set(boardIdKey, { ts: nowMs });
+            // Measured-pace tracking (sim ms per wall ms, EMA per board).
+            // Powers the runtime pill's actual-vs-setting readout so the
+            // panel can never claim 100% while the engine runs slower.
+            try {
+              const simMs = Number(msg.simTimeMs);
+              if (Number.isFinite(simMs) && typeof window !== 'undefined') {
+                const store = (window.__simPaceByBoard = window.__simPaceByBoard || {});
+                const prev = store[boardIdKey] || null;
+                if (prev && Number.isFinite(prev.simMs) && Number.isFinite(prev.wallMs) && nowMs > prev.wallMs) {
+                  const inst = (simMs - prev.simMs) / (nowMs - prev.wallMs);
+                  if (inst >= 0 && inst < 10) {
+                    const ema = prev.ema === undefined ? inst : prev.ema * 0.7 + inst * 0.3;
+                    store[boardIdKey] = { wallMs: nowMs, simMs, ema, at: nowMs };
+                  } else {
+                    store[boardIdKey] = { ...(prev || {}), at: nowMs };
+                  }
+                } else {
+                  store[boardIdKey] = { wallMs: nowMs, simMs, ema: prev && prev.ema, at: nowMs };
+                }
+              }
+            } catch { /* pace tracking never breaks ingest */ }
             const perf =
               msg.perf && typeof msg.perf === "object" ? msg.perf : null;
             const telemetryLogIntervalMs = 1500;

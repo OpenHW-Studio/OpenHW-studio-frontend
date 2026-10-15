@@ -1723,6 +1723,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
+  // Measured pace per board ({label, title}), null until samples land.
+  const [measuredSpeed, setMeasuredSpeed] = useState(null);
   const [showSpeedDialog, setShowSpeedDialog] = useState(false);
 
   const [componentTelemetryEnabled, setComponentTelemetryEnabled] =
@@ -4176,6 +4178,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     hardwareStatus,
     lastHardwareStatusRef,
     appendConsoleEntry,
+    simulationSpeed,
+    setMeasuredSpeed,
   });
   // ── Run controls (pause/reset/serial/baud) ──────────────────────────────────
   // Lives in hooks/useRunControls.js (identical routing + dep arrays).
@@ -5372,6 +5376,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               isPaused={isPaused}
               runDurationSec={runDurationSec}
               simulationSpeedPercent={simulationSpeedPercent}
+              measuredSpeed={measuredSpeed}
               formatRunDuration={formatRunDuration}
             />
 

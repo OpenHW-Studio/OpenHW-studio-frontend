@@ -1336,11 +1336,12 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 deepSiliconEnabled: activeDeepSiliconEnabled,
             };
 
-            // Heavy engines (ARM boards) tick on a dedicated compute Worker
-            // so one board's WASM burst never starves the others. AVR stays
-            // in-process (cheap, synchronous, needs direct instance access
-            // for INTERACT/physics). Degraded mode (no Worker): in-process.
-            const useBoardWorker = !/arduino|avr|mega|nano|attiny/i.test(boardType) && typeof Worker !== 'undefined';
+            // Phase B: every multi-board runner ticks on a dedicated compute
+            // Worker — AVR included. AVR stays in-process only in single
+            // mode (cheap, synchronous). One board per thread; the lockstep
+            // scheduler (BOARD_STEP) keeps shared sim-time, and SAB carries
+            // bytes while postMessage stays the wakeup.
+            const useBoardWorker = typeof Worker !== 'undefined';
             if (useBoardWorker) {
                 const bw = new Worker(new URL('./board.worker.ts', import.meta.url), { type: 'module' });
                 const targetId = boardComp.id;
@@ -1936,6 +1937,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     (br as any).setTelemetryEnabled(enabled, telemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
                 }
             });
+            for (const [, bw] of boardWorkers) {
+                try { bw.postMessage({ type: 'SET_TELEMETRY', enabled, mode: telemetryMode }); } catch { /* ignore */ }
+            }
         }
     } else if (data.type === 'FLUSH_VISUALS') {
         if (mode === 'single' && runner) {
@@ -1948,6 +1952,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     (br as any).forceEmitState();
                 }
             });
+            for (const [, bw] of boardWorkers) {
+                try { bw.postMessage({ type: 'FLUSH' }); } catch { /* ignore */ }
+            }
             // Board workers emit on their own cadence via SAB + state
             // wakeups; nothing to flush over the wire.
         }

@@ -39,6 +39,7 @@
  */
 import { createRunnerForBoard } from './execute';
 import type { BoardRunner } from './registries/component-registry.ts';
+import { avrInstruction } from 'avr8js';
 
 let runner: BoardRunner | null = null;
 let boardId = '';
@@ -119,6 +120,18 @@ self.onmessage = async (e: MessageEvent) => {
         return;
     }
 
+    // Phase B parity: telemetry + flush fan-out so worker-hosted boards
+    // emit the same frames as in-process runners.
+    if (data.type === 'SET_TELEMETRY') {
+        try { (runner as any)?.setTelemetryEnabled?.(!!data.enabled, String(data.mode || 'detail')); } catch { /* ignore */ }
+        return;
+    }
+
+    if (data.type === 'FLUSH') {
+        try { (runner as any)?.forceEmitState?.(); } catch { /* ignore */ }
+        return;
+    }
+
     if (data.type === 'PAUSE') {
         try { (runner as any)?.pause?.(); } catch { /* ignore */ }
         return;
@@ -155,14 +168,33 @@ self.onmessage = async (e: MessageEvent) => {
 
     if (data.type === 'INTERACT_EVT') {
         // Button/knob interaction for a component owned by this board.
-        // Runner instances live here; AVR-style quick bursts need direct
-        // CPU access, so the parent delegates instead of emulating.
+        // Runner instances live here. AVR runners additionally need a quick
+        // CPU burst + repropagate so firmware observes the event promptly
+        // (mirrors the parent's in-process runQuickBurst for single mode).
         try {
-            const inst = (runner as any)?.instances?.get?.(data.compId);
+            const r = runner as any;
+            const inst = r?.instances?.get?.(data.compId);
             if (inst) {
                 inst.onEvent(data.event);
-                if (typeof (runner as any)?.forceEmitState === 'function') {
-                    (runner as any).forceEmitState();
+                try {
+                    if (typeof r?.repropagateAllVoltages === 'function') r.repropagateAllVoltages();
+                    if (typeof r?.pollADCChannels === 'function') r.pollADCChannels();
+                    const cpu = r?.cpu;
+                    if (cpu && typeof cpu.cycles === 'number') {
+                        const target = cpu.cycles + 16000;
+                        let guard = 0;
+                        while (cpu.cycles < target && guard++ < 20000) {
+                            try { avrInstruction(cpu); } catch { break; }
+                            try { cpu.tick(); } catch { break; }
+                        }
+                    }
+                    const instArray = r?.instances ? Array.from(r.instances.values()) : [];
+                    for (const c of instArray) {
+                        try { c.update(cpu?.cycles ?? 0, r?.currentWires || [], instArray); } catch { /* ignore */ }
+                    }
+                } catch { /* burst never breaks interact */ }
+                if (typeof r?.forceEmitState === 'function') {
+                    r.forceEmitState();
                 }
                 post({ type: 'interact-done', boardId, compId: data.compId });
             } else {

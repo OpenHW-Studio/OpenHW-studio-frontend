@@ -62,18 +62,14 @@ test.describe('Dual boards (two Unos, partitioned + merged)', () => {
     expect(verdict.serial || '').toContain('UNO2_READY');
     expect(verdict.serial || '').toContain('UNO2_TICK');
     // Both OLEDs must hold pixels (user-reported blank second screen).
-    // Deterministic channel: liveOop is a LATCHING raw-state mirror while
-    // formatted telemetry is throttled per-message (heavy framebuffers can
-    // miss the verdict window). vram arrives as {nonzeroFrac,len} for views.
-    const oled2oop = (verdict.liveOop || {}).oled2 || {};
-    const vramView = oled2oop.vram || {};
-    console.log('OLED2 liveOop vram:', JSON.stringify(vramView).slice(0, 120));
+    // vramFillPercentage comes from the model's framebuffer scan; the
+    // verdict polls until selected telemetry is present, so this read is
+    // steady-state, not timing luck.
     const oled2 = (verdict.telemetry || []).find((t) => t.id === 'oled2');
-    const ocustom = oled2?.details?.custom || oled2?.details?.metrics?.custom || {};
+    expect(oled2).toBeTruthy();
+    const ocustom = oled2.details?.custom || oled2.details?.metrics?.custom || {};
     console.log('OLED2 vramFill:', ocustom.vramFillPercentage, 'power:', ocustom.powerStatus);
-    const fillFrac = Number(vramView.nonzeroFrac ?? NaN);
-    const fillPct = Number(ocustom.vramFillPercentage ?? NaN);
-    expect(fillFrac > 0 || fillPct > 0).toBe(true);
+    expect(Number(ocustom.vramFillPercentage ?? NaN)).toBeGreaterThan(0);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
