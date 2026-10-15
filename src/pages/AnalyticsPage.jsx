@@ -69,6 +69,56 @@ const fmtInt = (n) => {
     return v.toLocaleString('en-US');
 };
 
+/* Full geo names: backend sends ISO 3166-1 alpha-2 country codes
+   (geoip-lite `country`, e.g. "IN") and city labels shaped as
+   "City, CC" (e.g. "Mumbai, IN"). Intl.DisplayNames expands codes to
+   full English names ("India") with no hardcoded table. Unknown/invalid
+   codes fall back to the raw value so nothing ever renders blank. */
+let _regionDisplay = null;
+const regionDisplay = () => {
+    if (_regionDisplay === null) {
+        try {
+            _regionDisplay = new Intl.DisplayNames(['en'], { type: 'region' });
+        } catch {
+            _regionDisplay = false;
+        }
+    }
+    return _regionDisplay || null;
+};
+
+const fullCountryName = (codeOrName) => {
+    if (codeOrName == null) return 'Unknown';
+    const s = String(codeOrName).trim();
+    if (!s || /^unknown$/i.test(s)) return 'Unknown';
+    if (/^[A-Za-z]{2}$/.test(s)) {
+        const dn = regionDisplay();
+        if (dn) {
+            try {
+                const full = dn.of(s.toUpperCase());
+                if (full && full !== s) return full;
+            } catch {
+                /* fall through to raw value */
+            }
+        }
+    }
+    return s;
+};
+
+const fullCityLabel = (label) => {
+    if (label == null) return 'Unknown';
+    const s = String(label).trim();
+    if (!s || /^unknown$/i.test(s)) return 'Unknown';
+    const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+        const cc = parts[parts.length - 1];
+        if (/^[A-Za-z]{2}$/.test(cc)) {
+            return `${parts.slice(0, -1).join(', ')}, ${fullCountryName(cc)}`;
+        }
+    }
+    if (/^[A-Za-z]{2}$/.test(s)) return fullCountryName(s);
+    return s;
+};
+
 const shortDate = (iso) => {
     if (!iso) return '';
     const d = new Date(`${iso}T00:00:00`);
@@ -190,13 +240,12 @@ export default function AnalyticsPage() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
-    // ?range= persists one shared window across all three switches so views
+    // ?range= persists one shared window across all switches so views
     // are shareable (e.g. /analytics?range=week). Individual overrides let
     // each section diverge; they sync back into the URL as range_roles,
-    // range_visits, range_builds.
+    // range_visits, range_sims.
     const [timeframe, setTimeframe] = useState(() => readRangeParam(searchParams, 'range_roles', readRangeParam(searchParams, 'range', 'allTime')));
     const [trafficTimeframe, setTrafficTimeframe] = useState(() => readRangeParam(searchParams, 'range_visits', readRangeParam(searchParams, 'range', 'allTime')));
-    const [buildTimeframe, setBuildTimeframe] = useState(() => readRangeParam(searchParams, 'range_builds', readRangeParam(searchParams, 'range', 'allTime')));
     const [updatedAt, setUpdatedAt] = useState(null);
 
     const loadStats = async () => {
@@ -222,9 +271,18 @@ export default function AnalyticsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Legacy ?range=X migrates once into per-section params so shared links
-    // keep working and the URL always reflects the visible state.
+    // Legacy ?range=X (and the old range_builds key from the removed
+    // Compilation runs section) migrates once into per-section params so
+    // shared links keep working and the URL always reflects visible state.
     useEffect(() => {
+        const legacyBuilds = searchParams.get('range_builds');
+        if (legacyBuilds && RANGE_IDS.includes(legacyBuilds) && !searchParams.has('range_sims')) {
+            const next = Object.fromEntries(searchParams.entries());
+            delete next.range_builds;
+            next.range_sims = legacyBuilds;
+            setSimTimeframe(legacyBuilds);
+            setSearchParams(next, { replace: true });
+        }
         if (!searchParams.has('range')) return;
         const legacy = readRangeParam(searchParams, 'range', null);
         if (!legacy) return;
@@ -232,7 +290,7 @@ export default function AnalyticsPage() {
         delete next.range;
         if (!searchParams.has('range_roles')) { next.range_roles = legacy; setTimeframe(legacy); }
         if (!searchParams.has('range_visits')) { next.range_visits = legacy; setTrafficTimeframe(legacy); }
-        if (!searchParams.has('range_builds')) { next.range_builds = legacy; setBuildTimeframe(legacy); }
+        if (!searchParams.has('range_sims')) { next.range_sims = legacy; setSimTimeframe(legacy); }
         setSearchParams(next, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -277,28 +335,15 @@ export default function AnalyticsPage() {
         [traffic]
     );
 
-    const compiles = useMemo(() => stats?.compilationHistory || [], [stats]);
-    // Build window follows the page's window convention: Today = latest day,
-    // Week = last 7, Month/All time = everything the backend timeline holds
-    // (30-day series, so Month is a true 30-day month).
-    const buildWindowDays = TIMEFRAMES.find((t) => t.id === buildTimeframe)?.days ?? compiles.length;
-    const builds = compiles.slice(-Math.min(buildWindowDays, compiles.length));
-    const buildMax = Math.max(1, ...builds.map((d) => (d.success || 0) + (d.fail || 0)));
-    const compileTotals = useMemo(
-        () => builds.reduce((acc, d) => ({ success: acc.success + (d.success || 0), fail: acc.fail + (d.fail || 0) }), { success: 0, fail: 0 }),
-        [builds]
-    );
-    const successRate = compileTotals.success + compileTotals.fail > 0
-        ? Math.round((compileTotals.success / (compileTotals.success + compileTotals.fail)) * 100)
-        : null;
-
     // Simulations-over-time: daily Project.createdAt counts (new backend
-    // series, 30-day). Window follows the shared convention.
+    // series, 30-day). Own timeframe switch (was shared with the removed
+    // Compilation runs section); ?range_sims persists it in the URL.
+    const [simTimeframe, setSimTimeframe] = useState(() => readRangeParam(searchParams, 'range_sims', readRangeParam(searchParams, 'range_builds', readRangeParam(searchParams, 'range', 'allTime'))));
     const fullSimulations = useMemo(
         () => (stats?.simulationsTimeline || []).map((d) => ({ date: d.date, count: d.count || 0 })),
         [stats]
     );
-    const simWindowDays = TIMEFRAMES.find((t) => t.id === buildTimeframe)?.days ?? fullSimulations.length;
+    const simWindowDays = TIMEFRAMES.find((t) => t.id === simTimeframe)?.days ?? fullSimulations.length;
     const simulations = fullSimulations.slice(-Math.min(simWindowDays, fullSimulations.length));
     const simTotal = useMemo(() => simulations.reduce((acc, d) => acc + d.count, 0), [simulations]);
 
@@ -315,7 +360,7 @@ export default function AnalyticsPage() {
 
     const pickRoles = pickRange(setTimeframe, 'range_roles');
     const pickVisits = pickRange(setTrafficTimeframe, 'range_visits');
-    const pickBuilds = pickRange(setBuildTimeframe, 'range_builds');
+    const pickSims = pickRange(setSimTimeframe, 'range_sims');
 
     const exportWindowCsv = () => {
         const stamp = new Date().toISOString().split('T')[0];
@@ -327,8 +372,6 @@ export default function AnalyticsPage() {
             ...regTimeline.map((d) => ['signups', d.date, 'general_users', d.user || 0]),
             ...traffic.map((d) => ['visits', d.date, 'visitors', d.visitors]),
             ...traffic.map((d) => ['visits', d.date, 'session_hits', d.hits]),
-            ...builds.map((d) => ['builds', d.date, 'success', d.success || 0]),
-            ...builds.map((d) => ['builds', d.date, 'failed', d.fail || 0]),
             ...simulations.map((d) => ['simulations', d.date, 'saved', d.count]),
         ]);
     };
@@ -353,7 +396,7 @@ export default function AnalyticsPage() {
                             <h1 className="pa-title">How the workbench is growing</h1>
                             <p className="pa-lede">
                                 A shared notebook of community signups, daily visits, and
-                                compilation runs. Aggregate counts only — no maps tracking
+                                saved simulations. Aggregate counts only — no maps tracking
                                 individuals, no session logs.
                             </p>
                         </div>
@@ -546,55 +589,7 @@ export default function AnalyticsPage() {
                                     <div className="pa-devices">
                                         <div className="pa-device">Desktop<strong>{fmtInt(devices.desktop)}</strong></div>
                                         <div className="pa-device">Mobile<strong>{fmtInt(devices.mobile)}</strong></div>
-                                        <div className="pa-device">Tablet<strong>{fmtInt(devices.tablet)}</strong></div>
                                     </div>
-                                </div>
-                            </section>
-
-                            {/* Builds */}
-                            <section className="pa-section" aria-label="Compilations">
-                                <div className="pa-section-head">
-                                    <h2 className="pa-section-title">Compilation runs</h2>
-                                    <div className="pa-switch" role="group" aria-label="Builds timeframe">
-                                        {TIMEFRAMES.map((t) => (
-                                            <button
-                                                key={t.id}
-                                                className={`pa-switch-btn ${buildTimeframe === t.id ? 'is-on' : ''}`}
-                                                onClick={() => pickBuilds(t.id)}
-                                                aria-pressed={buildTimeframe === t.id}
-                                            >
-                                                {t.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <p className="pa-section-sub">
-                                    Successful versus failed firmware builds {windowLabel(buildTimeframe)}
-                                    {successRate != null && (
-                                        <> — <strong>{successRate}% success</strong> ({fmtInt(compileTotals.success)} succeeded · {fmtInt(compileTotals.fail)} failed · avg {stats?.avgCompileTime || '—'})</>
-                                    )}
-                                    {successRate == null && ' — no runs recorded yet'}.
-                                </p>
-                                <div className="pa-builds">
-                                    {builds.length > 0 ? (
-                                        builds.map((d) => {
-                                            const ok = d.success || 0;
-                                            const bad = d.fail || 0;
-                                            const dayRate = ok + bad > 0 ? Math.round((ok / (ok + bad)) * 100) : null;
-                                            return (
-                                                <div className="pa-build-row" key={d.date}>
-                                                    <span className="pa-build-date">{shortDate(d.date)}</span>
-                                                    <span className="pa-build-track" role="img" aria-label={`${shortDate(d.date)}: ${ok} succeeded, ${bad} failed${dayRate != null ? `, ${dayRate}% success` : ''}`}>
-                                                        <i style={{ width: `${(ok / buildMax) * 100}%` }} />
-                                                        <b style={{ left: `${(ok / buildMax) * 100}%`, width: `${(bad / buildMax) * 100}%` }} />
-                                                    </span>
-                                                    <span className="pa-build-nums"><strong>{fmtInt(ok)}</strong> ok · {fmtInt(bad)} failed{dayRate != null ? ` · ${dayRate}%` : ''}</span>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="pa-build-row"><span className="pa-build-date">—</span><span>No compilation data in this window yet.</span><span /></div>
-                                    )}
                                 </div>
                             </section>
 
@@ -626,9 +621,21 @@ export default function AnalyticsPage() {
                                         </div>
                                         <div className="pa-section-head pa-duo-gap">
                                             <h2 className="pa-section-title">Simulations saved</h2>
+                                            <div className="pa-switch" role="group" aria-label="Simulations timeframe">
+                                                {TIMEFRAMES.map((t) => (
+                                                    <button
+                                                        key={t.id}
+                                                        className={`pa-switch-btn ${simTimeframe === t.id ? 'is-on' : ''}`}
+                                                        onClick={() => pickSims(t.id)}
+                                                        aria-pressed={simTimeframe === t.id}
+                                                    >
+                                                        {t.label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
                                         <p className="pa-section-sub">
-                                            New saved simulations per day {windowLabel(buildTimeframe)} — {fmtInt(simTotal)} in view, {fmtInt(stats?.totalSimulations || 0)} all time.
+                                            New saved simulations per day {windowLabel(simTimeframe)} — {fmtInt(simTotal)} in view, {fmtInt(stats?.totalSimulations || 0)} all time.
                                         </p>
                                         <div className="pa-traffic pa-sims">
                                             <SimFigure points={simulations} />
@@ -650,7 +657,7 @@ export default function AnalyticsPage() {
                                                         <span className="pa-rank" aria-hidden="true">{i + 1}</span>
                                                         <span className="pa-place-main">
                                                             <span className="pa-place-top">
-                                                                <span className="pa-place-name">{c.name || 'Unknown'}</span>
+                                                                <span className="pa-place-name">{fullCountryName(c.name)}</span>
                                                                 <span className="pa-place-count">{fmtInt(c.count)}{c.percentage != null ? ` · ${c.percentage}%` : ''}</span>
                                                             </span>
                                                             <span className="pa-place-track" aria-hidden="true">
@@ -669,7 +676,7 @@ export default function AnalyticsPage() {
                                         {cities.length > 0 && (
                                             <div className="pa-cities">
                                                 {cities.map((c) => (
-                                                    <span className="pa-city" key={c.name}>{c.name}<b>{fmtInt(c.count)}</b></span>
+                                                    <span className="pa-city" key={c.name}>{fullCityLabel(c.name)}<b>{fmtInt(c.count)}</b></span>
                                                 ))}
                                             </div>
                                         )}

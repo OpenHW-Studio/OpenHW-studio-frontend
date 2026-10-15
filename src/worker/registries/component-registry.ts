@@ -1,11 +1,16 @@
 import { BaseComponent } from '@openhw/emulator';
+// Micro:bit v2 board shell: edge-connector pins only (the nRF52833 core
+// is driven by MicrobitRunner; this shell carries pin state for wiring
+// + board telemetry like matrixLit). No package changes needed.
+export class MicrobitBoardLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { matrixLit: 0, ...this.state };
+    }
+}
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
-import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
-import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic';
-import { PicoLogic } from '../pico-logic';
-import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
@@ -13,6 +18,7 @@ import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-s
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
 import { NeopixelLogic } from '@openhw/emulator/src/components/openhw-neopixel-matrix/logic';
 import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic';
+import { Logic as SpeakerLogic } from '@openhw/emulator/src/components/openhw-5w-speaker/logic';
 import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic';
 import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
@@ -39,7 +45,8 @@ import { RotaryEncoderLogic } from '@openhw/emulator/src/components/openhw-rotar
 import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-5110/logic';
 import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic';
-// import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { Lcd2004ParallelLogic } from '@openhw/emulator/src/components/openhw-lcd2004/logic';
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
@@ -58,24 +65,46 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { LtdcDisplayLogic } from '@openhw/emulator/src/components/openhw-ltdc-display/logic';
+import { UsbDeviceLogic } from '@openhw/emulator/src/components/openhw-usb-device/logic';
+import { ILI9341TouchLogic } from '@openhw/emulator/src/components/openhw-ili9341-touch/logic';
+import { EPaperLogic } from '@openhw/emulator/src/components/openhw-ePaperDisplay/logic';
 import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
 import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-module/logic';
 
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
+import { Logic as Inmp441Logic } from '@openhw/emulator/src/components/openhw-inmp441/logic';
+import { Logic as Sph0645Logic } from '@openhw/emulator/src/components/openhw-sph0645/logic';
+import { Logic as Max98357Logic } from '@openhw/emulator/src/components/openhw-max98357/logic';
+import { Logic as Pcm5102Logic } from '@openhw/emulator/src/components/openhw-pcm5102/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
+import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
+import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic';
+import { BMP180Logic } from '@openhw/emulator/src/components/openhw-bmp180/logic';
+import { DS1307RTCLogic } from '@openhw/emulator/src/components/openhw-ds1307-rtc/logic';
+import { NLSF595Logic } from '@openhw/emulator/src/components/openhw-nlsf595/logic';
+import { ChargerLogic } from '@openhw/emulator/src/components/openhw-charger/logic';
+import { NTCThermistorLogic } from '@openhw/emulator/src/components/openhw-ntc-thermistor/logic';
+import { HX711Logic } from '@openhw/emulator/src/components/openhw-hx711_5/logic';
+import { ADXL345Logic } from '@openhw/emulator/src/components/openhw-adxl345/logic';
+import { CC1101Logic } from '@openhw/emulator/src/components/openhw-cc1101/logic';
+import { NRF24L01Logic } from '@openhw/emulator/src/components/openhw-nrf24l01/logic';
 
-import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
+import { UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
+import { MICROBIT_EDGE_PINS } from '../board-profiles';
 
 
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
+import { Mcp2518fdLogic } from '../components/mcp2518fd';
 
 // Provide fallback protocols since base protocols are now integrated directly into BaseComponent
 const I2CProtocol = BaseComponent;
@@ -92,14 +121,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
-    'openhw-esp32': Esp32Logic,
-    'openhw-esp32-cam': Esp32CamLogic,
-    'wokwi-esp32-cam': Esp32CamLogic,
-    'esp32-cam': Esp32CamLogic,
-    'wokwi-raspberry-pi-pico': PicoLogic,
-    'openhw-raspberry-pi-pico': PicoLogic,
-    'wokwi-raspberry-pi-pico-w': PicoWLogic,
-    'openhw-raspberry-pi-pico-w': PicoWLogic,
+    'openhw-microbit-v2': MicrobitBoardLogic,
+
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
     'wokwi-slide-switch': SlideSwitchLogic,
@@ -118,6 +141,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ws2821b': NeopixelLogic,
     'wokwi-buzzer': BuzzerLogic,
     'openhw-buzzer': BuzzerLogic,
+    'openhw-5w-speaker': SpeakerLogic,
     'wokwi-motor': MotorLogic,
     'openhw-motor': MotorLogic,
     'wokwi-servo': ServoLogic,
@@ -130,8 +154,10 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CLogic,
     'openhw-lcd2004-i2c': Lcd2004I2CLogic,
-    // 'wokwi-lcd1602': Lcd1602Logic,
-    // 'openhw-lcd1602': Lcd1602Logic,
+    'wokwi-lcd1602': Lcd1602Logic,
+    'openhw-lcd1602': Lcd1602Logic,
+    'wokwi-lcd2004': Lcd2004ParallelLogic,
+    'openhw-lcd2004': Lcd2004ParallelLogic,
     'wokwi-lcd1602-i2c': Lcd2004I2CLogic,
     'openhw-lcd1602-i2c': Lcd2004I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
@@ -141,13 +167,18 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-max7219': MAX7219Logic,
     'wokwi-ldr-module': LdrModuleLogic,
     'openhw-ldr-module': LdrModuleLogic,
-    'wokwi-7segment': BaseComponent,
+    'wokwi-7segment': Wokwi7SegmentLogic,
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
+    'openhw-ltdc-display': LtdcDisplayLogic,
+    'openhw-usb-device': UsbDeviceLogic,
+    'openhw-ili9341-touch': ILI9341TouchLogic,
+    'openhw-ePaperDisplay': EPaperLogic,
     'wokwi-sd-card': SDCardLogic,
     'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
+    'openhw-74hc595': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
@@ -197,11 +228,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-logic-analyzer': SimulationMonitorLogic,
     'openhw-ks2e-m-dc5': Ks2eLogic,
 
-    // I2S Audio Components
-    'openhw-pcm5102': I2SProtocol,
-    'openhw-max98357': I2SProtocol,
-    'openhw-inmp441': I2SProtocol,
-    'openhw-sph0645': I2SProtocol,
+    // I2S Audio Components: real logic classes so frames decode to pins
+    // (mics) and pins decode to analog (DAC/amp).
+    'openhw-pcm5102': Pcm5102Logic,
+    'openhw-max98357': Max98357Logic,
+    'openhw-inmp441': Inmp441Logic,
+    'openhw-sph0645': Sph0645Logic,
 
     // Sensors — custom components
     'DHT-22': DHT22Logic,
@@ -219,18 +251,23 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-breadboard': BaseComponent,
     'wokwi-breadboard-half': BaseComponent,
     'openhw-breadboard-half': BaseComponent,
-    'wokwi-bmp180': BaseComponent,
-    'openhw-bmp180': BaseComponent,
-    'wokwi-bmp180-breakout': BaseComponent,
-    'openhw-bmp180-breakout': BaseComponent,
-    'wokwi-ds1307-rtc': BaseComponent,
-    'openhw-ds1307-rtc': BaseComponent,
+    'wokwi-bmp180': BMP180Logic,
+    'openhw-bmp180': BMP180Logic,
+    'wokwi-bmp180-breakout': BMP180Logic,
+    'openhw-bmp180-breakout': BMP180Logic,
+    'wokwi-ds1307-rtc': DS1307RTCLogic,
+    'openhw-ds1307-rtc': DS1307RTCLogic,
+    'openhw-hx711_5': HX711Logic,
+    'openhw-hx711_50': HX711Logic,
+    'openhw-adxl345': ADXL345Logic,
+    'openhw-cc1101': CC1101Logic,
+    'openhw-nrf24l01': NRF24L01Logic,
     'wokwi-hc-sr04': HCSR04Logic,
     'openhw-hc-sr04': HCSR04Logic,
-    'wokwi-mpu6050': BaseComponent,
-    'openhw-mpu6050': BaseComponent,
-    'wokwi-nlsf595': BaseComponent,
-    'openhw-nlsf595': BaseComponent,
+    'wokwi-mpu6050': MPU6050Logic,
+    'openhw-mpu6050': MPU6050Logic,
+    'wokwi-nlsf595': NLSF595Logic,
+    'openhw-nlsf595': NLSF595Logic,
     'wokwi-relay-module': RelayModuleLogic,
     'openhw-relay-module': RelayModuleLogic,
     'wokwi-stepper-motor': StepperMotorLogic,
@@ -239,13 +276,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
     'openhw-attiny85': BaseComponent,
-    'openhw-pico': PicoLogic,
-    'openhw-pico-w': PicoWLogic,
+
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
-    'openhw-ntc-thermistor': BaseComponent,
+    'openhw-ntc-thermistor': NTCThermistorLogic,
     'openhw-ntc-temperature-sensor': NtcLogic,
-    'openhw-charger': BaseComponent,
+    'openhw-charger': ChargerLogic,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
@@ -254,169 +290,225 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ds18b20': DS18B20Logic,
     'wokwi-ir-receiver': IRReceiverLogic,
     'openhw-ir-receiver': IRReceiverLogic,
+    'openhw-ir-remote': IRRemoteLogic,
+    'openhw-ir-remote': IRRemoteLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,
+    'openhw-mcp2518fd': Mcp2518fdLogic,
 };
 
-// Per-type pin lists so every component's pins are registered correctly
-export const COMPONENT_PINS: Record<string, { id: string }[]> = {
-    'wokwi-led': [{ id: 'A' }, { id: 'K' }],
-    'openhw-led': [{ id: 'A' }, { id: 'K' }],
+// Per-type pin lists so every component's pins are registered correctly.
+// §6: manifests are the source of truth. This table is GENERATED from
+// emulator manifests (see scripts/gen-component-pins.mjs — run it after any
+// manifest pin change and paste the output below). Entries below the
+// "generated" marker are build output; hand edits will be overwritten.
+// Covered ids: every openhw-*/wokwi-* type with manifest pins; the 3 pin-less
+// types (openhw-image/ir-remote/text) resolve to [] (not undefined)
+// so callers can distinguish "no pins" from "unknown type".
+export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-esp32': [{ id: 'EN' }, { id: 'VP' }, { id: 'VN' }, { id: '34' }, { id: '35' }, { id: '32' }, { id: '33' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '14' }, { id: '12' }, { id: '13' }, { id: 'GND.2' }, { id: 'VIN' }, { id: '23' }, { id: '22' }, { id: '1' }, { id: '3' }, { id: '21' }, { id: '19' }, { id: '18' }, { id: '5' }, { id: '17' }, { id: '16' }, { id: '4' }, { id: '2' }, { id: '15' }, { id: 'GND.1' }, { id: '3V3' }],
-    'openhw-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'wokwi-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
-    'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
-    'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
-    'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
-    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
-    'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
-    'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
-    'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
-    'openhw-buzzer': [{ id: 'GND' }, { id: 'SIG' }],
-    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'wokwi-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-    'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
-    'openhw-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
-    'wokwi-motor': [{ id: '1' }, { id: '2' }],
-    'openhw-motor': [{ id: '1' }, { id: '2' }],
-    'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
-    'openhw-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
-    'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
-    'openhw-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
-    'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
-    'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
-    'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'wokwi-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
-    'openhw-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
-    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
-    'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
-    max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
-    'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
-    'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
-    'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
-    'openhw-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
-    'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
-    'openhw-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
-    'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
-    'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
-    'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
-    'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
-    'wokwi-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }],
-    'openhw-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }],
-    'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
-    'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
-    'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
-    'wokwi-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'openhw-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
-    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-microbit-v2': MICROBIT_EDGE_PINS.map((id: string) => ({ id })),
+    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-buffer-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-clock-generator': [{ id: 'OUT' }],
+    'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
-    'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
-    'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
-    'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
-    'logic-clock-generator': [{ id: 'OUT' }],
-    'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
-    'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
-    'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
-    'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
-    'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
-    'openhw-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
-    'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
-    'openhw-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
-    'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
-    'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
-    'openhw-dip-switch-8': [{ id: '1a' }, { id: '1b' }, { id: '2a' }, { id: '2b' }, { id: '3a' }, { id: '3b' }, { id: '4a' }, { id: '4b' }, { id: '5a' }, { id: '5b' }, { id: '6a' }, { id: '6b' }, { id: '7a' }, { id: '7b' }, { id: '8a' }, { id: '8b' }],
-    'openhw-pcm5102': [{ id: 'VCC' }, { id: 'GND' }, { id: 'BCK' }, { id: 'LRCK' }, { id: 'DIN' }, { id: 'SCK' }, { id: 'FMT' }, { id: 'DEMP' }, { id: 'XSMT' }],
-    'openhw-max98357': [{ id: 'VDD' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRC' }, { id: 'DIN' }, { id: 'GAIN' }, { id: 'SD' }],
-    'openhw-inmp441': [{ id: 'VDD' }, { id: 'GND' }, { id: 'WS' }, { id: 'SCK' }, { id: 'SD' }, { id: 'LR' }],
-    'openhw-sph0645': [{ id: '3V' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRCLK' }, { id: 'DOUT' }, { id: 'SEL' }],
-    'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
-    'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
-    'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
-    'openhw-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
-    'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
-    'openhw-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
-    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
-    'openhw-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
-    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
-    'openhw-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
-    'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
-    'openhw-photodiode': [{ id: 'A' }, { id: 'C' }],
-    'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
-    'openhw-diode': [{ id: 'A' }, { id: 'C' }],
-    'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
-    'openhw-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
-    'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'max30102': [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
+    'openhw-5w-speaker': [{ id: 'IN+' }, { id: 'IN-' }],
+    'openhw-6502': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-74hc165': [{ id: 'vcc' }, { id: 'ce' }, { id: 'd3' }, { id: 'd2' }, { id: 'd1' }, { id: 'd0' }, { id: 'ds' }, { id: 'q7' }, { id: 'pl' }, { id: 'cp' }, { id: 'd4' }, { id: 'd5' }, { id: 'd6' }, { id: 'd7' }, { id: 'q7n' }, { id: 'gnd' }],
+    'openhw-74hc595': [{ id: 'vcc' }, { id: 'q0' }, { id: 'ser' }, { id: 'oe' }, { id: 'rclk' }, { id: 'srclk' }, { id: 'srclr' }, { id: 'q7s' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'gnd' }],
+    'openhw-7segment': [{ id: 'G' }, { id: 'F' }, { id: 'COM.2' }, { id: 'A' }, { id: 'B' }, { id: 'E' }, { id: 'D' }, { id: 'COM.1' }, { id: 'C' }, { id: 'DP' }],
+    'openhw-8051': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8085': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8086': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8088': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
-    'wokwi-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
-    'openhw-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
-    'wokwi-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
-    'openhw-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
-    'wokwi-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'openhw-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
-    'wokwi-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
-    'openhw-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
-    'wokwi-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
-    'openhw-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
-    'wokwi-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
-    'openhw-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
-    'wokwi-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
-    'openhw-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
-    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
-    'openhw-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
-    'wokwi-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
-    'openhw-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
-    'wokwi-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
-    'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
-    'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
-    'wokwi-battery': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-adxl345': [{ id: 'GND' }, { id: 'VCC' }, { id: 'CS' }, { id: 'INT1' }, { id: 'INT2' }, { id: 'SDO' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-analog-joystick': [{ id: 'VCC' }, { id: 'VERT' }, { id: 'HORZ' }, { id: 'SEL' }, { id: 'GND' }],
+    'openhw-arduino-mega': [{ id: 'SCL' }, { id: 'SDA' }, { id: 'AREF' }, { id: 'GND.1' }, { id: '13' }, { id: '12' }, { id: '11' }, { id: '10' }, { id: '9' }, { id: '8' }, { id: '7' }, { id: '6' }, { id: '5' }, { id: '4' }, { id: '3' }, { id: '2' }, { id: '1' }, { id: '0' }, { id: '14' }, { id: '15' }, { id: '16' }, { id: '17' }, { id: '18' }, { id: '19' }, { id: '20' }, { id: '21' }, { id: '5V.1' }, { id: '5V.2' }, { id: '22' }, { id: '23' }, { id: '24' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '28' }, { id: '29' }, { id: '30' }, { id: '31' }, { id: '32' }, { id: '33' }, { id: '34' }, { id: '35' }, { id: '36' }, { id: '37' }, { id: '38' }, { id: '39' }, { id: '40' }, { id: '41' }, { id: '42' }, { id: '43' }, { id: '44' }, { id: '45' }, { id: '46' }, { id: '47' }, { id: '48' }, { id: '49' }, { id: '50' }, { id: '51' }, { id: '52' }, { id: '53' }, { id: 'GND.4' }, { id: 'GND.5' }, { id: 'IOREF' }, { id: 'RESET' }, { id: '3.3V' }, { id: '5V' }, { id: 'GND.2' }, { id: 'GND.3' }, { id: 'VIN' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }],
+    'openhw-arduino-nano': [{ id: '12' }, { id: '11' }, { id: '10' }, { id: '9' }, { id: '8' }, { id: '7' }, { id: '6' }, { id: '5' }, { id: '4' }, { id: '3' }, { id: '2' }, { id: 'GND.2' }, { id: 'RST.2' }, { id: 'RX' }, { id: 'TX' }, { id: 'PE1' }, { id: '13' }, { id: '3V3' }, { id: 'AREF' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'RST.1' }, { id: 'GND.1' }, { id: 'VIN' }, { id: 'PE0' }],
+    'openhw-arduino-sensor-shield': [{ id: 'AREF_IN' }, { id: 'GND_TOP_IN' }, { id: 'D13_IN' }, { id: 'D12_IN' }, { id: 'D11_IN' }, { id: 'D10_IN' }, { id: 'D9_IN' }, { id: 'D8_IN' }, { id: 'D7_IN' }, { id: 'D6_IN' }, { id: 'D5_IN' }, { id: 'D4_IN' }, { id: 'D3_IN' }, { id: 'D2_IN' }, { id: 'D1_IN' }, { id: 'D0_IN' }, { id: 'RST_IN' }, { id: '3V3_IN' }, { id: '5V_IN' }, { id: 'GND1_IN' }, { id: 'GND2_IN' }, { id: 'VIN_IN' }, { id: 'A0_IN' }, { id: 'A1_IN' }, { id: 'A2_IN' }, { id: 'A3_IN' }, { id: 'A4_IN' }, { id: 'A5_IN' }, { id: 'S_AREF' }, { id: 'V_AREF' }, { id: 'G_AREF' }, { id: 'S_GND' }, { id: 'V_GND' }, { id: 'G_GND' }, { id: 'S_13' }, { id: 'V_13' }, { id: 'G_13' }, { id: 'S_12' }, { id: 'V_12' }, { id: 'G_12' }, { id: 'S_11' }, { id: 'V_11' }, { id: 'G_11' }, { id: 'S_10' }, { id: 'V_10' }, { id: 'G_10' }, { id: 'S_9' }, { id: 'V_9' }, { id: 'G_9' }, { id: 'S_8' }, { id: 'V_8' }, { id: 'G_8' }, { id: 'S_7' }, { id: 'V_7' }, { id: 'G_7' }, { id: 'S_6' }, { id: 'V_6' }, { id: 'G_6' }, { id: 'S_5' }, { id: 'V_5' }, { id: 'G_5' }, { id: 'S_4' }, { id: 'V_4' }, { id: 'G_4' }, { id: 'S_3' }, { id: 'V_3' }, { id: 'G_3' }, { id: 'S_2' }, { id: 'V_2' }, { id: 'G_2' }, { id: 'S_1' }, { id: 'V_1' }, { id: 'G_1' }, { id: 'S_0' }, { id: 'V_0' }, { id: 'G_0' }, { id: 'S_A0' }, { id: 'V_A0' }, { id: 'G_A0' }, { id: 'S_A1' }, { id: 'V_A1' }, { id: 'G_A1' }, { id: 'S_A2' }, { id: 'V_A2' }, { id: 'G_A2' }, { id: 'S_A3' }, { id: 'V_A3' }, { id: 'G_A3' }, { id: 'S_A4' }, { id: 'V_A4' }, { id: 'G_A4' }, { id: 'S_A5' }, { id: 'V_A5' }, { id: 'G_A5' }],
+    'openhw-attiny85': [{ id: 'P5' }, { id: 'P4' }, { id: 'P3' }, { id: 'P2' }, { id: 'P1' }, { id: 'P0' }, { id: '5V' }, { id: 'GND' }, { id: 'VIN' }],
     'openhw-battery': [{ id: 'VCC' }, { id: 'GND' }],
-    'openhw-charger': [{ id: 'VIN+' }, { id: 'VIN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
-    'openhw-breadboard-mini': [{ id: 'a1' }, { id: 'b1' }, { id: 'c1' }, { id: 'd1' }, { id: 'e1' }, { id: 'f1' }, { id: 'g1' }, { id: 'h1' }, { id: 'i1' }, { id: 'j1' }],
-    'openhw-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
-    'openhw-arduino-sensor-shield': [{ id: 'VCC' }, { id: 'GND' }, { id: 'S' }],
-    'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
-    'wokwi-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }],
-    'openhw-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }],
-    'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
-    'openhw-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
-    'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
-    'openhw-ks2e-m-dc5': [
-  { id: 'COIL1' }, { id: 'COIL2' },
-  { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' },
-  { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }
-],
+    'openhw-biaxial-stepper': [{ id: 'A1-' }, { id: 'A1+' }, { id: 'B1+' }, { id: 'B1-' }, { id: 'A2-' }, { id: 'A2+' }, { id: 'B2+' }, { id: 'B2-' }],
+    'openhw-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-breadboard': [{ id: 'top_gnd_1' }, { id: 'top_vcc_1' }, { id: 'top_gnd_2' }, { id: 'top_vcc_2' }, { id: 'top_gnd_3' }, { id: 'top_vcc_3' }, { id: 'top_gnd_4' }, { id: 'top_vcc_4' }, { id: 'top_gnd_5' }, { id: 'top_vcc_5' }, { id: 'top_gnd_6' }, { id: 'top_vcc_6' }, { id: 'top_gnd_7' }, { id: 'top_vcc_7' }, { id: 'top_gnd_8' }, { id: 'top_vcc_8' }, { id: 'top_gnd_9' }, { id: 'top_vcc_9' }, { id: 'top_gnd_10' }, { id: 'top_vcc_10' }, { id: 'top_gnd_11' }, { id: 'top_vcc_11' }, { id: 'top_gnd_12' }, { id: 'top_vcc_12' }, { id: 'top_gnd_13' }, { id: 'top_vcc_13' }, { id: 'top_gnd_14' }, { id: 'top_vcc_14' }, { id: 'top_gnd_15' }, { id: 'top_vcc_15' }, { id: 'top_gnd_16' }, { id: 'top_vcc_16' }, { id: 'top_gnd_17' }, { id: 'top_vcc_17' }, { id: 'top_gnd_18' }, { id: 'top_vcc_18' }, { id: 'top_gnd_19' }, { id: 'top_vcc_19' }, { id: 'top_gnd_20' }, { id: 'top_vcc_20' }, { id: 'top_gnd_21' }, { id: 'top_vcc_21' }, { id: 'top_gnd_22' }, { id: 'top_vcc_22' }, { id: 'top_gnd_23' }, { id: 'top_vcc_23' }, { id: 'top_gnd_24' }, { id: 'top_vcc_24' }, { id: 'top_gnd_25' }, { id: 'top_vcc_25' }, { id: 'top_gnd_26' }, { id: 'top_vcc_26' }, { id: 'top_gnd_27' }, { id: 'top_vcc_27' }, { id: 'top_gnd_28' }, { id: 'top_vcc_28' }, { id: 'top_gnd_29' }, { id: 'top_vcc_29' }, { id: 'top_gnd_30' }, { id: 'top_vcc_30' }, { id: 'top_gnd_31' }, { id: 'top_vcc_31' }, { id: 'top_gnd_32' }, { id: 'top_vcc_32' }, { id: 'top_gnd_33' }, { id: 'top_vcc_33' }, { id: 'top_gnd_34' }, { id: 'top_vcc_34' }, { id: 'top_gnd_35' }, { id: 'top_vcc_35' }, { id: 'top_gnd_36' }, { id: 'top_vcc_36' }, { id: 'top_gnd_37' }, { id: 'top_vcc_37' }, { id: 'top_gnd_38' }, { id: 'top_vcc_38' }, { id: 'top_gnd_39' }, { id: 'top_vcc_39' }, { id: 'top_gnd_40' }, { id: 'top_vcc_40' }, { id: 'top_gnd_41' }, { id: 'top_vcc_41' }, { id: 'top_gnd_42' }, { id: 'top_vcc_42' }, { id: 'top_gnd_43' }, { id: 'top_vcc_43' }, { id: 'top_gnd_44' }, { id: 'top_vcc_44' }, { id: 'top_gnd_45' }, { id: 'top_vcc_45' }, { id: 'top_gnd_46' }, { id: 'top_vcc_46' }, { id: 'top_gnd_47' }, { id: 'top_vcc_47' }, { id: 'top_gnd_48' }, { id: 'top_vcc_48' }, { id: 'top_gnd_49' }, { id: 'top_vcc_49' }, { id: 'top_gnd_50' }, { id: 'top_vcc_50' }, { id: '1e' }, { id: '1d' }, { id: '1c' }, { id: '1b' }, { id: '1a' }, { id: '1f' }, { id: '1g' }, { id: '1h' }, { id: '1i' }, { id: '1j' }, { id: '2e' }, { id: '2d' }, { id: '2c' }, { id: '2b' }, { id: '2a' }, { id: '2f' }, { id: '2g' }, { id: '2h' }, { id: '2i' }, { id: '2j' }, { id: '3e' }, { id: '3d' }, { id: '3c' }, { id: '3b' }, { id: '3a' }, { id: '3f' }, { id: '3g' }, { id: '3h' }, { id: '3i' }, { id: '3j' }, { id: '4e' }, { id: '4d' }, { id: '4c' }, { id: '4b' }, { id: '4a' }, { id: '4f' }, { id: '4g' }, { id: '4h' }, { id: '4i' }, { id: '4j' }, { id: '5e' }, { id: '5d' }, { id: '5c' }, { id: '5b' }, { id: '5a' }, { id: '5f' }, { id: '5g' }, { id: '5h' }, { id: '5i' }, { id: '5j' }, { id: '6e' }, { id: '6d' }, { id: '6c' }, { id: '6b' }, { id: '6a' }, { id: '6f' }, { id: '6g' }, { id: '6h' }, { id: '6i' }, { id: '6j' }, { id: '7e' }, { id: '7d' }, { id: '7c' }, { id: '7b' }, { id: '7a' }, { id: '7f' }, { id: '7g' }, { id: '7h' }, { id: '7i' }, { id: '7j' }, { id: '8e' }, { id: '8d' }, { id: '8c' }, { id: '8b' }, { id: '8a' }, { id: '8f' }, { id: '8g' }, { id: '8h' }, { id: '8i' }, { id: '8j' }, { id: '9e' }, { id: '9d' }, { id: '9c' }, { id: '9b' }, { id: '9a' }, { id: '9f' }, { id: '9g' }, { id: '9h' }, { id: '9i' }, { id: '9j' }, { id: '10e' }, { id: '10d' }, { id: '10c' }, { id: '10b' }, { id: '10a' }, { id: '10f' }, { id: '10g' }, { id: '10h' }, { id: '10i' }, { id: '10j' }, { id: '11e' }, { id: '11d' }, { id: '11c' }, { id: '11b' }, { id: '11a' }, { id: '11f' }, { id: '11g' }, { id: '11h' }, { id: '11i' }, { id: '11j' }, { id: '12e' }, { id: '12d' }, { id: '12c' }, { id: '12b' }, { id: '12a' }, { id: '12f' }, { id: '12g' }, { id: '12h' }, { id: '12i' }, { id: '12j' }, { id: '13e' }, { id: '13d' }, { id: '13c' }, { id: '13b' }, { id: '13a' }, { id: '13f' }, { id: '13g' }, { id: '13h' }, { id: '13i' }, { id: '13j' }, { id: '14e' }, { id: '14d' }, { id: '14c' }, { id: '14b' }, { id: '14a' }, { id: '14f' }, { id: '14g' }, { id: '14h' }, { id: '14i' }, { id: '14j' }, { id: '15e' }, { id: '15d' }, { id: '15c' }, { id: '15b' }, { id: '15a' }, { id: '15f' }, { id: '15g' }, { id: '15h' }, { id: '15i' }, { id: '15j' }, { id: '16e' }, { id: '16d' }, { id: '16c' }, { id: '16b' }, { id: '16a' }, { id: '16f' }, { id: '16g' }, { id: '16h' }, { id: '16i' }, { id: '16j' }, { id: '17e' }, { id: '17d' }, { id: '17c' }, { id: '17b' }, { id: '17a' }, { id: '17f' }, { id: '17g' }, { id: '17h' }, { id: '17i' }, { id: '17j' }, { id: '18e' }, { id: '18d' }, { id: '18c' }, { id: '18b' }, { id: '18a' }, { id: '18f' }, { id: '18g' }, { id: '18h' }, { id: '18i' }, { id: '18j' }, { id: '19e' }, { id: '19d' }, { id: '19c' }, { id: '19b' }, { id: '19a' }, { id: '19f' }, { id: '19g' }, { id: '19h' }, { id: '19i' }, { id: '19j' }, { id: '20e' }, { id: '20d' }, { id: '20c' }, { id: '20b' }, { id: '20a' }, { id: '20f' }, { id: '20g' }, { id: '20h' }, { id: '20i' }, { id: '20j' }, { id: '21e' }, { id: '21d' }, { id: '21c' }, { id: '21b' }, { id: '21a' }, { id: '21f' }, { id: '21g' }, { id: '21h' }, { id: '21i' }, { id: '21j' }, { id: '22e' }, { id: '22d' }, { id: '22c' }, { id: '22b' }, { id: '22a' }, { id: '22f' }, { id: '22g' }, { id: '22h' }, { id: '22i' }, { id: '22j' }, { id: '23e' }, { id: '23d' }, { id: '23c' }, { id: '23b' }, { id: '23a' }, { id: '23f' }, { id: '23g' }, { id: '23h' }, { id: '23i' }, { id: '23j' }, { id: '24e' }, { id: '24d' }, { id: '24c' }, { id: '24b' }, { id: '24a' }, { id: '24f' }, { id: '24g' }, { id: '24h' }, { id: '24i' }, { id: '24j' }, { id: '25e' }, { id: '25d' }, { id: '25c' }, { id: '25b' }, { id: '25a' }, { id: '25f' }, { id: '25g' }, { id: '25h' }, { id: '25i' }, { id: '25j' }, { id: '26e' }, { id: '26d' }, { id: '26c' }, { id: '26b' }, { id: '26a' }, { id: '26f' }, { id: '26g' }, { id: '26h' }, { id: '26i' }, { id: '26j' }, { id: '27e' }, { id: '27d' }, { id: '27c' }, { id: '27b' }, { id: '27a' }, { id: '27f' }, { id: '27g' }, { id: '27h' }, { id: '27i' }, { id: '27j' }, { id: '28e' }, { id: '28d' }, { id: '28c' }, { id: '28b' }, { id: '28a' }, { id: '28f' }, { id: '28g' }, { id: '28h' }, { id: '28i' }, { id: '28j' }, { id: '29e' }, { id: '29d' }, { id: '29c' }, { id: '29b' }, { id: '29a' }, { id: '29f' }, { id: '29g' }, { id: '29h' }, { id: '29i' }, { id: '29j' }, { id: '30e' }, { id: '30d' }, { id: '30c' }, { id: '30b' }, { id: '30a' }, { id: '30f' }, { id: '30g' }, { id: '30h' }, { id: '30i' }, { id: '30j' }, { id: '31e' }, { id: '31d' }, { id: '31c' }, { id: '31b' }, { id: '31a' }, { id: '31f' }, { id: '31g' }, { id: '31h' }, { id: '31i' }, { id: '31j' }, { id: '32e' }, { id: '32d' }, { id: '32c' }, { id: '32b' }, { id: '32a' }, { id: '32f' }, { id: '32g' }, { id: '32h' }, { id: '32i' }, { id: '32j' }, { id: '33e' }, { id: '33d' }, { id: '33c' }, { id: '33b' }, { id: '33a' }, { id: '33f' }, { id: '33g' }, { id: '33h' }, { id: '33i' }, { id: '33j' }, { id: '34e' }, { id: '34d' }, { id: '34c' }, { id: '34b' }, { id: '34a' }, { id: '34f' }, { id: '34g' }, { id: '34h' }, { id: '34i' }, { id: '34j' }, { id: '35e' }, { id: '35d' }, { id: '35c' }, { id: '35b' }, { id: '35a' }, { id: '35f' }, { id: '35g' }, { id: '35h' }, { id: '35i' }, { id: '35j' }, { id: '36e' }, { id: '36d' }, { id: '36c' }, { id: '36b' }, { id: '36a' }, { id: '36f' }, { id: '36g' }, { id: '36h' }, { id: '36i' }, { id: '36j' }, { id: '37e' }, { id: '37d' }, { id: '37c' }, { id: '37b' }, { id: '37a' }, { id: '37f' }, { id: '37g' }, { id: '37h' }, { id: '37i' }, { id: '37j' }, { id: '38e' }, { id: '38d' }, { id: '38c' }, { id: '38b' }, { id: '38a' }, { id: '38f' }, { id: '38g' }, { id: '38h' }, { id: '38i' }, { id: '38j' }, { id: '39e' }, { id: '39d' }, { id: '39c' }, { id: '39b' }, { id: '39a' }, { id: '39f' }, { id: '39g' }, { id: '39h' }, { id: '39i' }, { id: '39j' }, { id: '40e' }, { id: '40d' }, { id: '40c' }, { id: '40b' }, { id: '40a' }, { id: '40f' }, { id: '40g' }, { id: '40h' }, { id: '40i' }, { id: '40j' }, { id: '41e' }, { id: '41d' }, { id: '41c' }, { id: '41b' }, { id: '41a' }, { id: '41f' }, { id: '41g' }, { id: '41h' }, { id: '41i' }, { id: '41j' }, { id: '42e' }, { id: '42d' }, { id: '42c' }, { id: '42b' }, { id: '42a' }, { id: '42f' }, { id: '42g' }, { id: '42h' }, { id: '42i' }, { id: '42j' }, { id: '43e' }, { id: '43d' }, { id: '43c' }, { id: '43b' }, { id: '43a' }, { id: '43f' }, { id: '43g' }, { id: '43h' }, { id: '43i' }, { id: '43j' }, { id: '44e' }, { id: '44d' }, { id: '44c' }, { id: '44b' }, { id: '44a' }, { id: '44f' }, { id: '44g' }, { id: '44h' }, { id: '44i' }, { id: '44j' }, { id: '45e' }, { id: '45d' }, { id: '45c' }, { id: '45b' }, { id: '45a' }, { id: '45f' }, { id: '45g' }, { id: '45h' }, { id: '45i' }, { id: '45j' }, { id: '46e' }, { id: '46d' }, { id: '46c' }, { id: '46b' }, { id: '46a' }, { id: '46f' }, { id: '46g' }, { id: '46h' }, { id: '46i' }, { id: '46j' }, { id: '47e' }, { id: '47d' }, { id: '47c' }, { id: '47b' }, { id: '47a' }, { id: '47f' }, { id: '47g' }, { id: '47h' }, { id: '47i' }, { id: '47j' }, { id: '48e' }, { id: '48d' }, { id: '48c' }, { id: '48b' }, { id: '48a' }, { id: '48f' }, { id: '48g' }, { id: '48h' }, { id: '48i' }, { id: '48j' }, { id: '49e' }, { id: '49d' }, { id: '49c' }, { id: '49b' }, { id: '49a' }, { id: '49f' }, { id: '49g' }, { id: '49h' }, { id: '49i' }, { id: '49j' }, { id: '50e' }, { id: '50d' }, { id: '50c' }, { id: '50b' }, { id: '50a' }, { id: '50f' }, { id: '50g' }, { id: '50h' }, { id: '50i' }, { id: '50j' }, { id: '51e' }, { id: '51d' }, { id: '51c' }, { id: '51b' }, { id: '51a' }, { id: '51f' }, { id: '51g' }, { id: '51h' }, { id: '51i' }, { id: '51j' }, { id: '52e' }, { id: '52d' }, { id: '52c' }, { id: '52b' }, { id: '52a' }, { id: '52f' }, { id: '52g' }, { id: '52h' }, { id: '52i' }, { id: '52j' }, { id: '53e' }, { id: '53d' }, { id: '53c' }, { id: '53b' }, { id: '53a' }, { id: '53f' }, { id: '53g' }, { id: '53h' }, { id: '53i' }, { id: '53j' }, { id: '54e' }, { id: '54d' }, { id: '54c' }, { id: '54b' }, { id: '54a' }, { id: '54f' }, { id: '54g' }, { id: '54h' }, { id: '54i' }, { id: '54j' }, { id: '55e' }, { id: '55d' }, { id: '55c' }, { id: '55b' }, { id: '55a' }, { id: '55f' }, { id: '55g' }, { id: '55h' }, { id: '55i' }, { id: '55j' }, { id: '56e' }, { id: '56d' }, { id: '56c' }, { id: '56b' }, { id: '56a' }, { id: '56f' }, { id: '56g' }, { id: '56h' }, { id: '56i' }, { id: '56j' }, { id: '57e' }, { id: '57d' }, { id: '57c' }, { id: '57b' }, { id: '57a' }, { id: '57f' }, { id: '57g' }, { id: '57h' }, { id: '57i' }, { id: '57j' }, { id: '58e' }, { id: '58d' }, { id: '58c' }, { id: '58b' }, { id: '58a' }, { id: '58f' }, { id: '58g' }, { id: '58h' }, { id: '58i' }, { id: '58j' }, { id: '59e' }, { id: '59d' }, { id: '59c' }, { id: '59b' }, { id: '59a' }, { id: '59f' }, { id: '59g' }, { id: '59h' }, { id: '59i' }, { id: '59j' }, { id: '60e' }, { id: '60d' }, { id: '60c' }, { id: '60b' }, { id: '60a' }, { id: '60f' }, { id: '60g' }, { id: '60h' }, { id: '60i' }, { id: '60j' }, { id: '61e' }, { id: '61d' }, { id: '61c' }, { id: '61b' }, { id: '61a' }, { id: '61f' }, { id: '61g' }, { id: '61h' }, { id: '61i' }, { id: '61j' }, { id: '62e' }, { id: '62d' }, { id: '62c' }, { id: '62b' }, { id: '62a' }, { id: '62f' }, { id: '62g' }, { id: '62h' }, { id: '62i' }, { id: '62j' }, { id: '63e' }, { id: '63d' }, { id: '63c' }, { id: '63b' }, { id: '63a' }, { id: '63f' }, { id: '63g' }, { id: '63h' }, { id: '63i' }, { id: '63j' }, { id: 'bottom_vcc_1' }, { id: 'bottom_gnd_1' }, { id: 'bottom_vcc_2' }, { id: 'bottom_gnd_2' }, { id: 'bottom_vcc_3' }, { id: 'bottom_gnd_3' }, { id: 'bottom_vcc_4' }, { id: 'bottom_gnd_4' }, { id: 'bottom_vcc_5' }, { id: 'bottom_gnd_5' }, { id: 'bottom_vcc_6' }, { id: 'bottom_gnd_6' }, { id: 'bottom_vcc_7' }, { id: 'bottom_gnd_7' }, { id: 'bottom_vcc_8' }, { id: 'bottom_gnd_8' }, { id: 'bottom_vcc_9' }, { id: 'bottom_gnd_9' }, { id: 'bottom_vcc_10' }, { id: 'bottom_gnd_10' }, { id: 'bottom_vcc_11' }, { id: 'bottom_gnd_11' }, { id: 'bottom_vcc_12' }, { id: 'bottom_gnd_12' }, { id: 'bottom_vcc_13' }, { id: 'bottom_gnd_13' }, { id: 'bottom_vcc_14' }, { id: 'bottom_gnd_14' }, { id: 'bottom_vcc_15' }, { id: 'bottom_gnd_15' }, { id: 'bottom_vcc_16' }, { id: 'bottom_gnd_16' }, { id: 'bottom_vcc_17' }, { id: 'bottom_gnd_17' }, { id: 'bottom_vcc_18' }, { id: 'bottom_gnd_18' }, { id: 'bottom_vcc_19' }, { id: 'bottom_gnd_19' }, { id: 'bottom_vcc_20' }, { id: 'bottom_gnd_20' }, { id: 'bottom_vcc_21' }, { id: 'bottom_gnd_21' }, { id: 'bottom_vcc_22' }, { id: 'bottom_gnd_22' }, { id: 'bottom_vcc_23' }, { id: 'bottom_gnd_23' }, { id: 'bottom_vcc_24' }, { id: 'bottom_gnd_24' }, { id: 'bottom_vcc_25' }, { id: 'bottom_gnd_25' }, { id: 'bottom_vcc_26' }, { id: 'bottom_gnd_26' }, { id: 'bottom_vcc_27' }, { id: 'bottom_gnd_27' }, { id: 'bottom_vcc_28' }, { id: 'bottom_gnd_28' }, { id: 'bottom_vcc_29' }, { id: 'bottom_gnd_29' }, { id: 'bottom_vcc_30' }, { id: 'bottom_gnd_30' }, { id: 'bottom_vcc_31' }, { id: 'bottom_gnd_31' }, { id: 'bottom_vcc_32' }, { id: 'bottom_gnd_32' }, { id: 'bottom_vcc_33' }, { id: 'bottom_gnd_33' }, { id: 'bottom_vcc_34' }, { id: 'bottom_gnd_34' }, { id: 'bottom_vcc_35' }, { id: 'bottom_gnd_35' }, { id: 'bottom_vcc_36' }, { id: 'bottom_gnd_36' }, { id: 'bottom_vcc_37' }, { id: 'bottom_gnd_37' }, { id: 'bottom_vcc_38' }, { id: 'bottom_gnd_38' }, { id: 'bottom_vcc_39' }, { id: 'bottom_gnd_39' }, { id: 'bottom_vcc_40' }, { id: 'bottom_gnd_40' }, { id: 'bottom_vcc_41' }, { id: 'bottom_gnd_41' }, { id: 'bottom_vcc_42' }, { id: 'bottom_gnd_42' }, { id: 'bottom_vcc_43' }, { id: 'bottom_gnd_43' }, { id: 'bottom_vcc_44' }, { id: 'bottom_gnd_44' }, { id: 'bottom_vcc_45' }, { id: 'bottom_gnd_45' }, { id: 'bottom_vcc_46' }, { id: 'bottom_gnd_46' }, { id: 'bottom_vcc_47' }, { id: 'bottom_gnd_47' }, { id: 'bottom_vcc_48' }, { id: 'bottom_gnd_48' }, { id: 'bottom_vcc_49' }, { id: 'bottom_gnd_49' }, { id: 'bottom_vcc_50' }, { id: 'bottom_gnd_50' }],
+    'openhw-breadboard-half': [{ id: 'top_gnd_1' }, { id: 'top_vcc_1' }, { id: 'top_gnd_2' }, { id: 'top_vcc_2' }, { id: 'top_gnd_3' }, { id: 'top_vcc_3' }, { id: 'top_gnd_4' }, { id: 'top_vcc_4' }, { id: 'top_gnd_5' }, { id: 'top_vcc_5' }, { id: 'top_gnd_6' }, { id: 'top_vcc_6' }, { id: 'top_gnd_7' }, { id: 'top_vcc_7' }, { id: 'top_gnd_8' }, { id: 'top_vcc_8' }, { id: 'top_gnd_9' }, { id: 'top_vcc_9' }, { id: 'top_gnd_10' }, { id: 'top_vcc_10' }, { id: 'top_gnd_11' }, { id: 'top_vcc_11' }, { id: 'top_gnd_12' }, { id: 'top_vcc_12' }, { id: 'top_gnd_13' }, { id: 'top_vcc_13' }, { id: 'top_gnd_14' }, { id: 'top_vcc_14' }, { id: 'top_gnd_15' }, { id: 'top_vcc_15' }, { id: 'top_gnd_16' }, { id: 'top_vcc_16' }, { id: 'top_gnd_17' }, { id: 'top_vcc_17' }, { id: 'top_gnd_18' }, { id: 'top_vcc_18' }, { id: 'top_gnd_19' }, { id: 'top_vcc_19' }, { id: 'top_gnd_20' }, { id: 'top_vcc_20' }, { id: 'top_gnd_21' }, { id: 'top_vcc_21' }, { id: 'top_gnd_22' }, { id: 'top_vcc_22' }, { id: 'top_gnd_23' }, { id: 'top_vcc_23' }, { id: 'top_gnd_24' }, { id: 'top_vcc_24' }, { id: 'top_gnd_25' }, { id: 'top_vcc_25' }, { id: '1e' }, { id: '1d' }, { id: '1c' }, { id: '1b' }, { id: '1a' }, { id: '1f' }, { id: '1g' }, { id: '1h' }, { id: '1i' }, { id: '1j' }, { id: '2e' }, { id: '2d' }, { id: '2c' }, { id: '2b' }, { id: '2a' }, { id: '2f' }, { id: '2g' }, { id: '2h' }, { id: '2i' }, { id: '2j' }, { id: '3e' }, { id: '3d' }, { id: '3c' }, { id: '3b' }, { id: '3a' }, { id: '3f' }, { id: '3g' }, { id: '3h' }, { id: '3i' }, { id: '3j' }, { id: '4e' }, { id: '4d' }, { id: '4c' }, { id: '4b' }, { id: '4a' }, { id: '4f' }, { id: '4g' }, { id: '4h' }, { id: '4i' }, { id: '4j' }, { id: '5e' }, { id: '5d' }, { id: '5c' }, { id: '5b' }, { id: '5a' }, { id: '5f' }, { id: '5g' }, { id: '5h' }, { id: '5i' }, { id: '5j' }, { id: '6e' }, { id: '6d' }, { id: '6c' }, { id: '6b' }, { id: '6a' }, { id: '6f' }, { id: '6g' }, { id: '6h' }, { id: '6i' }, { id: '6j' }, { id: '7e' }, { id: '7d' }, { id: '7c' }, { id: '7b' }, { id: '7a' }, { id: '7f' }, { id: '7g' }, { id: '7h' }, { id: '7i' }, { id: '7j' }, { id: '8e' }, { id: '8d' }, { id: '8c' }, { id: '8b' }, { id: '8a' }, { id: '8f' }, { id: '8g' }, { id: '8h' }, { id: '8i' }, { id: '8j' }, { id: '9e' }, { id: '9d' }, { id: '9c' }, { id: '9b' }, { id: '9a' }, { id: '9f' }, { id: '9g' }, { id: '9h' }, { id: '9i' }, { id: '9j' }, { id: '10e' }, { id: '10d' }, { id: '10c' }, { id: '10b' }, { id: '10a' }, { id: '10f' }, { id: '10g' }, { id: '10h' }, { id: '10i' }, { id: '10j' }, { id: '11e' }, { id: '11d' }, { id: '11c' }, { id: '11b' }, { id: '11a' }, { id: '11f' }, { id: '11g' }, { id: '11h' }, { id: '11i' }, { id: '11j' }, { id: '12e' }, { id: '12d' }, { id: '12c' }, { id: '12b' }, { id: '12a' }, { id: '12f' }, { id: '12g' }, { id: '12h' }, { id: '12i' }, { id: '12j' }, { id: '13e' }, { id: '13d' }, { id: '13c' }, { id: '13b' }, { id: '13a' }, { id: '13f' }, { id: '13g' }, { id: '13h' }, { id: '13i' }, { id: '13j' }, { id: '14e' }, { id: '14d' }, { id: '14c' }, { id: '14b' }, { id: '14a' }, { id: '14f' }, { id: '14g' }, { id: '14h' }, { id: '14i' }, { id: '14j' }, { id: '15e' }, { id: '15d' }, { id: '15c' }, { id: '15b' }, { id: '15a' }, { id: '15f' }, { id: '15g' }, { id: '15h' }, { id: '15i' }, { id: '15j' }, { id: '16e' }, { id: '16d' }, { id: '16c' }, { id: '16b' }, { id: '16a' }, { id: '16f' }, { id: '16g' }, { id: '16h' }, { id: '16i' }, { id: '16j' }, { id: '17e' }, { id: '17d' }, { id: '17c' }, { id: '17b' }, { id: '17a' }, { id: '17f' }, { id: '17g' }, { id: '17h' }, { id: '17i' }, { id: '17j' }, { id: '18e' }, { id: '18d' }, { id: '18c' }, { id: '18b' }, { id: '18a' }, { id: '18f' }, { id: '18g' }, { id: '18h' }, { id: '18i' }, { id: '18j' }, { id: '19e' }, { id: '19d' }, { id: '19c' }, { id: '19b' }, { id: '19a' }, { id: '19f' }, { id: '19g' }, { id: '19h' }, { id: '19i' }, { id: '19j' }, { id: '20e' }, { id: '20d' }, { id: '20c' }, { id: '20b' }, { id: '20a' }, { id: '20f' }, { id: '20g' }, { id: '20h' }, { id: '20i' }, { id: '20j' }, { id: '21e' }, { id: '21d' }, { id: '21c' }, { id: '21b' }, { id: '21a' }, { id: '21f' }, { id: '21g' }, { id: '21h' }, { id: '21i' }, { id: '21j' }, { id: '22e' }, { id: '22d' }, { id: '22c' }, { id: '22b' }, { id: '22a' }, { id: '22f' }, { id: '22g' }, { id: '22h' }, { id: '22i' }, { id: '22j' }, { id: '23e' }, { id: '23d' }, { id: '23c' }, { id: '23b' }, { id: '23a' }, { id: '23f' }, { id: '23g' }, { id: '23h' }, { id: '23i' }, { id: '23j' }, { id: '24e' }, { id: '24d' }, { id: '24c' }, { id: '24b' }, { id: '24a' }, { id: '24f' }, { id: '24g' }, { id: '24h' }, { id: '24i' }, { id: '24j' }, { id: '25e' }, { id: '25d' }, { id: '25c' }, { id: '25b' }, { id: '25a' }, { id: '25f' }, { id: '25g' }, { id: '25h' }, { id: '25i' }, { id: '25j' }, { id: '26e' }, { id: '26d' }, { id: '26c' }, { id: '26b' }, { id: '26a' }, { id: '26f' }, { id: '26g' }, { id: '26h' }, { id: '26i' }, { id: '26j' }, { id: '27e' }, { id: '27d' }, { id: '27c' }, { id: '27b' }, { id: '27a' }, { id: '27f' }, { id: '27g' }, { id: '27h' }, { id: '27i' }, { id: '27j' }, { id: '28e' }, { id: '28d' }, { id: '28c' }, { id: '28b' }, { id: '28a' }, { id: '28f' }, { id: '28g' }, { id: '28h' }, { id: '28i' }, { id: '28j' }, { id: '29e' }, { id: '29d' }, { id: '29c' }, { id: '29b' }, { id: '29a' }, { id: '29f' }, { id: '29g' }, { id: '29h' }, { id: '29i' }, { id: '29j' }, { id: '30e' }, { id: '30d' }, { id: '30c' }, { id: '30b' }, { id: '30a' }, { id: '30f' }, { id: '30g' }, { id: '30h' }, { id: '30i' }, { id: '30j' }, { id: 'bottom_vcc_1' }, { id: 'bottom_gnd_1' }, { id: 'bottom_vcc_2' }, { id: 'bottom_gnd_2' }, { id: 'bottom_vcc_3' }, { id: 'bottom_gnd_3' }, { id: 'bottom_vcc_4' }, { id: 'bottom_gnd_4' }, { id: 'bottom_vcc_5' }, { id: 'bottom_gnd_5' }, { id: 'bottom_vcc_6' }, { id: 'bottom_gnd_6' }, { id: 'bottom_vcc_7' }, { id: 'bottom_gnd_7' }, { id: 'bottom_vcc_8' }, { id: 'bottom_gnd_8' }, { id: 'bottom_vcc_9' }, { id: 'bottom_gnd_9' }, { id: 'bottom_vcc_10' }, { id: 'bottom_gnd_10' }, { id: 'bottom_vcc_11' }, { id: 'bottom_gnd_11' }, { id: 'bottom_vcc_12' }, { id: 'bottom_gnd_12' }, { id: 'bottom_vcc_13' }, { id: 'bottom_gnd_13' }, { id: 'bottom_vcc_14' }, { id: 'bottom_gnd_14' }, { id: 'bottom_vcc_15' }, { id: 'bottom_gnd_15' }, { id: 'bottom_vcc_16' }, { id: 'bottom_gnd_16' }, { id: 'bottom_vcc_17' }, { id: 'bottom_gnd_17' }, { id: 'bottom_vcc_18' }, { id: 'bottom_gnd_18' }, { id: 'bottom_vcc_19' }, { id: 'bottom_gnd_19' }, { id: 'bottom_vcc_20' }, { id: 'bottom_gnd_20' }, { id: 'bottom_vcc_21' }, { id: 'bottom_gnd_21' }, { id: 'bottom_vcc_22' }, { id: 'bottom_gnd_22' }, { id: 'bottom_vcc_23' }, { id: 'bottom_gnd_23' }, { id: 'bottom_vcc_24' }, { id: 'bottom_gnd_24' }, { id: 'bottom_vcc_25' }, { id: 'bottom_gnd_25' }],
+    'openhw-breadboard-mini': [{ id: '1e' }, { id: '1d' }, { id: '1c' }, { id: '1b' }, { id: '1a' }, { id: '1f' }, { id: '1g' }, { id: '1h' }, { id: '1i' }, { id: '1j' }, { id: '2e' }, { id: '2d' }, { id: '2c' }, { id: '2b' }, { id: '2a' }, { id: '2f' }, { id: '2g' }, { id: '2h' }, { id: '2i' }, { id: '2j' }, { id: '3e' }, { id: '3d' }, { id: '3c' }, { id: '3b' }, { id: '3a' }, { id: '3f' }, { id: '3g' }, { id: '3h' }, { id: '3i' }, { id: '3j' }, { id: '4e' }, { id: '4d' }, { id: '4c' }, { id: '4b' }, { id: '4a' }, { id: '4f' }, { id: '4g' }, { id: '4h' }, { id: '4i' }, { id: '4j' }, { id: '5e' }, { id: '5d' }, { id: '5c' }, { id: '5b' }, { id: '5a' }, { id: '5f' }, { id: '5g' }, { id: '5h' }, { id: '5i' }, { id: '5j' }, { id: '6e' }, { id: '6d' }, { id: '6c' }, { id: '6b' }, { id: '6a' }, { id: '6f' }, { id: '6g' }, { id: '6h' }, { id: '6i' }, { id: '6j' }, { id: '7e' }, { id: '7d' }, { id: '7c' }, { id: '7b' }, { id: '7a' }, { id: '7f' }, { id: '7g' }, { id: '7h' }, { id: '7i' }, { id: '7j' }, { id: '8e' }, { id: '8d' }, { id: '8c' }, { id: '8b' }, { id: '8a' }, { id: '8f' }, { id: '8g' }, { id: '8h' }, { id: '8i' }, { id: '8j' }, { id: '9e' }, { id: '9d' }, { id: '9c' }, { id: '9b' }, { id: '9a' }, { id: '9f' }, { id: '9g' }, { id: '9h' }, { id: '9i' }, { id: '9j' }, { id: '10e' }, { id: '10d' }, { id: '10c' }, { id: '10b' }, { id: '10a' }, { id: '10f' }, { id: '10g' }, { id: '10h' }, { id: '10i' }, { id: '10j' }, { id: '11e' }, { id: '11d' }, { id: '11c' }, { id: '11b' }, { id: '11a' }, { id: '11f' }, { id: '11g' }, { id: '11h' }, { id: '11i' }, { id: '11j' }, { id: '12e' }, { id: '12d' }, { id: '12c' }, { id: '12b' }, { id: '12a' }, { id: '12f' }, { id: '12g' }, { id: '12h' }, { id: '12i' }, { id: '12j' }, { id: '13e' }, { id: '13d' }, { id: '13c' }, { id: '13b' }, { id: '13a' }, { id: '13f' }, { id: '13g' }, { id: '13h' }, { id: '13i' }, { id: '13j' }, { id: '14e' }, { id: '14d' }, { id: '14c' }, { id: '14b' }, { id: '14a' }, { id: '14f' }, { id: '14g' }, { id: '14h' }, { id: '14i' }, { id: '14j' }, { id: '15e' }, { id: '15d' }, { id: '15c' }, { id: '15b' }, { id: '15a' }, { id: '15f' }, { id: '15g' }, { id: '15h' }, { id: '15i' }, { id: '15j' }, { id: '16e' }, { id: '16d' }, { id: '16c' }, { id: '16b' }, { id: '16a' }, { id: '16f' }, { id: '16g' }, { id: '16h' }, { id: '16i' }, { id: '16j' }, { id: '17e' }, { id: '17d' }, { id: '17c' }, { id: '17b' }, { id: '17a' }, { id: '17f' }, { id: '17g' }, { id: '17h' }, { id: '17i' }, { id: '17j' }],
+    'openhw-buzzer': [{ id: 'GND' }, { id: 'SIG' }],
+    'openhw-cc1101': [{ id: 'VCC' }, { id: 'GND' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'MISO' }, { id: 'GDO2' }, { id: 'GDO0' }, { id: 'CSN' }],
+    'openhw-charger': [{ id: 'IN+' }, { id: 'IN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
+    'openhw-dht22': [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }],
+    'openhw-diode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-ds1307-rtc': [{ id: 'SQ_2' }, { id: 'DS_2' }, { id: 'SCL_2' }, { id: 'SDA_2' }, { id: 'VCC_2' }, { id: 'GND_2' }, { id: 'BAT_2' }, { id: 'DS' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VCC' }],
+    'openhw-ePaperDisplay': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CLK' }, { id: 'CS' }, { id: 'DC' }, { id: 'RST' }, { id: 'BUSY' }],
+    'openhw-esp32': [{ id: 'EN' }, { id: 'VP' }, { id: 'VN' }, { id: '34' }, { id: '35' }, { id: '32' }, { id: '33' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '14' }, { id: '12' }, { id: '13' }, { id: 'GND.2' }, { id: 'VIN' }, { id: '23' }, { id: '22' }, { id: '1' }, { id: '3' }, { id: '21' }, { id: '19' }, { id: '18' }, { id: '5' }, { id: '17' }, { id: '16' }, { id: '4' }, { id: '2' }, { id: '15' }, { id: 'GND.1' }, { id: '3V3' }],
+    'openhw-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
+    'openhw-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
+    'openhw-hp4067': [{ id: 'GND' }, { id: 'VCC' }, { id: 'EN' }, { id: 'S3' }, { id: 'S2' }, { id: 'S1' }, { id: 'S0' }, { id: 'SIG' }, { id: 'C15' }, { id: 'C14' }, { id: 'C13' }, { id: 'C12' }, { id: 'C11' }, { id: 'C10' }, { id: 'C9' }, { id: 'C8' }, { id: 'C7' }, { id: 'C6' }, { id: 'C5' }, { id: 'C4' }, { id: 'C3' }, { id: 'C2' }, { id: 'C1' }, { id: 'C0' }],
+    'openhw-hx711_5': [{ id: 'GND' }, { id: 'DT' }, { id: 'SCK' }, { id: 'VCC' }],
+    'openhw-hx711_50': [{ id: 'GND' }, { id: 'DT' }, { id: 'SCK' }, { id: 'VCC' }],
+    'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ltdc-display': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-usb-device': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-ili9341-touch': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-image': [],
+    'openhw-inmp441': [{ id: 'VDD' }, { id: 'GND' }, { id: 'L/R' }, { id: 'WS' }, { id: 'SCK' }, { id: 'SD' }],
+    'openhw-ir-receiver': [{ id: 'GND' }, { id: 'VCC' }, { id: 'OUT' }],
+    'openhw-ir-remote': [],
+    'openhw-ks2e-m-dc5': [{ id: 'COIL1' }, { id: 'COIL2' }, { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' }, { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }],
+    'openhw-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'openhw-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-lcd2004': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-led': [{ id: 'A' }, { id: 'K' }],
+    'openhw-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
+    'openhw-max98357': [{ id: 'LRC' }, { id: 'BCLK' }, { id: 'DIN' }, { id: 'GAIN' }, { id: 'SD' }, { id: 'GND' }, { id: 'VIN' }, { id: 'OUT+' }, { id: 'OUT-' }],
+    'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
-
-    // Custom sensors
-    'DHT-22':                [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }],
-    'openhw-dht22':          [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }],
-    'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-motor': [{ id: '1' }, { id: '2' }],
+    'openhw-motor-driver': [{ id: 'ENA' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'ENB' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: 'GND' }, { id: '5V' }],
+    'openhw-mpu6050': [{ id: 'INT' }, { id: 'AD0' }, { id: 'XCL' }, { id: 'XDA' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }],
     'openhw-mq2-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
-    'wokwi-pir-motion-sensor':  [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }],
-    'openhw-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }],
-    'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
-    'wokwi-raindrop-pad':    [{ id: 'AOUT' }, { id: 'GND' }],
+    'openhw-neopixel-matrix': [{ id: 'VCC' }, { id: 'DIN' }, { id: 'GND' }, { id: 'DOUT' }],
+    'openhw-neopixel-ring': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'DOUT' }],
+    'openhw-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'CS' }, { id: 'R1' }, { id: 'G1' }, { id: 'B1' }],
+    'openhw-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'openhw-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'openhw-nrf24l01': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CE' }, { id: 'CSN' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'IRQ' }],
+    'openhw-ntc-temperature-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'OUT' }],
+    'openhw-ntc-thermistor': [{ id: 'A0' }, { id: 'D0' }, { id: 'GND' }, { id: 'VCC' }],
+    'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'TXD' }, { id: 'RXD' }, { id: '#4' }, { id: '#17' }, { id: '#18' }, { id: '#27' }, { id: '#22' }, { id: '#23' }, { id: '#24' }, { id: '#25' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'CLK' }, { id: 'CE0' }, { id: 'CE1' }, { id: '#5' }, { id: '#6' }, { id: '#12' }, { id: '#13' }, { id: '#16' }, { id: '#19' }, { id: '#20' }, { id: '#21' }, { id: 'GND_IN' }, { id: 'VCC_IN' }, { id: '5.0V' }, { id: '3.3V' }, { id: 'GND' }, { id: 'S0' }, { id: 'V+0' }, { id: 'G0' }, { id: 'S1' }, { id: 'V+1' }, { id: 'G1' }, { id: 'S2' }, { id: 'V+2' }, { id: 'G2' }, { id: 'S3' }, { id: 'V+3' }, { id: 'G3' }, { id: 'S4' }, { id: 'V+4' }, { id: 'G4' }, { id: 'S5' }, { id: 'V+5' }, { id: 'G5' }, { id: 'S6' }, { id: 'V+6' }, { id: 'G6' }, { id: 'S7' }, { id: 'V+7' }, { id: 'G7' }, { id: 'S8' }, { id: 'V+8' }, { id: 'G8' }, { id: 'S9' }, { id: 'V+9' }, { id: 'G9' }, { id: 'S10' }, { id: 'V+10' }, { id: 'G10' }, { id: 'S11' }, { id: 'V+11' }, { id: 'G11' }, { id: 'S12' }, { id: 'V+12' }, { id: 'G12' }, { id: 'S13' }, { id: 'V+13' }, { id: 'G13' }, { id: 'S14' }, { id: 'V+14' }, { id: 'G14' }, { id: 'S15' }, { id: 'V+15' }, { id: 'G15' }],
+    'openhw-pca9865': [{ id: 'GND' }, { id: 'OE' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'VCC' }, { id: 'V+' }, { id: 'GND_R' }, { id: 'OE_R' }, { id: 'SCL_R' }, { id: 'SDA_R' }, { id: 'VCC_R' }, { id: 'V+_R' }, { id: 'V+_IN' }, { id: 'GND_IN' }, { id: 'S0' }, { id: 'V+0' }, { id: 'G0' }, { id: 'S1' }, { id: 'V+1' }, { id: 'G1' }, { id: 'S2' }, { id: 'V+2' }, { id: 'G2' }, { id: 'S3' }, { id: 'V+3' }, { id: 'G3' }, { id: 'S4' }, { id: 'V+4' }, { id: 'G4' }, { id: 'S5' }, { id: 'V+5' }, { id: 'G5' }, { id: 'S6' }, { id: 'V+6' }, { id: 'G6' }, { id: 'S7' }, { id: 'V+7' }, { id: 'G7' }, { id: 'S8' }, { id: 'V+8' }, { id: 'G8' }, { id: 'S9' }, { id: 'V+9' }, { id: 'G9' }, { id: 'S10' }, { id: 'V+10' }, { id: 'G10' }, { id: 'S11' }, { id: 'V+11' }, { id: 'G11' }, { id: 'S12' }, { id: 'V+12' }, { id: 'G12' }, { id: 'S13' }, { id: 'V+13' }, { id: 'G13' }, { id: 'S14' }, { id: 'V+14' }, { id: 'G14' }, { id: 'S15' }, { id: 'V+15' }, { id: 'G15' }],
+    'openhw-pcm5102': [{ id: 'VCC' }, { id: 'GND' }, { id: 'FLT' }, { id: 'DMP' }, { id: 'XMT' }, { id: 'FMT' }, { id: 'SCK' }, { id: 'BCK' }, { id: 'DIN' }, { id: 'LCK' }, { id: 'OUTL' }, { id: 'OUTR' }],
+    'openhw-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-photoresistor': [{ id: 'p1' }, { id: 'p2' }],
+    'openhw-pico': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SS' }],
+    'openhw-pico-2': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SS' }],
+    'openhw-pico-2-eth': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SS' }],
+    'openhw-pico-2-w': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SS' }],
+    'openhw-pico-eth': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SS' }],
+    'openhw-pico-w': [{ id: 'GP0' }, { id: 'GP1' }, { id: 'GND' }, { id: 'GP2' }, { id: 'GP3' }, { id: 'GP4' }, { id: 'GP5' }, { id: 'GND_1' }, { id: 'GP6' }, { id: 'GP7' }, { id: 'GP8' }, { id: 'GP9' }, { id: 'GND_2' }, { id: 'GP10' }, { id: 'GP11' }, { id: 'GP12' }, { id: 'GP13' }, { id: 'GND_3' }, { id: 'GP14' }, { id: 'GP15' }, { id: 'VBUS' }, { id: 'VSYS' }, { id: 'GND_4' }, { id: '3V3_EN' }, { id: '3V3' }, { id: 'ADC_VREF' }, { id: 'GP28' }, { id: 'AGND' }, { id: 'GP27' }, { id: 'GP26' }, { id: 'RUN' }, { id: 'GP22' }, { id: 'GND_5' }, { id: 'GP21' }, { id: 'GP20' }, { id: 'GP19' }, { id: 'GP18' }, { id: 'GND_6' }, { id: 'GP17' }, { id: 'GP16' }, { id: '13' }, { id: '2' }, { id: '5V' }, { id: 'A4' }, { id: 'A5' }],
+    'openhw-potentiometer': [{ id: '1' }, { id: 'SIG' }, { id: '2' }],
+    'openhw-power-supply': [{ id: '5V' }, { id: 'GND' }],
+    'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }],
+    'openhw-pushbutton-6mm': [{ id: '1A' }, { id: '1B' }, { id: '2A' }, { id: '2B' }],
+    'openhw-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
+    'openhw-raindrop-pad': [{ id: 'AOUT' }, { id: 'GND' }],
+    'openhw-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'COM' }, { id: 'NC' }],
+    'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-rv32': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-sd-card': [{ id: 'CD' }, { id: 'MISO' }, { id: 'GND' }, { id: 'SCK' }, { id: 'VCC' }, { id: 'MOSI' }, { id: 'CS' }],
+    'openhw-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+    'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
+    'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
+    'openhw-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'openhw-sph0645': [{ id: '3V' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'DOUT' }, { id: 'LRCL' }, { id: 'SEL' }],
+    'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-stepper-motor': [{ id: 'A-' }, { id: 'A+' }, { id: 'B+' }, { id: 'B-' }],
+    'openhw-stm32-bluepill': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32-gd32f103c8': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32-gd32f103cb': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32-gd32f103rb': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32-maple-mini': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32-nucleo-f103rb': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f103cb': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f103rc': [{ id: 'VBAT' }, { id: 'PC13' }, { id: 'PC14' }, { id: 'PC15' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB10' }, { id: 'PB11' }, { id: 'RESET' }, { id: '3V3.1' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: '5V' }, { id: 'PB9' }, { id: 'PB8' }, { id: 'PB7' }, { id: 'PB6' }, { id: 'PB5' }, { id: 'PB4' }, { id: 'PB3' }, { id: 'PA15' }, { id: 'PA12' }, { id: 'PA11' }, { id: 'PA10' }, { id: 'PA9' }, { id: 'PA8' }, { id: 'PB15' }, { id: 'PB14' }, { id: 'PB13' }, { id: 'PB12' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f4': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f401': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f407ve': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f411': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-stm32f429': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-text': [],
+    'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-z80': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }],
+    'wokwi-led': [{ id: 'A' }, { id: 'K' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-buzzer': [{ id: '1' }, { id: '2' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'openhw-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'openhw-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-motor': [{ id: '1' }, { id: '2' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-lcd2004': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }], // ORPHAN: no manifest — hand-checked
+    'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }], // ORPHAN: no manifest — hand-checked
+    'openhw-dip-switch-8': [{ id: '1a' }, { id: '1b' }, { id: '2a' }, { id: '2b' }, { id: '3a' }, { id: '3b' }, { id: '4a' }, { id: '4b' }, { id: '5a' }, { id: '5b' }, { id: '6a' }, { id: '6b' }, { id: '7a' }, { id: '7b' }, { id: '8a' }, { id: '8b' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }], // ORPHAN: no manifest — hand-checked
+    'openhw-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-diode': [{ id: 'A' }, { id: 'C' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'openhw-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'AD0' }, { id: 'INT' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'CS' }, { id: 'R1' }, { id: 'G1' }, { id: 'B1' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-battery': [{ id: 'VCC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'openhw-mcp2518fd': [{ id: 'CS' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SCK' }, { id: 'VCC' }, { id: 'GND' }, { id: 'INT' }, { id: 'TXCAN' }, { id: 'RXCAN' }], // ORPHAN: local model (src/worker/components/mcp2518fd.ts) — hand-checked
+    'DHT-22': [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'MQ-2 Gas Sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }], // ORPHAN: no manifest — hand-checked
+    'openhw-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }], // ORPHAN: no manifest — hand-checked
+    'wokwi-raindrop-pad': [{ id: 'AOUT' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
 };
 
 export type RP2040ExecutableRangeInput =
@@ -458,8 +550,17 @@ export type AVRRunnerOptions = {
     rp2040FlashPartitions?: RP2040FlashPartitionInput[];
     solverMode?: 'logic';
     sab?: SharedArrayBuffer;
+    sabOffsets?: Record<string, number>; // componentId → slot index (sab/layout.ts)
+    cmdBuffer?: SharedArrayBuffer; // main→worker command ring (sab/layout.ts)
+    evtBuffer?: SharedArrayBuffer; // worker→main event ring (sab/layout.ts)
 };
 
+/**
+ * BoardDriver (§10.9 step 2): the clean tick contract AVR / RP2040 / proxy
+ * runners implement. One shared loop shape: drain commands → CPU budget →
+ * hooks → update → physics → publish. Debug + SAB writers ride the same
+ * hooks on every driver (no per-runner special cases on the control plane).
+ */
 export type BoardRunner = {
     cpu: any;
     boardId: string;
@@ -468,6 +569,11 @@ export type BoardRunner = {
     reset?: () => void;
     pause?: () => void;
     resume?: () => void;
+    stepCycles?: (n: number) => number;
+    getDebugSnapshot?: () => any;
+    readMem?: (addr: number, len: number) => Uint8Array | null;
+    addPinWatch?: (pin: string, expectHigh?: boolean) => void;
+    removePinWatch?: (pin: string) => void;
     serialRx: (data: string) => void;
     serialRxByte: (value: number) => void;
     serialRxByteFromSource?: (value: number, source?: string) => void;
@@ -495,7 +601,7 @@ export type ConnectedComponentPin = {
  * ComponentSignalAPI
  *
  * Formal TypeScript interface for every signal callback a component can implement.
- * Runners (esp32-runner, backend-proxy-runner) cast component instances against
+ * Runners cast component instances against
  * this interface before dispatching signals, e.g.:
  *
  *   const api = inst as unknown as ComponentSignalAPI;
@@ -934,6 +1040,34 @@ export function resolveLogicClass(type: string): any {
     return BaseComponent;
 }
 
+/**
+ * Component capability declaration (plan §5.6/§11).
+ * Derives the capability vocabulary from manifest pin names — the same
+ * mapping resolveLogicClass uses to pick a protocol base — so tests and
+ * the conformance matrix can ask "what does this component need" without
+ * importing logic or touching runners. Additive; behavior-neutral.
+ * Vocabulary: digital-in/out, analog-in, pwm-in, i2c-target, spi-target,
+ * uart, onewire, i2s.
+ */
+export function getComponentCapabilities(type: string): string[] {
+    const out = new Set<string>();
+    const pins = ((COMPONENT_PINS as any)[type] || []).map((p: any) => String(p?.id ?? p).toUpperCase());
+    if (!pins.length) return [];
+    const has = (...names: string[]) => pins.some((p: string) => names.includes(p));
+    const hasAny = (names: string[]) => pins.some((p: string) => names.includes(p));
+    // Digital presence: any board-wirable signal pin implies digital I/O.
+    out.add('digital-in');
+    out.add('digital-out');
+    if (has('SDA') && has('SCL')) out.add('i2c-target');
+    if (hasAny(['MOSI', 'DIN', 'SDI', 'MISO'])) out.add('spi-target');
+    if (hasAny(['PWM', 'SIG'])) out.add('pwm-in');
+    if (hasAny(['TX', 'TXD', 'RX', 'RXD'])) out.add('uart');
+    if (hasAny(['DQ', 'DATA'])) out.add('onewire');
+    if (hasAny(['AO', 'AOUT'])) out.add('analog-in');
+    if (has('BCK', 'BCLK') && hasAny(['LRCK', 'LCK', 'WS', 'LRC', 'LRCLK'])) out.add('i2s');
+    return Array.from(out);
+}
+
 export const MEDIUM_COMPONENT_STATE_WEIGHT = 2_048;
 export const HEAVY_COMPONENT_STATE_WEIGHT = 8_192;
 export const MEDIUM_COMPONENT_MIN_SYNC_MS = 55;
@@ -1159,6 +1293,62 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
     };
 }
 
+/** River telemetry schema version (plan §5.5): additive evolution only. */
+export const TELEMETRY_SCHEMA_VERSION = 1;
+
+/**
+ * Sampling policy for one telemetry ingest decision (plan §5.5).
+ * Encodes the exact throttle semantics TelemetryManager applies:
+ * default 250 ms window scaled by sim speed, 50 ms floor, and Delta mode
+ * never throttles (throttling would permanently lose mutations).
+ */
+export interface TelemetrySamplePolicy {
+  throttleMs: number;
+  bypassThrottle: boolean;
+}
+
+export function telemetrySamplePolicy(
+  telemetryMode: unknown,
+  telemetrySampleInterval: unknown,
+  simulationSpeed: unknown,
+): TelemetrySamplePolicy {
+  const safeSpeed = Number.isFinite(Number(simulationSpeed)) && Number(simulationSpeed) > 0 ? Number(simulationSpeed) : 1.0;
+  const baseInterval = Number.isFinite(Number(telemetrySampleInterval)) ? Number(telemetrySampleInterval) : 250;
+  return {
+    throttleMs: Math.max(50, baseInterval / safeSpeed),
+    bypassThrottle: telemetryMode === 'delta',
+  };
+}
+
+/** Pure ingest gate: true when this message may be formatted/emitted now. */
+export function shouldEmitTelemetrySample(lastEmitMs: number, nowMs: number, policy: TelemetrySamplePolicy): boolean {
+  if (policy.bypassThrottle) return true;
+  return nowMs - lastEmitMs >= policy.throttleMs;
+}
+
+/**
+ * Validate a collected telemetry payload against the schema contract
+ * (plan §5.5, Phase 3 seed): versioned when present, never silently
+ * misshapen. Disabled telemetry (`{}`) is valid by design.
+ */
+export function validateTelemetrySchema(payload: any): { ok: boolean; reasons: string[] } {
+    const reasons: string[] = [];
+    if (payload === null || payload === undefined || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { ok: false, reasons: ['telemetry payload must be a plain object'] };
+    }
+    if (Object.keys(payload).length === 0) return { ok: true, reasons: [] }; // disabled telemetry
+    if (!('schemaVersion' in payload)) {
+        reasons.push('missing schemaVersion (collect via collectComponentTelemetry)');
+    } else if ((payload as any).schemaVersion !== TELEMETRY_SCHEMA_VERSION) {
+        reasons.push(`unsupported schemaVersion ${(payload as any).schemaVersion}, want ${TELEMETRY_SCHEMA_VERSION}`);
+    }
+    const data = (payload as any).telemetryData;
+    if (data !== undefined && (typeof data !== 'object' || data === null || Array.isArray(data))) {
+        reasons.push('telemetryData must be an object when present');
+    }
+    return { ok: reasons.length === 0, reasons };
+}
+
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
         const targetFreq = (cpu as any)?.clock?.frequency || (cpu as any)?.freq || 16_000_000;
@@ -1217,47 +1407,71 @@ export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?:
         // Telemetry failures should never break simulation state delivery.
     }
 
-    try {
-        if (!out.telemetrySummary && typeof inst?.getTelemetrySummary === 'function') {
-            const summary = inst.getTelemetrySummary();
-            if (typeof summary === 'string' && summary.trim()) {
-                out.telemetrySummary = summary.trim();
-            }
-        }
-    } catch (e) {
-        // Telemetry failures should never break simulation state delivery.
-    }
-
-    const fallback = buildFallbackTelemetry(inst);
-
-    if (effectiveMode === 'delta' && out.delta === undefined) {
-        if (!fallback.telemetryData.delta) {
-            return { delta: false }; // Ultra-fast early return for fallback components!
-        }
-        out.delta = true;
-    }
+    // T4 (§12.3): single telemetry build — primary OR fallback, never both.
+    // getRawMetrics/getDeltaMetrics/getTelemetryData already embed
+    // metrics+heuristics+capturedAt, so a complete primary skips the fallback
+    // entirely (saves 1 JSON fingerprint + 1 state scan per component/flush).
+    // Exception by design: simple-mode light primary ({state} only) is NOT
+    // complete and still takes the fallback supplement below.
+    const tdAny = out.telemetryData as any;
+    const primaryComplete = !!tdAny && typeof tdAny === 'object'
+        && !!(tdAny.metrics || tdAny._metrics);
+    const primaryHeuristicSummary: string | null =
+        (tdAny && typeof tdAny === 'object')
+            ? (tdAny?.heuristics?.summary || tdAny?._heuristics?.summary || null)
+            : null;
 
     if (!out.telemetrySummary) {
-        out.telemetrySummary = fallback.telemetrySummary;
+        if (primaryHeuristicSummary) {
+            // Reuse the heuristics summary the primary already computed —
+            // avoids a second getTelemetrySummary() → applyHeuristics() pass.
+            out.telemetrySummary = primaryHeuristicSummary;
+        } else {
+            try {
+                if (typeof inst?.getTelemetrySummary === 'function') {
+                    const summary = inst.getTelemetrySummary();
+                    if (typeof summary === 'string' && summary.trim()) {
+                        out.telemetrySummary = summary.trim();
+                    }
+                }
+            } catch (e) {
+                // Telemetry failures should never break simulation state delivery.
+            }
+        }
     }
 
-    if (!out.telemetryData || typeof out.telemetryData !== 'object') {
-        out.telemetryData = fallback.telemetryData;
-    } else {
-        const merged = { ...out.telemetryData };
-        if (!merged._metrics) {
-            merged._metrics = fallback.telemetryData._metrics;
+    if (!primaryComplete) {
+        const fallback = buildFallbackTelemetry(inst);
+
+        if (effectiveMode === 'delta' && out.delta === undefined) {
+            if (!fallback.telemetryData.delta) {
+                return { delta: false }; // Ultra-fast early return for fallback components!
+            }
+            out.delta = true;
         }
-        if (!merged._heuristics) {
-            merged._heuristics = fallback.telemetryData._heuristics;
+
+        if (!out.telemetrySummary) {
+            out.telemetrySummary = fallback.telemetrySummary;
         }
-        if (!merged._capturedAt) {
-            merged._capturedAt = fallback.telemetryData._capturedAt;
+
+        if (!out.telemetryData || typeof out.telemetryData !== 'object') {
+            out.telemetryData = fallback.telemetryData;
+        } else {
+            const merged = { ...out.telemetryData };
+            if (!merged._metrics) {
+                merged._metrics = fallback.telemetryData._metrics;
+            }
+            if (!merged._heuristics) {
+                merged._heuristics = fallback.telemetryData._heuristics;
+            }
+            if (!merged._capturedAt) {
+                merged._capturedAt = fallback.telemetryData._capturedAt;
+            }
+            if (!merged._fallbackGenerated) {
+                merged._fallbackGenerated = true;
+            }
+            out.telemetryData = merged;
         }
-        if (!merged._fallbackGenerated) {
-            merged._fallbackGenerated = true;
-        }
-        out.telemetryData = merged;
     }
 
     if (inst.deepSiliconEnabled && cpu && (inst.type.includes('arduino') || inst.type.includes('pico') || inst.type.includes('attiny'))) {
@@ -1327,5 +1541,9 @@ export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?:
         }
     }
 
+    // River telemetry schema marker (plan §5.5/§11.4): additive version tag
+    // so consumers can evolve without silent misreads. Unknown fields are
+    // ignored by older readers; removal/rename requires a version bump.
+    out.schemaVersion = TELEMETRY_SCHEMA_VERSION;
     return out;
 }

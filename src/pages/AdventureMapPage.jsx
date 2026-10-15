@@ -82,45 +82,68 @@ function getProjectIcon(slug) {
 }
 
 // Island image per project slug → /gamification_images/
+// Perf (images): WebP-first with PNG fallback. The 27 PNGs total 76MB
+// (8MB bg + ~2.8MB/island); WebP q80 versions total 3.7MB (~5%).
+// getIslandImage returns { webp, png }; IslandImg renders <picture> so modern
+// browsers fetch WebP and old ones fall back to PNG. Images below the fold
+// use loading="lazy" + async decoding.
 function getIslandImage(slug) {
   const s = String(slug || '').toLowerCase()
+  const pick = (base) => ({ webp: `/gamification_images/${base}.webp`, png: `/gamification_images/${base}.png` })
   // Arduino world 1
-  if (s === 'led-blink') return '/gamification_images/island_led.png'
-  if (s === 'rgb-led') return '/gamification_images/island_rgb.png'
-  if (s === 'buzzer') return '/gamification_images/island_buzzer.png'
-  if (s === 'potentiometer') return '/gamification_images/island_potentiometer.png'
-  if (s === 'ldr') return '/gamification_images/island_ldr.png'
+  if (s === 'led-blink') return pick('island_led')
+  if (s === 'rgb-led') return pick('island_rgb')
+  if (s === 'buzzer') return pick('island_buzzer')
+  if (s === 'potentiometer') return pick('island_potentiometer')
+  if (s === 'ldr') return pick('island_ldr')
   // Arduino world 2
-  if (s === 'servo-motor') return '/gamification_images/island_servo.png'
-  if (s === 'led-strip') return '/gamification_images/island_led_strip.png'
-  if (s === 'button-debounce') return '/gamification_images/island_button.png'
-  if (s === 'temperature-sensor') return '/gamification_images/island_temperature.png'
+  if (s === 'servo-motor') return pick('island_servo')
+  if (s === 'led-strip') return pick('island_led_strip')
+  if (s === 'button-debounce') return pick('island_button')
+  if (s === 'temperature-sensor') return pick('island_temperature')
   // Arduino world 3
-  if (s === 'dc-motor') return '/gamification_images/island_dc_motor.png'
+  if (s === 'dc-motor') return pick('island_dc_motor')
   // Arduino world 4
-  if (s === 'push-button') return '/gamification_images/island_button.png'
-  if (s === 'ultrasonic-sensor') return '/gamification_images/island_ultrasonic.png'
-  if (s === 'dht11-sensor') return '/gamification_images/island_dht11.png'
-  if (s === 'lcd-display') return '/gamification_images/island_lcd.png'
+  if (s === 'push-button') return pick('island_button')
+  if (s === 'ultrasonic-sensor') return pick('island_ultrasonic')
+  if (s === 'dht11-sensor') return pick('island_dht11')
+  if (s === 'lcd-display') return pick('island_lcd')
   // Arduino world 5
-  if (s === 'relay-control') return '/gamification_images/island_relay.png'
-  if (s === 'oled-graphics') return '/gamification_images/island_oled.png'
-  if (s === 'neopixel-effects') return '/gamification_images/island_led_strip.png'
-  if (s === 'keypad-lock') return '/gamification_images/island_keypad.png'
-  if (s === 'rotary-menu') return '/gamification_images/island_potentiometer.png'
-  if (s === 'seven-segment-clock') return '/gamification_images/island_seven_segment.png'
-  if (s === 'stepper-motor') return '/gamification_images/island_stepper.png'
-  if (s === 'mpu6050-tilt') return '/gamification_images/island_mpu6050.png'
+  if (s === 'relay-control') return pick('island_relay')
+  if (s === 'oled-graphics') return pick('island_oled')
+  if (s === 'neopixel-effects') return pick('island_led_strip')
+  if (s === 'keypad-lock') return pick('island_keypad')
+  if (s === 'rotary-menu') return pick('island_potentiometer')
+  if (s === 'seven-segment-clock') return pick('island_seven_segment')
+  if (s === 'stepper-motor') return pick('island_stepper')
+  if (s === 'mpu6050-tilt') return pick('island_mpu6050')
   // ESP32
-  if (s.includes('esp32') && s.includes('wifi') || s.includes('web-server') || s.includes('http')) return '/gamification_images/island_wifi.png'
-  if (s.includes('mqtt')) return '/gamification_images/island_mqtt.png'
-  if (s.includes('ble')) return '/gamification_images/island_ble.png'
-  if (s.includes('deep-sleep')) return '/gamification_images/island_deep_sleep.png'
-  if (s.includes('oled')) return '/gamification_images/island_oled.png'
-  if (s.includes('cloud')) return '/gamification_images/island_cloud.png'
-  if (s.includes('cam')) return '/gamification_images/island_camera.png'
-  if (s.includes('esp32')) return '/gamification_images/island_esp32.png'
-  return '/gamification_images/island_led.png'
+  if (s.includes('esp32') && s.includes('wifi') || s.includes('web-server') || s.includes('http')) return pick('island_wifi')
+  if (s.includes('mqtt')) return pick('island_mqtt')
+  if (s.includes('ble')) return pick('island_ble')
+  if (s.includes('deep-sleep')) return pick('island_deep_sleep')
+  if (s.includes('oled')) return pick('island_oled')
+  if (s.includes('cloud')) return pick('island_cloud')
+  if (s.includes('cam')) return pick('island_camera')
+  if (s.includes('esp32')) return pick('island_esp32')
+  return pick('island_led')
+}
+
+// WebP-first island image with PNG fallback. loading="lazy" keeps the ~22
+// off-screen world thumbnails out of the initial bandwidth burst.
+function IslandImg({ webp, png, alt, style, eager }) {
+  return (
+    <picture style={{ display: 'contents' }}>
+      <source srcSet={webp} type="image/webp" />
+      <img
+        src={png}
+        alt={alt}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        style={style}
+      />
+    </picture>
+  )
 }
 
 // Island color palette based on index (used for glow accents)
@@ -164,9 +187,11 @@ function IslandNode({ project, index, isActive, isCompleted, isLocked, onClick, 
         )}
 
         {/* Island PNG */}
-        <img
-          src={islandImg}
+        <IslandImg
+          webp={islandImg.webp}
+          png={islandImg.png}
           alt={project.title}
+          eager={isActive}
           style={{
             width: 230, height: 200,
             objectFit: 'contain',
@@ -181,7 +206,6 @@ function IslandNode({ project, index, isActive, isCompleted, isLocked, onClick, 
             animation: !isLocked && !isActive ? 'islandFloat 4s ease-in-out infinite' : undefined,
           }}
         />
-
         {/* Lock overlay */}
         {isLocked && (
           <div style={{
@@ -1402,6 +1426,8 @@ export default function AdventureMapPage() {
       `}</style>
 
       {/* ── MAIN MAP AREA ─────────────────────────────────────────────────── */}
+      {/* Perf (images): WebP bg (0.5MB) instead of 8MB PNG. <link> must not
+          render inside <main> — preload lives in index.html. */}
       <main
         onClick={(e) => {
           if (e.target === e.currentTarget) {
@@ -1414,7 +1440,7 @@ export default function AdventureMapPage() {
           width: '100%',
           height: '100%',
           zIndex: 1,
-          backgroundImage: "url('/gamification_images/adventure_map_bg.png')",
+          backgroundImage: "image-set(url('/gamification_images/adventure_map_bg.webp') type('image/webp'), url('/gamification_images/adventure_map_bg.png') type('image/png'))",
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}
@@ -2036,9 +2062,11 @@ export default function AdventureMapPage() {
                   border: '1px solid rgba(255,255,255,0.4)',
                   boxShadow: 'inset 0 4px 20px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(14, 165, 233, 0.12)',
                 }}>
-                  <img
-                    src={getIslandImage(activeProject.slug)}
+                  <IslandImg
+                    webp={getIslandImage(activeProject.slug).webp}
+                    png={getIslandImage(activeProject.slug).png}
                     alt={activeProject.title}
+                    eager
                     style={{
                       height: 120, width: 'auto',
                       objectFit: 'contain',

@@ -2,10 +2,44 @@ import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants'
 
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
-  if (s.includes('esp32')) return 'esp32';
-  if (s.includes('stm32')) return 'stm32';
-  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   if (s.includes('nano')) return 'arduino_nano';
+  if (s.includes('mega') || s.includes('2560')) return 'arduino_mega';
+  // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
+  if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
+  if (s.includes('pico-eth') || s.includes('picoeth') || s.includes('5500_evb_pico') || s.includes('w5500')) return 'pico_eth';
+  // Pico W before bare pico ('pico-w' contains 'pico'; 'rpipicow' too).
+  if (s.includes('pico-2-w') || s.includes('pico2w') || s.includes('rpipico2w')) return 'pico_2_w';
+  if (s.includes('pico-w') || s.includes('picow') || s.includes('rpipicow')) return 'pico_w';
+  // STM32F4 variants before the F4 catch-all.
+  if (s.includes('429') || s.includes('f429')) return 'stm32f429';
+  if (s.includes('407ve') || s.includes('407ze') || s.includes('f407ve')) return 'stm32f407ve';
+  if (s.includes('401') || s.includes('f401')) return 'stm32f401';
+  if (s.includes('411') || s.includes('f411')) return 'stm32f411';
+  // STM32F4 before F1: 'stm32f4' contains no 'f1' clash, but check anyway.
+  if (s.includes('stm32f4') || s.includes('f407') || s.includes('discovery') || s.includes('f4')) return 'stm32f4';
+  // STM32F1 variants before the F1 catch-all.
+  if (s.includes('maple')) return 'stm32_maple_mini';
+  if (s.includes('nucleo')) return 'stm32_nucleo_f103rb';
+  if (s.includes('gd32')) {
+    if (s.includes('rb')) return 'stm32_gd32f103rb';
+    if (s.includes('cb')) return 'stm32_gd32f103cb';
+    return 'stm32_gd32f103c8';
+  }
+  if (s.includes('f103cb') || s.includes('103cb')) return 'stm32f103cb';
+  if (s.includes('f103rc') || s.includes('103rc')) return 'stm32f103rc';
+  if (s.includes('stm32f1') || s.includes('bluepill') || s.includes('blue-pill') || s.includes('103') || s.includes('stm32')) return 'stm32f1';
+  if (s.includes('esp32')) return 'esp32';
+  // Pico 2 / RP2350 before Pico 1: 'pico-2' contains 'pico'.
+  if (s.includes('pico-2') || s.includes('pico2') || s.includes('rp2350') || s.includes('2350')) return 'rp2350';
+  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  // Retro 8/16-bit boards (8086emu): specific ISAs before the catch-all.
+  if (s.includes('8086') || s.includes('8088')) return 'retro_8086';
+  if (s.includes('8085')) return 'retro_8085';
+  if (s.includes('8051') || s.includes('mcs-51') || s.includes('mcs51')) return 'retro_8051';
+  if (s.includes('6502')) return 'retro_6502';
+  if (s.includes('z80') || s.includes('z-80')) return 'retro_z80';
+  if (s.includes('rv32') || s.includes('risc-v') || s.includes('riscv')) return 'retro_rv32';
+  if (s.includes('retro')) return 'retro_8086';
   return 'arduino_uno';
 }
 
@@ -27,220 +61,53 @@ export function boardCompToDisplayName(boardComp, fallbackKind = 'arduino_uno') 
 }
 
 export function resolveBoardFqbnForComponent(boardComp, boardKind) {
-  const type = String(boardComp?.type || '').toLowerCase();
-  if (type.includes('pico-w') || type.includes('picow')) {
-    return 'rp2040:rp2040:rpipicow';
-  }
-  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
+  // Per-board FQBN: the component TYPE wins over the normalized kind so
+  // variants (Maple Mini, Nucleo, GD32, F401/…) compile for their own part.
+  // Falls back to the kind table, then Uno.
+  const typeKey = normalizeBoardKind(boardComp?.type || '');
+  // RP2350 RISC-V: attrs arch=rv32 selects the riscv menu (toolchain
+  // present) so the firmware matches the Hazard3 core the runner boots.
+  try {
+    const archAttr = String(boardComp?.attrs?.arch || '').toLowerCase();
+    if ((typeKey === 'rp2350' || String(boardKind || '').toLowerCase().includes('rp2350'))
+      && (archAttr === 'rv32' || archAttr === 'riscv' || archAttr === 'risc-v')) {
+      if (BOARD_FQBN.pico_2_rv32) return BOARD_FQBN.pico_2_rv32;
+    }
+  } catch { /* fall through to the table */ }
+  return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 
-export function normalizeRp2040Env(source) {
-  const value = String(source || '').trim().toLowerCase();
-  if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
-  if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython') return 'circuitpython';
-  if (value.startsWith('circuitpython')) return 'circuitpython';
-  if (value === 'py' || value === 'python') return 'micropython';
-  if (value.startsWith('micropython')) return 'micropython';
-  return 'native';
-}
 
 export function createDefaultMainCode(boardKind, boardId, options = {}) {
-  const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-
-  if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
-    return `# Main logic for ${boardId}\n\ndef setup():\n    pass\n\ndef loop():\n    pass\n\nwhile True:\n    loop()\n`;
-  }
-  if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
-    return `# Main logic for ${boardId}\nimport board\nimport time\n\nwhile True:\n    pass\n`;
-  }
-
+  void boardId; void options;
+  const kind = normalizeBoardKind(boardKind);
+  // Retro boards default to a per-ISA hello program (assembled in-WASM).
+  if (String(kind || '').startsWith('retro')) return defaultRetroAsm(kind);
   return `void setup() {\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // put your main code here, to run repeatedly:\n\n}\n`;
 }
 
-export function isRp2040PythonEnv(source) {
-  const env = normalizeRp2040Env(source);
-  return env === 'micropython' || env === 'circuitpython';
-}
-
-export function getRp2040PythonEntryFileName(source) {
-  return normalizeRp2040Env(source) === 'circuitpython' ? 'code.py' : 'main.py';
-}
-
-export function mapRp2040EnvForLegacyContextMenu(source, circuitPythonVersion) {
-  const env = normalizeRp2040Env(source);
-  if (env === 'micropython') return 'micropython-20241129-v1.24.1';
-  if (env === 'circuitpython') return `circuitpython-${circuitPythonVersion || '8.2.7'}`;
-  return '';
-}
-
-export function looksLikeMicroPythonSource(source) {
-  const text = String(source || '').trim();
-  if (!text) return false;
-  const lower = text.toLowerCase();
-
-  return lower.includes('from machine import')
-    || lower.includes('import machine')
-    || lower.includes('machine.pin(')
-    || lower.includes('while true:')
-    || lower.includes('sleep_ms(')
-    || lower.includes('sleep_us(');
-}
-
-export function arduinoBlinkToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-
-  const pinMatch =
-    src.match(/#define\s+\w*LED\w*\s+(\d+)/i) ||
-    src.match(/const\s+\w+\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/int\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/LED_BUILTIN\b/);
-
-  let pinExpr;
-  if (pinMatch && pinMatch[1]) {
-    pinExpr = pinMatch[1];
-  } else if (src.includes('LED_BUILTIN')) {
-    pinExpr = "'LED'";
-  } else {
-    const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
-      src.match(/digitalWrite\s*\(\s*(\d+)/);
-    pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
+function defaultRetroAsm(kind) {
+  const k = String(kind || '');
+  if (k === 'retro_8085') {
+    return `; 8085 hello world: print chars via OUT 01h\n    MVI C, 05h\n    LXI H, msg\nloop:\n    MOV A, M\n    CPI '$'\n    JZ done\n    OUT 01h\n    INX H\n    JMP loop\ndone:\n    HLT\nmsg: DB 'Hello, 8085!', '$'\nEND`;
   }
-
-  const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
-  const delayOn = delayMatches[0] ?? 1000;
-  const delayOff = delayMatches[1] ?? delayOn;
-
-  const pinArg = /^\d+$/.test(String(pinExpr)) ? Number(pinExpr) : pinExpr;
-
-  return (
-    `# Auto-converted from Arduino sketch for ${boardId}\n` +
-    `from machine import Pin\n` +
-    `from time import sleep_ms\n` +
-    `\n` +
-    `led = Pin(${pinArg}, Pin.OUT)\n` +
-    `\n` +
-    `while True:\n` +
-    `    led.value(1)   # LED ON\n` +
-    `    sleep_ms(${delayOn})\n` +
-    `    led.value(0)   # LED OFF\n` +
-    `    sleep_ms(${delayOff})\n`
-  );
-}
-
-export function arduinoSerialToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-  if (!/\bSerial1?\s*\.\s*println\s*\(/.test(src)) return '';
-
-  const printMatches = [...src.matchAll(/\bSerial1?\s*\.\s*println\s*\(([^)]*)\)\s*;/g)]
-    .map((m) => String(m[1] || '').trim())
-    .filter(Boolean);
-  if (printMatches.length === 0) return '';
-
-  const pyLiteral = (expr) => {
-    const e = String(expr || '').trim();
-    if (/^"[\s\S]*"$/.test(e) || /^'[\s\S]*'$/.test(e)) return e;
-    if (/^[0-9.+\-*/ ()]+$/.test(e)) return `str(${e})`;
-    return `str(${JSON.stringify(e)})`;
-  };
-
-  const setupMsg = pyLiteral(printMatches[0]);
-  const loopMsg = pyLiteral(printMatches[1] || printMatches[0]);
-  const delayMatch = src.match(/\bdelay\s*\(\s*(\d+)\s*\)/i);
-  const loopDelay = delayMatch ? Math.max(1, Number(delayMatch[1])) : 1000;
-
-  return [
-    `# Auto-converted Serial sketch for ${boardId}`,
-    'from time import sleep_ms',
-    '',
-    `print(${setupMsg})`,
-    '',
-    'while True:',
-    `  print(${loopMsg})`,
-    `  sleep_ms(${loopDelay})`,
-    '',
-  ].join('\n');
-}
-
-export function prepareRp2040SketchForSimulation(sourceCode) {
-  const source = String(sourceCode || '');
-  if (!source.trim()) return source;
-  if (!/\bSerial1?\b/.test(source)) return source;
-  if (/OPENHW_SIM_SERIAL_REWRITE/.test(source)) return source;
-
-  const hasBlockingSerialWaitCondition = (condition) => {
-    const cond = String(condition || '');
-    if (!/!\s*Serial1?\b/.test(cond)) return false;
-    if (/!\s*Serial1?\s*(?:\.|\[)/.test(cond)) return false;
-    return true;
-  };
-
-  const stripBlockingSerialWaits = (text) => String(text || '')
-    .replace(/\bwhile\s*\(([^)]*)\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*(?!\{|;)[^;\n]*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ));
-
-  const rewritten = stripBlockingSerialWaits(source.replace(/\bSerial\b(?!1)/g, 'Serial1'));
-  if (rewritten === source) return source;
-
-  const serialShim = [
-    '#ifdef ARDUINO_ARCH_RP2040',
-    '// OPENHW_SIM_SERIAL_REWRITE: route Serial monitor traffic to UART0 (GP0/GP1)',
-    '// and prevent blocking while(!Serial...) waits in simulator mode.',
-    '#endif',
-    '',
-  ].join('\n');
-
-  return `${serialShim}${rewritten}`;
-}
-
-export function resolveRp2040SourceMode({
-  configuredMode,
-  activePrefersIno,
-  activePrefersPy,
-  hasNativeSketch,
-  hasPythonSource,
-  prefersNativeFromSyntax = false,
-}) {
-  const mode = String(configuredMode || 'auto').toLowerCase();
-
-  if (mode === 'cp' || mode === 'circuitpy' || mode === 'circuitpython') {
-    return 'cp';
+  if (k === 'retro_8051') {
+    return `; 8051 hello world: write chars to SBUF (serial output)\n    MOV DPTR, #msg\n    MOV R1, #00h\nloop:\n    MOV A, R1\n    MOVC A, @A+DPTR\n    JZ done\n    MOV SBUF, A\n    INC R1\n    SJMP loop\ndone:\n    SJMP done\nmsg: DB 'Hello, 8051!', 0\nEND`;
   }
-
-  if (mode === 'py' || mode === 'python' || mode === 'micropython') {
-    return 'py';
+  if (k === 'retro_6502') {
+    // NOTE: package 6502 DB takes one literal per DB (repo hello6502.asm).
+    return `; 6502 hello world: STA $01 prints A\n    ORG 0\n    LDX #0\nloop:\n    LDA msg,X\n    BEQ done\n    STA $01\n    INX\n    JMP loop\ndone:\n    BRK\nmsg: DB 'H'\n    DB 'i'\n    DB 10\n    DB 0\n    END\n`;
   }
-
-  if (mode === 'ino' || mode === 'native' || mode === 'none') return 'ino';
-
-  if (activePrefersIno) return 'ino';
-  if (activePrefersPy) return mode === 'cp' ? 'cp' : 'py';
-
-  if (hasNativeSketch || prefersNativeFromSyntax) return 'ino';
-  if (hasPythonSource) return mode === 'cp' ? 'cp' : 'py';
-  return 'ino';
+  if (k === 'retro_z80') {
+    // NOTE: package Z80 assembler has no forward label refs (verified) —
+    // unrolled OUT sequence like the repo helloz80.asm example.
+    return `; Z80 hello world: OUT (1),A prints A\n    ORG 0\n    LD A, 'H'\n    OUT (1), A\n    LD A, 'i'\n    OUT (1), A\n    LD A, 10\n    OUT (1), A\n    HALT\n    END\n`;
+  }
+  if (k === 'retro_rv32') {
+    return `# rv32 hello world: ECALL write semihosting\n    .text\n    la a0, msg\n    li a1, 12\n    li a7, 64\n    ecall\n    li a7, 93\n    ecall\nmsg:\n    .string "Hello, rv32!"\n`;
+  }
+  // retro_8086 default: DOS COM program (ORG 100h), INT 21h string output.
+  return `; 8086 hello world via DOS INT 21h\nORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\nMOV AH, 4Ch\nINT 21h\nmsg: DB 'Hello, 8086!$'\nEND`;
 }
 
 export function resolveComponentAttrString(attrs, key, fallback = '') {
@@ -256,48 +123,9 @@ export function resolveComponentAttrString(attrs, key, fallback = '') {
   return String(raw);
 }
 
-export function ensureMicroPythonSerialProbe(sourceCode, boardId) {
-  const script = String(sourceCode || '').trim();
-  const marker = 'OpenHW RP2040 UART0 ready';
-  if (script.includes(marker)) return script;
-
-  const probe = `print("${marker}: ${boardId}")`;
-  if (!script) return `${probe}\n`;
-  return `${probe}\n${script}\n`;
-}
-
-export function applyRp2040MicroPythonCompat(sourceCode) {
-  const script = String(sourceCode || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
-  if (!script) return script;
-  if (script.includes('OPENHW_RP2040_SLEEP_COMPAT')) return script;
-
-  const needsSleepCompat = /\btime\.sleep_ms\s*\(|\bsleep_ms\s*\(/.test(script);
-  if (!needsSleepCompat) return script;
-
-  const prelude = [
-    '# OPENHW_RP2040_SLEEP_COMPAT',
-    'def _openhw_sleep_ms(ms):',
-    '    ms = int(ms)',
-    '    if ms <= 0:',
-    '        return',
-    '    for _ in range(ms * 500):',
-    '        pass',
-    '',
-  ].join('\n');
-
-  const rewritten = script
-    .replace(/\btime\.sleep_ms\s*\(/g, '_openhw_sleep_ms(')
-    .replace(/\bsleep_ms\s*\(/g, '_openhw_sleep_ms(');
-
-  return `${prelude}\n${rewritten}\n`;
-}
-
 export function isProgrammableBoardType(type) {
   const s = String(type || '').toLowerCase();
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(s);
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(s);
 }
 
 export function isBreadboardType(type) {

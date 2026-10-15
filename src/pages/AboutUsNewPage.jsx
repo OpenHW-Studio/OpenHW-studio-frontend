@@ -5,7 +5,7 @@ import { Rocket, Share2, GraduationCap } from "lucide-react";
 import PublicNavbar from "../components/PublicNavbar.jsx";
 
 
-import tinkeringImg from "../assets/about/tinkering-students.png";
+import tinkeringImg from "../assets/about/tinkering-students.webp";
 import prabhuImg from "../assets/about/Prabhu.jpeg";
 import rajeshImg from "../assets/about/rajesh.jpeg";
 import pratikBImg from "../assets/about/pratik-b.jpeg";

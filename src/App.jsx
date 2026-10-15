@@ -14,60 +14,64 @@ import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { GamificationProvider } from "./context/GamificationContext.jsx";
 import { GamificationToasts } from "./services/gamification/Gamificationpanel.jsx";
 // Pages
+// Perf (bundle-split): ONLY LandingPage ("/") is statically imported — it is
+// the entry route and must paint fast. Every other route is React.lazy so the
+// 7.5MB index chunk splits into per-route chunks that load on demand.
+// Verified: vite build chunk list + boot/run probes.
 import LandingPage from "./pages/LandingPage.jsx";
-import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
-import UserSignupPage from "./pages/auth/UserSignupPage.jsx";
-import ReactivationPage from "./pages/auth/ReactivationPage.jsx";
+const UserLoginPage = React.lazy(() => import("./pages/auth/UserLoginPage.jsx"));
+const UserSignupPage = React.lazy(() => import("./pages/auth/UserSignupPage.jsx"));
+const ReactivationPage = React.lazy(() => import("./pages/auth/ReactivationPage.jsx"));
 
-import RoleSelectPage from "./pages/RoleSelectPage.jsx";
-import ProjectTheoryPage from "./pages/ProjectTheoryPage.jsx";
-import ProjectQuizPage from "./pages/ProjectQuizPage.jsx";
-import ProjectComponentUnlockPage from "./pages/ProjectComponentUnlockPage.jsx";
-import TeacherProjectContentEditor from "./pages/teacher/TeacherProjectContentEditor.jsx";
-import TeacherProjectBankPage from "./pages/teacher/TeacherProjectBankPage.jsx";
+const RoleSelectPage = React.lazy(() => import("./pages/RoleSelectPage.jsx"));
+const ProjectTheoryPage = React.lazy(() => import("./pages/ProjectTheoryPage.jsx"));
+const ProjectQuizPage = React.lazy(() => import("./pages/ProjectQuizPage.jsx"));
+const ProjectComponentUnlockPage = React.lazy(() => import("./pages/ProjectComponentUnlockPage.jsx"));
+const TeacherProjectContentEditor = React.lazy(() => import("./pages/teacher/TeacherProjectContentEditor.jsx"));
+const TeacherProjectBankPage = React.lazy(() => import("./pages/teacher/TeacherProjectBankPage.jsx"));
 // Lazy-loaded routes to drastically improve LCP
-import ExamplesPage from "./pages/ExamplesPage.jsx";
-import SigninPage from "./pages/auth/SigninPage.jsx";
-import SignupPage from "./pages/auth/SignupPage.jsx";
-import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
-import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
-import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
-import UserDashboard from "./pages/user/UserDashboard.jsx";
-import UserProfilePage from "./pages/user/UserProfilePage.jsx";
-import StudentDashboard from "./pages/student/StudentDashboard.jsx";
-import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
-import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
-import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
-import TeacherClassDetailPage from "./pages/teacher/TeacherClassDetailPage.jsx";
-import StudentClassDetailPage from "./pages/student/StudentClassDetailPage.jsx";
+const ExamplesPage = React.lazy(() => import("./pages/ExamplesPage.jsx"));
+const SigninPage = React.lazy(() => import("./pages/auth/SigninPage.jsx"));
+const SignupPage = React.lazy(() => import("./pages/auth/SignupPage.jsx"));
+const ForgotPasswordPage = React.lazy(() => import("./pages/auth/ForgotPasswordPage.jsx"));
+const ResetPasswordPage = React.lazy(() => import("./pages/auth/ResetPasswordPage.jsx"));
+const AuthSuccess = React.lazy(() => import("./pages/auth/AuthSuccess.jsx"));
+const UserDashboard = React.lazy(() => import("./pages/user/UserDashboard.jsx"));
+const UserProfilePage = React.lazy(() => import("./pages/user/UserProfilePage.jsx"));
+const StudentDashboard = React.lazy(() => import("./pages/student/StudentDashboard.jsx"));
+const StudentProfilePage = React.lazy(() => import("./pages/student/StudentProfilePage.jsx"));
+const TeacherDashboard = React.lazy(() => import("./pages/teacher/TeacherDashboard.jsx"));
+const TeacherProfilePage = React.lazy(() => import("./pages/teacher/TeacherProfilePage.jsx"));
+const TeacherClassDetailPage = React.lazy(() => import("./pages/teacher/TeacherClassDetailPage.jsx"));
+const StudentClassDetailPage = React.lazy(() => import("./pages/student/StudentClassDetailPage.jsx"));
 
 const SimulatorPage = React.lazy(
   () => import("./pages/simulationpage/SimulatorPage.jsx"),
 );
-import AdminPage from "./pages/admin/AdminPage.jsx";
-import AdminLoginPage from "./pages/admin/AdminLoginPage.jsx";
-import AdminLandingPage from "./pages/admin/AdminLandingPage.jsx";
-import ProjectAssessmentPage from "./pages/ProjectAssessmentPage.jsx";
-import ProjectsGallery from "./pages/ProjectsGallery.jsx";
-import ComponentsPage from "./pages/ComponentsPage.jsx";
-import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
-import AdventureMapPage from "./pages/AdventureMapPage.jsx";
+const AdminPage = React.lazy(() => import("./pages/admin/AdminPage.jsx"));
+const AdminLoginPage = React.lazy(() => import("./pages/admin/AdminLoginPage.jsx"));
+const AdminLandingPage = React.lazy(() => import("./pages/admin/AdminLandingPage.jsx"));
+const ProjectAssessmentPage = React.lazy(() => import("./pages/ProjectAssessmentPage.jsx"));
+const ProjectsGallery = React.lazy(() => import("./pages/ProjectsGallery.jsx"));
+const ComponentsPage = React.lazy(() => import("./pages/ComponentsPage.jsx"));
+const ComponentEditorPage = React.lazy(() => import("./pages/ComponentEditorPage.jsx"));
+const AdventureMapPage = React.lazy(() => import("./pages/AdventureMapPage.jsx"));
 const ProjectGuidePage = React.lazy(
   () => import("./pages/ProjectGuidePage.jsx"),
 );
-import ExploreCommunity from "./pages/ExploreCommunity.jsx";
+const ExploreCommunity = React.lazy(() => import("./pages/ExploreCommunity.jsx"));
 const GuidedSimulatorPage = React.lazy(
   () => import("./pages/GuidedSimulatorPage.jsx"),
 );
 const MobileSimulatorPage = React.lazy(
   () => import("./pages/mobileui/SimulatorPage.jsx"),
 );
-import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
+const ComponentLab = React.lazy(() => import("./pages/simulationpage/ComponentLab.jsx"));
 const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
-import MaintenancePage from "./pages/MaintenancePage.jsx";
-import AboutUsNew from "./pages/AboutUsNewPage.jsx";
-import ContributorsPage from "./pages/ContributorsPage.jsx";
-import AnalyticsPage from "./pages/AnalyticsPage.jsx";
+const MaintenancePage = React.lazy(() => import("./pages/MaintenancePage.jsx"));
+const AboutUsNew = React.lazy(() => import("./pages/AboutUsNewPage.jsx"));
+const ContributorsPage = React.lazy(() => import("./pages/ContributorsPage.jsx"));
+const AnalyticsPage = React.lazy(() => import("./pages/AnalyticsPage.jsx"));
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 const BugTrackerPage = React.lazy(() => import("./pages/BugTrackerPage.jsx"));
 const FeedbackReviewsPage = React.lazy(() => import("./pages/FeedbackReviewsPage.jsx"));
@@ -219,7 +223,7 @@ function ThemeToggleButton() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <VisitorTracker>
         <AuthProvider>
           <GamificationProvider>

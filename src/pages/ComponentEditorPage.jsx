@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react'
 const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
 import { useNavigate } from 'react-router-dom'
-import JSZip from 'jszip'
-import * as Babel from '@babel/standalone'
+// Perf (bundle-split): jszip + babel/standalone (~3.1MB) load on demand via
+// getJSZip()/getBabel — ZIP import/export and transpile preview are
+// click-gated, never needed at route paint.
+import { getBabel, getBabelSync, getJSZip } from './simulationpage/utils/exportUtils.js'
+import { applyOpenHwThemes } from '../utils/monacoConfig.js'
+
+// Perf (bundle-split): Babel is lazy — s5() renders synchronously so it can't
+// await. The route mounts long before step 5 is reached, so preload on mount
+// (see useEffect below) and fall back to cached sync access here.
+let _babelCache = null;
+const primeBabel = () => {
+  if (!_babelCache) _babelCache = getBabel();
+  return _babelCache;
+};
 import * as ReactJsxRuntime from 'react/jsx-runtime'
 import * as ReactJsxDevRuntime from 'react/jsx-dev-runtime'
 import * as EmulatorComponents from '@openhw/emulator'
@@ -724,20 +736,25 @@ function ReactPreview({ reactCode, compW, compH, zoom=1, style }) {
 
   useEffect(() => {
     if (!reactCode?.trim()) { setEl(null); setErr(null); return }
-    try {
-      const transformed = Babel.transform(reactCode, { filename:'ui.tsx', presets: ['react', 'typescript', 'env'] }).code
+    let cancelled = false;
+    (async () => {
+      try {
+        const Babel = await getBabel();
+        if (cancelled) return;
+        const transformed = Babel.transform(reactCode, { filename:'ui.tsx', presets: ['react', 'typescript', 'env'] }).code
       // Find something exported that looks like a component
       const exportsUI = evalTranspiledReactModule(transformed)
       const keys = Object.keys(exportsUI)
       const compKey = keys.find(k => /ui|component|view|preview/i.test(k)) || keys[0]
       const Comp = exportsUI[compKey]
       if (typeof Comp !== 'function' && typeof Comp !== 'object') throw new Error('No exported React component found. Export a component from your code.')
-      setEl(React.createElement(Comp, { state:{}, attrs:{}, isRunning:false }))
-      setErr(null)
-    } catch (e) {
-      setErr(e.message)
-      setEl(null)
-    }
+        setEl(React.createElement(Comp, { state:{}, attrs:{}, isRunning:false }))
+        setErr(null)
+      } catch (e) {
+        if (!cancelled) { setErr(e.message); setEl(null); }
+      }
+    })();
+    return () => { cancelled = true; };
   }, [reactCode])
 
   return (
@@ -794,8 +811,12 @@ function CanvasPanel({ open, onToggle, svgCode, reactCode, imageMode, compW, com
   const [userAttrs, setUserAttrs] = useState({})
   useEffect(() => {
     if (imageMode !== 'react' || !reactCode?.trim()) { setEvalComp(null); setEvalCtxMenu(null); setEvalErr(null); return }
-    try {
-      const transformed = Babel.transform(reactCode, { filename:'ui.tsx', presets: ['react', 'typescript', 'env'] }).code
+    let cancelled = false;
+    (async () => {
+      try {
+        const Babel = await getBabel();
+        if (cancelled) return;
+        const transformed = Babel.transform(reactCode, { filename:'ui.tsx', presets: ['react', 'typescript', 'env'] }).code
       const exportsUI = evalTranspiledReactModule(transformed)
       // Match SimulatorPage: pick UI component (key ending with 'ui' or first function)
       const uiKey = Object.keys(exportsUI).find(k => typeof exportsUI[k] === 'function' && k.toLowerCase().endsWith('ui'))
@@ -807,13 +828,13 @@ function CanvasPanel({ open, onToggle, svgCode, reactCode, imageMode, compW, com
       // Match SimulatorPage: pick ContextMenu component
       const ctxKey = Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))
       setEvalCtxMenu(ctxKey && typeof exportsUI[ctxKey] === 'function' ? () => exportsUI[ctxKey] : null)
-      setUserAttrs({})
-      setEvalErr(null)
-    } catch (e) {
-      setEvalComp(null)
-      setEvalCtxMenu(null)
-      setEvalErr(e.message)
-    }
+        setUserAttrs({})
+        setEvalErr(null)
+      } catch (e) {
+        if (!cancelled) { setEvalComp(null); setEvalCtxMenu(null); setEvalErr(e.message); }
+      }
+    })();
+    return () => { cancelled = true; };
   }, [reactCode, imageMode])
 
   // ── Fluid SVG for SVG mode (same approach as SimulatorPage) ────────────────
@@ -1444,6 +1465,10 @@ const Sep = ({ v }) => (
 export default function ComponentEditorPage() {
   const navigate = useNavigate()
 
+  // Perf (bundle-split): preload Babel in background on route mount — s5()
+  // renders synchronously and needs it cached by the time step 5 opens.
+  useEffect(() => { primeBabel(); }, [])
+
   // ── Theme ─────────────────────────────────────────────────────────────────
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const toggleTheme = () => {
@@ -1526,6 +1551,10 @@ export default function ComponentEditorPage() {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => observer.disconnect();
   }, []);
+
+  // beforeMount on every Monaco instance: themes must exist BEFORE first
+  // paint or Monaco falls back to the default light theme in dark mode.
+  const monacoBeforeMount = useCallback((monaco) => { applyOpenHwThemes(monaco); }, []);
 
   const commonMonacoOptions = useMemo(() => ({
     fontSize: 13,
@@ -1839,6 +1868,7 @@ export default function ComponentEditorPage() {
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return; e.target.value = ''
     try {
+      const JSZip = await getJSZip();
       const zip = await JSZip.loadAsync(file)
       let mStr,uiStr,logicStr,validStr,indexStr,docsStr
       for (const p of Object.keys(zip.files)) {
@@ -1898,6 +1928,7 @@ export default function ComponentEditorPage() {
 
   // ── Build / download ZIP ──────────────────────────────────────────────────
   const buildZip = async () => {
+    const JSZip = await getJSZip();
     const d = getData(), zip = new JSZip(), f = zip.folder(d.type||'my-component')
     f.file('manifest.json', manifestCode||genManifest(d))
     f.file('ui.tsx',        uiCode||genUICode(d))
@@ -1934,13 +1965,14 @@ export default function ComponentEditorPage() {
     pushHist()
   }
 
-  const runLogicCheck = useCallback(() => {
+  const runLogicCheck = useCallback(async () => {
     const issues = []
     const notes = []
     const startedAt = new Date().toISOString()
 
     const addIssue = (msg) => issues.push(msg)
     const addNote = (msg) => notes.push(msg)
+    const Babel = await getBabel()
 
     // 1) Syntax/transpile checks
     let transpiledLogic = ''
@@ -2217,6 +2249,7 @@ export default function ComponentEditorPage() {
                 <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                   <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                     <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                       height="100%"
                       language={svgMode === 'react' ? 'typescript' : 'xml'}
                       theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2668,10 +2701,15 @@ export default function ComponentEditorPage() {
   // ─────────────────────────────────────────────────────────────────────────
   const s5 = () => {
     // Live compile & render the ContextMenu component
+    // (Babel preloaded on mount via primeBabel; _babelCache is set by then.
+    // If the user reaches step 5 before preload finishes, show the error
+    // state instead of crashing — the transpile resolves on next render.)
     let liveCtxEl = null
     let liveCtxErr = null
     if (ctxMenuCode.trim()) {
       try {
+        const Babel = getBabelSync();
+        if (!Babel) throw new Error('Compiler still loading…')
         const transformed = Babel.transform(ctxMenuCode, { filename:'context.tsx', presets: ['react','typescript','env'] }).code
         const exps = evalTranspiledReactModule(transformed)
         const key = Object.keys(exps).find(k => k.toLowerCase().includes('contextmenu')) || Object.keys(exps).find(k => typeof exps[k]==='function') || Object.keys(exps)[0]
@@ -2742,6 +2780,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
             <div style={{ flex:1, overflow:'auto' }}>
               <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                 <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                   height="100%"
                   language="typescript"
                   theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2910,6 +2949,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
            <div style={{ height: s6EditorHeight, minHeight: 320, maxHeight: '75vh', overflow: 'auto' }}>
               <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
                 <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                   height="100%"
                   language={codeLangId === 'tsx' ? 'typescript' : codeLangId}
                   theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -2966,6 +3006,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', minHeight: 340 }}>
             <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
               <MonacoEditor
+                      beforeMount={monacoBeforeMount}
                 height={s7EditorHeight}
                 language="typescript"
                 theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
@@ -3046,6 +3087,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
         <div style={{ flex:1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
             <MonacoEditor
+                      beforeMount={monacoBeforeMount}
               height="100%"
               language="html"
               theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
