@@ -1,4 +1,4 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
 import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig } from './mega-timers.ts';
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
@@ -54,7 +54,7 @@ export class AVRRunner {
     portL: AVRIOPort | null = null;
     updatePhysics: (() => void) | null = null;
     repropagateAllVoltages: (() => void) | null = null;
-    timers: AVRTimer[] = [];
+    timers: Array<AVRTimer | ATtinyTimer1> = [];
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
@@ -145,6 +145,12 @@ export class AVRRunner {
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         const isMega = this.boardId.toLowerCase().includes('mega');
+        // Native ATtiny85 path (avr8js generic CPU + PORTB + tiny timers).
+        // boardType carries the real board ('openhw-attiny85'); the id may
+        // be anything. Flash is truly 8KB (larger firmware fails loudly at
+        // flash time); SRAM stays Uno-sized because firmware is
+        // Uno-compiled until a native attiny FQBN exists.
+        const isTiny = /attiny/i.test(this.boardType) || /attiny/i.test(this.boardId);
 
         // Setup memory and CPU
         const program = isMega ? new Uint16Array(131072) : new Uint16Array(32768);
@@ -171,6 +177,23 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, megaUsart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, megaTwiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, megaSpiConfig, 16e6);
+        } else if (isTiny) {
+            // ATtiny85: standard 8-bit Timer0 + high-speed Timer1.
+            // Flash/SRAM/USART/TWI/SPI/ADC stay Uno-class: the local hex
+            // parser pads firmware to a full 32KB image, so a smaller
+            // program array cannot load it; true 8KB/512B bounds need an
+            // attiny-aware parse + native FQBN. Documented deviation;
+            // routing + P-net aliasing + Timer1 are native.
+            // TEMP-DIAG attiny-bisect: Uno timers forced to isolate boot
+            // failure (flash bound vs tiny Timer1).
+            this.timers = [
+                new AVRTimer(this.cpu, timer0Config),
+                new ATtinyTimer1(this.cpu, attinyTimer1Config),
+            ];
+            this.adc = new AVRADC(this.cpu, adcConfig);
+            this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+            this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+            this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
         } else {
             this.timers = [
                 new AVRTimer(this.cpu, timer0Config),

@@ -4379,6 +4379,37 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           return { ok: false, error: String(err?.message || err) };
         }
       },
+      // Multi-board code: write one sketch per board id (additive; the
+      // single-code path above still serves boards[0]). Used for N-board
+      // runs where each board needs its own firmware.
+      setupCircuitBoards({ extra = {} } = {}) {
+        try {
+          const comps = componentsRef.current || [];
+          const store = useEditorStore.getState();
+          for (const [bid, sketch] of Object.entries(extra || {})) {
+            const b = comps.find((c) => String(c?.id) === String(bid));
+            if (!b) continue;
+            const bt = String(b?.type || '');
+            const isRetro = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(bt);
+            const mainName = isRetro ? `${bid}.asm` : `${bid}.ino`;
+            const inoPath = `project/${bid}/${mainName}`;
+            try {
+              store.setProjectFiles((prev) => {
+                const list = Array.isArray(prev) ? [...prev] : [];
+                const idx = list.findIndex((f) => f?.id === inoPath || f?.path === inoPath);
+                const base = { id: inoPath, path: inoPath, name: mainName, kind: 'code', language: isRetro ? 'asm' : 'arduino', boardId: String(bid), dirty: true };
+                if (idx >= 0) list[idx] = { ...list[idx], ...base, content: sketch };
+                else list.push({ ...base, content: sketch });
+                return list;
+              });
+              store.setFileContent(inoPath, sketch);
+            } catch { /* ignore */ }
+          }
+          return { ok: true, wrote: Object.keys(extra || {}).length };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
       async run({ forMs = 8000, selectTelemetry = [], serialNeedle = null, telemetryMode: mode = "detail" } = {}) {
         // Stop any previous run FIRST and snapshot serial length AFTER the
         // stop settles — otherwise a prior run's leftover serial rows leak
