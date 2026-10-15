@@ -222,7 +222,10 @@ export class SDCardLogic extends SPIProtocol {
     constructor(id: string, manifest: any) {
         super(id, manifest);
 
-        const capacityKbRaw = Number(manifest?.attrs?.capacityKB ?? 2048);
+        // Default 32 MB: FAT16 needs >= 4085 data clusters and Arduino's
+        // bundled SD library mounts FAT16/FAT32 only — smaller images
+        // format best-effort but cannot mount there.
+        const capacityKbRaw = Number(manifest?.attrs?.capacityKB ?? 32768);
         const capacityKB = Number.isFinite(capacityKbRaw) && capacityKbRaw > 64
             ? Math.floor(capacityKbRaw)
             : 2048;
@@ -272,6 +275,10 @@ export class SDCardLogic extends SPIProtocol {
 
     /**
      * Minimal FAT16 formatter (MBR + PBR + 2 FATs + root + README data).
+     * Genuine FAT16 (NOT FAT12): Arduino's bundled SD library mounts
+     * FAT16/FAT32 only, and FAT16 needs >= 4085 data clusters — images too
+     * small for that keep a best-effort layout but won't mount there.
+     * Sectors/cluster adapts (1..64) to land in range.
      * Geometry: reserved 1, 2 FATs, 512 root entries, 8 sectors/cluster.
      * Pure arithmetic over this.storage — no I/O, no dependencies. Lets
      * genuine FAT stacks mount the virtual card and do file I/O through
@@ -291,7 +298,10 @@ export class SDCardLogic extends SPIProtocol {
             set16(off + 2, Math.floor(v / 65536) & 0xffff);
         };
         // MBR (LBA 0): one FAT16 partition spanning LBA 1..total-1.
+        // Boot indicator MUST be 0x00/0x80: Arduino rejects entries with
+        // any other low 7 bits as "not a valid partition".
         const part = 446;
+        this.storage[part] = 0x00;
         this.storage[part + 4] = 0x06;
         set32(part + 8, 1);
         set32(part + 12, total - 1);
@@ -305,14 +315,25 @@ export class SDCardLogic extends SPIProtocol {
         const oem = 'MSDOS5.0';
         for (let i = 0; i < 8; i += 1) this.storage[pbr + 3 + i] = oem.charCodeAt(i);
         set16(pbr + 11, S);
-        this.storage[pbr + 13] = 8; // sectors per cluster
+        // Sectors/cluster adapts so data clusters land in FAT16 range.
+        const rootSectors = 32;
+        let spc = 8;
+        let fatSectors = 2;
+        for (const cand of [1, 2, 4, 8, 16, 32, 64]) {
+            const fat = Math.max(1, Math.ceil((((total - 1 - rootSectors) / cand) * 2) / S));
+            const clusters = Math.floor((total - 1 - rootSectors - 2 * fat) / cand);
+            if (clusters >= 4085 && clusters <= 65525) {
+                spc = cand;
+                fatSectors = fat;
+                break;
+            }
+        }
+        this.storage[pbr + 13] = spc; // sectors per cluster
         set16(pbr + 14, 1); // reserved sectors
         this.storage[pbr + 16] = 2; // FAT count
         set16(pbr + 17, 512); // root entries
         set16(pbr + 19, total - 1); // total16
         this.storage[pbr + 21] = 0xf8; // media
-        const rootSectors = 32;
-        const fatSectors = 2;
         set16(pbr + 22, fatSectors);
         set16(pbr + 24, 32); // sectors per track
         set16(pbr + 26, 64); // heads
@@ -685,6 +706,14 @@ export class SDCardLogic extends SPIProtocol {
     onSPIByteExchange(value: number, index: number) {
         this.refreshPowerState();
 
+        try {
+            const c = Number((this as any).__diagE || 0);
+            (this as any).__diagE = c + 1;
+            if (c === 0) {
+                console.warn(`[SD-DIAG] exchange alive m=${this.mounted} p=${this.powered} cs=${this.state.csActive} vcc=${this.getPinVoltage('VCC')} cspin=${this.getPinVoltage('CS')}`);
+            }
+        } catch { /* diag never breaks sim */ }
+
         if (!this.mounted || !this.powered || !this.state.csActive) {
             return 0xff;
         }
@@ -705,10 +734,19 @@ export class SDCardLogic extends SPIProtocol {
 
         if (this.commandFrame.length === 0) {
             if ((byte & 0xc0) === 0x40) {
+                // New command frame: the card drives MISO HIGH while
+                // receiving command bytes (real cards never spend queued
+                // responses on clocks the master ignores). Returning the
+                // queue here would eat the previous response early and
+                // shift every subsequent read by one. Stale tail bytes are
+                // dropped: a new command supersedes them in hardware too.
+                this.responseQueue.length = 0;
                 this.commandFrame.push(byte);
+                return 0xff;
             } else if (byte === 0x9f) {
                 // Legacy SPI probe compatibility.
                 this.queueResponse([0x53, 0x44, 0x30]);
+                return 0xff;
             }
             return this.emitResponseByte();
         }
@@ -718,6 +756,9 @@ export class SDCardLogic extends SPIProtocol {
             const frame = this.commandFrame.slice(0, 6);
             this.commandFrame = [];
             this.handleCommandFrame(frame);
+            // Command bytes read back as idle-high; the queued R1/R3/R7
+            // surfaces on the master's following read clocks.
+            return 0xff;
         }
 
         return this.emitResponseByte();
