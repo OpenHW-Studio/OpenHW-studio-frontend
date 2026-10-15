@@ -223,7 +223,7 @@ function normalizeGroupName(name) {
 }
 
 function sortCatalog(catalog) {
-  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
+  const GROUP_ORDER = ['Boards', 'Board Variants', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
   catalog.sort((a, b) => {
     const idxA = GROUP_ORDER.indexOf(a.group);
     const idxB = GROUP_ORDER.indexOf(b.group);
@@ -516,6 +516,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
   'Boards': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="18" x2="8" y2="22" /><line x1="16" y1="18" x2="16" y2="22" /><line x1="2" y1="8" x2="6" y2="8" /><line x1="2" y1="16" x2="6" y2="16" /><line x1="18" y1="8" x2="22" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2" /></svg>,
+  'Board Variants': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" strokeDasharray="3 2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="18" x2="8" y2="22" /><line x1="16" y1="18" x2="16" y2="22" /><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2" /></svg>,
   'output': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5" /><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5" /></svg>,
   'input': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2" /><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3" /><line x1="12" y1="2" x2="12" y2="8" /><line x1="4" y1="18" x2="6" y2="18" /><line x1="18" y1="18" x2="20" y2="18" /></svg>,
   'basic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12" /><rect x="6" y="8" width="12" height="8" rx="1" /><line x1="18" y1="12" x2="22" y2="12" /></svg>,
@@ -526,7 +527,7 @@ const GROUP_ICON_SVG = {
   'logic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h8c3.3 0 6 2.7 6 6s-2.7 6-6 6H4z" /><line x1="4" y1="4" x2="4" y2="20" /><line x1="2" y1="11" x2="4" y2="11" /><line x1="2" y1="17" x2="4" y2="17" /><line x1="18" y1="14" x2="22" y2="14" /></svg>,
 };
 const GROUP_COLORS = {
-  'Boards': '#6366f1', 'output': '#22c55e', 'input': '#3b82f6',
+  'Boards': '#6366f1', 'Board Variants': '#818cf8', 'output': '#22c55e', 'input': '#3b82f6',
   'basic': '#f59e0b', 'Actuators': '#06b6d4',
   'misc': '#8b5cf6', 'display': '#ec4899', 'sensor': '#14b8a6', 'logic': '#8b5cf6',
 };
@@ -534,6 +535,7 @@ const GROUP_COLORS = {
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  rp2350: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32f1: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32f4: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
@@ -542,6 +544,7 @@ const BOARD_BAUD_PRESETS = {
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
   rp2040: '115200',
+  rp2350: '115200',
   esp32: '115200',
   stm32f1: '115200',
   stm32f4: '115200',
@@ -557,17 +560,49 @@ const SERIAL_LINE_ENDINGS = {
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
   rp2040: 'rp2040:rp2040:rpipico',
+  rp2350: 'rp2040:rp2040:rpipico2',
+  pico_w: 'rp2040:rp2040:rpipicow',
+  pico_2_w: 'rp2040:rp2040:rpipico2w',
+  pico_eth: 'rp2040:rp2040:wiznet_5500_evb_pico',
+  pico_2_eth: 'rp2040:rp2040:wiznet_5500_evb_pico2',
   esp32: 'esp32:esp32:esp32',
   stm32f1: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
-  stm32f4: 'STMicroelectronics:stm32:GenF4:pnum=DISCO_F407VG',
+  stm32f103cb: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB',
+  stm32_maple_mini: 'STMicroelectronics:stm32:GenF1:pnum=MAPLEMINI_F103CB',
+  stm32_nucleo_f103rb: 'STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_F103RB',
+  stm32f103rc: 'STMicroelectronics:stm32:GenF1:pnum=GENERIC_F103RCTX',
+  stm32_gd32f103c8: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
+  stm32_gd32f103cb: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB',
+  stm32_gd32f103rb: 'STMicroelectronics:stm32:GenF1:pnum=GENERIC_F103RBTX',
+  stm32f4: 'STMicroelectronics:stm32:Disco:pnum=DISCO_F407VG',
+  stm32f401: 'STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F401CE',
+  stm32f411: 'STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F411CE',
+  stm32f407ve: 'STMicroelectronics:stm32:GenF4:pnum=BLACK_F407VE',
+  stm32f429: 'STMicroelectronics:stm32:Disco:pnum=DISCO_F429ZI',
 };
 
 const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
   rp2040: 'Raspberry Pi Pico',
+  rp2350: 'Raspberry Pi Pico 2',
+  pico_w: 'Raspberry Pi Pico W',
+  pico_2_w: 'Raspberry Pi Pico 2 W',
+  pico_eth: 'WIZnet W5500-EVB-Pico',
+  pico_2_eth: 'WIZnet W5500-EVB-Pico2',
   esp32: 'ESP32 DevKit',
   stm32f1: 'STM32F1 Blue Pill',
+  stm32f103cb: 'STM32F103CB Blue Pill (128K)',
+  stm32_maple_mini: 'Maple Mini (F103CB)',
+  stm32_nucleo_f103rb: 'Nucleo-F103RB',
+  stm32f103rc: 'STM32F103RC (256K)',
+  stm32_gd32f103c8: 'GD32F103C8 Blue Pill',
+  stm32_gd32f103cb: 'GD32F103CB (128K)',
+  stm32_gd32f103rb: 'GD32F103RB (128K)',
   stm32f4: 'STM32F4 Discovery',
+  stm32f401: 'STM32F401 BlackPill',
+  stm32f411: 'STM32F411 BlackPill',
+  stm32f407ve: 'STM32F407VE Black Board',
+  stm32f429: 'STM32F429 Discovery',
 };
 
 const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
@@ -752,9 +787,32 @@ function allocateComponentId(type, usedIdsInput) {
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
   if (s.includes('nano')) return 'arduino_nano';
+  // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
+  if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
+  if (s.includes('pico-eth') || s.includes('picoeth') || s.includes('5500_evb_pico') || s.includes('w5500')) return 'pico_eth';
+  // Pico W before bare pico ('pico-w' contains 'pico'; 'rpipicow' too).
+  if (s.includes('pico-2-w') || s.includes('pico2w') || s.includes('rpipico2w')) return 'pico_2_w';
+  if (s.includes('pico-w') || s.includes('picow') || s.includes('rpipicow')) return 'pico_w';
+  // STM32F4 variants before the F4 catch-all.
+  if (s.includes('429') || s.includes('f429')) return 'stm32f429';
+  if (s.includes('407ve') || s.includes('407ze') || s.includes('f407ve')) return 'stm32f407ve';
+  if (s.includes('401') || s.includes('f401')) return 'stm32f401';
+  if (s.includes('411') || s.includes('f411')) return 'stm32f411';
   if (s.includes('stm32f4') || s.includes('f407') || s.includes('discovery') || s.includes('f4')) return 'stm32f4';
+  // STM32F1 variants before the F1 catch-all.
+  if (s.includes('maple')) return 'stm32_maple_mini';
+  if (s.includes('nucleo')) return 'stm32_nucleo_f103rb';
+  if (s.includes('gd32')) {
+    if (s.includes('rb')) return 'stm32_gd32f103rb';
+    if (s.includes('cb')) return 'stm32_gd32f103cb';
+    return 'stm32_gd32f103c8';
+  }
+  if (s.includes('f103cb') || s.includes('103cb')) return 'stm32f103cb';
+  if (s.includes('f103rc') || s.includes('103rc')) return 'stm32f103rc';
   if (s.includes('stm32f1') || s.includes('bluepill') || s.includes('blue-pill') || s.includes('103') || s.includes('stm32')) return 'stm32f1';
   if (s.includes('esp32')) return 'esp32';
+  // Pico 2 / RP2350 before Pico 1: 'pico-2' contains 'pico'.
+  if (s.includes('pico-2') || s.includes('pico2') || s.includes('rp2350') || s.includes('2350')) return 'rp2350';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
 }
@@ -808,8 +866,10 @@ function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
 }
 
 function resolveBoardFqbnForComponent(boardComp, boardKind) {
-  void boardComp;
-  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
+  // Per-board FQBN: the component TYPE wins over the normalized kind so
+  // variants (Maple Mini, Nucleo, GD32, F401/…) compile for their own part.
+  const typeKey = normalizeBoardKind(boardComp?.type || '');
+  return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 
 function createDefaultMainCode(boardKind, boardId, options = {}) {
@@ -1099,7 +1159,7 @@ function resolveComponentAttrString(attrs, key, fallback = '') {
 
 
 function isProgrammableBoardType(type) {
-  return /(arduino)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico|esp32|stm32)/i.test(String(type || ''));
 }
 
 
@@ -1607,6 +1667,9 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [activeGroupFilter, setActiveGroupFilter] = useState('All')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFavorites, setShowFavorites] = useState(true)
+  // 'Board Variants' group starts collapsed and can never auto-expand:
+  // the 11 footprint-clone tiles stay one tap away without crowding Boards.
+  const [variantsOpen, setVariantsOpen] = useState(false)
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
   const [showComponentDesc, setShowComponentDesc] = useState(true) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
@@ -1724,7 +1787,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter(c => /(arduino)/i.test(c.type))
+      .filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
       .map(c => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
@@ -1755,7 +1818,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1788,7 +1851,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
-  const boardComponents = useMemo(() => components.filter(c => /(arduino)/i.test(c.type)), [components]);
+  const boardComponents = useMemo(() => components.filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
     boardComponents.forEach((component) => {
@@ -6353,7 +6416,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         : '';
       const boardHexMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino)/i.test(c.type));
+      const programmableBoards = components.filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type));
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -6430,15 +6493,35 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
+            // Pico kinds: rp2040/rp2350 + pico_w/pico_2_w/pico_eth/pico_2_eth.
+            // STM32 kinds: stm32f1/stm32f4 + all variant kinds (same bin+elf).
+            const isPicoKind = kind === 'rp2040' || kind === 'rp2350' || String(kind || '').startsWith('pico');
+            const isStmKind = String(kind || '').startsWith('stm32');
             const artifacts =
-              kind === 'rp2040' ? ['uf2', 'elf'] :
+              isPicoKind ? ['uf2', 'elf'] :
               kind === 'esp32' ? ['bin', 'elf'] :
-              (kind === 'stm32f1' || kind === 'stm32f4') ? ['bin', 'elf'] :
+              isStmKind ? ['bin', 'elf'] :
               ['hex', 'elf'];
             try {
+              // Pico Serial compat (all Pico kinds): arduino-pico `Serial`
+              // is USB CDC (unmodeled) — rewrite bare `Serial.` → `Serial1.`
+              // (UART0 GP0/GP1) before compile, mirroring genericBoardCompile.
+              let effectiveSource = compileSource;
+              let effectiveFiles = compileUnit.files;
+              if (isPicoKind) {
+                const rewriteSerial = (src) => String(src || '').replace(/\bSerial\.(?![0-9])/, 'Serial1.');
+                if (/\bSerial\.(?![0-9])/.test(String(compileSource || ''))) {
+                  effectiveSource = rewriteSerial(compileSource);
+                }
+                effectiveFiles = (compileUnit.files || []).map((f) =>
+                  /\bSerial\.(?![0-9])/.test(String(f.content || ''))
+                    ? { ...f, content: rewriteSerial(f.content) }
+                    : f,
+                );
+              }
               compiled = await compileCode({
-                code: compileSource,
-                files: compileUnit.files,
+                code: effectiveSource,
+                files: effectiveFiles,
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
                 target: kind,
@@ -7715,7 +7798,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     setComponents(normalizedComponents);
     setWires(normalizedConnections);
 
-    const importedBoards = normalizedComponents.filter((c) => /(arduino)/i.test(c.type));
+    const importedBoards = normalizedComponents.filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type));
     let normalizedFiles = normalizeProjectFiles(Array.isArray(meta?.projectFiles) ? meta.projectFiles : []);
 
     // Backward compatibility: older exports stored only top-level `code`.
@@ -8444,13 +8527,48 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
                     });
                     if (filteredItems.length === 0) return null;
                     const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
-                    return (
-                      <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
-                        <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    const isVariantsGroup = group.group === 'Board Variants';
+                    if (isVariantsGroup && !variantsOpen) return (
+                      <div key={group.group || `group-${index}`} style={{ marginBottom: 18, marginTop: 14, paddingTop: 10, paddingBottom: 8, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                        <div
+                          className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1"
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                          onClick={() => setVariantsOpen(true)}
+                          title="Expand board variants"
+                        >
                           <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                             {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
                           </span>
                           {group.group}
+                          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>
+                            <span style={{ fontSize: 9, color: 'var(--text3)' }}>{filteredItems.length} variants</span>
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                              <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                    return (
+                      <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
+                        <div
+                          className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1"
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isVariantsGroup ? 'pointer' : 'default' }}
+                          onClick={isVariantsGroup ? () => setVariantsOpen(false) : undefined}
+                          title={isVariantsGroup ? 'Collapse board variants' : undefined}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                            {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
+                          </span>
+                          {group.group}
+                          {isVariantsGroup && (
+                            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>
+                              <span style={{ fontSize: 9, color: 'var(--text3)' }}>{filteredItems.length} variants</span>
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ transform: 'rotate(180deg)' }}>
+                                <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </span>
+                          )}
                         </div>
 
                         {paletteViewMode === 'grid' ? (

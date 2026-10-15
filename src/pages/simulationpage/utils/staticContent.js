@@ -32,6 +32,14 @@ export const COMPONENT_DESCRIPTIONS = {
         "Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.",
       "openhw-pico":
         "Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.",
+      "openhw-pico-2":
+        "Dual-core ARM Cortex-M33 / RISC-V RP2350 microcontroller. Faster clocks, more memory, flexible digital interfaces.",
+      "openhw-pico-2-w":
+        "RP2350 Pico 2 W board with CYW43 wireless. GPIO, UART, I2C, SPI, PWM and ADC in simulation.",
+      "openhw-pico-eth":
+        "RP2040 W5500-EVB-Pico carrier board. W5500 Ethernet on SPI0, flexible digital interfaces.",
+      "openhw-pico-2-eth":
+        "RP2350 W5500-EVB-Pico2 carrier board. W5500 Ethernet on SPI0, flexible digital interfaces.",
       "wokwi-breadboard":
         "Full-size solderless breadboard. 830 tie points for prototyping circuits.",
       "openhw-breadboard":
@@ -249,8 +257,12 @@ export function useWokwiToCompId() {
           "openhw-attiny85": "attiny85",
           "wokwi-raspberry-pi-pico": "pico",
           "openhw-pico": "pico",
+          "openhw-pico-2": "pico-2",
           "wokwi-raspberry-pi-pico-w": "pico-w",
           "openhw-pico-w": "pico-w",
+          "openhw-pico-2-w": "pico-2-w",
+          "openhw-pico-eth": "pico-eth",
+          "openhw-pico-2-eth": "pico-2-eth",
           "wokwi-power-supply": "power-supply",
           "openhw-power-supply": "power-supply",
           "wokwi-battery": "battery",

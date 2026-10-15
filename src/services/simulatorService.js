@@ -85,17 +85,23 @@ async function setLocalCompileCache(hash, data) {
  * Board → default firmware artifacts requested from the compiler-worker.
  * The backend derives the same defaults from the fqbn, so this is only
  * about being explicit: the frontend states what it will consume.
- *   Uno (avr)   → hex (simulator) + elf (GDB)
- *   Pico (rp2040) → uf2 (simulator) + elf (GDB)
+ *   Uno (avr)      → hex (simulator) + elf (GDB)
+ *   Pico (rp2040)  → uf2 (simulator) + elf (GDB)
+ *   ESP32          → bin (merged flash image @0) + elf (GDB)
+ *   STM32F1/F4     → bin (raw flash image) + elf (GDB)
  */
 export const DEFAULT_ARTIFACTS_BY_FAMILY = Object.freeze({
     avr: Object.freeze(['hex', 'elf']),
     rp2040: Object.freeze(['uf2', 'elf']),
+    esp32: Object.freeze(['bin', 'elf']),
+    stm32: Object.freeze(['bin', 'elf']),
 });
 
 export function defaultArtifactsForFqbn(fqbn) {
     const lowered = String(fqbn || '').toLowerCase();
     if (lowered.includes('rp2040')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.rp2040];
+    if (lowered.includes('esp32')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.esp32];
+    if (lowered.includes('stm32') || lowered.includes('stmicroelectronics')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.stm32];
     return [...DEFAULT_ARTIFACTS_BY_FAMILY.avr];
 }
 
@@ -112,6 +118,14 @@ export function getResponseArtifact(compiled, name) {
     }
     if (name === 'uf2' && typeof compiled?.hex === 'string' && compiled.hex.startsWith('UF2BASE64:')) {
         return { fileName: compiled.artifactName || 'firmware.uf2', encoding: 'base64', data: compiled.hex.slice('UF2BASE64:'.length) };
+    }
+    // ESP32/STM32 `.bin` arrives as raw base64 (no prefix) in the artifacts
+    // map; the legacy top-level `hex` field may also carry it when bin is
+    // the primary artifact type.
+    if (name === 'bin') {
+        if (typeof compiled?.hex === 'string' && compiled.hex && compiled.artifactType === 'bin') {
+            return { fileName: compiled.artifactName || 'firmware.bin', encoding: 'base64', data: compiled.hex };
+        }
     }
     if (name === 'elf' && typeof compiled?.elf === 'string' && compiled.elf) {
         const raw = compiled.elf.startsWith('ELFBASE64:') ? compiled.elf.slice('ELFBASE64:'.length) : compiled.elf;
@@ -166,7 +180,13 @@ export async function compileCode(input) {
     if (!Array.isArray(payload.artifacts) || payload.artifacts.length === 0) {
         payload.artifacts = defaultArtifactsForFqbn(targetFqbn);
     }
-    const isUnoOrPico = targetFqbn.includes('avr') || targetFqbn.includes('rp2040') || payload.target === 'uno' || payload.target === 'pico';
+    const loweredFqbn = targetFqbn.toLowerCase();
+    const isArmBoard = loweredFqbn.includes('rp2040') || loweredFqbn.includes('esp32')
+        || loweredFqbn.includes('stm32') || loweredFqbn.includes('stmicroelectronics');
+    const isUnoOrPico = targetFqbn.includes('avr') || isArmBoard
+        || payload.target === 'uno' || payload.target === 'pico'
+        || payload.target === 'esp32' || payload.target === 'stm32f1' || payload.target === 'stm32f4'
+        || payload.target === 'rp2040';
 
     let hash = '';
     if (isUnoOrPico) {

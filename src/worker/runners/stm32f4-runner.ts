@@ -3,18 +3,62 @@
  *
  * Engine: `STM32F4` facade via the package entry (`index.mjs`, which injects
  * SVD + WASM bindings — direct `site/stm32f4.js` import throws). One instance
- * per board runner (verified isolated). Firmware: fromELF/fromHex/fromBin.
- * `chip` option selects the F401/F411/F407/F429 table (default stm32f407).
+ * per board runner (verified isolated).
  *
- * UART: `usart1.onData` TX hook (single shared model buffer — only usart1
- * fires, per package docs); `usart1.send`/`uartRx` RX. GPIO: `gpio.pin()`.
+ * Firmware contract (boardHexMap carries `compiled.hex`):
+ *   Arduino `.bin` → backend `bin` artifact = `<sketch>.ino.bin` (raw app
+ *   image), raw base64 → fromBin. Verified: boots, PD12 toggles via
+ *   gpio hooks. UART STATUS: Disco `Serial.println` does NOT reach
+ *   drainUart()/usart1.onData (probed 2026-10-02, see gapStm32f4.md) —
+ *   likely USB CDC or an uncaptured USART base. Runner is GPIO-verified.
+ * `chip` option selects the F401/F411/F407/F407VE/F429 table (default
+ *   stm32f407 Discovery; board TYPE implies the chip when the opt is absent).
+ *   Per-chip LEDs follow the package BOARD_LED map (401/411→PC13,
+ *   407→PD12, 407ve→PA6, 429→PG13); per-chip SVD is fetched from
+ *   public/vendor (vendored this change).
+ *
+ * UART (when the package routes it): `usart1.onData` TX hook (single shared
+ * model buffer — only usart1 fires, per package docs); `usart1.send`/`uartRx`
+ * RX. GPIO: `gpio.pin()`.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 
-// F407 USART1: TX=PA9, RX=PA10. Discovery LEDs: PD12–PD15.
+// F407 USART1: TX=PA9, RX=PA10.
+// Board LED map (package site/boards.js BOARD_LED — matches emulator shells):
+//   stm32f401/stm32f411 → PC13, stm32f407 → PD12, stm32f407ve → PA6,
+//   stm32f429 → PG13.
 const F4_UART_TX = ['PA9', 'A9', 'TX', 'TX0', 'TX1'];
 const F4_UART_RX = ['PA10', 'A10', 'RX', 'RX0', 'RX1'];
+
+function f4LedFor(chip: string): { bank: string; pin: number } {
+    const c = String(chip || '').toLowerCase();
+    if (c.includes('429')) return { bank: 'G', pin: 13 };
+    if (c.includes('407ve') || c.includes('407ze')) return { bank: 'A', pin: 6 };
+    if (c.includes('401') || c.includes('411')) return { bank: 'C', pin: 13 };
+    return { bank: 'D', pin: 12 };
+}
+
+// Board type → package chip key (explicit `chip` opt/attr always wins).
+// Matches the 4 new emulator shells + legacy openhw-stm32f4 (F407 default).
+function f4ChipForType(boardType: string): string {
+    const t = String(boardType || '').toLowerCase();
+    if (t.includes('429')) return 'stm32f429';
+    if (t.includes('407ve') || t.includes('407ze') || t.includes('f407ve')) return 'stm32f407ve';
+    if (t.includes('401')) return 'stm32f401';
+    if (t.includes('411')) return 'stm32f411';
+    if (t.includes('407')) return 'stm32f407';
+    return 'stm32f407';
+}
+
+// Package SVD asset per chip (vendored under public/vendor + public root).
+function f4SvdFor(chip: string): string {
+    const c = String(chip || '').toLowerCase();
+    if (c.includes('401')) return 'stm32f401.svd';
+    if (c.includes('411')) return 'stm32f411.svd';
+    if (c.includes('429')) return 'stm32f429.svd';
+    return 'stm32f407.svd'; // f407 + f407ve share the F407 SVD
+}
 
 function b64ToU8(b64: string): Uint8Array {
     const bin = atob(b64);
@@ -38,7 +82,12 @@ export class Stm32f4Runner extends ArmRunnerBase {
         options: AVRRunnerOptions & { chip?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
-        if (typeof (options as any)?.chip === 'string') this.chip = (options as any).chip;
+        // Chip map: F401/F411/F407/F407VE/F429 package table (default
+        // stm32f407 Discovery). Attr / option wins; board TYPE implies the
+        // chip when absent (openhw-stm32f429 → stm32f429, …).
+        const optChip = String((options as any)?.chip || '');
+        const typeStr = String((options as any)?.boardType || '');
+        this.chip = (/^[a-z0-9_+-]+$/i.test(optChip) && optChip ? optChip : f4ChipForType(typeStr)).toLowerCase();
         void this.boot('openhw-stm32f4');
     }
 
@@ -67,15 +116,25 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     return;
                 }
                 // Fetch SVD + wasm bytes from public/ so the facade never
-                // touches the filesystem.
+                // touches the filesystem. SVD is per-chip (vendored 401/407/
+                // 411/429; 407ve shares the 407 SVD); the root copy is the
+                // F407 fallback when the per-chip asset is missing.
                 let svdXml: string | undefined;
                 let wasmBytes: Uint8Array | undefined;
+                const svdName = f4SvdFor(self.chip);
                 try {
                     const [svdRes, wasmRes] = await Promise.all([
-                        fetch('/vendor/stm32f407.svd').catch(() => null),
+                        fetch(`/vendor/board-engines/stm32f4-emu/site/vendor/${svdName}`).catch(() => null),
                         fetch('/wasm/stm32_periph_wasm_bg.wasm').catch(() => null),
                     ]);
-                    if (svdRes && svdRes.ok) svdXml = await svdRes.text();
+                    let res = svdRes && svdRes.ok ? svdRes : null;
+                    if (!res) {
+                        try { const fb = await fetch(`/vendor/${svdName}`).catch(() => null); if (fb && fb.ok) res = fb; } catch { /* ignore */ }
+                    }
+                    if (!res) {
+                        try { const fb = await fetch('/vendor/stm32f407.svd').catch(() => null); if (fb && fb.ok) res = fb; } catch { /* ignore */ }
+                    }
+                    if (res) svdXml = await res.text();
                     if (wasmRes && wasmRes.ok) wasmBytes = new Uint8Array(await wasmRes.arrayBuffer());
                 } catch { /* facade falls back to bundled resolution */ }
                 // STM32F4._create(opts): opts.bindings defaults null (fine —
@@ -141,18 +200,34 @@ export class Stm32f4Runner extends ArmRunnerBase {
 
     private hookGpio(unsubs: Array<() => void>): void {
         if (!this.mcu?.gpio) return;
-        // F407 exposes banks A–K; watch the header-relevant subset.
+        // F407 exposes banks A–K; F401/F411 A–F; F429 A–K. Watch the
+        // header-relevant subset; per-chip LED (BOARD_LED map) drives state.
         const banks = ['A', 'B', 'C', 'D', 'E'];
+        const led = f4LedFor(this.chip);
         for (const bank of banks) {
             for (let pin = 0; pin < 16; pin++) {
                 try {
                     const h = this.mcu.gpio.pin(bank, pin);
                     const u = h.on('change', (high: boolean) => {
                         this.publishGpio(`P${bank}${pin}`, !!high);
+                        if (bank === led.bank && pin === led.pin) {
+                            try { (this.instances.get(this.boardId) as any)?.setState?.({ builtInLed: !!high }); } catch { /* ignore */ }
+                        }
                     });
                     if (typeof u === 'function') unsubs.push(u);
                 } catch { /* skip missing pin */ }
             }
+        }
+        // F429 PG13 lives outside the A–E subset — watch it explicitly.
+        if (led.bank === 'G') {
+            try {
+                const h = this.mcu.gpio.pin('G', 13);
+                const u = h.on('change', (high: boolean) => {
+                    this.publishGpio('PG13', !!high);
+                    try { (this.instances.get(this.boardId) as any)?.setState?.({ builtInLed: !!high }); } catch { /* ignore */ }
+                });
+                if (typeof u === 'function') unsubs.push(u);
+            } catch { /* skip missing pin */ }
         }
     }
 

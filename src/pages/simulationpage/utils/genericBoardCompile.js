@@ -62,15 +62,38 @@ export async function compileGenericBoard(args, ctx) {
               logSerial(`Compiling ${boardComp.id}...`);
               // Per-family artifacts: the backend registry decides supported
               // names; arduino-cli emits them from the installed core.
+              // Pico kinds: rp2040/rp2350 + pico_w/pico_2_w/pico_eth/pico_2_eth.
+              // STM32 kinds: stm32f1/stm32f4 + all variant kinds (start with
+              // 'stm32' / contain 'f103'/'f4' — same bin+elf contract).
+              const isPicoKind = kind === 'rp2040' || kind === 'rp2350' || String(kind || '').startsWith('pico');
+              const isStmKind = String(kind || '').startsWith('stm32') || kind === 'stm32f1' || kind === 'stm32f4';
               const artifacts =
-                kind === 'rp2040' ? ['uf2', 'elf'] :
+                isPicoKind ? ['uf2', 'elf'] :
                 kind === 'esp32' ? ['bin', 'elf'] :
-                (kind === 'stm32f1' || kind === 'stm32f4') ? ['bin', 'elf'] :
+                isStmKind ? ['bin', 'elf'] :
                 ['hex', 'elf'];
+              // Pico Serial compat: arduino-pico `Serial` is USB CDC, which
+              // pico-emu does not model — UART0 (GP0/GP1) is the monitor
+              // path. Rewrite bare `Serial.` → `Serial1.` (word-boundary,
+              // Serial1/Serial2 untouched) before compile.
+              let effectiveSource = compileSource;
+              let effectiveFiles = compileUnit.files;
+              if (isPicoKind) {
+                const rewriteSerial = (src) => String(src || '').replace(/\bSerial\.(?![0-9])/, 'Serial1.');
+                // Only rewrite when the sketch actually uses bare Serial.
+                if (/\bSerial\.(?![0-9])/.test(String(compileSource || ''))) {
+                  effectiveSource = rewriteSerial(compileSource);
+                }
+                effectiveFiles = (compileUnit.files || []).map((f) =>
+                  /\bSerial\.(?![0-9])/.test(String(f.content || ''))
+                    ? { ...f, content: rewriteSerial(f.content) }
+                    : f,
+                );
+              }
               try {
                 compiled = await compileCode({
-                  code: compileSource,
-                  files: compileUnit.files,
+                  code: effectiveSource,
+                  files: effectiveFiles,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
                   target: kind,

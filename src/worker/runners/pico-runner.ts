@@ -1,22 +1,46 @@
 /**
- * pico-runner.ts — Raspberry Pi Pico (RP2040) BoardRunner over pico-emu@1.0.3.
+ * pico-runner.ts — Raspberry Pi Pico (RP2040) + Pico 2 (RP2350) BoardRunner
+ * over pico-emu@1.0.3.
  *
  * Engine: Emscripten `picoemu.wasm.js` (`_picoemu_*`). One Module instance per
- * board runner (verified isolated). Firmware: UF2 (`_picoemu_load_uf2`) for
- * arduino-pico sketches; MicroPython: bundled `micropython_rp2040.uf2` base
- * image + user `main.py` injected over the REPL.
+ * board runner (verified isolated). Arch select: 0 = RP2040 M0+ (Pico),
+ * 2 = RP2350 M33 (Pico 2 default), 1 = RP2350 RISC-V Hazard3 (attr arch=rv32).
+ * Same UF2 family-ID auto-detect rule as the pico-emu CLI.
+ *
+ * Firmware contract (boardHexMap carries `compiled.hex`):
+ *   Arduino `.uf2` → backend `uf2` artifact (`UF2BASE64:…`) → _load_uf2.
+ *   NOTE: arduino-pico `Serial` is USB CDC (unmodeled) — genericBoardCompile
+ *   rewrites bare `Serial.` → `Serial1.` (UART0 GP0/GP1) before compile.
+ *   Verified: Serial1.println reaches _read_uart(0); plain Serial is silent.
+ *   MicroPython: bundled `micropython_rp2040.uf2` / `micropython_rp2350.uf2`
+ *   base image + user `main.py` injected over the REPL.
  *
  * UART: `_write_uart` RX, `_read_uart(0)` TX drain. GPIO: `_set_gpio` in,
  * `_get_gpio_out` out, published into pinStates + SAB pin bitfield.
- * WiFi/BLE/Ethernet (`_wifi_enable`, `_w5500_*`, `_bt_hci_*`) deferred —
- * see info/gapPico.md.
+ * WiFi/BLE/Ethernet: `_wifi_enable` (CYW43, Pico W / Pico 2 W) and
+ * `_picoemu_board_eth` (W5500, pico-eth/pico-eth2) are ENABLED at boot when
+ * the board type / attrs request them — stub mode (no live gateway socket;
+ * DHCP/DNS served by the in-emulator fake net). Live gateway proxy + BLE
+ * HCI (`_bt_hci_enable`) stay deferred — see info/gapPico.md.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 
 const PICO_UART_TX = ['GP0', 'GPIO0', '0', 'D0', 'TX', 'TX0'];
 const PICO_UART_RX = ['GP1', 'GPIO1', '1', 'D1', 'RX', 'RX0'];
-const MICROPYTHON_BASE_URL = '/firmware/micropython_rp2040.uf2';
+const MICROPYTHON_RP2040_URL = '/firmware/micropython_rp2040.uf2';
+const MICROPYTHON_RP2350_URL = '/firmware/micropython_rp2350.uf2';
+// pico-emu arch ids (same as CLI --arch): 0 = M0+ (RP2040), 2 = M33
+// (RP2350 ARM, Pico 2 default), 1 = RV32 Hazard3 (RP2350 RISC-V).
+const PICO_ARCH_M0 = 0;
+const PICO_ARCH_RV32 = 1;
+const PICO_ARCH_M33 = 2;
+// UF2 family IDs at offset 28 of block 0 (same table as pico-emu cli.js).
+const UF2_FAMILY_ARCH: Record<number, number> = {
+  0xe48bff56: PICO_ARCH_M0,
+  0xe48bff59: PICO_ARCH_M33,
+  0xe48bff5a: PICO_ARCH_RV32,
+};
 
 function b64ToU8(b64: string): Uint8Array {
     const bin = atob(b64);
@@ -42,17 +66,40 @@ export class PicoRunner extends ArmRunnerBase {
     private isMicroPython = false;
     private pyInjected = false;
     private pyScript = '';
+    private archOpt = '';
+    private isPico2 = false;
+    private arch = PICO_ARCH_M0;
+    private wantWifi = false;
+    private ethBoard: '' | 'w5500' = '';
+    private ethSpi = 0;
 
     constructor(
         hexData: string,
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { pyScript?: string } = {},
+        options: AVRRunnerOptions & { pyScript?: string; arch?: string | number; wirelessMode?: string; boardSpi?: string | number; ethLive?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.pyScript = String((options as any)?.pyScript || '');
-        void this.boot('openhw-pico');
+        this.archOpt = String((options as any)?.arch || (options as any)?.boardArch || '').toLowerCase();
+        const typeStr = String((options as any)?.boardType || '') + ' ' + String(this.boardId || '');
+        this.isPico2 = /pico-?2|rp2350|2350/.test(typeStr);
+        // WiFi: Pico W / Pico 2 W board types, or explicit wirelessMode attr
+        // (full/compat-stub/on/1/true). 'off' disables (matches shell default
+        // attr wirelessMode=full; shell offers full/compat-stub/off).
+        const wifiAttr = String((options as any)?.wirelessMode || (options as any)?.wifi || '').toLowerCase();
+        this.wantWifi = /pico-?w|picow|-w\b/.test(typeStr)
+            || ['full', 'compat-stub', 'compat', 'stub', 'on', '1', 'true', 'yes'].includes(wifiAttr);
+        if (wifiAttr === 'off' || wifiAttr === '0' || wifiAttr === 'false' || wifiAttr === 'no') this.wantWifi = false;
+        // Ethernet: pico-eth / pico-2-eth board types (W5500 on SPI). The
+        // W6300 (pico-w6300) is a different chip the arduino-pico core does
+        // not target — explicit gap, not silently mapped.
+        if (/pico-?2-?eth|picoeth2|2-eth/.test(typeStr)) this.ethBoard = 'w5500';
+        else if (/pico-?eth|picoeth|w5500/.test(typeStr)) this.ethBoard = 'w5500';
+        const spiOpt = Number.parseInt(String((options as any)?.boardSpi ?? '0'), 10);
+        this.ethSpi = spiOpt === 1 ? 1 : 0;
+        void this.boot(this.isPico2 ? 'openhw-pico-2' : 'openhw-pico');
     }
 
     private makeEngine() {
@@ -80,8 +127,21 @@ export class PicoRunner extends ArmRunnerBase {
                     print: () => {}, printErr: () => {},
                     ...(wasmBinary ? { wasmBinary } : {}),
                 });
-                self.mod._picoemu_init(0); // arch 0 = RP2040
-                self.mod._picoemu_set_clock(125);
+                // Arch select: explicit attr (arch=m33/rv32/m0) wins, else
+                // Pico 2 board default (M33), else UF2 family-ID auto-detect
+                // (CLI rule), else board default (M0 Pico / M33 Pico 2).
+                self.arch = self.resolveArch(payloadToU8(firmware));
+                self.mod._picoemu_init(self.arch);
+                self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
+                // Wireless + wired net (stub mode, no live sockets):
+                // CYW43 for Pico W / Pico 2 W, W5500 board for pico-eth
+                // variants — same CLI calls minus --board-live (deferred).
+                try {
+                    if (self.wantWifi) self.mod._picoemu_wifi_enable(0);
+                } catch { /* older builds */ }
+                try {
+                    if (self.ethBoard === 'w5500') self.mod._picoemu_board_eth(1, 0, self.ethSpi);
+                } catch { /* older builds */ }
                 const u8 = payloadToU8(firmware);
                 if (u8 && u8.length > 0) {
                     self.loadImage(u8);
@@ -136,6 +196,18 @@ export class PicoRunner extends ArmRunnerBase {
         };
     }
 
+    private resolveArch(u8: Uint8Array | null): number {
+        const opt = String(this.archOpt || '').toLowerCase();
+        if (opt === 'm0' || opt === 'rp2040' || opt === '0') return PICO_ARCH_M0;
+        if (opt === 'm33' || opt === 'arm' || opt === '2') return PICO_ARCH_M33;
+        if (opt === 'rv32' || opt === 'riscv' || opt === 'risc-v' || opt === '1') return PICO_ARCH_RV32;
+        if (u8 && u8.length >= 32) {
+            const fam = (u8[28] | (u8[29] << 8) | (u8[30] << 16) | (u8[31] << 24)) >>> 0;
+            if (fam in UF2_FAMILY_ARCH) return UF2_FAMILY_ARCH[fam];
+        }
+        return this.isPico2 ? PICO_ARCH_M33 : PICO_ARCH_M0;
+    }
+
     private loadImage(u8: Uint8Array): void {
         const looksUf2 = u8.length >= 512 && u8[0] === 0x55 && u8[1] === 0x46 && u8[2] === 0x44 && u8[3] === 0x32; // 'UF2\n' magic-ish
         const ptr = this.mod._malloc(u8.length);
@@ -151,7 +223,8 @@ export class PicoRunner extends ArmRunnerBase {
 
     private async bootMicroPython(): Promise<void> {
         try {
-            const res = await fetch(MICROPYTHON_BASE_URL);
+            const url = this.arch === PICO_ARCH_M0 ? MICROPYTHON_RP2040_URL : MICROPYTHON_RP2350_URL;
+            const res = await fetch(url);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const buf = new Uint8Array(await res.arrayBuffer());
             this.loadImage(buf);

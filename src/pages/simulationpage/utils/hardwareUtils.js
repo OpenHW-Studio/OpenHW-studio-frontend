@@ -3,10 +3,33 @@ import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants'
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
   if (s.includes('nano')) return 'arduino_nano';
+  // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
+  if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
+  if (s.includes('pico-eth') || s.includes('picoeth') || s.includes('5500_evb_pico') || s.includes('w5500')) return 'pico_eth';
+  // Pico W before bare pico ('pico-w' contains 'pico'; 'rpipicow' too).
+  if (s.includes('pico-2-w') || s.includes('pico2w') || s.includes('rpipico2w')) return 'pico_2_w';
+  if (s.includes('pico-w') || s.includes('picow') || s.includes('rpipicow')) return 'pico_w';
+  // STM32F4 variants before the F4 catch-all.
+  if (s.includes('429') || s.includes('f429')) return 'stm32f429';
+  if (s.includes('407ve') || s.includes('407ze') || s.includes('f407ve')) return 'stm32f407ve';
+  if (s.includes('401') || s.includes('f401')) return 'stm32f401';
+  if (s.includes('411') || s.includes('f411')) return 'stm32f411';
   // STM32F4 before F1: 'stm32f4' contains no 'f1' clash, but check anyway.
   if (s.includes('stm32f4') || s.includes('f407') || s.includes('discovery') || s.includes('f4')) return 'stm32f4';
+  // STM32F1 variants before the F1 catch-all.
+  if (s.includes('maple')) return 'stm32_maple_mini';
+  if (s.includes('nucleo')) return 'stm32_nucleo_f103rb';
+  if (s.includes('gd32')) {
+    if (s.includes('rb')) return 'stm32_gd32f103rb';
+    if (s.includes('cb')) return 'stm32_gd32f103cb';
+    return 'stm32_gd32f103c8';
+  }
+  if (s.includes('f103cb') || s.includes('103cb')) return 'stm32f103cb';
+  if (s.includes('f103rc') || s.includes('103rc')) return 'stm32f103rc';
   if (s.includes('stm32f1') || s.includes('bluepill') || s.includes('blue-pill') || s.includes('103') || s.includes('stm32')) return 'stm32f1';
   if (s.includes('esp32')) return 'esp32';
+  // Pico 2 / RP2350 before Pico 1: 'pico-2' contains 'pico'.
+  if (s.includes('pico-2') || s.includes('pico2') || s.includes('rp2350') || s.includes('2350')) return 'rp2350';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
 }
@@ -29,8 +52,12 @@ export function boardCompToDisplayName(boardComp, fallbackKind = 'arduino_uno') 
 }
 
 export function resolveBoardFqbnForComponent(boardComp, boardKind) {
+  // Per-board FQBN: the component TYPE wins over the normalized kind so
+  // variants (Maple Mini, Nucleo, GD32, F401/…) compile for their own part.
+  // Falls back to the kind table, then Uno.
+  const typeKey = normalizeBoardKind(boardComp?.type || '');
   void boardComp;
-  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
+  return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 
 

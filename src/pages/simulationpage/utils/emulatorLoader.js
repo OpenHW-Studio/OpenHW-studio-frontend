@@ -210,7 +210,7 @@ export function buildCatalog(registry, groupMapping) {
 }
 
 export function sortCatalog(catalog) {
-  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
+  const GROUP_ORDER = ['Boards', 'Board Variants', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
   catalog.sort((a, b) => {
     const groupA = String(a?.group || 'Misc');
     const groupB = String(b?.group || 'Misc');

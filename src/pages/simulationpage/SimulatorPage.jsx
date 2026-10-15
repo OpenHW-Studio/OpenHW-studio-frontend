@@ -1076,7 +1076,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1107,7 +1107,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1149,7 +1149,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino)/i.test(c.type),
+        /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type),
       ),
     [components],
   );
@@ -2394,7 +2394,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     if (!components) return;
     const currentBoardTypes = components
-      .filter((c) => /arduino|attiny/i.test(c.type))
+      .filter((c) => /arduino|attiny|rp2040|pico|esp32|stm32/i.test(c.type))
       .map((c) => c.type);
 
     const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
@@ -4321,7 +4321,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             // not from `code` alone — without the file, firmware is empty.
             // Order: file+buffer first, active second — never setCode alone.
             const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
-              /(arduino)/i.test(String(c?.type || "")),
+              /(arduino|rp2040|pico|esp32|stm32)/i.test(String(c?.type || "")),
             );
             const boardId = boards[0]?.id || "uno1";
             const inoPath = `project/${boardId}/${boardId}.ino`;
@@ -4437,7 +4437,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let compileProbe = null;
         try {
           const boards = (componentsRef.current || []).filter((c) =>
-            /(arduino)/i.test(String(c?.type || "")),
+            /(arduino|rp2040|pico|esp32|stm32)/i.test(String(c?.type || "")),
           );
           compileProbe = boards.map((b) => {
             let mainLen = -1;

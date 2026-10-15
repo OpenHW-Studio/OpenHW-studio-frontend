@@ -62,7 +62,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-esp32': {
-    hide: true,
     status: 'beta',
     summary: 'Tensilica Xtensa Dual-Core 32-bit LX6 @ 240 MHz',
     working: [
@@ -85,7 +84,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-esp32-cam': {
-    hide: true,
     status: 'in-development',
     summary: 'ESP32 with OV2640 Camera Module & MicroSD Card Socket',
     working: [
@@ -104,7 +102,6 @@ export const COMPONENT_STATUS_CONFIG = {
 
 
   'openhw-arduino-nano': {
-    hide: true,
     status: 'in-development',
     summary: 'ATmega328P Compact Breadboard-Friendly Board',
     working: ['Core AVR Simulation (AVR8js)'],
@@ -114,7 +111,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-arduino-mega': {
-    hide: true,
     status: 'in-development',
     summary: 'ATmega2560 High-I/O Board (54 Digital I/O, 16 Analog Inputs)',
     working: ['AVR2560 Memory Model'],
@@ -124,7 +120,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-attiny85': {
-    hide: true,
     status: 'in-development',
     summary: '8-pin Low-Power AVR Microcontroller',
     working: ['AVR Tiny Core Execution'],
@@ -133,20 +128,8 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Minimalist AVR board model undergoing palette integration.'
   },
 
-  'openhw-stm32-blue-pill (frontend)': {
-    hide: true,
-    status: 'in-development',
-    summary: 'STM32F103C8T6 ARM Cortex-M3 @ 72 MHz',
-    working: ['Visual Breadboard Form-Factor Model'],
-    inProgress: ['ARM Cortex-M3 GDB / Emulation Core Integration'],
-    limitations: ['ARM backend runner connection'],
-    notes: 'Cortex-M3 simulation backend is currently being linked to the web emulator.'
-  },
-
-
   // Audio Components
   'openhw-sph0645': {
-    hide: true,
     status: 'in-development',
     summary: 'I2S MEMS Microphone Breakout',
     working: [],
@@ -156,7 +139,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-pcm5102': {
-    hide: true,
     status: 'in-development',
     summary: 'High-Quality Stereo I2S DAC Module',
     working: [],
@@ -166,7 +148,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-max98357': {
-    hide: true,
     status: 'in-development',
     summary: 'I2S Class-D Mono Amplifier',
     working: [],
@@ -176,7 +157,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-inmp441': {
-    hide: true,
     status: 'in-development',
     summary: 'Omnidirectional I2S Microphone with Bottom Port',
     working: [],
@@ -186,7 +166,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-5w-speaker': {
-    hide: true,
     status: 'in-development',
     summary: '4 Ohm 5W Dynamic Audio Speaker',
     working: [],

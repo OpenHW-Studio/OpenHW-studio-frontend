@@ -24,11 +24,15 @@ import { BaseComponent } from '@openhw/emulator';
 import {
     BoardRunner,
     AVRRunnerOptions,
+    ConnectedComponentPin,
     LOGIC_REGISTRY,
     COMPONENT_PINS,
     getUnifiedComponentSyncState,
     collectComponentTelemetry,
     collectNeopixelShutdownStates,
+    getInternalBridgesForComponent,
+    collectConnectedComponentPins,
+    invokeOptional,
 } from '../registries/component-registry.ts';
 import {
     SabStateWriter,
@@ -103,6 +107,11 @@ export abstract class ArmRunnerBase implements BoardRunner {
     protected abstract engine: ArmEngineHooks;
     protected abstract uartTxPins: string[];
     protected abstract uartRxPins: string[];
+    // Netlist (same role as AVRRunner.buildNetlist): wire adjacency +
+    // internal bridges so GPIO levels fan out to every connected component
+    // (LEDs, buttons, sensors, I2C/SPI/UART protocol handlers, …).
+    protected pinToNet: Map<string, number> = new Map();
+    protected protocolEndpointsCache = new Map<string, ConnectedComponentPin[]>();
 
     protected readonly onStateUpdate: (state: any) => void;
     protected readonly onByteTransmitCb?: (payload: { boardId: string; value: number; char: string; source?: string }) => void;
@@ -133,6 +142,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
         this.attachSab(options);
         this.instantiateComponents(componentsDef || []);
+        this.buildNetlist();
     }
 
     /** Async boot: load firmware, then start the tick timer. Subclasses call after super(). */
@@ -400,7 +410,9 @@ export abstract class ArmRunnerBase implements BoardRunner {
         }
     }
 
-    /** Publish one GPIO output level into pinStates + SAB pin bitfield. */
+    /** Publish one GPIO output level into pinStates + SAB pin bitfield,
+     * then fan out to every connected component pin (same contract as
+     * AVRRunner.propagateBoardPin: voltage + isHigh + onPinStateChange). */
     protected publishGpio(pinId: string, isHigh: boolean, analogV?: number): void {
         this.pinStates[pinId] = !!isHigh;
         try {
@@ -413,5 +425,119 @@ export abstract class ArmRunnerBase implements BoardRunner {
         } catch { /* pin publish never breaks propagation */ }
         const boardInst = this.instances.get(this.boardId);
         try { boardInst?.onPinStateChange(pinId, !!isHigh, 0); } catch { /* ignore */ }
+        // Component fan-out: LEDs light, buttons/sensors react, protocol
+        // handlers (I2C/SPI/UART/PWM/OneWire) get their signal callbacks.
+        const voltage = isHigh ? 3.3 : 0.0;
+        for (const endpoint of this.getProtocolEndpointsForPin(pinId)) {
+            try {
+                endpoint.inst.setPinVoltage(endpoint.pinId, voltage);
+                if ((endpoint.inst as any).pins?.[endpoint.pinId]) {
+                    (endpoint.inst as any).pins[endpoint.pinId].isHigh = !!isHigh;
+                    (endpoint.inst as any).pins[endpoint.pinId].voltage = voltage;
+                }
+                endpoint.inst.onPinStateChange(endpoint.pinId, !!isHigh, 0);
+            } catch { /* one bad component never breaks the fan-out */ }
+        }
+    }
+
+    /** Board-pin aliases for netlist lookup (D13/13, GPIOx/GPx, PA9/A9…). */
+    protected getPinAliases(pinId: string): string[] {
+        const raw = String(pinId || '').toUpperCase();
+        const out = new Set<string>([raw]);
+        if (/^D\d+$/.test(raw)) out.add(raw.slice(1));
+        else if (/^\d+$/.test(raw)) out.add(`D${raw}`);
+        if (/^GPIO\d+$/.test(raw)) out.add(raw.replace(/^GPIO/, 'GP'));
+        if (/^GP\d+$/.test(raw)) out.add(raw.replace(/^GP/, 'GPIO'));
+        if (/^PA\d+$/.test(raw) || /^PB\d+$/.test(raw) || /^PC\d+$/.test(raw) || /^PD\d+$/.test(raw)) {
+            out.add(raw.slice(1)); // PA9 → A9
+        }
+        return Array.from(out);
+    }
+
+    protected getProtocolEndpointsForPin(pinId: string): ConnectedComponentPin[] {
+        const key = String(pinId || '').toUpperCase();
+        const cached = this.protocolEndpointsCache.get(key);
+        if (cached) return cached;
+        const endpoints = collectConnectedComponentPins(
+            this.boardId,
+            this.getPinAliases(key),
+            this.currentWires,
+            this.instances,
+        );
+        this.protocolEndpointsCache.set(key, endpoints);
+        return endpoints;
+    }
+
+    /** Build the wire+bridge netlist (mirrors AVRRunner.buildNetlist). */
+    protected buildNetlist(): void {
+        this.protocolEndpointsCache.clear();
+        const adj = new Map<string, string[]>();
+        const addEdge = (a: string, b: string) => {
+            if (!adj.has(a)) adj.set(a, []);
+            if (!adj.has(b)) adj.set(b, []);
+            adj.get(a)!.push(b);
+            adj.get(b)!.push(a);
+        };
+        for (const wire of this.currentWires) {
+            if (wire?.from && wire?.to) addEdge(String(wire.from), String(wire.to));
+        }
+        for (const [id, inst] of this.instances) {
+            for (const bridge of getInternalBridgesForComponent(id, inst.type)) {
+                addEdge(bridge[0], bridge[1]);
+            }
+        }
+        const visited = new Set<string>();
+        let currentNet = 0;
+        for (const startNode of adj.keys()) {
+            if (visited.has(startNode)) continue;
+            const queue = [startNode];
+            visited.add(startNode);
+            while (queue.length > 0) {
+                const node = queue.shift()!;
+                this.pinToNet.set(node, currentNet);
+                const parts = node.split(':');
+                if (parts.length === 2) {
+                    const compId = parts[0];
+                    const pId = parts[1];
+                    const upper = pId.toUpperCase();
+                    if (!pId.startsWith('D') && !pId.startsWith('A') && /^\d+$/.test(pId)) {
+                        this.pinToNet.set(`${compId}:D${pId}`, currentNet);
+                    } else if (pId.startsWith('D')) {
+                        this.pinToNet.set(`${compId}:${pId.substring(1)}`, currentNet);
+                    }
+                    if (/^GPIO\d+$/.test(upper)) {
+                        this.pinToNet.set(`${compId}:${upper.replace(/^GPIO/, 'GP')}`, currentNet);
+                    } else if (/^GP\d+$/.test(upper)) {
+                        this.pinToNet.set(`${compId}:${upper.replace(/^GP/, 'GPIO')}`, currentNet);
+                    }
+                    if (upper === 'GND' || /^GND[._]?\d*$/.test(upper)) {
+                        this.pinToNet.set(`${compId}:GND`, currentNet);
+                    }
+                    if (upper === '5V' || upper === 'VCC') {
+                        this.pinToNet.set(`${compId}:5V`, currentNet);
+                        this.pinToNet.set(`${compId}:VCC`, currentNet);
+                    }
+                    if (upper === '3V3' || upper === '3.3V') {
+                        this.pinToNet.set(`${compId}:3V3`, currentNet);
+                    }
+                }
+                for (const neighbor of adj.get(node) || []) {
+                    if (!visited.has(neighbor)) {
+                        visited.add(neighbor);
+                        queue.push(neighbor);
+                    }
+                }
+            }
+            currentNet++;
+        }
+    }
+
+    /** Dispatch optional protocol callbacks for a pin edge (PWM/OneWire…). */
+    protected dispatchOptionalProtocols(pinId: string, isHigh: boolean): void {
+        for (const endpoint of this.getProtocolEndpointsForPin(pinId)) {
+            try {
+                invokeOptional(endpoint.inst as any, ['onPWM', 'onPwm', 'onPWMSignal'], [endpoint.pinId, { boardPin: pinId, isHigh }]);
+            } catch { /* ignore */ }
+        }
     }
 }

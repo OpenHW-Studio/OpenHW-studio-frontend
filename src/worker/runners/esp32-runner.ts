@@ -2,10 +2,18 @@
  * esp32-runner.ts — ESP32 DevKit BoardRunner over esp32-emu@1.1.0.
  *
  * Engine: `SimulatorWorker` (WASM Xtensa + native peripherals). One worker
- * per board runner (verified isolated). Firmware: Arduino `.bin` at flash
- * offset 0; MicroPython image at 0x1000 (`esptool write_flash 0x1000` rule).
+ * per board runner (verified isolated).
+ *
+ * Firmware contract (boardHexMap carries `compiled.hex`):
+ *   Arduino `.bin` → backend `bin` artifact = `<sketch>.ino.merged.bin`
+ *   (full 4MB flash image: bootloader@0x1000 + partitions@0x8000 +
+ *   app@0x10000), raw base64, flashed at offset 0. Verified: boots to
+ *   setup()/loop(), Serial.println reaches _onUART.
+ *   MicroPython image → offset 0x1000 (`esptool write_flash 0x1000` rule).
  *
  * UART: `_onUART` TX hook → emit; `sendUart` RX (string). GPIO: `setPinInput`.
+ * Board preset: `board:'esp32-cam'` (component attr or option) selects the
+ * AI-Thinker ESP32-CAM preset (4MB flash + 4MB PSRAM); default is DevKit.
  * WiFi/BLE/Ethernet deferred — see info/gapEsp32.md.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
@@ -28,16 +36,24 @@ export class Esp32Runner extends ArmRunnerBase {
     protected engine = this.makeEngine();
     private sim: any = null;
     private isMicroPython = false;
+    private board: string;
 
     constructor(
         hexData: string,
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { pyScript?: string } = {},
+        options: AVRRunnerOptions & { pyScript?: string; board?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
-        void this.boot('openhw-esp32');
+        // ESP32-CAM uses the esp32-cam board preset (4MB flash + 4MB PSRAM);
+        // plain DevKit uses 'esp32'. Attr / option wins, type fallback.
+        const optBoard = String((options as any)?.board || '').toLowerCase();
+        const compBoard = String(
+            (componentsDef || []).find((c: any) => String(c?.id) === String((options as any)?.boardId))?.type || '',
+        ).toLowerCase();
+        this.board = optBoard.includes('cam') || compBoard.includes('cam') ? 'esp32-cam' : 'esp32';
+        void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
     }
 
     private makeEngine() {
@@ -96,7 +112,11 @@ export class Esp32Runner extends ArmRunnerBase {
                 self.sim = new SimulatorWorker();
                 self.sim._onUART = (b: number) => { txQueue.push(b & 0xff); };
                 self.sim._onError = (e: any) => console.error('[Esp32Runner]', e);
-                await self.sim.init('ESP32', { flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000 }, flash, rom);
+                // Board preset: 'esp32-cam' applies ESP32_CAM_DEFAULTS
+                // (4MB flash + 4MB PSRAM) via applyBoardPreset semantics;
+                // explicit sizes below always win (package contract).
+                const isCam = self.board === 'esp32-cam';
+                await self.sim.init(isCam ? 'esp32-cam' : 'ESP32', { flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000 }, flash, rom);
                 try {
                     if (wasmBinary && typeof self.sim.loadWasm === 'function') {
                         await self.sim.loadWasm(wasmBinary);
