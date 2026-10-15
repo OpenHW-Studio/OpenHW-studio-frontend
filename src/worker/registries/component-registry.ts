@@ -69,6 +69,8 @@ import { Logic as Sph0645Logic } from '@openhw/emulator/src/components/openhw-sp
 import { Logic as Max98357Logic } from '@openhw/emulator/src/components/openhw-max98357/logic';
 import { Logic as Pcm5102Logic } from '@openhw/emulator/src/components/openhw-pcm5102/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
+import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
@@ -150,6 +152,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-sd-card': SDCardLogic,
     'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
+    'openhw-74hc595': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
@@ -256,6 +259,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ds18b20': DS18B20Logic,
     'wokwi-ir-receiver': IRReceiverLogic,
     'openhw-ir-receiver': IRReceiverLogic,
+    'openhw-ir-remote': IRRemoteLogic,
+    'openhw-ir-remote': IRRemoteLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,
 };

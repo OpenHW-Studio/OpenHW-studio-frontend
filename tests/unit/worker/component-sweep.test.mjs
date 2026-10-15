@@ -261,6 +261,9 @@ describe('whole-registry component sweep (headless harness)', () => {
         if (/ir-receiver/i.test(type) && typeof inst.onEvent === 'function') {
           try { inst.onEvent({ type: 'ir-send', button: 'POWER' }); } catch { /* optional */ }
         }
+        if (/ir-remote/i.test(type) && !/ir-receiver/i.test(type) && typeof inst.onEvent === 'function') {
+          try { inst.onEvent({ type: 'button_press', button: 'Power' }); } catch { /* optional */ }
+        }
 
         // 7-segment: light every segment on every active digit.
         if (/7segment/i.test(type)) {
@@ -389,6 +392,8 @@ describe('whole-registry component sweep (headless harness)', () => {
             } catch { /* ignore */ }
           } else if (/ir-receiver/i.test(type)) {
             if (st1.transmitting === true || String(st1.lastButton || '') === 'POWER') tier = 'content';
+          } else if (/ir-remote/i.test(type)) {
+            if (String(st1.lastCommand || '') === 'Power') tier = 'content';
           } else if (type.includes('max7219')) {
             if (Number(st1.spiRxBytes || 0) > 0 && (st1.lastFrame?.length > 0 || st1.lastCommand != null)) tier = 'content';
           } else if (type.includes('ili9341')) {

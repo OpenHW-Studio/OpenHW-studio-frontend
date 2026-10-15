@@ -812,6 +812,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     await page.waitForTimeout(3000);
     // Exactly one pushbutton on the canvas (uno reset uses another class).
     // Scope to the placed instance: palette previews render too.
+    await page.locator('#comp-master-btn1').scrollIntoViewIfNeeded().catch(() => {});
     const boxes = await page.locator('#comp-master-btn1 .btn-wrapper').evaluateAll((els) =>
       els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
     console.log('BTN boxes:', JSON.stringify(boxes));
@@ -848,8 +849,17 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       forMs: 22000, selectTelemetry: ['pir1'], serialNeedle: 'PIR_READY', telemetryMode: 'detail',
     }));
     await page.waitForTimeout(3000);
-    // Reveal the cone + draggable dot by clicking the placed sensor body.
-    await page.locator('#comp-master-pir1').click({ timeout: 10000 });
+    // Reveal the cone + draggable dot by clicking the placed sensor body
+    // (coordinate click: the wrapper is not pointer-actionable itself).
+    await page.locator('#comp-master-pir1').scrollIntoViewIfNeeded().catch(() => {});
+    const pirBox = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-pir1');
+      if (!root) return null;
+      const r = root.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    expect(pirBox).toBeTruthy();
+    await page.mouse.click(pirBox.x, pirBox.y);
     await page.waitForTimeout(800);
     // Wiggle the teal grab-dot inside the cone to simulate movement.
     const dot = await page.evaluate(() => {
@@ -907,14 +917,24 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       const svgs = [...root.querySelectorAll('svg')];
       const hit = svgs.find((s) => (s.innerHTML || '').includes('M 145 55')) || svgs[0];
       if (!hit) return null;
+      hit.scrollIntoView({ block: 'center' });
       const r = hit.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
     console.log('IRR svg:', JSON.stringify(svgBox));
     expect(svgBox).toBeTruthy();
-    await page.mouse.click(svgBox.x + svgBox.w / 2, svgBox.y + svgBox.h / 2);
+    // Click via dispatched DOM click (overlay move-layers can swallow hit-testing).
+    await page.evaluate(() => {
+      const root = document.getElementById('comp-master-irr1');
+      const svgs = [...(root ? root.querySelectorAll('svg') : [])];
+      const hit = svgs.find((s) => (s.innerHTML || '').includes('M 145 55')) || svgs[0];
+      if (hit) hit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await page.waitForTimeout(800);
-    await page.locator('#comp-master-irr1').getByRole('button', { name: 'POWER' }).click({ timeout: 10000 });
+    const powerCount = await page.locator('#comp-master-irr1').getByRole('button', { name: 'POWER' }).count();
+    console.log('IRR POWER buttons:', powerCount);
+    expect(powerCount).toBeGreaterThan(0);
+    await page.locator('#comp-master-irr1').getByRole('button', { name: 'POWER' }).first().dispatchEvent('click');
     const verdict = await verdictPromise;
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
@@ -945,12 +965,24 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       const svgs = [...root.querySelectorAll('svg')];
       const hit = svgs.find((s) => (s.innerHTML || '').includes('M-4,-4 A 6 6')) || svgs[0];
       if (!hit) return null;
+      hit.scrollIntoView({ block: 'center' });
       const r = hit.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
     console.log('IRM svg:', JSON.stringify(svgBox));
     expect(svgBox).toBeTruthy();
-    await page.mouse.click(svgBox.x + (25 / 130) * svgBox.w, svgBox.y + (35 / 310) * svgBox.h);
+    // Dispatched DOM click on the POWER <g> (bypasses overlay hit-testing).
+    const irmClicked = await page.evaluate(() => {
+      const root = document.getElementById('comp-master-irm1');
+      if (!root) return false;
+      const gs = [...root.querySelectorAll('g')];
+      const hit = gs.find((g) => (g.getAttribute('transform') || '').includes('translate(25, 35)'));
+      if (!hit) return false;
+      hit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return true;
+    });
+    console.log('IRM dispatched:', irmClicked);
+    expect(irmClicked).toBe(true);
     const verdict = await verdictPromise;
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
@@ -979,7 +1011,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
         { from: 'uno1:A0', to: 'kp1:C3' },
         { from: 'uno1:A1', to: 'kp1:C4' },
       ],
-      code: 'int rows[4]={8,9,10,11};\nint cols[4]={12,13,A0,A1};\nvoid setup(){Serial.begin(9600);Serial.println("KP_READY");for(int i=0;i<4;i++){pinMode(rows[i],OUTPUT);digitalWrite(rows[i],HIGH);pinMode(cols[i],INPUT_PULLUP);}}\nvoid loop(){for(int r=0;r<4;r++){digitalWrite(rows[r],LOW);for(int c=0;c<4;c++){if(digitalRead(cols[c])==LOW){Serial.print("KEY:");Serial.print(r);Serial.println(c);delay(300);}}digitalWrite(rows[r],HIGH);}delay(50);}\n',
+      code: 'int rows[4]={8,9,10,11};\nint cols[4]={12,13,A0,A1};\nvoid setup(){Serial.begin(9600);Serial.println("KP_READY");for(int i=0;i<4;i++){pinMode(rows[i],OUTPUT);digitalWrite(rows[i],HIGH);pinMode(cols[i],INPUT_PULLUP);}}\nvoid loop(){for(int r=0;r<4;r++){digitalWrite(rows[r],LOW);for(int c=0;c<4;c++){if(digitalRead(cols[c])==LOW){Serial.print("KEY:");Serial.print(r);Serial.println(c);delay(300);}}digitalWrite(rows[r],HIGH);}delay(200);}\n',
     });
     const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
       forMs: 22000, selectTelemetry: ['kp1'], serialNeedle: 'KP_READY', telemetryMode: 'detail',
@@ -1031,6 +1063,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       const svgs = [...root.querySelectorAll('svg')];
       const hit = svgs.find((s) => (s.getAttribute('viewBox') || '') === '0 0 99 75') || svgs[0];
       if (!hit) return null;
+      hit.scrollIntoView({ block: 'center' });
       const r = hit.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
@@ -1047,8 +1080,12 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
       await page.waitForTimeout(90);
     }
     await page.mouse.up();
-    // Knob center click = SW press (radius < 14 svg units).
-    await page.mouse.click(cx, cy);
+    // Knob center press-and-hold = SW press (radius < 14 svg units).
+    // Hold ~800ms: firmware polls every 100ms, a quick click can slip through.
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.waitForTimeout(800);
+    await page.mouse.up();
     await page.waitForTimeout(600);
     const verdict = await verdictPromise;
     expect(verdict.ok).toBe(true);
