@@ -22,6 +22,16 @@ export default defineConfig(({ mode }) => {
     resolvedEmulatorPath = dockerEmulatorPath;
   }
 
+  // Engine folders (owner sources, pre-npm): runners import by exact
+  // npm-shaped specifiers; these aliases are the single dev-resolution
+  // point (folder now, npm packages later — flip targets, not sources).
+  // NOTE: vendor mirrors under public/vendor keep their OpenHW patches
+  // (SAB TextDecoder, mosiLog, Dallas) and are deploy-only; dev loads
+  // folder bytes below.
+  const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
+  const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
+  const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
+
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
   return {
@@ -132,20 +142,35 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
-      alias: {
-        ...(resolvedEmulatorPath ? {
-          '@openhw/emulator': resolvedEmulatorPath,
-        } : {}),
+      alias: [
+        ...(resolvedEmulatorPath ? [{
+          find: '@openhw/emulator',
+          replacement: resolvedEmulatorPath,
+        }] : []),
+        // Pico (folder-first): stock glue + wasm bytes from the owner
+        // folder. The `.wasm?url` regex form is needed so the query
+        // survives aliasing (exact strings don't match with ?url).
+        { find: 'pico-emu/picoemu.wasm.js', replacement: path.join(picoFolder, 'picoemu.wasm.js') },
+        // (Replacement `$1` re-appends the query: @rollup/plugin-alias
+        // uses String.replace semantics, so captures survive.)
+        { find: /^pico-emu\/picoemu\.wasm\.wasm(\?.*)?$/, replacement: path.join(picoFolder, 'picoemu.wasm.wasm') + '$1' },
         // Board-engine SAB proxy: package exports map only exposes ".",
         // whose root pulls node:crypto (no browser shim). Alias the deep
         // file so `import 'esp32-emu/dist/sab/worker-proxy.js'` resolves in
         // vite dev AND the worker build (file has zero node: imports).
-        'esp32-emu/dist/sab/worker-proxy.js': path.resolve(__dirname, 'node_modules/esp32-emu/dist/sab/worker-proxy.js'),
+        // Folder-first: owner `esp32 emu` checkout (dist == 1.2.0 bytes).
+        { find: 'esp32-emu/dist/sab/worker-proxy.js', replacement: path.join(esp32Folder, 'worker-proxy.js') },
+        // STM32F4: folder-first SUSPENDED 2026-10-15 — the owner folder
+        // is mid-rebuild (site/emulator.js + bindings glue differ from
+        // npm by hundreds of lines; folder wasm is dirty/uncommitted).
+        // Glue+facade+wasm must version-match, so F4 stays on the blessed
+        // npm pair until the owner lands. Flip back to stm32f4Folder then.
+        // 'stm32f4-emu/stm32f4' intentionally unaliased (npm pair).
         // node:crypto has no browser build. The only in-repo consumer is
         // esp32-emu's partition-table MD5 (custom CSV path, never hit on
         // merged-bin boot) — stub it so the worker-entry transform loads.
-        'node:crypto': path.resolve(__dirname, 'src/worker/shims/node-crypto-stub.ts'),
-      },
+        { find: 'node:crypto', replacement: path.resolve(__dirname, 'src/worker/shims/node-crypto-stub.ts') },
+      ],
     },
     optimizeDeps: {
       // Board-engine emulators are worker-side ES modules with node:fs
@@ -213,11 +238,20 @@ export default defineConfig(({ mode }) => {
         'Cross-Origin-Embedder-Policy': 'credentialless',
       },
       watch: {
-        ignored: ['**/test-results/**', '**/playwright-report/**', '**/tests/fixtures/binary-cache/**']
+        // .tmp-vitest holds live Playwright browser profiles (leveldb LOCK/
+        // MANIFEST/Code Cache churn constantly during e2e). Without this,
+        // vite pushes a full page reload mid-run and every in-flight cell
+        // dies with "execution context was destroyed". Never remove.
+        ignored: ['**/test-results/**', '**/playwright-report/**', '**/tests/fixtures/binary-cache/**', '**/.tmp-vitest/**']
       },
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
+          // Owner engine folders (outside the repo root): folder-first
+          // engine bytes for pico / esp32 / stm32f4.
+          '/home/danish1075/Documents/rp2350/Pico-emu',
+          '/home/danish1075/Documents/esp32 emu',
+          '/home/danish1075/Documents/stm32 F4',
           ...(resolvedEmulatorPath ? [resolvedEmulatorPath] : []),
         ],
       },

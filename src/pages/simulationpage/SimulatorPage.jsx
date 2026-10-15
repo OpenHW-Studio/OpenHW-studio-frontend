@@ -1664,19 +1664,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    const handleDownloadPcap = (e) => {
-      const { componentId } = e.detail;
-      if (isRunning && workerRef.current) {
-        workerRef.current.postMessage({
-          type: 'DOWNLOAD_PCAP',
-          boardId: componentId
-        });
-      }
-    };
-    window.addEventListener('network:download-pcap', handleDownloadPcap);
-    return () => window.removeEventListener('network:download-pcap', handleDownloadPcap);
-  }, [isRunning]);
+  // PCAP download removed with the Network Worker (pending WiFi/IP reimplementation).
   const runStartGuardRef = useRef(false);
   // Serial ingress ref: created here so hooks/effects ABOVE the
   // useSerialIngress() call site can already receive the stable ref object.

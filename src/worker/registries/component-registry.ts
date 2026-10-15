@@ -302,8 +302,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 // emulator manifests (see scripts/gen-component-pins.mjs — run it after any
 // manifest pin change and paste the output below). Entries below the
 // "generated" marker are build output; hand edits will be overwritten.
-// Covered ids: every openhw-*/wokwi-* type with manifest pins; the 4 pin-less
-// types (openhw-image/ir-remote/text/wifi-ap) resolve to [] (not undefined)
+// Covered ids: every openhw-*/wokwi-* type with manifest pins; the 3 pin-less
+// types (openhw-image/ir-remote/text) resolve to [] (not undefined)
 // so callers can distinguish "no pins" from "unknown type".
 export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
@@ -439,7 +439,6 @@ export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'openhw-stm32f429': [{ id: '5V' }, { id: 'GND.1' }, { id: '3V3' }, { id: 'PA0' }, { id: 'PA1' }, { id: 'PA2' }, { id: 'PA3' }, { id: 'PA4' }, { id: 'PA5' }, { id: 'PA6' }, { id: 'PA7' }, { id: 'PB0' }, { id: 'PB1' }, { id: 'PB6' }, { id: 'PB7' }, { id: 'PB8' }, { id: 'PB9' }, { id: 'RESET' }, { id: 'GND.2' }, { id: '3V3.2' }, { id: 'GND.3' }, { id: 'PC0' }, { id: 'PC1' }, { id: 'PD12' }, { id: 'PD13' }, { id: 'PD14' }, { id: 'PD15' }, { id: 'PC6' }, { id: 'PC7' }, { id: 'PA9' }, { id: 'PA10' }, { id: 'PA11' }, { id: 'PA12' }, { id: 'PB12' }, { id: 'PB13' }, { id: 'PB14' }, { id: 'PB15' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-text': [],
     'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
-    'openhw-wifi-ap': [],
     'openhw-z80': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }],
     'wokwi-led': [{ id: 'A' }, { id: 'K' }], // ORPHAN: no manifest — hand-checked

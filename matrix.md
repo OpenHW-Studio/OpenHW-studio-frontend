@@ -33,11 +33,11 @@ stm32-gd32-wave2 (12/12: softserial/RTC/DHT/CAN).
 
 | Board | UART | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI/FS | LTDC | DCMI | QSPI | FSMC | SAI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | NONE (deferred — user takes ETH/WiFi later) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
+| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | FULL (gateway DORA 2026-10-15) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
 | openhw-stm32f401 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
 | openhw-stm32f411 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
-| openhw-stm32f407ve | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | FULL (CDC echo) | ABSENT | NONE (deferred — user takes ETH/WiFi later) | FULL | FULL (raw; FS NO-GO engine-side) | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | FULL (OLED/MAX7219) |
-| openhw-stm32f429 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE (DMA2D gate unused) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | FULL | FULL (raw; FS NO-GO engine-side) | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | FULL (OLED/MAX7219; LTDC proven) |
+| openhw-stm32f407ve | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | FULL (CDC echo) | ABSENT | PARTIAL (same runner path as F407, board cell pending) | FULL | FULL (raw; FS NO-GO engine-side) | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f429 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE (DMA2D gate unused) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | NONE | ABSENT | PARTIAL (same runner path as F407, board cell pending) | FULL | FULL (raw; FS NO-GO engine-side) | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | FULL (OLED/MAX7219; LTDC proven) |
 
 Specs: stm32f4-sdio, stm32f4-ltdc, stm32f4-usb, stm32f4-dcmi, stm32f4-qspi,
 stm32f4-fsmc, stm32f4-sai, stm32f4-dac, stm32f4-adc, stm32f4-pwm, stm32f4-spi,
@@ -138,12 +138,12 @@ Connectivity extras not in the main tables:
 
 | Feature | Status |
 |---|---|
-| Pico-W CYW43 WiFi traffic | NONE (deferred — user later) |
-| Pico-ETH W5500/W6300 traffic | NONE (deferred — user later) |
+| Pico-W CYW43 WiFi traffic | FULL 2026-10-15 — Arduino join + gateway DHCP (STATUS=3 IP=192.168.4.2) via unified gateway :5030; runner enables + WS pump in pico-runner.ts, engine from owner folder (vite alias) |
+| Pico-ETH W5500/W6300 traffic | FULL 2026-10-15 — Arduino Wiznet5500lwIP DORA via unified gateway :5030 (MACRAW sock0, tickMHz 125); runner board enables + WS pump in pico-runner.ts, engine from owner folder (vite alias). W6300 still explicit gap. |
 | Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell; real silicon does device+host) |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
 | Pico SD/FATFS (sdcard.c, fatfs.c) | NONE |
-| ESP32 WiFi link (wifi_bridge.rs) | NONE (deferred — user later) |
+| ESP32 WiFi link (wifi_bridge.rs) | RED 2026-10-15 — runner passes config.wifi (engine dials gateway itself) + stats telemetry wired, but guest stalls pre-print (second-stage, pc 0x400857b3, 800M inst no UART) in node AND browser with valid flash; engine-owner ticket needed (see session notes). Pico-W path proves the gateway side. |
 | ESP32 BLE | ABSENT (no engine model) |
 | ESP32 PCNT / SDMMC / ULP / FreeRTOS tasks / eFuse | NONE each (models exist) |
 | ESP32 USB-CDC (usbcdc.rs) | ABSENT at board level (classic ESP32, no USB silicon) |

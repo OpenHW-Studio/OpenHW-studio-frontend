@@ -9,8 +9,8 @@ const EMPTY_SERIAL_VARS = Object.freeze({});
  * handleRun > worker.onmessage.
  * (state.pins -> pin-transition counts + render mirrors + live pins +
  *  plotter history; state.neopixels; state.components -> update counts +
- *  buzzer-latency trace + live OOP + telemetry; generic state -> wifi
- *  dispatch + LAG telemetry; debug_telemetry.)
+ *  buzzer-latency trace + live OOP + telemetry; generic state -> LAG
+ *  telemetry; debug_telemetry.)
  *
  * Pure function of (msg, msgArrivalMs, ctx); all live state flows through
  * ctx refs + setters. 1000-pt plot cap, 200-entry protocol caps, and the
@@ -213,13 +213,6 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
             handleTelemetryStateMessageRef.current(msg);
           }
           if (msg.type === "state") {
-            if (msg.wifi && typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("OPENHW_WIFI_STATS", {
-                  detail: { boardId: msg.boardId, ...msg.wifi },
-                })
-              );
-            }
             const boardIdKey = String(msg.boardId || "default");
             const boardComp =
               components.find((c) => c.id === boardIdKey) ||

@@ -17,16 +17,21 @@
  *
  * UART: `_write_uart` RX, `_read_uart(0)` TX drain. GPIO: `_set_gpio` in,
  * `_get_gpio_out` out, published into pinStates + SAB pin bitfield.
- * WiFi/BLE/Ethernet: `_wifi_enable` (CYW43, Pico W / Pico 2 W) and
- * `_picoemu_board_eth` (W5500, pico-eth/pico-eth2) are ENABLED at boot when
- * the board type / attrs request them — stub mode (no live gateway socket;
- * DHCP/DNS served by the in-emulator fake net). Live gateway proxy + BLE
- * HCI (`_bt_hci_enable`) stay deferred — see info/gapPico.md.
+ * Network: Pico W / Pico 2 W (CYW43) and pico-eth / pico-2-eth (W5500
+ * MACRAW) ride the unified gateway (openhw-unified-gateway :5030) —
+ * `_wifi_enable(1)` / `_board_eth` + `_w5500_gw_enable(1)`, WS uplink,
+ * per-tick TX pump (see startNetLink/pumpNetLink). Sockets 1-7 offload
+ * stay on the proxy path (deferred). BLE HCI deferred.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 import { createSPIBridge, levelPassiveNets } from '../bus-bridge.ts';
 import { pollPicoPioNeopixel } from './pico-pio-pump.ts';
+import { GatewayLink, GATEWAY_DEFAULT_URL } from '../net/gateway-link.ts';
+// Folder-first engine bytes (owner `rp2350/Pico-emu`, aliased in
+// vite.config.js): glue + wasm are a matched pair from the same folder,
+// never mixed with npm bytes (see glue×wasm pairing matrix in git log).
+import picoFolderWasmUrl from 'pico-emu/picoemu.wasm.wasm?url';
 
 const PICO_UART_TX = ['GP0', 'GPIO0', '0', 'D0', 'TX', 'TX0'];
 const PICO_UART_RX = ['GP1', 'GPIO1', '1', 'D1', 'RX', 'RX0'];
@@ -126,9 +131,6 @@ export class PicoRunner extends ArmRunnerBase {
     private fixedFirmwareUrl = '';
     private isPico2 = false;
     private arch = PICO_ARCH_M0;
-    private wantWifi = false;
-    private ethBoard: '' | 'w5500' = '';
-    private ethSpi = 0;
     // I2C mirror bridge (runner-owned, AVR-TWIAdapter pattern): boards that
     // own I2C peripherals get the core's virtual mirror slaves attached at
     // the models' addresses; per-tick ring drains feed the standard
@@ -152,6 +154,20 @@ export class PicoRunner extends ArmRunnerBase {
     // ADC/PWM observation also requires the fork core (see constructor).
     private wantADC = false;
     private wantPWM = false;
+    // Unified-gateway network (CYW43 WiFi / W5500 Ethernet): board-type
+    // detection in the constructor; startNetLink (boot) performs the
+    // engine enables + WS link, pumpNetLink (stepBudget) drains TX,
+    // stopNetLink (close) tears down. Fork-core runs stay offline unless
+    // the fork exports the net functions (typeof-guarded per call).
+    private netWifi = false;
+    private netEth: '' | 'w5500' = '';
+    private netSpi = 0;
+    private netSessionId = '';
+    private netGatewayUrl = '';
+    private netLink: GatewayLink | null = null;
+    private netIp = '';
+    private netUp = false;
+    private netLastPublished = '';
     private compAttrById: Map<string, any> = new Map();
     // Runner-side watchdog countdown (RP2040/RP2350 WDT recipe check):
     // pico-emu models the watchdog registers + TRIGGER reboot but runs no
@@ -193,7 +209,7 @@ export class PicoRunner extends ArmRunnerBase {
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { pyScript?: string; arch?: string | number; wirelessMode?: string; boardSpi?: string | number; ethLive?: string; tickMHz?: string | number; boardTickMHz?: string | number } = {},
+        options: AVRRunnerOptions & { pyScript?: string; arch?: string | number; boardSpi?: string | number; tickMHz?: string | number; boardTickMHz?: string | number; sessionId?: string; gatewayUrl?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.pyScript = String((options as any)?.pyScript || '');
@@ -202,20 +218,20 @@ export class PicoRunner extends ArmRunnerBase {
         this.fixedFirmwareUrl = String((options as any)?.fixedFirmware || '').trim();
         const typeStr = String((options as any)?.boardType || '') + ' ' + String(this.boardId || '');
         this.isPico2 = /pico-?2|rp2350|2350/.test(typeStr);
-        // WiFi: Pico W / Pico 2 W board types, or explicit wirelessMode attr
-        // (full/compat-stub/on/1/true). 'off' disables (matches shell default
-        // attr wirelessMode=full; shell offers full/compat-stub/off).
-        const wifiAttr = String((options as any)?.wirelessMode || (options as any)?.wifi || '').toLowerCase();
-        this.wantWifi = /pico-?w|picow|-w\b/.test(typeStr)
-            || ['full', 'compat-stub', 'compat', 'stub', 'on', '1', 'true', 'yes'].includes(wifiAttr);
-        if (wifiAttr === 'off' || wifiAttr === '0' || wifiAttr === 'false' || wifiAttr === 'no') this.wantWifi = false;
-        // Ethernet: pico-eth / pico-2-eth board types (W5500 on SPI). The
-        // W6300 (pico-w6300) is a different chip the arduino-pico core does
-        // not target — explicit gap, not silently mapped.
-        if (/pico-?2-?eth|picoeth2|2-eth/.test(typeStr)) this.ethBoard = 'w5500';
-        else if (/pico-?eth|picoeth|w5500/.test(typeStr)) this.ethBoard = 'w5500';
+        // Network (unified-gateway path, owner folder rp2350/Pico-emu):
+        // Pico W / Pico 2 W → CYW43 WiFi; pico-eth / pico-2-eth → W5500
+        // on SPI (boardSpi attr selects SPI0/SPI1). W6300 boards are an
+        // explicit gap (different chip/pins, not silently mapped).
+        // Enables + WS link happen post-init in startNetLink (boot), the
+        // TX pump rides stepBudget, teardown rides close().
+        this.netWifi = /pico-?w|picow|-w\b/.test(typeStr)
+            && !/pico-?eth|picoeth|w5500/.test(typeStr);
+        if (/pico-?2-?eth|picoeth2|2-eth/.test(typeStr)) this.netEth = 'w5500';
+        else if (/pico-?eth|picoeth|w5500/.test(typeStr)) this.netEth = 'w5500';
         const spiOpt = Number.parseInt(String((options as any)?.boardSpi ?? '0'), 10);
-        this.ethSpi = spiOpt === 1 ? 1 : 0;
+        this.netSpi = spiOpt === 1 ? 1 : 0;
+        this.netSessionId = String((options as any)?.sessionId || '').trim();
+        this.netGatewayUrl = String((options as any)?.gatewayUrl || '').trim();
         // Snapshot component attrs for generic I2C address resolution + arm
         // the mirror bridge when any owned instance speaks the I2C slave
         // interface (mirror attach happens post-engine-init in loadFirmware).
@@ -659,6 +675,111 @@ export class PicoRunner extends ArmRunnerBase {
         } catch { /* drain never breaks the tick */ }
     }
 
+    /** Start the unified-gateway network link (boot, post-init).
+     * Owner parity (rp2350/Pico-emu web/cli.js): `_wifi_enable(1)`
+     * (nodhcp — DHCP flows to the gateway) for Pico W; `_board_eth`
+     * + `_w5500_gw_enable(1)` (MACRAW sock0 joins the shared vnet bus)
+     * for pico-eth; `_eth_set_uplink(1)` immediately, before first step.
+     * Sockets 1-7 TCP/UDP offload stay on the proxy path (deferred). */
+    private startNetLink(): void {
+        if (this.netLink || !this.mod) return;
+        const mod = this.mod;
+        let kind: '' | 'wifi' | 'eth' = '';
+        if (this.netWifi && typeof mod._picoemu_wifi_enable === 'function') {
+            try { mod._picoemu_wifi_enable(1); kind = 'wifi'; } catch { /* older builds */ }
+        }
+        if (!kind && this.netEth === 'w5500') {
+            try {
+                // live=1: proven green twice in this runner (live=0 stalls
+                // DHCP here even though the owner demo uses live=0 — the
+                // demo's extra proxy-socket/upload path likely covers the
+                // difference; flagged upstream).
+                if (typeof mod._picoemu_board_eth === 'function') mod._picoemu_board_eth(1, 1, this.netSpi);
+            } catch { /* older builds */ }
+            try {
+                if (typeof mod._picoemu_w5500_gw_enable === 'function') {
+                    mod._picoemu_w5500_gw_enable(1);
+                    kind = 'eth';
+                }
+            } catch { /* older builds */ }
+        }
+        if (!kind) return;
+        if (typeof mod._picoemu_eth_set_uplink !== 'function'
+            || typeof mod._picoemu_eth_push_rx !== 'function'
+            || typeof mod._picoemu_eth_pop_tx !== 'function') return;
+        const room = this.netSessionId || String(this.boardId || 'pico');
+        const link = new GatewayLink(this.netGatewayUrl || GATEWAY_DEFAULT_URL, room, {
+            onFrame: (frame: Uint8Array) => {
+                try {
+                    const m = this.mod;
+                    if (!m) return;
+                    const p = m._malloc(frame.length);
+                    m.HEAPU8.set(frame, p);
+                    try { m._picoemu_eth_push_rx(p, frame.length); } catch { /* push never breaks ingress */ }
+                    m._free(p);
+                } catch { /* ingress never breaks the sim */ }
+            },
+            onStatus: (s) => {
+                try {
+                    this.netUp = !!s.up;
+                    if (s.ip) this.netIp = s.ip;
+                    this.publishNetStatus();
+                } catch { /* status never breaks the sim */ }
+            },
+        });
+        this.netLink = link;
+        try { mod._picoemu_eth_set_uplink(1); } catch { /* older builds */ }
+        link.open();
+    }
+
+    /** TX pump (stepBudget): ≤16 queued frames per tick to the gateway.
+     * Owner parity (cli.js main loop). No-op when the link is down. */
+    private pumpNetLink(): void {
+        const link = this.netLink;
+        const mod = this.mod;
+        if (!link || !link.isOpen || !mod) return;
+        try {
+            if (typeof mod._picoemu_eth_pop_tx !== 'function') return;
+            for (let i = 0; i < 16; i++) {
+                const p = mod._malloc(2048);
+                let got = -1;
+                try { got = mod._picoemu_eth_pop_tx(p, 2048); }
+                catch { try { mod._free(p); } catch { /* ignore */ } break; }
+                if (got <= 0) { try { mod._free(p); } catch { /* ignore */ } break; }
+                try { link.send(mod.HEAPU8.slice(p, p + got)); } catch { /* send never breaks the tick */ }
+                try { mod._free(p); } catch { /* ignore */ }
+            }
+        } catch { /* pump never breaks the tick */ }
+    }
+
+    /** Publish link status to the board instance (change-triggered, so the
+     * live-OOP snapshot carries human-senses telemetry, not just serial). */
+    private publishNetStatus(): void {
+        try {
+            const key = (this.netUp ? '1' : '0') + '|' + this.netIp;
+            if (key === this.netLastPublished) return;
+            this.netLastPublished = key;
+            const inst = this.instances.get(this.boardId);
+            try { (inst as any)?.setState?.({ netUp: this.netUp, netIp: this.netIp }); } catch { /* ignore */ }
+        } catch { /* status never breaks the sim */ }
+    }
+
+    /** Tear down the network link (close). */
+    private stopNetLink(): void {
+        try {
+            const mod = this.mod;
+            if (mod && typeof mod._picoemu_eth_set_uplink === 'function') {
+                try { mod._picoemu_eth_set_uplink(0); } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        try { this.netLink?.close(); } catch { /* ignore */ }
+        this.netLink = null;
+        if (this.netUp) {
+            this.netUp = false;
+            try { this.publishNetStatus(); } catch { /* ignore */ }
+        }
+    }
+
     private makeEngine() {
         const self = this;
         return {
@@ -682,15 +803,12 @@ export class PicoRunner extends ArmRunnerBase {
                 }
                 const wasmUrl = useFork
                     ? '/wasm/picoemu-fork.wasm.wasm'
-                    // Stock runs: the MATCHED npm pair (glue + its own
-                    // wasm). The untracked public/wasm/picoemu.wasm.wasm
-                    // first-party file MISBINDS with the npm glue (proven
-                    // 2026-10-14 by glue×wasm pairing matrix, bare-worker:
-                    // npm+npm DONE; npm+first-party malloc→undefined (a
-                    // void export) then reset→OOB trap — and the glue
-                    // ignores the wasmBinary bytes, streaming instead from
-                    // locateFile, so the URL alone decides the build).
-                    : '/node_modules/pico-emu/picoemu.wasm.wasm';
+                    // Stock runs: the MATCHED folder pair (glue + its own
+                    // wasm from owner `rp2350/Pico-emu`, via ?url above).
+                    // Never mix folder glue with npm/first-party wasm —
+                    // mismatched builds misbind exports (proven 2026-10-14
+                    // by the glue×wasm pairing matrix).
+                    : picoFolderWasmUrl;
                 let wasmBinary: ArrayBuffer | undefined;
                 try {
                     const r = await fetch(wasmUrl);
@@ -752,15 +870,10 @@ export class PicoRunner extends ArmRunnerBase {
                 // SPI mirror attach (post-init, pre-firmware): spimirror
                 // slave on SPI0 (see attachSPIMirrors).
                 try { self.attachSPIMirrors(); } catch { /* attach never breaks boot */ }
-                // Wireless + wired net (stub mode, no live sockets):
-                // CYW43 for Pico W / Pico 2 W, W5500 board for pico-eth
-                // variants — same CLI calls minus --board-live (deferred).
-                try {
-                    if (self.wantWifi) self.mod._picoemu_wifi_enable(0);
-                } catch { /* older builds */ }
-                try {
-                    if (self.ethBoard === 'w5500') self.mod._picoemu_board_eth(1, 0, self.ethSpi);
-                } catch { /* older builds */ }
+                // Network link (post-init, pre-firmware): CYW43/W5500
+                // enables + gateway WS uplink before the guest boots so
+                // the first DHCP frame is never lost.
+                try { self.startNetLink(); } catch { /* net never breaks boot */ }
                 const u8 = payloadToU8(firmware);
                 if (self.fixedFirmwareUrl) {
                     // Fixed-firmware cells (RV32 proof images, etc.): the
@@ -824,6 +937,8 @@ export class PicoRunner extends ArmRunnerBase {
                         } catch { /* pump never breaks tick */ }
                     }
                     try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
+                    // Gateway TX pump: guest ETH frames → gateway WS.
+                    try { self.pumpNetLink(); } catch { /* pump never breaks tick */ }
                     // I2C mirror drain: polled transaction ring → models.
                     try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
                     // SPI mirror drain: polled MOSI ring → bridge → models.
@@ -957,7 +1072,7 @@ export class PicoRunner extends ArmRunnerBase {
             readAnalog(_ref: string): number {
                 return NaN;
             },
-            close(): void { self.mod = null; },
+            close(): void { try { self.stopNetLink(); } catch { /* ignore */ } self.mod = null; },
             resetEngine(): void {
                 try { self.mod?._picoemu_reset?.(); } catch { /* ignore */ }
             },

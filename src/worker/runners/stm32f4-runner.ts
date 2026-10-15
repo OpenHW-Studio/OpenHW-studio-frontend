@@ -25,6 +25,7 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
+import { GatewayLink, GATEWAY_DEFAULT_URL } from '../net/gateway-link.ts';
 import {
   collectI2CSlaveAddresses,
   createI2CBridge,
@@ -130,6 +131,17 @@ export class Stm32f4Runner extends ArmRunnerBase {
     protected engine = this.makeEngine();
     private mcu: any = null;
     private chip = 'stm32f407';
+    // Unified-gateway Ethernet state (F407/F429): TX frames tapped at
+    // create-time onTx queue here; RX frames from the link queue for
+    // per-drain ethInject. Teardown rides close().
+    private netSessionId = '';
+    private netGatewayUrl = '';
+    private netLink: GatewayLink | null = null;
+    private netTx: Uint8Array[] = [];
+    private netRx: Uint8Array[] = [];
+    private netIp = '';
+    private netUp = false;
+    private netLastPublished = '';
     private compAttrById: Map<string, any> = new Map();
 
     /** Generic slave address of one instance (same chain as the collector). */
@@ -862,7 +874,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { chip?: string } = {},
+        options: AVRRunnerOptions & { chip?: string; sessionId?: string; gatewayUrl?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         // Chip map: F401/F411/F407/F407VE/F429 package table (default
@@ -876,7 +888,19 @@ export class Stm32f4Runner extends ArmRunnerBase {
             this.uartRxPins = [...F4_UART2_RX, ...F4_UART_RX];
         }
         try { this.snapshotCompAttrs(componentsDef); } catch { /* never breaks construction */ }
+        // Unified-gateway Ethernet (F407/F429 only — F401/F411 have no
+        // ETH silicon): TX tap rides create-time onTx, RX via ethInject,
+        // link driven up at boot. Room = run sessionId (same-run LAN) or
+        // boardId fallback (isolated).
+        try { this.netSessionId = String((options as any)?.sessionId || '').trim(); } catch { this.netSessionId = ''; }
+        try { this.netGatewayUrl = String((options as any)?.gatewayUrl || '').trim(); } catch { this.netGatewayUrl = ''; }
         void this.boot('openhw-stm32f4');
+    }
+
+    /** True when this chip has Ethernet silicon (F407 family + F429). */
+    private get f4EthCapable(): boolean {
+        const c = String(this.chip || '').toLowerCase();
+        return c.includes('407') || c.includes('429');
     }
 
     private makeEngine() {
@@ -994,6 +1018,34 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 try {
                     self.buildBusSpecs(withAssets);
                 } catch { /* bridges never break boot */ }
+                // ETH IRQ delivery (create-time): IRQ-driven guests
+                // (eth_dhcp/eth_test: ETH_IRQHandler owns its flags) need
+                // irq_eth so RX raises IRQ61; polling firmware (eth_http)
+                // needs it off. Opt in via board attr ethIrq=on (default
+                // off so all existing cells are unaffected).
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const ethIrqAttr = String((battrs as any)?.ethIrq ?? '').toLowerCase();
+                    const wantIrq = (ethIrqAttr === 'on' || ethIrqAttr === '1' || ethIrqAttr === 'true');
+                    if (wantIrq && /407|429/.test(String(self.chip || ''))) {
+                        (withAssets as any).irq_eth = true;
+                    }
+                } catch { /* irq flag never breaks boot */ }
+                // Ethernet TX tap (create-time only — the facade passes
+                // onTx through to createEmulator; there is no post-create
+                // hook). Frames queue for the per-drain gateway pump.
+                // Queued only while the link exists (set at boot below).
+                try {
+                    (withAssets as any).onTx = (frame: any) => {
+                        try {
+                            if (!self.netLink || !frame) return;
+                            const u8 = frame instanceof Uint8Array ? frame.slice() : new Uint8Array(frame);
+                            if (u8.length < 14 || u8.length > 1600) return;
+                            self.netTx.push(u8);
+                            if (self.netTx.length > 256) self.netTx.shift();
+                        } catch { /* tap never breaks the sim */ }
+                    };
+                } catch { /* tap never breaks boot */ }
                 // Display-cell observation binds (DCMI/QSPI/FSMC): an
                 // openhw-ltdc-display sink with a `cell` attr selects which
                 // engine source feeds it. All three binds are create-time
@@ -1138,6 +1190,12 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     self.mcu = await STM32F4.fromBin(fw.data as Uint8Array, withAssets);
                 }
                 try { self.mcu.usart1.onData = (b: number) => { txQueue.push(b & 0xff); }; } catch { /* ignore */ }
+                // Ethernet link (post-create, pre-step): F407/F429 only.
+                // Harness drives the PHY link up (BMSR/PHYSTS follow, like
+                // silicon); gateway WS carries TX out / RX in. Owner parity
+                // (stm32-periph-wasm/pkg/cli.mjs): inject RX before each
+                // step batch, send TX after.
+                try { self.startF4NetLink(); } catch { /* net never breaks boot */ }
                 // Disco F407 Serial = USART2: the package TX tap is global
                 // (feeds usart1._emit regardless of port), so usart1.onData
                 // already carries Disco bytes too. Hook usart2 as well for
@@ -1234,6 +1292,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
+                // Ethernet pump (F407/F429): TX queue → gateway WS, queued
+                // RX → ethInject (head-only FS+LS delivery at next poll).
+                // Capped per drain; never breaks the drain.
+                try { self.pumpF4NetLink(); } catch { /* pump never breaks drain */ }
                 // Net leveling: model-driven pins fan out across
                 // component-only nets (engine owns board nets). Per-boot
                 // gate (f4NeedsLevel, resolved in loadFirmware): a boot with
@@ -1866,6 +1928,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
             },
             close(): void {
                 try { gpioUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } }); } catch { /* ignore */ }
+                try { self.stopF4NetLink(); } catch { /* ignore */ }
                 try { self.mcu?.close?.(); } catch { /* ignore */ }
                 self.mcu = null;
             },
@@ -1873,6 +1936,71 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 try { self.mcu?.reset?.(); } catch { /* ignore */ }
             },
         };
+    }
+
+    /** Start the unified-gateway Ethernet link (post-create, pre-step).
+     * Requires the facade ethInject + an ETH-capable chip. Link up is
+     * driven so BMSR/PHYSTS report carrier (silicon: external PHY). */
+    private startF4NetLink(): void {
+        if (this.netLink || !this.mcu) return;
+        try {
+            if (!this.f4EthCapable) return;
+            if (typeof (this.mcu as any)?.ethInject !== 'function') return;
+            try {
+                if (typeof (this.mcu as any)?.ethSetLink === 'function') (this.mcu as any).ethSetLink(true);
+            } catch { /* link never breaks boot */ }
+            const room = this.netSessionId || String(this.boardId || 'f4');
+            const link = new GatewayLink(this.netGatewayUrl || GATEWAY_DEFAULT_URL, room, {
+                onFrame: (frame: Uint8Array) => {
+                    try {
+                        const cpy = frame.slice();
+                        this.netRx.push(cpy);
+                        if (this.netRx.length > 256) this.netRx.shift();
+                    } catch { /* ingress never breaks the sim */ }
+                },
+                onStatus: (s) => {
+                    try {
+                        this.netUp = !!s.up;
+                        if (s.ip) this.netIp = s.ip;
+                        const key = (this.netUp ? '1' : '0') + '|' + this.netIp;
+                        if (key === this.netLastPublished) return;
+                        this.netLastPublished = key;
+                        const inst = this.instances.get(this.boardId);
+                        try { (inst as any)?.setState?.({ netUp: this.netUp, netIp: this.netIp }); } catch { /* ignore */ }
+                    } catch { /* status never breaks the sim */ }
+                },
+            });
+            this.netLink = link;
+            link.open();
+        } catch { /* link never breaks boot */ }
+    }
+
+    /** Per-drain pump: TX queue → gateway, queued RX → ethInject (≤8). */
+    private pumpF4NetLink(): void {
+        const link = this.netLink;
+        const mcu = this.mcu as any;
+        if (!link || !mcu) return;
+        try {
+            if (link.isOpen && this.netTx.length > 0) {
+                const batch = this.netTx.splice(0, this.netTx.length);
+                for (const f of batch) { try { link.send(f); } catch { /* ignore */ } }
+            }
+            if (this.netRx.length > 0 && typeof mcu?.ethInject === 'function') {
+                const batch = this.netRx.splice(0, Math.min(8, this.netRx.length));
+                for (const f of batch) { try { mcu.ethInject(f); } catch { /* ignore */ } }
+            }
+        } catch { /* pump never breaks the drain */ }
+    }
+
+    /** Tear down the Ethernet link (close). */
+    private stopF4NetLink(): void {
+        try { this.netLink?.close(); } catch { /* ignore */ }
+        this.netLink = null;
+        this.netTx = [];
+        this.netRx = [];
+        try {
+            if (typeof (this.mcu as any)?.ethSetLink === 'function') (this.mcu as any).ethSetLink(false);
+        } catch { /* ignore */ }
     }
 
     private hookGpio(unsubs: Array<() => void>): void {

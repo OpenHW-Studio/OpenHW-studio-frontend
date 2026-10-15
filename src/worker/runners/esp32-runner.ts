@@ -61,13 +61,23 @@ export class Esp32Runner extends ArmRunnerBase {
     // backs the engine-dead fallback.
     private simTimeEpochMs = 0;
     private simTimeLastMs = 0;
+    // Unified-gateway WiFi: the engine (folder `esp32 emu` dist, == 1.2.0
+    // bytes) dials the gateway itself at boot (worker-entry connectGateway,
+    // pre-open buffered). The runner only passes config.wifi
+    // {ssid,bssid,channel,room,gatewayUrl} and surfaces getWifiStats().
+    private netSessionId = '';
+    private netGatewayUrl = '';
+    private netIp = '';
+    private netUp = false;
+    private netLastStatAt = 0;
+    private netLastPublished = '';
 
     constructor(
         hexData: string,
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { pyScript?: string; board?: string } = {},
+        options: AVRRunnerOptions & { pyScript?: string; board?: string; sessionId?: string; gatewayUrl?: string } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         // ESP32-CAM uses the esp32-cam board preset (4MB flash + 4MB PSRAM);
@@ -78,6 +88,8 @@ export class Esp32Runner extends ArmRunnerBase {
         ).toLowerCase();
         this.board = optBoard.includes('cam') || compBoard.includes('cam') ? 'esp32-cam' : 'esp32';
         try { this.pyScript = String((options as any)?.pyScript || ''); } catch { this.pyScript = ''; }
+        try { this.netSessionId = String((options as any)?.sessionId || '').trim(); } catch { this.netSessionId = ''; }
+        try { this.netGatewayUrl = String((options as any)?.gatewayUrl || '').trim(); } catch { this.netGatewayUrl = ''; }
         // Snapshot component attrs (board tickMHz for the clock preset).
         // Mirrors the F1/F4 snapshotCompAttrs discipline: runners must see
         // menu-set attrs at boot, not construction-stale empties.
@@ -87,6 +99,59 @@ export class Esp32Runner extends ArmRunnerBase {
             }
         } catch { /* snapshot never breaks construction */ }
         void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
+    }
+
+    /** Gateway WiFi config for init (engine dials itself at boot).
+     * ssid/bssid/channel/room/gatewayUrl ride board attrs (canvas menus)
+     * or run options (sessionId → shared room for same-run LAN play).
+     * The engine defaults (ESP-GUEST/ch6/:5030) apply per missing key. */
+    private netWifiConfig(): Record<string, unknown> {
+        try {
+            const battrs = this.compAttrById?.get?.(this.boardId) || {};
+            const wifi: Record<string, unknown> = {};
+            const ssid = String((battrs as any)?.ssid || '').trim();
+            if (ssid) wifi.ssid = ssid;
+            const bssid = String((battrs as any)?.bssid || '').trim();
+            if (bssid) wifi.bssid = bssid;
+            const ch = Math.floor(Number((battrs as any)?.wifiChannel ?? (battrs as any)?.channel) || 0);
+            if (ch >= 1 && ch <= 14) wifi.channel = ch;
+            const room = String((battrs as any)?.room || (battrs as any)?.sessionId || '')
+                .trim() || this.netSessionId;
+            if (room) wifi.room = room;
+            const gw = String((battrs as any)?.gatewayUrl || '').trim() || this.netGatewayUrl;
+            if (gw) wifi.gatewayUrl = gw;
+            return { wifi };
+        } catch { return { wifi: {} }; }
+    }
+
+    /** Poll engine WiFi stats (throttled) → board instance telemetry.
+     * getWifiStats carries ip/state/frames (proxy CMD_GET_WIFI_STATS).
+     * GATED on netAlive: SAB_CMD holds ONE slot, so any stats CMD posted
+     * before the engine consumes RUN overwrites it and the core never
+     * starts (observed: total UART silence). The pump sets netAlive on
+     * first UART flow; only then is the slot safe to borrow. */
+    private pollNetStats(): void {
+        try {
+            if (!(this as any).netAlive) return;
+            const now = Date.now();
+            if (now - this.netLastStatAt < 2000 || !this.sim) return;
+            this.netLastStatAt = now;
+            const p = (this.sim as any)?.getWifiStats?.();
+            if (!p || typeof (p as any).then !== 'function') return;
+            (p as Promise<any>).then((st: any) => {
+                try {
+                    const ip = String(st?.ip || '');
+                    const up = !!ip || Number(st?.state) === 1 || Number(st?.connectedClients) > 0;
+                    if (ip) this.netIp = ip;
+                    if (up !== this.netUp) this.netUp = up;
+                    const key = (this.netUp ? '1' : '0') + '|' + this.netIp;
+                    if (key === this.netLastPublished) return;
+                    this.netLastPublished = key;
+                    const inst = this.instances.get(this.boardId);
+                    try { (inst as any)?.setState?.({ netUp: this.netUp, netIp: this.netIp }); } catch { /* ignore */ }
+                } catch { /* stats never break the sim */ }
+            }).catch(() => { /* stats never break the sim */ });
+        } catch { /* stats never break the sim */ }
     }
 
     /** Split a MicroPython script into short exec('...') payload lines
@@ -255,7 +320,7 @@ export class Esp32Runner extends ArmRunnerBase {
                         } catch { /* ignore */ }
                     }
                 } catch { /* ignore */ }
-                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}) }, flash, rom);
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}), ...self.netWifiConfig() }, flash, rom);
                 // MMU mapping: init already seeds the identity map
                 // (mmuTablePro[p] = p, Pro+App) twice — in applyBasicSetup
                 // and again after loadWasm+reset (worker-entry.js). Do NOT
@@ -320,6 +385,10 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { self.sim.pollUart(); } catch { /* ignore */ }
                     try { self.pollBusTaps(); } catch { /* ignore */ }
                     try { self.pumpPythonInject(); } catch { /* inject never breaks the pump */ }
+                    // Liveness gate for stats CMDs (see pollNetStats):
+                    // first UART flow proves RUN was consumed.
+                    try { if (txQueue.length > 0) (self as any).netAlive = true; } catch { /* ignore */ }
+                    try { self.pollNetStats(); } catch { /* stats never break the pump */ }
                     // Boot watchdog: RUN is fire-and-forget, so a lost RUN
                     // (see above) would idle silently for the whole window.
                     // If the core retired zero instructions after 20s wall,

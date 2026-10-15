@@ -73,14 +73,14 @@ export const COMPONENT_STATUS_CONFIG = {
       'UART Serial Communication'
     ],
     inProgress: [
-      'WiFi Station & Access Point Simulation',
       'FreeRTOS Multi-Tasking Scheduler Timing',
       'Deep Sleep & Wakeup Triggers'
     ],
     limitations: [
-      'Bluetooth BLE Subsystem (Planned)'
+      'Bluetooth BLE Subsystem (Planned)',
+      'WiFi / Ethernet (removed pending engine reimplementation)'
     ],
-    notes: 'Microcontroller core and GPIO peripherals run reliably. WiFi networking stack is currently undergoing active implementation.'
+    notes: 'Microcontroller core and GPIO peripherals run reliably. WiFi networking removed pending engine reimplementation.'
   },
 
   'openhw-esp32-cam': {

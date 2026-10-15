@@ -1,7 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
-import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr }) => {
@@ -763,12 +762,7 @@ function CanvasSceneLayerBase({
         );
       })()}
       
-      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
-      <NetworkComponentOverlay 
-        components={components} 
-        isRunning={isRunning} 
-        updateComponentAttr={updateComponentAttr} 
-      />
+      {/* Network overlay removed with the Network Worker (pending WiFi/IP reimplementation). */}
     </div>
     </>
   );

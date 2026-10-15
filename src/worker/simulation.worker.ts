@@ -242,13 +242,6 @@ let boardInjectSessions: Map<string, {
  */
 let renderWorkerPort: MessagePort | null = null;
 
-/**
- * MessagePort to the Network Worker. Set when the main thread sends SET_NET_PORT.
- * When set, Ethernet frames from WiFi boards are forwarded directly (zero-copy),
- * keeping DNS/TCP/UDP I/O completely isolated from the CPU simulation loop.
- */
-let netWorkerPort: MessagePort | null = null;
-
 /** Display component types that have a Render Worker renderer registered. */
 const DISPLAY_COMPONENT_TYPES = new Set([
     'openhw-ili9341',
@@ -782,12 +775,11 @@ function postRunnerState(stateObj: any, boardId: string) {
     if ((stateObj as any)._emitSeq !== undefined) msg._emitSeq = (stateObj as any)._emitSeq;
     if ((stateObj as any)._emitTime !== undefined) msg._emitTime = (stateObj as any)._emitTime;
     // Small channels pass through untouched (pins drive transition counts +
-    // plotter; analog/perf/neopixels/wifi are tiny). Only the components
+    // plotter; analog/perf/neopixels are tiny). Only the components
     // array shrinks — see below.
     if ((stateObj as any).analog !== undefined) msg.analog = (stateObj as any).analog;
     if ((stateObj as any).perf !== undefined) msg.perf = (stateObj as any).perf;
     if ((stateObj as any).neopixels !== undefined) msg.neopixels = (stateObj as any).neopixels;
-    if ((stateObj as any).wifi !== undefined) msg.wifi = (stateObj as any).wifi;
 
     // Dirty-notify + SAB-mirror (same shape as the single-board fast path):
     // when the runner publishes slots into the shared SAB, the UI rAF
@@ -1132,52 +1124,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
         return;
     }
 
-    // ── Network Worker port handshake ─────────────────────────────────────────
-    // Sent from the main thread after creating the Network Worker.
-    // The sim worker uses netWorkerPort to forward Ethernet frames from WiFi
-    // boards (Pico W) to the dedicated Network Worker — zero-copy transfers.
-    if (data.type === 'SET_NET_PORT') {
-        const port: MessagePort = data.port;
-        console.log('[SimWorker] SET_NET_PORT message received, port:', !!port);
-        if (port && typeof port.postMessage === 'function') {
-            netWorkerPort = port;
-            netWorkerPort.start();
-            // Forward inbound frames (FRAME_IN / WIFI_STATUS) back to main thread
-            netWorkerPort.onmessage = (evt: MessageEvent) => {
-                const msg = evt.data;
-                if (msg?.type === 'FRAME_IN') {
-                    // Inject Ethernet frame into the Pico W chip via the runner
-                    // The runner must have onEthernetFrameIn(boardId, frame) or similar
-                    const boardId = String(msg.boardId || '');
-                    const frame   = new Uint8Array(msg.frame as ArrayBuffer);
-                    const b64     = btoa(String.fromCharCode(...frame));
-                    // Forward to main thread as a wifi_packet_in event
-                    postMessage({ type: 'wifi_packet_in', boardId, ether_b64: b64 });
-                } else if (msg?.type === 'WIFI_STATUS') {
-                    // Forward status to main thread for UI
-                    postMessage({ type: 'wifi_status', ...msg });
-                } else if (msg?.type === 'PCAP_DATA') {
-                    // Transfer PCAP buffer back to main thread for download
-                    const buf = msg.data as ArrayBuffer;
-                    postMessage({ type: 'wifi_pcap', boardId: msg.boardId, data: buf }, [buf]);
-                }
-            };
-            console.log('[SimWorker] netWorkerPort successfully registered and started');
-        }
-        return;
-    }
-
-    if (data.type === 'DOWNLOAD_PCAP') {
-        const boardId = data.boardId;
-        const targetRunner = boardRunners.get(boardId) || runner;
-        if (targetRunner && typeof targetRunner.downloadPcap === 'function') {
-            console.log(`[SimWorker] Triggering PCAP download for ${boardId}`);
-            targetRunner.downloadPcap();
-        } else {
-            console.warn(`[SimWorker] PCAP download requested for ${boardId} but runner doesn't support it or isn't active`);
-        }
-        return;
-    }
+    // ── Network Worker removed pending WiFi/IP engine reimplementation
+    // (SET_NET_PORT handshake + PCAP download deleted with it).
 
     if (data.type === 'START') {
         const {

@@ -27,12 +27,8 @@ function deriveOpts(
     if (arch) extra.arch = arch;
     const board = attrStr(attrs, 'board');
     if (board) extra.board = board;
-    const wifi = attrStr(attrs, 'wirelessMode', 'wifi');
-    if (wifi) extra.wirelessMode = wifi;
     const spi = attrStr(attrs, 'boardSpi', 'board-spi', 'spi');
     if (spi) extra.boardSpi = spi;
-    const ethLive = attrStr(attrs, 'ethLive', 'board-live', 'boardLive');
-    if (ethLive) extra.ethLive = ethLive;
     const fixedFirmware = attrStr(attrs, 'firmware', 'fixedFirmware', 'fixed-firmware');
     if (fixedFirmware) extra.fixedFirmware = fixedFirmware;
     // Guest-clock divider (Pico tickMHz + F1/F4 clock attrs share the

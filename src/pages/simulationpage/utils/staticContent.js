@@ -35,11 +35,11 @@ export const COMPONENT_DESCRIPTIONS = {
       "openhw-pico-2":
         "Dual-core ARM Cortex-M33 / RISC-V RP2350 microcontroller. Faster clocks, more memory, flexible digital interfaces.",
       "openhw-pico-2-w":
-        "RP2350 Pico 2 W board with CYW43 wireless. GPIO, UART, I2C, SPI, PWM and ADC in simulation.",
+        "RP2350 Pico 2 W board. GPIO, UART, I2C, SPI, PWM and ADC in simulation (wireless removed pending engine reimplementation).",
       "openhw-pico-eth":
-        "RP2040 W5500-EVB-Pico carrier board. W5500 Ethernet on SPI0, flexible digital interfaces.",
+        "RP2040 W5500-EVB-Pico carrier board. Flexible digital interfaces (Ethernet removed pending engine reimplementation).",
       "openhw-pico-2-eth":
-        "RP2350 W5500-EVB-Pico2 carrier board. W5500 Ethernet on SPI0, flexible digital interfaces.",
+        "RP2350 W5500-EVB-Pico2 carrier board. Flexible digital interfaces (Ethernet removed pending engine reimplementation).",
       "wokwi-breadboard":
         "Full-size solderless breadboard. 830 tie points for prototyping circuits.",
       "openhw-breadboard":
