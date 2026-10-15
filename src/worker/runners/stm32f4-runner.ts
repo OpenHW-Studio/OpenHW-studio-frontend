@@ -428,6 +428,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
      * isTransactionActive(); anything else never engages. */
     private dhtFineEngaged(): boolean {
         try {
+            // Per-boot presence cache (f4DhtPresent): no one-wire model on
+            // the board means no transaction can ever be active — skip the
+            // instance scan (this gate also runs per SPI-hot slice).
+            if ((this as any).f4DhtPresent === false) return false;
             for (const inst of this.instances.values()) {
                 try {
                     if (typeof (inst as any)?.isTransactionActive === 'function'
@@ -443,6 +447,11 @@ export class Stm32f4Runner extends ArmRunnerBase {
      * above decides slicing. */
     private dhtPresent(): boolean {
         try {
+            const cached = (this as any).f4DhtPresent;
+            if (cached === true) return true;
+            if (cached === false) return false;
+        } catch { /* fall through to the live scan */ }
+        try {
             for (const inst of this.instances.values()) {
                 try {
                     if (typeof (inst as any)?.isTransactionActive === 'function') return true;
@@ -456,11 +465,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
      * per-slice scheduler drain + GPIO poll, so release detection and
      * the model's ACK schedule meet the firmware's bit reads in the
      * same slot instead of quantizing to whole-tick batches.
-     * Discipline mirrors F1: facade instCount is a per-call delta on
-     * F4 (no retiredDelta needed); advance simCycleCount per slice so
-     * the scheduler domain matches firmware timing 1:1, then return
-     * ~0 so the base runLoop adds only its +1 floor instead of
-     * double-counting the budget. */
+     * Discipline mirrors F1 (retiredDelta): the facade reports the
+     * CUMULATIVE instCount (verified in the vendored engine —
+     * emulator.js accumulates `instCount += c`, zeroed only on reset),
+     * so derive per-slice deltas via f4Delta; advance simCycleCount
+     * per slice so the scheduler domain matches firmware timing 1:1,
+     * then return ~0 so the base runLoop adds only its +1 floor
+     * instead of double-counting the budget. */
     private stepDhtFine(budget: number): number {
         const mcu = (this as any).mcu;
         if (!mcu) return 0;
@@ -472,7 +483,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
             const s = Math.min(slice, remaining);
             let r: any = null;
             try { r = mcu.execute(s); } catch { break; }
-            const d = Math.max(1, Math.floor(Number(r?.instCount ?? s)) || 1);
+            // Delta discipline (see f4Delta): instCount is cumulative —
+            // adding it raw per slice would inflate simCycleCount
+            // quadratically and break every step-domain delay.
+            const d = this.f4Delta(Number(r?.instCount), s);
             try { (this as any).simCycleCount += d; } catch { /* ignore */ }
             try { (this as any).drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
             try { (this as any).pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
@@ -480,7 +494,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
             if (r?.stopped) break;
         }
         if (remaining > 0 && guard >= maxSlices) {
-            try { mcu.execute(remaining); } catch { /* ignore */ }
+            // Unreachable in practice (budgets cap at 1M < 4096 slices);
+            // still difference through f4Delta so the rebase cursor stays
+            // continuous (F1 fallback parity — no simCycleCount add there).
+            try {
+                const r3 = mcu.execute(remaining);
+                this.f4Delta(Number(r3?.instCount), remaining);
+            } catch { /* ignore */ }
         }
         return 0;
     }
@@ -527,6 +547,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
      * release + ACK edges. */
     private dhtPollInput(): void {
         if (!(this as any).mcu) return;
+        // No one-wire model on this boot: the scan below would find
+        // nothing — return on the cached flag (one property read).
+        if ((this as any).f4DhtPresent === false) return;
         for (const [id, inst] of (this as any).instances) {
             let bidi = false;
             try { bidi = typeof (inst as any)?.isTransactionActive === 'function'; } catch { bidi = false; }
@@ -586,6 +609,48 @@ export class Stm32f4Runner extends ArmRunnerBase {
         }
         if (Number.isFinite(a) && a >= 0) this.f4LastAbs = a;
         return fb;
+    }
+
+    /** Per-boot cached component ref (built in loadFirmware next to the
+     *  ADC cache): drains must not scan the instance map every 8ms.
+     *  Falls back to a live scan when the cache is absent (pre-boot),
+     *  so the resolved sink is identical either way. */
+    private f4Sink(kind: 'ltdc' | 'usb'): any {
+        try {
+            const s = (this as any).f4Sinks;
+            if (s && s[kind] !== undefined) return s[kind] || null;
+        } catch { /* fall through to the live scan */ }
+        try {
+            for (const inst of this.instances.values()) {
+                try {
+                    const t = String((inst as any)?.type || '').toLowerCase();
+                    if (kind === 'ltdc' && t === 'openhw-ltdc-display') return inst;
+                    if (kind === 'usb' && t === 'openhw-usb-device') return inst;
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        return null;
+    }
+
+    /** Per-boot cached PWM listener list (same predicates as the former
+     *  per-drain scan): instances are static per boot, so the drain only
+     *  walks the listeners instead of every instance. */
+    private f4PwmListeners(): any[] {
+        try {
+            const cached = (this as any).f4PwmInsts;
+            if (Array.isArray(cached)) return cached;
+        } catch { /* fall through to the live scan */ }
+        const out: any[] = [];
+        try {
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.onPWM !== 'function') continue;
+                    if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                    out.push(inst);
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        return out;
     }
 
     /** Per-boot ADC net cache: nets never change mid-run, so resolve the
@@ -790,8 +855,11 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 try {
                     delete (self as any).f4Dcmi; delete (self as any).f4Qspi;
                     delete (self as any).f4Fsmc; delete (self as any).f4SaiDone; delete (self as any).f4SaiAcc;
-                    delete (self as any).f4TickDiv; delete (self as any).f4TickRaw;
+                    delete (self as any).f4TickDiv; delete (self as any).f4TickRaw; delete (self as any).f4TickApplied;
                     delete (self as any).f4LastAbs;
+                    delete (self as any).f4Sinks; delete (self as any).f4PwmInsts; delete (self as any).f4DhtPresent;
+                    delete (self as any).f4SaiTick;
+                    delete (self as any).f4NeedsLevel; delete (self as any).f4AdcLast; delete (self as any).f4DrainCount;
                     let cell = '';
                     for (const inst of self.instances.values()) {
                         try {
@@ -824,9 +892,61 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         const ed2: any = (withAssets.ext_devices = withAssets.ext_devices || {});
                         if (ed2.speaker === undefined) ed2.speaker = true;
                     } catch { /* ignore */ }
+                    // Sink refs: instances are static per boot — resolve once
+                    // so drains never scan the instance map (LTDC + USB +
+                    // cell sinks, PWM listeners, one-wire presence).
+                    try {
+                        let ltdcSink: any = null, usbSink: any = null;
+                        const pwmInsts: any[] = [];
+                        let dhtPresent = false;
+                        for (const inst of self.instances.values()) {
+                            try {
+                                const t = String((inst as any)?.type || '').toLowerCase();
+                                if (t === 'openhw-ltdc-display' && !ltdcSink) ltdcSink = inst;
+                                else if (t === 'openhw-usb-device' && !usbSink) usbSink = inst;
+                                try {
+                                    if (typeof (inst as any)?.onPWM === 'function'
+                                        && typeof (inst as any)?.getPWMPinNames !== 'function') pwmInsts.push(inst);
+                                } catch { /* ignore */ }
+                                try {
+                                    if (typeof (inst as any)?.isTransactionActive === 'function') dhtPresent = true;
+                                } catch { /* ignore */ }
+                            } catch { /* ignore */ }
+                        }
+                        (self as any).f4Sinks = { ltdc: ltdcSink, usb: usbSink };
+                        (self as any).f4PwmInsts = pwmInsts;
+                        (self as any).f4DhtPresent = dhtPresent;
+                    } catch { /* ignore */ }
                     // ADC net cache: nets are static per boot — resolve once
                     // here so the 8ms drain never scans pinToNet.
                     try { self.buildAdcCache(); } catch { /* cache never breaks boot */ }
+                    // Leveling gate: levelPassiveNets is a proven no-op when
+                    // no component-only net has a voltage-capable member
+                    // (every actionable net touches the board, where the
+                    // engine owns the levels). Nets + members are static per
+                    // boot, so resolve once and skip the per-drain
+                    // O(pinToNet) regroup when there is nothing to level.
+                    // Fail-open (true) — the gate only ever SKIPS a no-op.
+                    try {
+                        let need = false;
+                        const seen = new Map<number, { board: boolean; cap: boolean }>();
+                        for (const [node, netId] of ((self as any).pinToNet as Map<string, number>)) {
+                            let e = seen.get(netId);
+                            if (!e) { e = { board: false, cap: false }; seen.set(netId, e); }
+                            const sep = node.indexOf(':');
+                            if (sep < 0) continue;
+                            if (node.slice(0, sep) === (self as any).boardId) { e.board = true; continue; }
+                            try {
+                                const inst = (self as any).instances.get(node.slice(0, sep));
+                                if (inst && typeof (inst as any)?.getPinVoltage === 'function'
+                                    && typeof (inst as any)?.setPinVoltage === 'function') e.cap = true;
+                            } catch { /* one node never breaks the gate */ }
+                        }
+                        for (const e of seen.values()) {
+                            if (!e.board && e.cap) { need = true; break; }
+                        }
+                        (self as any).f4NeedsLevel = need;
+                    } catch { try { (self as any).f4NeedsLevel = true; } catch { /* ignore */ } }
                 } catch { /* display binds never break boot */ }
                 const s = String(firmware || '').trim();
                 const decode = (): { kind: 'elf' | 'hex' | 'bin'; data: Uint8Array | string } | null => {
@@ -950,17 +1070,36 @@ export class Stm32f4Runner extends ArmRunnerBase {
             },
             drainUartOut(): number[] {
                 // Net leveling: model-driven pins fan out across
-                // component-only nets (engine owns board nets).
-                try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
+                // component-only nets (engine owns board nets). Per-boot
+                // gate (f4NeedsLevel, resolved in loadFirmware): a boot with
+                // no actionable net skips the per-drain O(pinToNet) regroup —
+                // the call is a proven no-op there. Fail-open while undefined.
+                try {
+                    if ((self as any).f4NeedsLevel !== false) {
+                        levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any);
+                    }
+                } catch { /* never breaks drain */ }
+                // Drain counter for rare-event poll cadences below (pwrMode:
+                // F1 f1PwrTick parity — every 8th drain, ~64ms wall).
+                try { (self as any).f4DrainCount = (Number((self as any).f4DrainCount) || 0) + 1; } catch { /* ignore */ }
                 // Clock preset (virtual time compression): board attr tickMHz
                 // (e.g. 24/42/84 on a 168MHz chip) divides the guest SysTick
                 // reload so virtual milliseconds cost fewer host instructions.
                 // LOAD rewrite alone is not enough — the model latches the
                 // period on CSR writes — so the guest CSR value is rewritten
                 // verbatim to re-latch. Re-applies when the guest reconfigures
-                // (LOAD returns to a full-clock value). Guest baud/timer
+                // (LOAD returns to a full-clock value); the divided value is
+                // remembered (f4TickApplied) so our own write is never
+                // re-divided on the next drain. Guest baud/timer
                 // prescalers are untouched (untimed in our models); PWM freq
                 // telemetry is rescaled below. Default off (div=1).
+                // Presets per chip (virtual-MHz ask → divider): 429@180 →
+                // 90/60/45/36/30 (div 2/3/4/5/6); 407@168 → 84/56/42/28/24/21
+                // (div 2/3/4/6/7/8); 401@84 → 42/28/21/14 (div 2/3/4/6);
+                // 411@100 → 50/25/20 (div 2/4/5). Any want in (0, chipMHz)
+                // works (div = round(chipMHz/want)); div clamps at 32 — past
+                // that the SysTick storm costs more ISR-entry host time than
+                // the compression saves. Default off (div=1).
                 // NOTE: DWT/micros() busy-loops still assume the full clock —
                 // do not combine tickMHz with microsecond-critical firmware.
                 try {
@@ -969,7 +1108,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         const chipMHz = /429/.test(self.chip) ? 180 : (/401/.test(self.chip) ? 84 : (/411/.test(self.chip) ? 100 : 168));
                         const battrs = self.compAttrById?.get?.(self.boardId) || {};
                         const want = Math.floor(Number((battrs as any)?.tickMHz) || 0);
-                        div = (want > 0 && want < chipMHz) ? Math.max(1, Math.round(chipMHz / want)) : 1;
+                        div = (want > 0 && want < chipMHz) ? Math.min(32, Math.max(1, Math.round(chipMHz / want))) : 1;
                         (self as any).f4TickDiv = div;
                     }
                     if (div > 1) {
@@ -978,10 +1117,19 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             let csr = 0, load = 0;
                             try { csr = emu.periphRead(0xE000E010, 4) >>> 0; load = emu.periphRead(0xE000E014, 4) >>> 0; } catch { csr = 0; load = 0; }
                             const lastRaw = Number((self as any).f4TickRaw) || 0;
-                            if ((csr & 1) && load > div && load !== lastRaw) {
+                            const lastApplied = Number((self as any).f4TickApplied) || 0;
+                            // lastApplied is the value this divider wrote: without
+                            // it the next drain would read back its own divided
+                            // LOAD (read-your-writes regs) and divide AGAIN —
+                            // runaway until LOAD <= div. A genuinely new guest
+                            // LOAD differs from both cursors, so reconfig still
+                            // re-applies exactly once.
+                            if ((csr & 1) && load > div && load !== lastRaw && load !== lastApplied) {
+                                const divided = Math.max(1, Math.floor(load / div));
                                 (self as any).f4TickRaw = load;
+                                (self as any).f4TickApplied = divided;
                                 try {
-                                    emu.periphWrite(0xE000E014, 4, Math.floor(load / div));
+                                    emu.periphWrite(0xE000E014, 4, divided);
                                     emu.periphWrite(0xE000E010, 4, csr >>> 0);
                                     const tag = `F4CLK:div=${div} `;
                                     for (let i = 0; i < tag.length; i++) {
@@ -1005,7 +1153,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     const tdiv = Number((self as any).f4TickDiv) || 1;
                     const freqTrue = tdiv > 1 ? freq / tdiv : freq;
                     if (duty > 0 && freqTrue > 0) {
-                        for (const inst of self.instances.values()) {
+                        // Listeners resolved once per boot (f4PwmInsts) —
+                        // same capability filter, no per-drain map scan.
+                        for (const inst of self.f4PwmListeners()) {
                             try {
                                 if (typeof (inst as any)?.onPWM !== 'function') continue;
                                 if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
@@ -1077,7 +1227,24 @@ export class Stm32f4Runner extends ArmRunnerBase {
                                     }
                                 }
                                 if (volts !== null) {
-                                    try { mcu.setAdcChannel('ADC1', rec.ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
+                                    // Change-dedup: the override table is a pure
+                                    // value latch (engine lib.rs
+                                    // adc_set_channel_value → adc_set_override,
+                                    // no side effects), so rewriting an identical
+                                    // quantized value only burns a string-crossing
+                                    // FFI. Guest reads see the same value either
+                                    // way; idle pots cost zero crossings.
+                                    try {
+                                        const q = Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)));
+                                        const last = (self as any).f4AdcLast as Record<number, number> | undefined;
+                                        if (!last || last[rec.ch] !== q) {
+                                            mcu.setAdcChannel('ADC1', rec.ch, q);
+                                            try {
+                                                const m = (last || ((self as any).f4AdcLast = {})) as Record<number, number>;
+                                                m[rec.ch] = q;
+                                            } catch { /* cache never breaks adc */ }
+                                        }
+                                    } catch { /* ignore */ }
                                 }
                             } catch { /* one pin never breaks the drain */ }
                         }
@@ -1089,12 +1256,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // packed 0xRRGGBB, push on change (~5fps throttle; hash
                 // first so idle frames cost one snapshot, not a convert).
                 try {
-                    let sink: any = null;
-                    for (const inst of self.instances.values()) {
-                        try {
-                            if (String((inst as any)?.type || '').toLowerCase() === 'openhw-ltdc-display') { sink = inst; break; }
-                        } catch { /* ignore */ }
-                    }
+                    // Sink ref resolved once per boot (f4Sinks) — no
+                    // per-drain instance scan; identical object either way.
+                    const sink: any = self.f4Sink('ltdc');
                     const disp = (self.mcu as any)?.display;
                     if (sink && disp && typeof disp.ltdc === 'function') {
                         const now = Date.now();
@@ -1141,12 +1305,8 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // bytes to the sink and emits USB_ markers into the serial
                 // stream. Idle cost when idle: one instanceof scan.
                 try {
-                    let usink: any = null;
-                    for (const inst of self.instances.values()) {
-                        try {
-                            if (String((inst as any)?.type || '').toLowerCase() === 'openhw-usb-device') { usink = inst; break; }
-                        } catch { /* ignore */ }
-                    }
+                    // Same per-boot sink ref as the LTDC push above.
+                    const usink: any = self.f4Sink('usb');
                     const mcu: any = self.mcu;
                     if (usink && mcu && typeof mcu.usbInjectSetup === 'function') {
                         const st: any = ((self as any).f4Usb = (self as any).f4Usb || { phase: 'init', waits: 0, rx: 0, echo: '', link: '' });
@@ -1354,14 +1514,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // for the cell bound at load. Each fires once per boot.
                 try {
                     const cell = String((self as any).f4Cell || '');
-                    let sink: any = null;
-                    if (cell === 'dcmi' || cell === 'qspi' || cell === 'fsmc') {
-                        for (const inst of self.instances.values()) {
-                            try {
-                                if (String((inst as any)?.type || '').toLowerCase() === 'openhw-ltdc-display') { sink = inst; break; }
-                            } catch { /* ignore */ }
-                        }
-                    }
+                    // Display sink for the bound cell (per-boot ref).
+                    const sink: any = (cell === 'dcmi' || cell === 'qspi' || cell === 'fsmc')
+                        ? self.f4Sink('ltdc') : null;
                     const say = (line: string) => {
                         try {
                             const tag = line + '\n';
@@ -1440,12 +1595,21 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     if (!(self as any).f4SaiDone) {
                         const acc: number[] = ((self as any).f4SaiAcc = (self as any).f4SaiAcc || []);
                         if (acc.length < 16) {
-                            try {
-                                const samples: ArrayLike<number> = (self.mcu as any)?.takeSpeakerSamples?.() || [];
-                                for (let i = 0; i < samples.length && acc.length < 16; i++) {
-                                    acc.push(Math.round(Number((samples as any)[i]) * 32768));
-                                }
-                            } catch { /* ignore */ }
+                            // Cadence: takeSpeakerSamples is a wasm→JS copy
+                            // every drain, but the capture FIFO persists in
+                            // the model — polling every 4th drain (~32ms)
+                            // accumulates the same samples in the same order
+                            // (guest writes 16 per ~3s; no ring pressure).
+                            const saiTick = (Number((self as any).f4SaiTick) || 0) + 1;
+                            (self as any).f4SaiTick = saiTick;
+                            if (saiTick % 4 === 1) {
+                                try {
+                                    const samples: ArrayLike<number> = (self.mcu as any)?.takeSpeakerSamples?.() || [];
+                                    for (let i = 0; i < samples.length && acc.length < 16; i++) {
+                                        acc.push(Math.round(Number((samples as any)[i]) * 32768));
+                                    }
+                                } catch { /* ignore */ }
+                            }
                         }
                         if (acc.length >= 16) {
                             (self as any).f4SaiDone = true;
@@ -1478,9 +1642,18 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'f4itm'); } catch { /* ignore */ } }; } catch { /* ignore */ }
                         }
                     } catch { /* wiring never breaks the drain */ }
+                    // Rare-event cadence (F1 f1PwrTick parity): PWR_CR is
+                    // firmware-static for whole runs — one MMIO FFI every 8th
+                    // drain (~64ms wall) reports the same transitions with
+                    // 1/8th the crossings. First drain always samples so the
+                    // initial mode marker never waits. Marker sequence
+                    // otherwise unchanged.
                     try {
-                        const pm = (mcuS && typeof mcuS.pwrMode === 'function') ? Number(mcuS.pwrMode()) : -1;
-                        if (pm >= 0 && pm !== Number((self as any).f4PwrLast ?? 0)) { (self as any).f4PwrLast = pm; say('F4PWR_MODE:' + pm); }
+                        const dc = (Number((self as any).f4DrainCount) || 0);
+                        if (dc === 1 || dc % 8 === 0) {
+                            const pm = (mcuS && typeof mcuS.pwrMode === 'function') ? Number(mcuS.pwrMode()) : -1;
+                            if (pm >= 0 && pm !== Number((self as any).f4PwrLast ?? 0)) { (self as any).f4PwrLast = pm; say('F4PWR_MODE:' + pm); }
+                        }
                     } catch { /* ignore */ }
                 } catch { /* f4sys markers never break the drain */ }
                 if (!txQueue.length) return [];

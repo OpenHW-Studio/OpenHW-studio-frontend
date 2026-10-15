@@ -65,6 +65,12 @@ import type { SimTransport } from '../hal/types.ts';
  *     if it doesn't, the runner stays idle (honest warning, no silent HTML).
  */
 export async function importEngine(bundlerSpec: string, vendorUrl: string): Promise<any> {
+    // Runtime-only dynamic import: built via the Function constructor so NO
+    // bundler (any vite/rollup version, dev or build) can statically trace a
+    // /vendor/... or public-dir URL into the module graph (which fails the
+    // build with "should not be imported from source code"). /* @vite-ignore */
+    // on a variable specifier is version-fragile; this is bulletproof.
+    const runtimeImport = (Function('u', 'return import(u);') as unknown) as (u: string) => Promise<any>;
     try {
         switch (bundlerSpec) {
             case 'pico-emu/picoemu.wasm.js':
@@ -91,7 +97,7 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
                 // the stub patch (custom-CSV partitions unsupported in
                 // browser; default merged-bin boot never hits it).
                 try {
-                    return await import(/* @vite-ignore */ vendorUrl);
+                    return await runtimeImport(vendorUrl);
                 } catch { /* fall through to bundler */ }
                 return await import('esp32-emu/dist/sab/worker-proxy.js');
             case '8086emu/multi_cpu_emu.js':
@@ -104,14 +110,14 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
                 // the matched 1.5.1 pair; NEVER mix glue/wasm versions.
                 return await import('8086emu/multi_cpu_emu.js');
             default:
-                return await import(/* @vite-ignore */ bundlerSpec);
+                return await runtimeImport(bundlerSpec);
         }
     } catch { /* fall through to vendor */ }
     // Deployed app only: node_modules isn't served, public/ is. The
     // facades' relative imports resolve against the /vendor/ URL, which
     // works because the whole package dir is mirrored there.
     try {
-        return await import(/* @vite-ignore */ vendorUrl);
+        return await runtimeImport(vendorUrl);
     } catch {
         return null;
     }

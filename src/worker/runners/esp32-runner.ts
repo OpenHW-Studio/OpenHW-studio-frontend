@@ -56,6 +56,11 @@ export class Esp32Runner extends ArmRunnerBase {
     private pyInjectAttempts = 0;
     private pyOutputSeen = false;
     private pyUartTail = '';
+    // Virtual-time epoch (see getSimulatedTimeMs below): folded forward
+    // on engine reset so reported time stays monotonic; last-good cache
+    // backs the engine-dead fallback.
+    private simTimeEpochMs = 0;
+    private simTimeLastMs = 0;
 
     constructor(
         hexData: string,
@@ -73,6 +78,14 @@ export class Esp32Runner extends ArmRunnerBase {
         ).toLowerCase();
         this.board = optBoard.includes('cam') || compBoard.includes('cam') ? 'esp32-cam' : 'esp32';
         try { this.pyScript = String((options as any)?.pyScript || ''); } catch { this.pyScript = ''; }
+        // Snapshot component attrs (board tickMHz for the clock preset).
+        // Mirrors the F1/F4 snapshotCompAttrs discipline: runners must see
+        // menu-set attrs at boot, not construction-stale empties.
+        try {
+            for (const c of (componentsDef || [])) {
+                if (c && c.id !== undefined) this.compAttrById.set(String(c.id), (c as any).attrs || {});
+            }
+        } catch { /* snapshot never breaks construction */ }
         void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
     }
 
@@ -220,7 +233,36 @@ export class Esp32Runner extends ArmRunnerBase {
                 // constructor); the cam preset rides config.board
                 // (init('esp32-cam') dies with "Unknown chip" and a
                 // silent dead sim — observed live as zero serial).
-                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000 }, flash, rom);
+                // wasmBinary rides the init config: worker-entry resolves
+                // it via config.wasmBinary FIRST and only falls back to a
+                // relative-URL fetch (404 under /vendor/) when absent — the
+                // old loadWasm-after-init call never existed on the proxy
+                // and the bytes were silently dropped (blank engine).
+                // Clock preset (virtual time compression): board attr tickMHz
+                // (160 Full / 80 / 40) rides init config cpuFrequency — the
+                // engine scales virtual nanos by native/target, so lower
+                // clocks cost fewer host cycles per virtual ms. Default off
+                // (omitted → native). Marker for evidence.
+                let espTickDiv = 1;
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const want = Math.floor(Number((battrs as any)?.tickMHz) || 0);
+                    if (want > 0 && want < 160) {
+                        espTickDiv = Math.max(1, Math.round(160 / want));
+                        try {
+                            const tag = `ESP32CLK:div=${espTickDiv} `;
+                            for (let i = 0; i < tag.length; i++) txQueue.push(tag.charCodeAt(i) & 0xff);
+                        } catch { /* ignore */ }
+                    }
+                } catch { /* ignore */ }
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}) }, flash, rom);
+                // 1.2.0 SAB boot: seed the MMU page table from flash AFTER
+                // init — without it the app image isn't executable-in-place
+                // and the ROM jumps to entry into silence (observed: entry
+                // 0x400805b4 then nothing). Guarded: older proxies lack it.
+                try {
+                    if (typeof (self.sim as any).seedMMU === 'function') await (self.sim as any).seedMMU(0);
+                } catch (e) { console.warn('[Esp32Runner] seedMMU failed:', e); }
                 try {
                     if (wasmBinary && typeof self.sim.loadWasm === 'function') {
                         await self.sim.loadWasm(wasmBinary);
@@ -270,8 +312,17 @@ export class Esp32Runner extends ArmRunnerBase {
                         br.idleFlush(nowMs);
                     }
                 } catch { /* flush never breaks the drain */ }
-                if (!txQueue.length) return [];
+                const stash = (((self as any).hostSerialStash as number[] | undefined) || []);
+                if (!txQueue.length && stash.length === 0) return [];
+                // Host-observed evidence lines (TWAI-TX/RMT-TX pumps below)
+                // ride the serial needle with a HOST_ prefix so cells assert
+                // engine-observed facts — never firmware self-report.
                 const drained = txQueue.splice(0, Math.min(txQueue.length, 1024));
+                if (stash.length > 0) {
+                    try {
+                        drained.push(...stash.splice(0, Math.max(0, 1024 - drained.length)));
+                    } catch { /* stash never breaks the drain */ }
+                }
                 // MicroPython REPL sniff: `>>> ` prompt arms injection;
                 // fresh output after a full drain means the script ran.
                 try {
@@ -327,6 +378,12 @@ export class Esp32Runner extends ArmRunnerBase {
                 self.sim = null;
             },
             resetEngine(): void {
+                // Engine virtual clock restarts at 0 — fold current time
+                // into the epoch so getSimulatedTimeMs() stays monotonic
+                // (base simCycleCount never resets either). Assigned (not
+                // inferred from later reads) so torn SAB reads can't
+                // inflate it.
+                try { self.simTimeEpochMs = self.getSimulatedTimeMs(); } catch { /* ignore */ }
                 try { self.sim?.pressResetButton?.(); } catch { /* ignore */ }
             },
         };
@@ -433,6 +490,13 @@ export class Esp32Runner extends ArmRunnerBase {
             } catch { /* rmt-dht never breaks boot */ }
             try { armEsp32I2sTx(self.sim); } catch { /* i2s never breaks boot */ }
             try { wireEsp32CameraTap(self.sim); } catch { /* camera tap never breaks boot */ }
+            // RMT-TX IR observer: arm guest→host capture (the DHT
+            // re-inject path is untouched; the observer yields while
+            // rmtDhtArmed — pollRmtTx drains, two pollers would steal
+            // each other's windows).
+            for (let ch = 0; ch < 2; ch++) {
+                try { void (self.sim as any)?.armRmtTx?.(ch)?.catch?.(() => {}); } catch { /* ignore */ }
+            }
         } catch { /* taps never break boot */ }
     }
 
@@ -503,6 +567,7 @@ export class Esp32Runner extends ArmRunnerBase {
             }
             // ADC inject + PWM observe (1.2.0 taps; no-ops without them).
             try { self.driveEsp32ADC(); } catch { /* never breaks tick */ }
+            try { self.driveEsp32Touch(); } catch { /* never breaks tick */ }
             try { self.pollEsp32PWM(); } catch { /* never breaks tick */ }
             // Net leveling: model-driven pins fan out across
             // component-only nets (engine owns board nets).
@@ -527,9 +592,31 @@ export class Esp32Runner extends ArmRunnerBase {
                 if (c % 200 === 0 && typeof (self.sim as any)?.sendTwaiFrame === 'function') {
                     try { void ((self.sim as any).sendTwaiFrame(0x123, [0xDE, 0xAD, 0xBE, 0xEF]) as Promise<any>)?.catch?.(() => {}); } catch { /* ignore */ }
                 }
+                // TWAI-TX observer: the virtual peer captures NORMAL-mode
+                // guest transmits (getTwaiTx). New frames ride the serial
+                // needle as HOST_TWAI_TX so the TX cell asserts
+                // engine-observed — never firmware self-report.
+                if (c % 20 === 0 && typeof (self.sim as any)?.getTwaiTx === 'function') {
+                    try {
+                        ((self.sim as any).getTwaiTx() as Promise<any>).then((f) => {
+                            try {
+                                if (!f || !Number.isFinite(Number(f.count))) return;
+                                const seen = Number((self as any).twaiTxSeen || 0);
+                                if (Number(f.count) <= seen) return;
+                                (self as any).twaiTxSeen = Number(f.count);
+                                const data = Array.isArray(f.data) ? f.data : [];
+                                const line = `HOST_TWAI_TX:id=${Number(f.id)}${f.ext ? 'x' : ''},dlc=${Number(f.dlc)},b0=${data.length ? Number(data[0]) : -1}\n`;
+                                const st = ((((self as any).hostSerialStash as number[] | undefined) || ((self as any).hostSerialStash = [])) as number[]);
+                                for (let i = 0; i < line.length && st.length < 4096; i++) st.push(line.charCodeAt(i) & 0xff);
+                            } catch { /* observer never breaks tick */ }
+                        }).catch(() => {});
+                    } catch { /* ignore */ }
+                }
             } catch { /* never breaks tick */ }
             // RMT-DHT pump: re-inject sensor response per captured start.
             try { self.pollRmtDht(); } catch { /* never breaks tick */ }
+            // RMT-TX IR observer (guest→host NEC/raw capture).
+            try { self.pollRmtTxHost(); } catch { /* never breaks tick */ }
             try { pollEsp32I2sTx(self.sim, self.instances); } catch { /* never breaks tick */ }
             try { pollEsp32CameraTap(self.sim); } catch { /* never breaks tick */ }
         } catch { /* poll never breaks tick */ }
@@ -538,6 +625,56 @@ export class Esp32Runner extends ArmRunnerBase {
     /** Drive a GPIO input level (host-driven pin toggle, e.g. buttons). */
     async setGpioInput(pinNumber: number, high: boolean): Promise<void> {
         try { await this.sim?.setPinInput?.(pinNumber, high ? 1 : 0); } catch { /* ignore */ }
+    }
+
+    /** Touch drive: host-driven counts from wired switch/button nets
+     * (model truth, same philosophy as driveEsp32ADC — there is no
+     * touch component model). Pads T0..T9 = GPIO
+     * 4/0/2/15/13/12/14/27/33/32; engine reads low when touched
+     * (untouched default ~1000, worker-entry.js onTouchRead). Touch
+     * pins with no component on their net are skipped (engine default
+     * stands). Throttled to every 10th tick (SAB round-trip). */
+    private driveEsp32Touch(): void {
+        try {
+            const sim = this.sim as any;
+            if (!sim || typeof sim.setTouchInput !== 'function') return;
+            const c = (((this as any).touchTick || 0) + 1) % 10;
+            (this as any).touchTick = c;
+            if (c !== 0) return;
+            const pads: Array<[number, number]> = [[0, 4], [1, 0], [2, 2], [3, 15], [4, 13], [5, 12], [6, 14], [7, 27], [8, 33], [9, 32]];
+            const nets = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!nets) return;
+            for (const [pad, gpio] of pads) {
+                try {
+                    let netId: number | undefined;
+                    for (const [node, net] of nets) {
+                        const sep = node.indexOf(':');
+                        if (sep < 0) continue;
+                        if (node.slice(0, sep) !== this.boardId) continue;
+                        const pin = node.slice(sep + 1).toUpperCase();
+                        if (pin !== `GPIO${gpio}` && pin !== `${gpio}`) continue;
+                        netId = net;
+                        break;
+                    }
+                    if (netId === undefined) continue;
+                    let maxV = -1;
+                    let anyModel = false;
+                    for (const [node2, net2] of nets) {
+                        if (net2 !== netId) continue;
+                        const s2 = node2.indexOf(':');
+                        if (s2 < 0) continue;
+                        if (node2.slice(0, s2) === this.boardId) continue;
+                        const inst = this.instances.get(node2.slice(0, s2));
+                        if (!inst || typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                        anyModel = true;
+                        const v = Number((inst as any).getPinVoltage(node2.slice(s2 + 1)));
+                        if (Number.isFinite(v) && v > maxV) maxV = v;
+                    }
+                    if (!anyModel) continue;
+                    try { void sim.setTouchInput(pad, maxV > 1.0 ? 10 : 1000)?.catch?.(() => {}); } catch { /* ignore */ }
+                } catch { /* one pad never breaks the drive */ }
+            }
+        } catch { /* touch never breaks the tick */ }
     }
 
     /** ADC inject: ESP32 ADC1 lives on GPIO32-39 (VP=36/VN=39). Wiper
@@ -603,7 +740,12 @@ export class Esp32Runner extends ArmRunnerBase {
             return -1;
         }
         const n = Number(m[1]);
-        return n >= 32 && n <= 39 ? n : -1;
+        // ADC1: 32-39. ADC2 (0/2/4/12-15/25-27) has no DevKit cell, but
+        // the CAM shell exposes 0/2/4/12-15 — inject those identically
+        // (WiFi stays off in e2e, so ADC2 reads valid).
+        if (n >= 32 && n <= 39) return n;
+        if (n === 0 || n === 2 || n === 4 || (n >= 12 && n <= 15) || (n >= 25 && n <= 27)) return n;
+        return -1;
     }
 
     /** DHT22 RMT response words (42 u32, 1MHz ticks) from the component
@@ -683,6 +825,38 @@ export class Esp32Runner extends ArmRunnerBase {
                         self.rmtDhtStarts = (Number(self.rmtDhtStarts || 0) + starts) | 0;
                     }
                 } catch { /* pump never breaks tick */ }
+            }).catch(() => {});
+        } catch { /* never breaks tick */ }
+    }
+
+    /** RMT-TX IR observer (guest→host NEC/raw capture). Yields whenever
+     * the DHT cell owns RMT (pollRmtTx drains — two pollers would steal
+     * each other's windows). Non-empty captures ride the serial needle
+     * as HOST_RMT_TX. Same res shape as the proven DHT pump above. */
+    private pollRmtTxHost(): void {
+        try {
+            const self = this as any;
+            if (self.rmtDhtArmed) return;
+            if (typeof self.sim?.pollRmtTx !== 'function') return;
+            const c = ((self.rmtHostTick || 0) + 1) % 20;
+            self.rmtHostTick = c;
+            if (c !== 0) return;
+            let p: any = null;
+            try { p = self.sim.pollRmtTx(); } catch { /* ignore */ }
+            if (!p || typeof (p as any).then !== 'function') return;
+            (p as Promise<Array<{ ch: number; items: number[]; tickHz: number }>>).then((res) => {
+                try {
+                    for (const r of res || []) {
+                        const items = (r as any)?.items;
+                        if (!Array.isArray(items) || items.length < 2) continue;
+                        let nonZero = false;
+                        for (const w of items) { if ((w >>> 0) !== 0) { nonZero = true; break; } }
+                        if (!nonZero) continue;
+                        const line = `HOST_RMT_TX:ch=${Number((r as any)?.ch || 0)},words=${items.length},first=${(items[0] >>> 0).toString(16)}\n`;
+                        const st = ((((self as any).hostSerialStash as number[] | undefined) || ((self as any).hostSerialStash = [])) as number[]);
+                        for (let i = 0; i < line.length && st.length < 4096; i++) st.push(line.charCodeAt(i) & 0xff);
+                    }
+                } catch { /* observer never breaks tick */ }
             }).catch(() => {});
         } catch { /* never breaks tick */ }
     }
@@ -788,5 +962,31 @@ export class Esp32Runner extends ArmRunnerBase {
 
     protected budgetForDelta(deltaMs: number): number {
         return Math.floor(deltaMs * 1000 * this.speed);
+    }
+
+    /** Honest virtual time from the engine's own clock (`sim.nanos`:
+     * SAB_SLOT_NANOS_LO/HI = chip.cycles @160MHz × cpuFrequency scale,
+     * incl. idle fast-forward; synchronous Atomics read, safe per tick).
+     * Replaces the base budget-domain simCycleCount/16 divisor, which
+     * measured wall-requested budget (stepBudget echoes the request for
+     * this free-running core), not executed engine time. Consumers:
+     * SPI idleFlush gaps + bridge lane timestamps (self-consistent same
+     * domain), pace pill (now true engine pace). simCycleCount itself is
+     * untouched — scheduler stamps (_scheduleBoardCycles/_boardCyclesNow/
+     * publishGpio) stay in the budget domain; no _boardCyclesPerUs
+     * consumers exist outside the base, so nothing else can observe the
+     * domain split. Epoch (folded in resetEngine above) keeps monotonicity
+     * across pressResetButton; fallback freezes at last-good instead of
+     * mixing in budget-domain time. */
+    protected getSimulatedTimeMs(): number {
+        try {
+            const raw = Number((this.sim as any)?.nanos);
+            if (Number.isFinite(raw) && raw >= 0) {
+                const ms = Math.floor(this.simTimeEpochMs + raw / 1e6);
+                this.simTimeLastMs = ms;
+                return ms;
+            }
+        } catch { /* keep last-good */ }
+        try { return Math.floor(this.simTimeLastMs) || 0; } catch { return 0; }
     }
 }

@@ -142,6 +142,59 @@ export const ComponentContextMenu = ({
       });
     }
 
+    // F1 clock preset: runner honors board attr tickMHz via SysTick
+    // divider (72 Full / 36 / 24 / 12). Default untouched.
+    if (kind.includes('stm32f1') || kind.includes('stm32f103') || kind.includes('maple') || kind.includes('bluepill')) {
+      const baseMHz = 72;
+      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
+      const presets = [baseMHz, 36, 24, 12];
+      menus.push({
+        label: 'Clock',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+        options: presets.map((mhz) => ({
+          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
+          active: String(currentTick) === String(mhz),
+          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
+        })),
+      });
+    }
+
+
+    // Pico clock preset: runner honors board attr tickMHz via
+    // _picoemu_set_clock (arch default 125 M0 / 150 M33, opt-in).
+    if (kind.includes('rp2040') || kind.includes('pico')) {
+      const t = String(comp.type || '').toLowerCase();
+      const baseMHz = (t.includes('pico-2') || t.includes('pico2')) ? 150 : 125;
+      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
+      const presets = [baseMHz, ...[100, 50, 25].filter((v) => v < baseMHz)];
+      menus.push({
+        label: 'Clock',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+        options: presets.map((mhz) => ({
+          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
+          active: String(currentTick) === String(mhz),
+          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
+        })),
+      });
+    }
+
+    // ESP32 clock preset: runner passes tickMHz as init cpuFrequency —
+    // the engine scales virtual nanos by native/target. Default native.
+    if (kind.includes('esp32')) {
+      const baseMHz = 160;
+      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
+      const presets = [baseMHz, 80, 40];
+      menus.push({
+        label: 'Clock',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+        options: presets.map((mhz) => ({
+          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
+          active: String(currentTick) === String(mhz),
+          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
+        })),
+      });
+    }
+
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');
       const ledColors = [

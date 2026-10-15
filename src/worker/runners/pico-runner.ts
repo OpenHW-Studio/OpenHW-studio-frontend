@@ -153,17 +153,44 @@ export class PicoRunner extends ArmRunnerBase {
     private wantADC = false;
     private wantPWM = false;
     private compAttrById: Map<string, any> = new Map();
+    // Runner-side watchdog countdown (RP2040/RP2350 WDT recipe check):
+    // pico-emu models the watchdog registers + TRIGGER reboot but runs no
+    // timeout countdown (clocks.c has no tick/decrement path), so unfed
+    // firmware would never reboot. This poll owns the countdown via
+    // _picoemu_mem_read32 (stock + fork cores): ENABLE edge or LOAD change
+    // arms/re-feeds, expiry calls _picoemu_reset. Additive-only (never
+    // fires until firmware sets CTRL.ENABLE). Limitation: same-value
+    // periodic feeds (watchdog_update rewrites the identical LOAD) are not
+    // observable without an engine write-trap — the engine-side countdown
+    // is the correct fix; unfed shapes (all WDT cells) are exact.
+    private wdtArmed = false;
+    private wdtDeadlineMs = 0;
+    private wdtPeriodMs = 0;
+    private wdtLastLoad = 0;
+    private wdtExpiredOnce = false;
+    // Guest clock + slow-observe state (timing/pace honesty):
+    // picoClockMHz mirrors every _picoemu_set_clock call (arch default
+    // 125 M0 / 150 M33, opt-in tickMHz attr) so the sim-time divisors
+    // track the engine rate. adcLastCode skips redundant ADC register
+    // writes (idempotent sets — engine state identical). slowPollTick
+    // gates ADC/PWM observation to every 4th tick (human-speed signals;
+    // steady-state identical, see drivePicoADC/pollPicoPWM).
+    private picoClockMHz = 125;
+    private tickMHzOpt = '';
+    private adcLastCode: Array<number | null> = [null, null, null];
+    private slowPollTick = 0;
 
     constructor(
         hexData: string,
         componentsDef: any[],
         wiresDef: any[],
         onStateUpdate: (state: any) => void,
-        options: AVRRunnerOptions & { pyScript?: string; arch?: string | number; wirelessMode?: string; boardSpi?: string | number; ethLive?: string } = {},
+        options: AVRRunnerOptions & { pyScript?: string; arch?: string | number; wirelessMode?: string; boardSpi?: string | number; ethLive?: string; tickMHz?: string | number; boardTickMHz?: string | number } = {},
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.pyScript = String((options as any)?.pyScript || '');
         this.archOpt = String((options as any)?.arch || (options as any)?.boardArch || '').toLowerCase();
+        this.tickMHzOpt = String((options as any)?.tickMHz ?? (options as any)?.boardTickMHz ?? '').trim();
         this.fixedFirmwareUrl = String((options as any)?.fixedFirmware || '').trim();
         const typeStr = String((options as any)?.boardType || '') + ' ' + String(this.boardId || '');
         this.isPico2 = /pico-?2|rp2350|2350/.test(typeStr);
@@ -451,7 +478,16 @@ export class PicoRunner extends ArmRunnerBase {
                         break;
                     }
                     if (volts !== null) {
-                        try { mod._picoemu_adc_set(ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
+                        const code = Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)));
+                        try {
+                            // Idempotent register set: skip the engine call
+                            // when the code is unchanged (engine state
+                            // identical, analogRead returns the same value).
+                            if (this.adcLastCode[ch] !== code) {
+                                this.adcLastCode[ch] = code;
+                                mod._picoemu_adc_set(ch, code);
+                            }
+                        } catch { /* ignore */ }
                     }
                 } catch { /* one pin never breaks the drain */ }
             }
@@ -460,17 +496,17 @@ export class PicoRunner extends ArmRunnerBase {
 
     /** PWM observe: poll slices 0-7 via _picoemu_pwm_read (freq + duty A/B
      * in basis points); strongest duty drives LED models via onPWM.
-     * No-ops on cores without the export. */
+     * No-ops on cores without the export. Single scratch allocation per
+     * poll (was one per slice — same values read, 8× fewer mallocs). */
     private pollPicoPWM(): void {
         try {
             const mod = this.mod;
             if (!mod || typeof mod._picoemu_pwm_read !== 'function' || typeof mod._malloc !== 'function') return;
             let best = 0;
             let bestFreq = 0;
-            for (let slice = 0; slice < 8; slice++) {
-                try {
-                    const ptr = mod._malloc(16);
-                    let freq = 0, da = 0, db = 0, en = 0;
+            const ptr = mod._malloc(16);
+            try {
+                for (let slice = 0; slice < 8; slice++) {
                     try {
                         const r = mod._picoemu_pwm_read(slice, ptr, ptr + 4, ptr + 8, ptr + 12);
                         // NOTE: returns 0 on success (like POSIX), nonzero
@@ -482,13 +518,13 @@ export class PicoRunner extends ArmRunnerBase {
                         // drain hit the same issue with HEAPU16).
                         const b = mod.HEAPU8;
                         const u32 = (o: number) => ((b[o] || 0) | ((b[o + 1] || 0) << 8) | ((b[o + 2] || 0) << 16) | ((b[o + 3] || 0) << 24)) >>> 0;
-                        freq = u32(ptr); da = u32(ptr + 4); db = u32(ptr + 8); en = u32(ptr + 12) ? 1 : 0;
-                    } finally { try { mod._free(ptr); } catch { /* ignore */ } }
-                    if (!en) continue;
-                    const d = Math.max(da, db) / 100;
-                    if (d > best) { best = d; bestFreq = freq; }
-                } catch { /* one slice never breaks the poll */ }
-            }
+                        const freq = u32(ptr), da = u32(ptr + 4), db = u32(ptr + 8), en = u32(ptr + 12) ? 1 : 0;
+                        if (!en) continue;
+                        const d = Math.max(da, db) / 100;
+                        if (d > best) { best = d; bestFreq = freq; }
+                    } catch { /* one slice never breaks the poll */ }
+                }
+            } finally { try { mod._free(ptr); } catch { /* ignore */ } }
             if (best <= 0) return;
             const duty01 = Math.max(0, Math.min(1, best / 100));
             for (const inst of this.instances.values()) {
@@ -501,6 +537,51 @@ export class PicoRunner extends ArmRunnerBase {
                 } catch { /* one instance never breaks pwm */ }
             }
         } catch { /* PWM never breaks the tick */ }
+    }
+
+    /** Runner-side watchdog countdown (see field note). Polls the
+     *  watchdog CTRL/LOAD via _picoemu_mem_read32; expiry resets the core
+     *  so unfed firmware reboots (WDT_BOOT needles repeat). Register map
+     *  from the pico-sdk (RP2040 CTRL=0x40058000, RP2350=0x400D8000;
+     *  CTRL off 0x00 ENABLE=bit30 TRIGGER=bit31, LOAD off 0x04 in 1us
+     *  ticks, RP2040 XFACTOR 2 per errata RP2040-E1, RP2350 XFACTOR 1).
+     *  No-ops when the export is absent or the firmware never arms the WDT. */
+    private pollPicoWDT(): void {
+        try {
+            const mod = this.mod;
+            if (!mod || typeof mod._picoemu_mem_read32 !== 'function'
+                || typeof mod._picoemu_reset !== 'function') return;
+            const base = this.arch === PICO_ARCH_M0 ? 0x40058000 : 0x400D8000;
+            let ctrl = 0, load = 0;
+            try {
+                ctrl = mod._picoemu_mem_read32(base) >>> 0;
+                load = mod._picoemu_mem_read32(base + 4) >>> 0;
+            } catch { return; }
+            // Firmware-requested reboot (TRIGGER) is engine-owned — stay out.
+            if ((ctrl & 0x80000000) !== 0) { this.wdtArmed = false; this.wdtExpiredOnce = false; return; }
+            if ((ctrl & 0x40000000) === 0) { this.wdtArmed = false; this.wdtExpiredOnce = false; return; }
+            const xfactor = this.arch === PICO_ARCH_M0 ? 2 : 1;
+            const periodMs = Math.max(1, (load >>> 0) / (1000 * xfactor));
+            const now = performance.now();
+            if (!this.wdtArmed || load !== this.wdtLastLoad) {
+                // ENABLE edge or LOAD change (re-arm / feed with new period).
+                this.wdtArmed = true;
+                this.wdtLastLoad = load;
+                this.wdtPeriodMs = periodMs;
+                this.wdtDeadlineMs = now + periodMs;
+                this.wdtExpiredOnce = false;
+                return;
+            }
+            if (now < this.wdtDeadlineMs) { this.wdtExpiredOnce = false; return; }
+            // Expired: debounce one extra poll (bus misread guard), then
+            // reset the core — setup() re-runs and the BOOT needle repeats.
+            // The watchdog stays conceptually armed (silicon keeps it running
+            // across its own reset); setup's wdt_begin re-feeds anyway.
+            if (!this.wdtExpiredOnce) { this.wdtExpiredOnce = true; return; }
+            this.wdtExpiredOnce = false;
+            this.wdtDeadlineMs = now + this.wdtPeriodMs;
+            try { mod._picoemu_reset(); } catch { /* reset never breaks tick */ }
+        } catch { /* WDT never breaks the tick */ }
     }
 
     /** Drain SPI mirror ring entries into the bridge (AVR-adapter semantics). */
@@ -613,12 +694,18 @@ export class PicoRunner extends ArmRunnerBase {
                     if (!self.archOpt && (battrs as any).arch) {
                         self.archOpt = String((battrs as any).arch).toLowerCase();
                     }
+                    if (!self.tickMHzOpt && (battrs as any).tickMHz) {
+                        self.tickMHzOpt = String((battrs as any).tickMHz).trim();
+                    }
                 } catch { /* attrs never break boot */ }
                 if (!self.fixedFirmwareUrl) {
                     self.arch = self.resolveArch(payloadToU8(firmware));
                     self.mod._picoemu_init(self.arch);
                 }
-                self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
+                // Guest clock: arch default (125 M0 / 150 M33), opt-in
+                // tickMHz attr — the engine honors it for guest timing
+                // (timers/SysTick/PWM divide by cycles_per_us).
+                self.applyPicoClock();
                 // I2C mirror attach (post-init, pre-firmware): one call for
                 // every owned slave address (see attachI2CMirrors).
                 try { self.attachI2CMirrors(); } catch { /* attach never breaks boot */ }
@@ -646,7 +733,7 @@ export class PicoRunner extends ArmRunnerBase {
                             const buf = new Uint8Array(await res.arrayBuffer());
                             self.arch = self.resolveArch(buf);
                             self.mod._picoemu_init(self.arch);
-                            self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
+                            self.applyPicoClock();
                             self.loadImage(buf);
                         } else {
                             console.warn('[PicoRunner] fixed firmware unavailable:', res.status);
@@ -701,10 +788,20 @@ export class PicoRunner extends ArmRunnerBase {
                     try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
                     // SPI mirror drain: polled MOSI ring → bridge → models.
                     try { self.drainSPIMirror(); } catch { /* drain never breaks tick */ }
-                    // ADC inject: pot wipers drive RP2040 ADC0-2 (GP26-28).
-                    try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
-                    // PWM observe: first enabled slice drives LED models.
-                    try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
+                    // ADC inject + PWM observe: human-speed signals — every
+                    // 4th tick is identical in steady state (pots/static
+                    // duty converge; see slowPollTick). WDT/PIO/I2C/SPI
+                    // stay every-tick (latency-sensitive or already
+                    // pending-guarded).
+                    self.slowPollTick = (self.slowPollTick + 1) & 0xffff;
+                    if ((self.slowPollTick & 3) === 0) {
+                        // ADC inject: pot wipers drive RP2040 ADC0-2 (GP26-28).
+                        try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
+                        // PWM observe: first enabled slice drives LED models.
+                        try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
+                    }
+                    // Watchdog countdown: unfed WDT reboots (no engine tick).
+                    try { self.pollPicoWDT(); } catch { /* drain never breaks tick */ }
                     // PIO WS2812 mirror: PIO0 SM0 RX words → NeoPixel frames.
                     try { pollPicoPioNeopixel(self.mod, self.instances); } catch { /* drain never breaks tick */ }
                     // Net leveling: model-driven pins (shift-register
@@ -839,6 +936,37 @@ export class PicoRunner extends ArmRunnerBase {
         return this.isPico2 ? PICO_ARCH_M33 : PICO_ARCH_M0;
     }
 
+    /** Guest clock in MHz for _picoemu_set_clock. Opt-in board attr
+     *  `tickMHz` (integer 1–250, mirrors the engine web-UI clock
+     *  dropdown) wins; otherwise `fallback` when given, else the arch
+     *  default (125 RP2040 / 150 RP2350). Absent/invalid attr leaves
+     *  the default untouched. */
+    private resolvePicoClockMHz(fallback?: number): number {
+        try {
+            const v = Number(String(this.tickMHzOpt || '').trim());
+            if (Number.isFinite(v) && v >= 1 && v <= 250) return Math.max(1, Math.floor(v));
+        } catch { /* fall through to default */ }
+        if (typeof fallback === 'number' && Number.isFinite(fallback)) return fallback;
+        return this.arch === PICO_ARCH_M0 ? 125 : 150;
+    }
+
+    /** Record + apply the guest clock (see resolvePicoClockMHz). The
+     *  engine honors it for guest timing: retired cycles convert to
+     *  timer/RTC/TIMER1 microseconds via cycles_per_us and SysTick
+     *  counts raw cycles (src/cpu.c timing_tick); the PWM readback
+     *  derives sysclk from it (src/pwm.c:182); RV32 CLINT re-latches
+     *  (src/picoemu_wasm.c picoemu_set_clock). Load-bearing, not
+     *  cosmetic: picoemu_init resets the clock to 1MHz (fast-forward
+     *  default), so without this call guest timers would run 125x fast.
+     *  picoClockMHz doubles as the sim-time divisor below. */
+    private applyPicoClock(fallback?: number): void {
+        try {
+            const mhz = this.resolvePicoClockMHz(fallback);
+            this.picoClockMHz = mhz;
+            try { this.mod?._picoemu_set_clock?.(mhz); } catch { /* older builds */ }
+        } catch { /* clock never breaks boot */ }
+    }
+
     private loadImage(u8: Uint8Array): void {
         // UF2 magic is 'UF2\n' = 55 46 32 0A (NOT 55 46 44 32 = 'UFD2';
         // probed live: every backend UF2 starts 55 46 32 0A and the old
@@ -865,8 +993,9 @@ export class PicoRunner extends ArmRunnerBase {
             this.isMicroPython = true;
             // MicroPython USB-CDC timing is validated at 125MHz (engine
             // harness proof); the generic 150MHz M33 clock leaves the
-            // M33 image silent.
-            try { this.mod._picoemu_set_clock(125); } catch { /* ignore */ }
+            // M33 image silent. An explicit tickMHz attr still wins
+            // (opt-in), otherwise the validated 125 stands.
+            try { this.applyPicoClock(125); } catch { /* ignore */ }
         } catch (e) {
             console.warn('[PicoRunner] MicroPython base UF2 unavailable:', e);
         }
@@ -929,6 +1058,32 @@ export class PicoRunner extends ArmRunnerBase {
     protected budgetForDelta(deltaMs: number): number {
         // pico-emu worker uses 2.5M steps / 16ms; match that cadence.
         return Math.floor(deltaMs * 156250 * this.speed);
+    }
+
+    /** Board steps per microsecond: active guest clock (125 RP2040 /
+     *  150 RP2350 / tickMHz opt-in). Same override shape as F1/F4.
+     *  NOTE the simCycleCount domain counts _picoemu_step returns, which
+     *  are core-0 *instructions*, not cycles (docs/PICOEMU.md:
+     *  "Execute up to N instructions; returns count run";
+     *  src/picoemu_wasm.c returns `total`, plus WFI fast-forward chunks
+     *  counted in cycle units, so the return even mixes units). This
+     *  divisor therefore yields instruction-time (≈ cycle-time: modeled
+     *  per-instruction costs average ~1 cycle, see cpu.c
+     *  timing_instruction_cycles) — the honest available measure.
+     *  NO engine-cycle override: _picoemu_cycle_count reads
+     *  global_cycle_count, which advances ONLY while the irq-latency
+     *  profiler runs (cpu.c:1610-1611 gated on irq_latency_enabled,
+     *  default 0 in devtools.c:925; the runner never starts it), so it
+     *  is 0 on every M0/M33 run; on RV32 it counts exactly 1/retired
+     *  step, i.e. numerically identical to this domain anyway. Base
+     *  instruction-time stands — no fabricated clocks. (Ungated-counter
+     *  engine ask: vendor/emulator-hook-specs/pico-emu.md P2.) */
+    protected override cyclesPerMicrosecond(): number {
+        try {
+            const m = Math.floor(Number(this.picoClockMHz) || 0);
+            if (m >= 1 && m <= 1000) return m;
+        } catch { /* fall through */ }
+        return this.arch === PICO_ARCH_M0 ? 125 : 150;
     }
 
     protected maxBudgetPerTick(): number {

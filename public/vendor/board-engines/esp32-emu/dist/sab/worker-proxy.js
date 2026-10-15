@@ -1328,7 +1328,10 @@ var SimulatorWorker = class {
         if (msg.chipInfo) Object.assign(this._chipInfo, msg.chipInfo);
         if (Atomics.load(this.ctrl, SAB_SLOT_ERR_FLAG) && this.errMsg) {
           const end = this.errMsg.indexOf(0);
-          const errText = new TextDecoder().decode(this.errMsg.subarray(0, end >= 0 ? end : this.errMsg.length));
+          // BROWSER FIX (OpenHW mirror): errMsg views a SharedArrayBuffer and
+          // TextDecoder rejects shared views — copy to a private buffer first
+          // so engine errors surface instead of masking as decode throws.
+          const errText = new TextDecoder().decode(new Uint8Array(this.errMsg.subarray(0, end >= 0 ? end : this.errMsg.length)));
           if (this._onError) {
             this._onError(new Error(errText));
             this._onError = null;

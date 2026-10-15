@@ -3414,7 +3414,11 @@ var Esp32GpioMatrixEntries = [
 ];
 
 // src/peripherals/common/partition-table.js
-import { createHash } from "node:crypto";
+// BROWSER STUB (OpenHW vendor mirror): node:crypto is unreachable from a
+// page/worker context (bare-specifier fetch is CORS-blocked), and the default
+// merged-bin boot path never computes custom-partition MD5. The single
+// caller throws honestly if custom-CSV partitions are ever attempted.
+var createHash = () => { throw new Error("partition MD5 unavailable in browser"); };
 var PARTITION_MAGIC = 20650;
 var PARTITION_ENTRY_SIZE = 32;
 var PARTITION_TABLE_OFFSET = 32768;

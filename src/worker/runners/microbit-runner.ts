@@ -196,6 +196,16 @@ export class MicrobitRunner extends ArmRunnerBase {
                 return stepped > 0 ? stepped : n;
             },
             drainUartOut(): number[] {
+                // TEMP cell: board attr `tempC` drives the engine die-temp
+                // (temp_set_celsius, synchronous — no pump). Re-applied per
+                // drain so fixed-firmware cells and late attr edits converge.
+                try {
+                    const battrs = (self as any).compAttrById?.get?.(self.boardId) || {};
+                    const c = Number((battrs as any)?.tempC);
+                    if (Number.isFinite(c) && self.mod?.temp_set_celsius) {
+                        self.mod.temp_set_celsius(Math.max(-40, Math.min(85, c)));
+                    }
+                } catch { /* temp drive never breaks the drain */ }
                 try {
                     const s = String(self.mod?.get_uart_output?.() || '');
                     if (!s) return [];
@@ -227,6 +237,11 @@ export class MicrobitRunner extends ArmRunnerBase {
         const wasm = this.mod;
         const cpu = this.cpu;
         if (!wasm || !cpu) return;
+        // System extras (I2S/NFC drains only — taps verified in-file
+        // i2s_take_tx/take_rx/complete_tx/complete_rx 1483-1540,
+        // nfct_take_tx/take_rx/complete_tx/complete_rx + nfct_field_present
+        // 1631-1700; WDT-reboot/sleep-wake/QSPI-slot are DRAFT, excluded).
+        try { this.pumpSysExtras(); } catch { /* never breaks tick */ }
         // UARTE TX: complete with guest bytes (polled-TXD firmware like
         // hello_nrf never stages DMA — take is empty, zero cost).
         try {
@@ -267,6 +282,90 @@ export class MicrobitRunner extends ArmRunnerBase {
                     const fill = new Uint8Array(t[1] * 2).fill(0x80);
                     cpu.mem_write(t[0], fill);
                     wasm.saadc_complete_result(t[1]);
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        // NVMC erase pump (NVS cell): guest page-erase is async in the
+        // model — take returns the pending erase descriptor, complete
+        // acknowledges it (same take/complete shape as the DMA taps above).
+        // Word writes have no tap (synchronous in-model); the cell asserts
+        // erase→write→readback so a silent write gap fails loudly.
+        try {
+            const e = (wasm as any).nvmc_take_erase?.();
+            if (e && e.length > 0) {
+                try { (wasm as any).nvmc_complete_erase?.(); } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+    }
+
+    /** System-extras pump (every frame, after the DMA taps): drains
+     * guest-initiated I2S/NFC takes into board-state counters (no air
+     * peer staged — owner engine owns the air models; counts are future
+     * cell oracles, never faked traffic). NFC field is attr-gated
+     * (nfcField). WDT-reboot / sleep-wake / QSPI are NOT pumped here
+     * (no WasmCpu reboot/wake API; QSPI slot name unverified — DRAFT).
+     * Firmware .bins required for I2S/NFC cells (no backend nRF core). */
+    private pumpSysExtras(): void {
+        const wasm = this.mod as any;
+        const cpu = this.cpu;
+        if (!wasm || !cpu) return;
+        const self = this as any;
+        const mark = (key: string, val: any) => {
+            try { (this.instances.get(this.boardId) as any)?.setState?.({ [key]: val }); } catch { /* ignore */ }
+        };
+        // First-tick wiring: NFC field only (attr-gated).
+        try {
+            if (!self.sysExtrasWired) {
+                self.sysExtrasWired = true;
+                let attrs: any = {};
+                try { attrs = self.compAttrById?.get?.(self.boardId) || {}; } catch { attrs = {}; }
+                try {
+                    if ((attrs as any)?.nfcField && typeof wasm.nfct_field_present === 'function') {
+                        wasm.nfct_field_present(true);
+                    }
+                } catch { /* ignore */ }
+            }
+        } catch { /* wiring never breaks the pump */ }
+        // I2S TX: ack taken words back verbatim (no consumer model —
+        // the count is the oracle), RX: complete pending with silence.
+        try {
+            const tx = wasm.i2s_take_tx?.();
+            if (tx && tx.length > 0) {
+                try {
+                    self.i2sTxWords = (Number(self.i2sTxWords || 0) + tx.length) | 0;
+                    mark('i2sTxWords', self.i2sTxWords);
+                    wasm.i2s_complete_tx(new Uint8Array(new Uint32Array(tx).buffer));
+                } catch { try { wasm.i2s_complete_tx(new Uint8Array(0)); } catch { /* ignore */ } }
+            }
+        } catch { /* ignore */ }
+        try {
+            const rx = wasm.i2s_take_rx?.();
+            if (rx && rx.length > 0) {
+                try {
+                    self.i2sRxReqs = (Number(self.i2sRxReqs || 0) + 1) | 0;
+                    mark('i2sRxReqs', self.i2sRxReqs);
+                    wasm.i2s_complete_rx();
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        // NFC takes: count only (no peer frames staged).
+        try {
+            const t = wasm.nfct_take_tx?.();
+            if (t && t.length > 0) {
+                try {
+                    self.nfcTxFrames = (Number(self.nfcTxFrames || 0) + 1) | 0;
+                    mark('nfcTxFrames', self.nfcTxFrames);
+                    wasm.nfct_complete_tx();
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+        try {
+            const r = wasm.nfct_take_rx?.();
+            if (r && r.length > 0) {
+                try {
+                    self.nfcRxFrames = (Number(self.nfcRxFrames || 0) + 1) | 0;
+                    mark('nfcRxFrames', self.nfcRxFrames);
+                    wasm.nfct_complete_rx(0);
                 } catch { /* ignore */ }
             }
         } catch { /* ignore */ }

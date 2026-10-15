@@ -1854,10 +1854,11 @@ export class Stm32f1Runner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // F1 bench: adaptive 20K/50K batches; ~50K inst/ms keeps UI smooth.
-        // Raised toward cycle-honest 72K/ms: pace is now a first-class proof
-        // (pace specs assert guest-time advance), DHT exactness guards it.
-        return Math.floor(deltaMs * 72000 * this.speed);
+        // Measured: engine does ~45 MIPS standalone (Node, showcase fw), so
+        // 72K/ms needs ~13ms host per 8ms tick — chronic overrun that slows
+        // everything downstream. 50K/ms fits the tick; virtual-time gains
+        // come from the tickMHz divider, not the budget. Reverted 72K→50K.
+        return Math.floor(deltaMs * 50000 * this.speed);
     }
 
     protected maxBudgetPerTick(): number {
