@@ -10,6 +10,12 @@ function extractParamValue(key, comp, telemetryData, state, activeMetrics, activ
   if (val === undefined) val = activeMetrics?.[key];
   if (val === undefined) val = telemetryData?.metrics?.[key];
   if (val === undefined) val = activeCustom?.[key];
+  // Custom telemetry rides inside metrics.custom (getUniversalMetrics) —
+  // surface it as a last-resort source so per-component params (LCD text,
+  // display fill, buzzing state, mic amplitude) render instead of N/A.
+  // Additive fallback only; never overrides richer sources above.
+  if (val === undefined) val = activeMetrics?.custom?.[key];
+  if (val === undefined) val = telemetryData?.metrics?.custom?.[key];
 
   if (val === undefined && String(key).startsWith('deepSilicon')) {
     const deepObj = comp.deepSilicon || telemetryData?.deepSilicon;

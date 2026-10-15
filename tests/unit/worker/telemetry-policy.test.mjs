@@ -56,8 +56,7 @@ describe('telemetry enforcement (plan §5.5, Phase 3 seed)', () => {
     assert.deepEqual(collectComponentTelemetry(off, 'detail', undefined), {});
   });
 
-  test('sampling policy matches the wired ingest semantics', () => {
-    // Defaults: 250 ms window at 1x, Delta bypasses.
+  test('sampling policy matches the wired ingest semantics', () => {    // Defaults: 250 ms window at 1x, Delta bypasses.
     assert.deepEqual(telemetrySamplePolicy('detail', 250, 1.0), { throttleMs: 250, bypassThrottle: false });
     assert.deepEqual(telemetrySamplePolicy('delta', 250, 1.0), { throttleMs: 250, bypassThrottle: true });
     // Speed scaling with 50 ms floor; junk inputs fall back safely.
@@ -71,5 +70,14 @@ describe('telemetry enforcement (plan §5.5, Phase 3 seed)', () => {
     assert.equal(shouldEmitTelemetrySample(0, 250, p), true);
     const d = telemetrySamplePolicy('delta', 250, 1.0);
     assert.equal(shouldEmitTelemetrySample(0, 0, d), true);
+  });
+  test('formatted summaries surface metrics.custom (no silent N/A)', async () => {
+    const { formatTelemetryEntry } = await import('../../../src/pages/simulationpage/services/TelemetryManager.js');
+    const comp = {
+      id: 'mic1', type: 'openhw-inmp441', state: {}, delta: false,
+      telemetryData: { metrics: { custom: { peakAmplitude: '0.123' } } },
+    };
+    const out = formatTelemetryEntry(comp, 'detail', { mic1: ['peakAmplitude'] });
+    assert.match(String(out.summary || ''), /0\.123/);
   });
 });
