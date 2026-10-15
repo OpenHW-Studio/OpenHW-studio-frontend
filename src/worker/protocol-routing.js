@@ -12,10 +12,10 @@ import {
 
 export function isProgrammableBoardType(type) {
   const s = String(type || '');
-  // Camera component shells (openhw-esp32-cam) share a family token but
-  // are NOT boards: classifying them as boards spawns an esp32-emu engine
-  // that dies on "Unknown chip", taking the real board's run down with it.
-  if (/-cam/i.test(s)) return false;
+  // (Historical note: openhw-esp32-cam used to be excluded here because it
+  // spawned an esp32-emu engine that died on "Unknown chip", taking the real
+  // board's run down with it. The Esp32Runner now boots the esp32-cam board
+  // preset (chipType stays 'ESP32'), so the cam board routes normally.)
   // ATtiny85 has no dedicated core/CPU in the sim; it runs Uno-compiled
   // firmware on AVRRunner (documented attiny-path). It IS a programmable
   // board for run routing — without this the run falls back to a ghost

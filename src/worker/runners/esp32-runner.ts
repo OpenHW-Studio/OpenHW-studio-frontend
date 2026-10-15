@@ -47,6 +47,15 @@ export class Esp32Runner extends ArmRunnerBase {
     private sim: any = null;
     private isMicroPython = false;
     private board: string;
+    // MicroPython REPL inject (mirrors PicoRunner.startPythonInject):
+    // chunked exec() lines over UART, paced per pump on the `>>> ` prompt.
+    private pyScript = '';
+    private pyQueue = '';
+    private pyQueuePos = 0;
+    private pyPromptSeen = false;
+    private pyInjectAttempts = 0;
+    private pyOutputSeen = false;
+    private pyUartTail = '';
 
     constructor(
         hexData: string,
@@ -63,7 +72,76 @@ export class Esp32Runner extends ArmRunnerBase {
             (componentsDef || []).find((c: any) => String(c?.id) === String((options as any)?.boardId))?.type || '',
         ).toLowerCase();
         this.board = optBoard.includes('cam') || compBoard.includes('cam') ? 'esp32-cam' : 'esp32';
+        try { this.pyScript = String((options as any)?.pyScript || ''); } catch { this.pyScript = ''; }
         void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
+    }
+
+    /** Split a MicroPython script into short exec('...') payload lines
+     * (same contract as PicoRunner.chunkExecLines: cuts only at blank
+     * lines or between zero-indent lines so blocks never split). */
+    private static chunkExecLines(script: string, maxChars: number): string[] {
+        const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+        const lines = String(script || '').split('\n');
+        const paras: string[][] = [];
+        let cur: string[] = [];
+        const push = () => { if (cur.length) paras.push(cur); cur = []; };
+        for (const ln of lines) {
+            if (ln.trim() === '') { push(); continue; }
+            cur.push(ln);
+        }
+        push();
+        const out: string[] = [];
+        for (const para of paras) {
+            let buf: string[] = [];
+            const flush = () => { if (buf.length) { out.push(esc(buf.join('\n'))); buf = []; } };
+            for (const ln of para) {
+                buf.push(ln);
+                const hasIndent = buf.some((l) => /^\s/.test(l));
+                if (!hasIndent && buf.join('\n').length >= maxChars) flush();
+            }
+            flush();
+        }
+        return out.filter((s) => s.length > 0);
+    }
+
+    /** Build the paced REPL queue: Ctrl-C prefix + exec() chunks sharing
+     * __main__ globals (imports/I2C state persist across them). */
+    private startPythonInject(): void {
+        try {
+            const script = this.pyScript.replace(/\r\n/g, '\n');
+            const chunks = Esp32Runner.chunkExecLines(script, 150);
+            this.pyQueue = `\x03${chunks.map((c) => `exec('${c}')\r\n`).join('')}`;
+            this.pyQueuePos = 0;
+            this.pyOutputSeen = false;
+        } catch { /* retry next pump */ }
+    }
+
+    /** Paced MP inject, called from the wall pump (50ms cadence): arm on
+     * the `>>> ` prompt (3 attempts max), then 16 chars/pump so the REPL
+     * line buffer never overruns. No-op without a script. */
+    private pumpPythonInject(): void {
+        try {
+            if (!this.isMicroPython || !this.pyScript.trim()) return;
+            if (this.pyPromptSeen && this.pyInjectAttempts < 3 && !this.pyOutputSeen
+                && this.pyQueuePos >= this.pyQueue.length) {
+                this.startPythonInject();
+                this.pyInjectAttempts++;
+            }
+            if (this.pyQueuePos < this.pyQueue.length && this.sim) {
+                // 48 chars/pump: exec() lines stay short (REPL-safe) while
+                // the ~1.1KB script drains in ~1.2s instead of ~3.5s.
+                // Uint8Array (NOT string): the proxy's string path uses
+                // node Buffer.from, which throws in the browser bundle and
+                // silently wedges the drain (caught below, pos never moves).
+                const chunk = this.pyQueue.slice(this.pyQueuePos, this.pyQueuePos + 48);
+                try {
+                    if (typeof this.sim.sendUart === 'function') {
+                        this.sim.sendUart(new TextEncoder().encode(chunk));
+                    } else return;
+                } catch { return; }
+                this.pyQueuePos += chunk.length;
+            }
+        } catch { /* inject never breaks the pump */ }
     }
 
     private makeEngine() {
@@ -121,7 +199,18 @@ export class Esp32Runner extends ArmRunnerBase {
                     } catch { /* boot ROM only */ }
                 }
                 self.sim = new SimulatorWorker();
-                self.sim._onUART = (b: number) => { txQueue.push(b & 0xff); };
+                self.sim._onUART = (b: number) => {
+                    txQueue.push(b & 0xff);
+                    // REPL prompt sniff at arrival: the drain cadence only
+                    // observes whatever txQueue holds, so watch the bytes
+                    // where they land.
+                    try {
+                        if (self.isMicroPython) {
+                            self.pyUartTail = (self.pyUartTail + String.fromCharCode(b & 0xff)).slice(-24);
+                            if (self.pyUartTail.endsWith('>>> ')) self.pyPromptSeen = true;
+                        }
+                    } catch { /* sniff never breaks RX */ }
+                };
                 self.sim._onError = (e: any) => console.error('[Esp32Runner]', e);
                 // Board preset: 'esp32-cam' applies ESP32_CAM_DEFAULTS
                 // (4MB flash + 4MB PSRAM) via applyBoardPreset semantics;
@@ -144,12 +233,17 @@ export class Esp32Runner extends ArmRunnerBase {
                 // bytes prestage per-cell via pushI2cTx when needed.
                 try { self.wireBusTaps(); } catch { /* taps never break boot */ }
                 // Poll pump: SimulatorWorker needs pollUart() calls to move
-                // bytes from the WASM ring into _onUART.
+                // bytes from the WASM ring into _onUART. Reschedules
+                // unconditionally while the sim lives (NOT gated on
+                // base `running`: this pump first runs inside loadFirmware,
+                // before boot() flips running — gating on it killed the
+                // chain on its first call and MicroPython inject never ran).
                 const pump = () => {
                     if (!self.sim) return;
                     try { self.sim.pollUart(); } catch { /* ignore */ }
                     try { self.pollBusTaps(); } catch { /* ignore */ }
-                    if (self.running) setTimeout(pump, 50);
+                    try { self.pumpPythonInject(); } catch { /* inject never breaks the pump */ }
+                    try { setTimeout(pump, 50); } catch { /* ignore */ }
                 };
                 pump();
             },
@@ -177,11 +271,27 @@ export class Esp32Runner extends ArmRunnerBase {
                     }
                 } catch { /* flush never breaks the drain */ }
                 if (!txQueue.length) return [];
-                return txQueue.splice(0, Math.min(txQueue.length, 1024));
+                const drained = txQueue.splice(0, Math.min(txQueue.length, 1024));
+                // MicroPython REPL sniff: `>>> ` prompt arms injection;
+                // fresh output after a full drain means the script ran.
+                try {
+                    if (self.isMicroPython) {
+                        let s = '';
+                        for (let i = 0; i < drained.length; i++) s += String.fromCharCode(drained[i] & 0xff);
+                        self.pyUartTail = (self.pyUartTail + s).slice(-24);
+                        if (self.pyUartTail.endsWith('>>> ')) self.pyPromptSeen = true;
+                        if (self.pyQueue.length > 0 && self.pyQueuePos >= self.pyQueue.length && s.length > 0) {
+                            self.pyOutputSeen = true;
+                        }
+                    }
+                } catch { /* sniff never breaks the drain */ }
+                return drained;
             },
             injectUartByte(value: number, _source?: string) {
                 try {
-                    const ch = String.fromCharCode(value & 0xff);
+                    // Uint8Array (NOT string): see pumpPythonInject — the
+                    // proxy string path uses node Buffer (throws in browser).
+                    const ch = new Uint8Array([value & 0xff]);
                     if (typeof self.sim?.sendUart === 'function') self.sim.sendUart(ch);
                 } catch { /* ignore */ }
             },
