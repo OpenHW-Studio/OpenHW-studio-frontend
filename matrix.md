@@ -8,13 +8,16 @@ missing) / `NONE` (silicon-capable, no proof yet) / `ABSENT` (no such silicon) /
 - Proof = serial needle + telemetry/liveOop evidence in the named spec.
 - Last updated: 2026-10-09 (all sections survey-verified; RED column fills from sweep).
 
-## STM32F1 (survey-verified 2026-10-09; zero RED among stm32* specs)
+## STM32F1 (survey-verified 2026-10-09; DHT RED all-F103 — intermittent per-read nan under hunt; all other stm32* cells green)
 
 | Board | UART | SoftSerial | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire/DHT | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (nan regression under hunt; Maple/CB exact) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
-| openhw-stm32-maple-mini | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
-| openhw-stm32f103cb | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
+| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (per-read nan ~12-16% on all F103 boards; reads exact 24.00/50.00 when good; census BP 3/26, CB 4/25, MP 4/26) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
+| openhw-stm32-maple-mini | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | RED (same all-F103 intermittent nan; census MP 4/26) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
+| openhw-stm32f103cb | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | RED (same all-F103 intermittent nan; census CB 4/25) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
+| openhw-stm32-gd32f103c8 | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
+| openhw-stm32-gd32f103cb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
+| openhw-stm32-gd32f103rb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
 
 UART note: all FULL cells prove TX; HW-UART RX loopback unproven (SW-UART RX
 proven on bluepill only).
@@ -22,7 +25,9 @@ Specs: stm32-can, stm32-softserial(+tx), stm32-dht22, stm32-rtc, stm32-gpio-in,
 stm32-i2c, stm32-spi, stm32-595, stm32-adc, stm32-pwm, stm32-mpu6050,
 stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep,
 stm32f1-maple-cb (6/6), stm32f1-maple-cb-2 (8/8), stm32f1-dma, stm32f1-crc,
-stm32f1-sys (WDG/EXTI/BKP, all three boards).
+stm32f1-sys (WDG/EXTI/BKP, all three boards), stm32-gd32-uart (3/3),
+stm32-gd32-analog (9/9), stm32-gd32-core (15/15: DMA/CRC/WDG/EXTI/BKP),
+stm32-gd32-wave2 (12/12: softserial/RTC/DHT/CAN).
 
 ## STM32F4 (survey-verified 2026-10-09; chip flags from engine CHIPS table)
 

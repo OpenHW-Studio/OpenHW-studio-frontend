@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // (attachI2cSlave + pollI2c events into the shared I2C bridge).
 // Same assert shape as the F1/Pico I2C rows.
 test.describe('ESP32 I2C (devkit OLED)', () => {
-  test.setTimeout(240000);
+  test.setTimeout(420000); // 200s run + slow ESP32 boot + compile headroom
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/**', async (route) => {
       const url = route.request().url();
