@@ -96,6 +96,12 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
                 return await import('esp32-emu/dist/sab/worker-proxy.js');
             case '8086emu/multi_cpu_emu.js':
                 // wasm-bindgen ESM, no node: imports — safe in workers.
+                // NOTE: 1.6 bytes (ppi_set_input et al.) are staged for the
+                // npm 1.6.0 publish flip; the 1.6 docs/pkg build fails
+                // browser-worker init as __wbindgen_malloc-of-undefined
+                // (green in Node, dark in worker — engine-build issue filed
+                // with the owner). Until then this stays bundler-first on
+                // the matched 1.5.1 pair; NEVER mix glue/wasm versions.
                 return await import('8086emu/multi_cpu_emu.js');
             default:
                 return await import(/* @vite-ignore */ bundlerSpec);

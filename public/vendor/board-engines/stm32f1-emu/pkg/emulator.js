@@ -235,7 +235,7 @@ export async function createEmulator(opts = {}) {
     init, init_svd, get_uart_output, uart_rx_byte, uart_inject_break, uart_rx_pending, gpio_read_output,
     gpio_set_input, gpio_read_input,
     can_inject_message, adc_set_sim_value, gpio_set_analog, adc_set_rc_tau,
-    touchscreen_set_touch, pwm_duty, raise_fault,
+    touchscreen_set_touch, pwm_duty, tim_chan_pin, raise_fault,
      i2c_oled_fb, lcd_fb, gpio_take_pin_events,     drain_events, spi_inject_miso, i2c_inject_rx, i2c_inject_start, i2c_inject_write, i2c_inject_read, i2c_inject_stop, i2c_inject_alert,     bootloader_enable, bootloader_go_addr, pwr_mode, pwr_estimate, pwr_set_supply_mv, adc_set_internal, rcc_sysclk_hz, rcc_clocks_hz, rcc_mco_hz, rcc_fail_hse, gpio_set_slew, i2c_oled_writes, usb_bus_reset, usb_detach, usb_inject_setup, usb_inject_out, otg_inject_setup, otg_inject_out, otg_bus_reset, otg_detach, otg_host_feed_in, otg_host_attach,
     board_info, board_boot0, board_boot0_get, board_nrst,
     rustcpu_init, rustcpu_load, rustcpu_run, rustcpu_fault, rustcpu_fault_clear, rustcpu_dispatch,
@@ -797,6 +797,9 @@ export async function createEmulator(opts = {}) {
 
         /** PWM duty (0-100) of a timer channel, e.g. pwmDuty(0x40000000, 0) = TIM2 CH1. */
         pwmDuty(addr, channel = 0) { return pwm_duty(addr, channel); },
+        /** PWM output pin for a timer channel (1-based timer, 0-based channel):
+         *  packed (port << 4 | pin) with the live AFIO remap, or -1 when none. */
+        timChanPin(timer, channel = 0) { return tim_chan_pin(timer, channel); },
 
         setSimAdc(value) { adc_set_sim_value(value); },
         /** Override internal ADC channel 16/17/18 (temp/VREF/VBAT); 65535 clears to nominal. */

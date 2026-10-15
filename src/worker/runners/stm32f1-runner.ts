@@ -1,5 +1,5 @@
 /**
- * stm32f1-runner.ts — STM32F103 Blue Pill BoardRunner over stm32f1-emu@3.2.0.
+ * stm32f1-runner.ts — STM32F103 Blue Pill BoardRunner over stm32f1-emu@3.3.0.
  *
  * Engine: `STM32F1` facade. One instance per board runner (verified
  * isolated).
@@ -24,6 +24,7 @@ import {
   collectI2CSlaveAddresses,
   createI2CBridge,
   createSPIBridge,
+  levelPassiveNets,
   type I2CBridge,
   type SPIBridge,
 } from '../bus-bridge.ts';
@@ -144,14 +145,31 @@ export class Stm32f1Runner extends ArmRunnerBase {
             if (addrs.length > 0 && mcu.i2c1) {
                 this.i2cBridge = createI2CBridge(bridgeCtx);
                 const br = this.i2cBridge;
-                try { mcu.i2c1.onStart = (addr: number) => { try { br.start(Number(addr) & 0x7f, false); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                // Read-mode inference: the engine's start event carries the
+                // 7-bit address only (direction stripped), but sensor reads
+                // arrive as write-pointer + repeated START with no STOP
+                // between. Track bus idle: a START on a non-idle bus is the
+                // read phase (the I2cDevice repeated-start path drains the
+                // pending pointer write and prefills the read queue).
+                let busIdle = true;
+                try { mcu.i2c1.onStart = (addr: number) => { try { br.start(Number(addr) & 0x7f, !busIdle); busIdle = false; } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try { mcu.i2c1.onWrite = (byte: number) => { try { br.write(Number(byte) & 0xff); } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try {
+                    // NOTE: the engine's _read() calls onRead but IGNORES
+                    // its return value — the MCU consumes the pre-queued
+                    // injectRx FIFO. Fill it synchronously on every read
+                    // edge (direct wasm call, lands before the engine
+                    // consumes); the bridge serves the model register
+                    // stream (pointer was set in the write phase).
                     mcu.i2c1.onRead = () => {
-                        try { return br.read() & 0xff; } catch { return 0xff; }
+                        try {
+                            const b = br.read() & 0xff;
+                            try { mcu.i2c1.injectRx([b]); } catch { /* ignore */ }
+                            return b;
+                        } catch { return 0xff; }
                     };
                 } catch { /* ignore */ }
-                try { mcu.i2c1.onStop = () => { try { br.stop(); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try { mcu.i2c1.onStop = () => { try { br.stop(); busIdle = true; } catch { /* ignore */ } }; } catch { /* ignore */ }
             }
             // SPI: per-DR-write transfers grouped by 2ms sim gaps (mirrors
             // AVR's framing); MISO responses queue immediately (timing
@@ -339,6 +357,10 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
+                // Net leveling: model-driven pins (shift-register outputs
+                // etc.) fan out across component-only nets (engine owns
+                // board nets).
+                try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
                 // Per-tick SPI idle flush (runs every base tick): closes a
                 // frame whose last byte is older than the 2ms sim gap even
                 // when setup-only traffic never triggers another transfer
@@ -395,8 +417,8 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         // rail pin — the model then divides honestly.
                         try {
                             const railSpecs: Array<{ pins: string[]; pat: RegExp; volts: number }> = [
-                                { pins: ['VCC', '1'], pat: /3V3/i, volts: 3.3 },
-                                { pins: ['V+', 'VCC5'], pat: /^5V$/i, volts: 5.0 },
+                                { pins: ['VCC', 'vcc', '1'], pat: /3V3/i, volts: 3.3 },
+                                { pins: ['V+', 'VCC5', 'vcc5'], pat: /^5V$/i, volts: 5.0 },
                             ];
                             for (const inst of self.instances.values()) {
                                 try {

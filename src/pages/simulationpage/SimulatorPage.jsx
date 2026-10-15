@@ -4395,13 +4395,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             if (!b) continue;
             const bt = String(b?.type || '');
             const isRetro = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(bt);
-            const mainName = isRetro ? `${bid}.asm` : `${bid}.ino`;
+            const benvMp = String(b?.attrs?.env || '').toLowerCase();
+            // MicroPython path (e2e-only): env micropython/py takes main.py
+            // instead of .ino (mirrors the boardLoopPrologue PYSCRIPT
+            // sentinel contract).
+            const isPyMp = !isRetro && (benvMp.includes('micropython') || benvMp === 'py');
+            const mainName = isRetro ? `${bid}.asm` : (isPyMp ? 'main.py' : `${bid}.ino`);
             const inoPath = `project/${bid}/${mainName}`;
             try {
               store.setProjectFiles((prev) => {
                 const list = Array.isArray(prev) ? [...prev] : [];
                 const idx = list.findIndex((f) => f?.id === inoPath || f?.path === inoPath);
-                const base = { id: inoPath, path: inoPath, name: mainName, kind: 'code', language: isRetro ? 'asm' : 'arduino', boardId: String(bid), dirty: true };
+                const base = { id: inoPath, path: inoPath, name: mainName, kind: 'code', language: isRetro ? 'asm' : (isPyMp ? 'python' : 'arduino'), boardId: String(bid), dirty: true };
                 if (idx >= 0) list[idx] = { ...list[idx], ...base, content: sketch };
                 else list.push({ ...base, content: sketch });
                 return list;

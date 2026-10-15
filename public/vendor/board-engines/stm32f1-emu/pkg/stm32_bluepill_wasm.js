@@ -1316,6 +1316,21 @@ export function tick() {
 }
 
 /**
+ * PWM output pin for a timer channel (1-based timer number, 0-based
+ * channel): packed (port << 4 | pin) with the live AFIO remap applied
+ * (port 0=A .. 3=D), or -1 when the timer/channel has no output pin.
+ * E.g. tim_chan_pin(3, 0) = 0x06 (PA6) by default. Read-only observation
+ * helper for servo/LED/buzzer wiring; -1 before init too.
+ * @param {number} timer
+ * @param {number} channel
+ * @returns {number}
+ */
+export function tim_chan_pin(timer, channel) {
+    const ret = wasm.tim_chan_pin(timer, channel);
+    return ret;
+}
+
+/**
  * Set touch coordinates on a touchscreen device. Must be called after init().
  * @param {string} peripheral
  * @param {number} x

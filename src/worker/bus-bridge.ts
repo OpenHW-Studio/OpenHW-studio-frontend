@@ -11,6 +11,7 @@
  * Engine-specific parts (callbacks, injection) stay in each runner; this
  * module is pure routing + framing and fully headless-testable.
  */
+import { traversePassive } from './signal/electrical.ts';
 
 export interface BridgeCtx {
     boardId: string;
@@ -59,13 +60,17 @@ export function createI2CBridge(ctx: BridgeCtx): I2CBridge {
     let activeSlave: any = null;
     let buf: number[] = [];
 
-    const findClaim = (addr: number): any => {
+    const findClaim = (addr: number, read: boolean): any => {
         let claimed: any = null;
         try {
             for (const inst of ctx.instances.values()) {
                 if (typeof inst?.onI2CStart !== 'function') continue;
                 let ack = false;
-                try { ack = !!inst.onI2CStart(addr, false); } catch { ack = false; }
+                // NOTE: forward the real R/W flag — the model enters its
+                // read path (drains the pending pointer write, prefills the
+                // read queue) only on read-mode START. Hardcoding false
+                // starves every sensor read (observed: all 0xFF).
+                try { ack = !!inst.onI2CStart(addr, !!read); } catch { ack = false; }
                 if (ack && !claimed) claimed = inst;
             }
         } catch { /* start never breaks the bus */ }
@@ -73,11 +78,10 @@ export function createI2CBridge(ctx: BridgeCtx): I2CBridge {
     };
 
     return {
-        start(addr: number, _read: boolean): void {
+        start(addr: number, read: boolean): void {
             activeAddr = addr & 0x7f;
             buf = [];
-            activeSlave = findClaim(activeAddr);
-            void _read;
+            activeSlave = findClaim(activeAddr, !!read);
         },
         write(byte: number): void {
             buf.push(byte & 0xff);
@@ -395,4 +399,87 @@ export function spiBusForSck(boardType: string, sckPin: string): number {
         }
     } catch { /* fall through to default */ }
     return /stm32|esp32/i.test(String(boardType || '')) ? 1 : 0;
+}
+
+const SUPPLY_PIN_RE = /^(GND(\.\d+)?|VCC|VDD|VSS|VSS\d*|VDD\d*|5V(\.\d+)?|3V3|3\.3V|V\+|V-|VIN|VOUT|SWD_3V3|SWD_GND|VREF|AREF)$/i;
+
+// Component types that conduct passively (shared traversePassive
+// semantics): voltage propagates through them without model logic.
+const CONDUCTION_RE = /resistor|pushbutton|slide-switch|breadboard|\bvia\b|\bwire\b/i;
+
+/** Level component-only nets (no board node → engine owns nothing there).
+ * Worker pin stores are explicit (no in-worker MNA), so a model driving
+ * q0=5V never reaches the LED on the same net without help. Raise-only:
+ * the max pin voltage fans out to non-supply member pins. Never lowers
+ * (LOW drivers re-assert every tick through their own paths) and never
+ * touches supply pins or nets containing a board node (engine authority).
+ * This is what lights LEDs behind shift registers / expanders. */
+export function levelPassiveNets(
+    boardId: string,
+    pinToNet: Map<string, number> | undefined,
+    instances: Map<string, any>,
+): void {
+    try {
+        if (!pinToNet || pinToNet.size === 0) return;
+        const byNet = new Map<number, string[]>();
+        for (const [node] of pinToNet) {
+            const net = pinToNet.get(node);
+            if (net === undefined) continue;
+            let arr = byNet.get(net);
+            if (!arr) { arr = []; byNet.set(net, arr); }
+            arr.push(node);
+        }
+        for (const [, nodes] of byNet) {
+            try {
+                let hasBoard = false;
+                for (const node of nodes) {
+                    const sep = node.indexOf(':');
+                    if (sep >= 0 && node.slice(0, sep) === boardId) { hasBoard = true; break; }
+                }
+                if (hasBoard) continue;
+                let peak = 0;
+                const members: Array<{ inst: any; compId: string; pin: string }> = [];
+                for (const node of nodes) {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const inst = instances.get(node.slice(0, sep));
+                    const pin = node.slice(sep + 1);
+                    if (!inst || typeof (inst as any)?.getPinVoltage !== 'function'
+                        || typeof (inst as any)?.setPinVoltage !== 'function') continue;
+                    if (SUPPLY_PIN_RE.test(pin)) continue;
+                    members.push({ inst, compId: node.slice(0, sep), pin });
+                    let v = 0;
+                    try { v = Number((inst as any).getPinVoltage(pin)) || 0; } catch { continue; }
+                    if (Number.isFinite(v) && v > peak) peak = v;
+                }
+                if (!(peak > 0.5) || members.length === 0) continue;
+                // Conduction first: push high pins through passives
+                // (resistor dividers, switch shorts) so multi-hop nets
+                // see the source before leveling.
+                for (const { inst, compId, pin } of members) {
+                    try {
+                        const t = String((inst as any)?.type || '');
+                        if (!CONDUCTION_RE.test(t)) continue;
+                        let v = 0;
+                        try { v = Number((inst as any).getPinVoltage(pin)) || 0; } catch { continue; }
+                        if (!(v > 0.5)) continue;
+                        traversePassive(inst as any, compId, pin, v, (target, nextV) => {
+                            try {
+                                const ts = String(target).indexOf(':');
+                                if (ts < 0) return;
+                                const tInst = instances.get(String(target).slice(0, ts));
+                                (tInst as any)?.setPinVoltage?.(String(target).slice(ts + 1), nextV);
+                            } catch { /* one hop never breaks leveling */ }
+                        }, () => []);
+                    } catch { /* one member never breaks leveling */ }
+                }
+                for (const { inst, pin } of members) {
+                    try {
+                        const v = Number((inst as any).getPinVoltage(pin)) || 0;
+                        if (v < peak - 0.05) (inst as any).setPinVoltage(pin, peak);
+                    } catch { /* one pin never breaks leveling */ }
+                }
+            } catch { /* one net never breaks leveling */ }
+        }
+    } catch { /* leveling never breaks the tick */ }
 }

@@ -25,6 +25,7 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
+import { createSPIBridge, levelPassiveNets } from '../bus-bridge.ts';
 
 const PICO_UART_TX = ['GP0', 'GPIO0', '0', 'D0', 'TX', 'TX0'];
 const PICO_UART_RX = ['GP1', 'GPIO1', '1', 'D1', 'RX', 'RX0'];
@@ -139,6 +140,16 @@ export class PicoRunner extends ArmRunnerBase {
     private mirrorActiveAddr: number | null = null;
     private mirrorBuf: number[] = [];
     private mirrorSlave: any = null;
+    // SPI mirror bridge (runner-owned, same pattern): boards owning SPI
+    // peripherals get the core's spimirror slave attached; per-tick ring
+    // drains feed the standard onSPIByte path. Requires the fork core
+    // with the spimirror SDD (stock 1.0.3 has no SPI channel either).
+    private wantSPIBridge = false;
+    private spiMirrorAttached = false;
+    private spiBridge: any = null;
+    // ADC/PWM observation also requires the fork core (see constructor).
+    private wantADC = false;
+    private wantPWM = false;
     private compAttrById: Map<string, any> = new Map();
 
     constructor(
@@ -178,6 +189,32 @@ export class PicoRunner extends ArmRunnerBase {
             for (const inst of this.instances.values()) {
                 if (typeof (inst as any)?.onI2CStart === 'function') { this.wantI2CBridge = true; break; }
             }
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onSPIByte === 'function'
+                    || typeof (inst as any)?.onSPIByteExchange === 'function') { this.wantSPIBridge = true; break; }
+            }
+            // ADC/PWM observation needs the fork core too (stock 1.0.3 has
+            // neither export): analog sources wired to GP26-28, or models
+            // speaking onPWM/onPWMSignal (capability detection, no per-type
+            // code — without this the run silently loads stock and every
+            // tap guarded-misses, observed live as adcSet=undefined).
+            try {
+                for (const inst of this.instances.values()) {
+                    if (typeof (inst as any)?.onPWM === 'function'
+                        || typeof (inst as any)?.onPWMSignal === 'function') { this.wantPWM = true; break; }
+                }
+                if (!this.wantADC) {
+                    try {
+                        for (const w of (wiresDef as any[]) || []) {
+                            for (const end of [w?.from, w?.to]) {
+                                const m = /^[^:]+:(GP2[678])$/i.exec(String(end || ''));
+                                if (m) { this.wantADC = true; break; }
+                            }
+                            if (this.wantADC) break;
+                        }
+                    } catch { /* ignore */ }
+                }
+            } catch { /* detection never breaks construction */ }
         } catch { /* detection never breaks construction */ }
         void this.boot(this.isPico2 ? 'openhw-pico-2' : 'openhw-pico');
     }
@@ -240,9 +277,14 @@ export class PicoRunner extends ArmRunnerBase {
             try {
                 n = mod._picoemu_jsmirror_pop(ptr, max) || 0;
                 if (n <= 0) return;
-                const view = mod.HEAPU16
-                    ? new Uint16Array(mod.HEAPU16.buffer, ptr, n)
-                    : Array.from({ length: n }, (_, i) => mod.HEAPU16?.[ptr / 2 + i] || 0);
+                // NOTE: read via HEAPU8, never HEAPU16 — emscripten 6.x
+                // builds may not export HEAPU16 (undefined → the old
+                // fallback manufactured zero entries and starved models).
+                const bu8 = mod.HEAPU8;
+                const view = Array.from({ length: n }, (_, i) => {
+                    try { return ((bu8[ptr + i * 2] || 0) | ((bu8[ptr + i * 2 + 1] || 0) << 8)) & 0xffff; }
+                    catch { return 0; }
+                });
                 for (let i = 0; i < n; i++) this.feedMirrorEntry(view[i] & 0xffff);
             } finally {
                 mod._free(ptr);
@@ -320,6 +362,194 @@ export class PicoRunner extends ArmRunnerBase {
         this.mirrorSlave = null;
     }
 
+    /** Attach the SPI mirror slave (single call — one mirror per bus). */
+    private attachSPIMirrors(): void {
+        if (!this.wantSPIBridge || this.spiMirrorAttached) return;
+        try {
+            const mod = this.mod;
+            const addFn = mod?._picoemu_sdd_add;
+            if (typeof addFn !== 'function') return;
+            for (const bus of [0]) {
+                try {
+                    const arg = `spimirror:spi=${bus}`;
+                    const ptr = mod._malloc(arg.length + 1);
+                    mod.HEAPU8.set(new TextEncoder().encode(arg + '\0'), ptr);
+                    try { addFn(ptr); } finally { mod._free(ptr); }
+                } catch { /* one bus never breaks attach */ }
+            }
+            this.spiMirrorAttached = true;
+            try {
+                const ctx: any = {
+                    boardId: this.boardId,
+                    onStateUpdate: (msg: any) => { try { this.onStateUpdate(msg); } catch { /* ignore */ } },
+                    getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
+                    instances: this.instances,
+                    compAttrById: this.compAttrById,
+                    pinToNet: (this as any).pinToNet,
+                    boardPinLevel: (pin: string) => {
+                        try {
+                            const v = ((this as any).pinStates as any)?.[pin];
+                            return typeof v === 'boolean' ? v : null;
+                        } catch { return null; }
+                    },
+                };
+                this.spiBridge = createSPIBridge(ctx);
+            } catch { /* bridge never breaks attach */ }
+        } catch { /* attach never breaks boot */ }
+    }
+
+    /** ADC inject: RP2040 ADC0-2 live on GP26-28. Read wired wiper
+     * voltages per tick into _picoemu_adc_set (12-bit code). Rails power
+     * like the F1 path (boards source no power today). No-ops on cores
+     * without the export. */
+    private drivePicoADC(): void {
+        try {
+            const mod = this.mod;
+            if (!mod || typeof mod._picoemu_adc_set !== 'function') return;
+            const chFor: Record<string, number> = { GP26: 0, GP27: 1, GP28: 2 };
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                    for (const nm of ['VCC', 'vcc', '1']) {
+                        let v = 0;
+                        try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
+                        if (v > 0.2) continue;
+                        const net = (this as any).pinToNet?.get?.(`${(inst as any)?.id}:${nm}`);
+                        if (net === undefined) continue;
+                        for (const [node, netId] of (this as any).pinToNet) {
+                            if (netId !== net) continue;
+                            const sep = node.indexOf(':');
+                            if (sep < 0) continue;
+                            if (node.slice(0, sep) !== this.boardId) continue;
+                            if (!/3V3/i.test(node.slice(sep + 1))) continue;
+                            try { (inst as any).setPinVoltage(nm, 3.3); } catch { /* ignore */ }
+                            break;
+                        }
+                    }
+                } catch { /* one instance never breaks rails */ }
+            }
+            for (const [pin, ch] of Object.entries(chFor)) {
+                try {
+                    let volts: number | null = null;
+                    for (const [node, netId] of (this as any).pinToNet) {
+                        const sep = node.indexOf(':');
+                        if (sep < 0) continue;
+                        if (node.slice(0, sep) !== this.boardId) continue;
+                        if (node.slice(sep + 1).toUpperCase() !== pin) continue;
+                        for (const [node2, net2] of (this as any).pinToNet) {
+                            if (net2 !== netId) continue;
+                            const s2 = node2.indexOf(':');
+                            if (s2 < 0) continue;
+                            if (node2.slice(0, s2) === this.boardId) continue;
+                            const inst = this.instances.get(node2.slice(0, s2));
+                            const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
+                            if (Number.isFinite(v)) { volts = v; break; }
+                        }
+                        break;
+                    }
+                    if (volts !== null) {
+                        try { mod._picoemu_adc_set(ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
+                    }
+                } catch { /* one pin never breaks the drain */ }
+            }
+        } catch { /* ADC never breaks the tick */ }
+    }
+
+    /** PWM observe: poll slices 0-7 via _picoemu_pwm_read (freq + duty A/B
+     * in basis points); strongest duty drives LED models via onPWM.
+     * No-ops on cores without the export. */
+    private pollPicoPWM(): void {
+        try {
+            const mod = this.mod;
+            if (!mod || typeof mod._picoemu_pwm_read !== 'function' || typeof mod._malloc !== 'function') return;
+            let best = 0;
+            let bestFreq = 0;
+            for (let slice = 0; slice < 8; slice++) {
+                try {
+                    const ptr = mod._malloc(16);
+                    let freq = 0, da = 0, db = 0, en = 0;
+                    try {
+                        const r = mod._picoemu_pwm_read(slice, ptr, ptr + 4, ptr + 8, ptr + 12);
+                        // NOTE: returns 0 on success (like POSIX), nonzero
+                        // on bad slice — the old `if (!r) continue` was
+                        // inverted and skipped every valid slice.
+                        if (r !== 0) continue;
+                        // NOTE: read via HEAPU8, never HEAPU32 — emscripten
+                        // 6.x builds may not export typed views (the I2C
+                        // drain hit the same issue with HEAPU16).
+                        const b = mod.HEAPU8;
+                        const u32 = (o: number) => ((b[o] || 0) | ((b[o + 1] || 0) << 8) | ((b[o + 2] || 0) << 16) | ((b[o + 3] || 0) << 24)) >>> 0;
+                        freq = u32(ptr); da = u32(ptr + 4); db = u32(ptr + 8); en = u32(ptr + 12) ? 1 : 0;
+                    } finally { try { mod._free(ptr); } catch { /* ignore */ } }
+                    if (!en) continue;
+                    const d = Math.max(da, db) / 100;
+                    if (d > best) { best = d; bestFreq = freq; }
+                } catch { /* one slice never breaks the poll */ }
+            }
+            if (best <= 0) return;
+            const duty01 = Math.max(0, Math.min(1, best / 100));
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.onPWM !== 'function') continue;
+                    if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                    for (const pn of ['A', 'ANODE', '+']) {
+                        try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreq }); } catch { /* ignore */ }
+                    }
+                } catch { /* one instance never breaks pwm */ }
+            }
+        } catch { /* PWM never breaks the tick */ }
+    }
+
+    /** Drain SPI mirror ring entries into the bridge (AVR-adapter semantics). */
+    private drainSPIMirror(): void {
+        // Per-tick idle flush first (closes setup-only frames / missing CS
+        // edges even when no new entries arrive — same contract as F1/ESP32).
+        try {
+            const br0 = this.spiBridge as any;
+            if (br0 && typeof br0.idleFlush === 'function') {
+                let nowMs = 0;
+                try { nowMs = this.getSimulatedTimeMs(); } catch { nowMs = 0; }
+                br0.idleFlush(nowMs);
+            }
+        } catch { /* flush never breaks the tick */ }
+        if (!this.spiMirrorAttached || !this.mod) return;
+        try {
+            const mod = this.mod;
+            if (typeof mod._picoemu_spimirror_pending !== 'function'
+                || typeof mod._picoemu_spimirror_pop !== 'function') return;
+            if ((mod._picoemu_spimirror_pending() || 0) <= 0) return;
+            if (!this.spiBridge) return;
+            const max = 512;
+            const ptr = mod._malloc(max * 2);
+            let n = 0;
+            try {
+                n = mod._picoemu_spimirror_pop(ptr, max) || 0;
+                if (n <= 0) return;
+                // NOTE: HEAPU8, never HEAPU16 (see I2C drain — 6.x may not
+                // export HEAPU16 and the fallback manufactures zeros).
+                const bu8s = mod.HEAPU8;
+                const view = Array.from({ length: n }, (_, i) => {
+                    try { return ((bu8s[ptr + i * 2] || 0) | ((bu8s[ptr + i * 2 + 1] || 0) << 8)) & 0xffff; }
+                    catch { return 0; }
+                });
+                const br = this.spiBridge;
+                let idx = 0;
+                for (let i = 0; i < n; i++) {
+                    const entry = view[i] & 0xffff;
+                    if (entry === 0x200 || entry === 0x201) {
+                        try { br.frame(true); } catch { /* ignore */ }
+                    } else if (entry === 0x100 || entry === 0x101) {
+                        continue;
+                    } else {
+                        try { br.exchange(entry & 0xff, idx++); } catch { /* ignore */ }
+                    }
+                }
+            } finally {
+                mod._free(ptr);
+            }
+        } catch { /* drain never breaks the tick */ }
+    }
+
     private makeEngine() {
         const self = this;
         return {
@@ -331,7 +561,7 @@ export class PicoRunner extends ArmRunnerBase {
                 // see vendor/pico-emu-fork/README.md). Every other Pico run
                 // loads stock 1.0.3 byte-identically to before — the fork
                 // never touches non-I2C behavior.
-                const useFork = self.wantI2CBridge;
+                const useFork = self.wantI2CBridge || self.wantSPIBridge || self.wantADC || self.wantPWM;
                 const engineMod: any = await importEngine(
                     useFork ? '../engines/pico-emu-fork/picoemu.wasm.js' : 'pico-emu/picoemu.wasm.js',
                     '/vendor/board-engines/pico-emu/picoemu.wasm.js',
@@ -373,6 +603,9 @@ export class PicoRunner extends ArmRunnerBase {
                 // I2C mirror attach (post-init, pre-firmware): one call for
                 // every owned slave address (see attachI2CMirrors).
                 try { self.attachI2CMirrors(); } catch { /* attach never breaks boot */ }
+                // SPI mirror attach (post-init, pre-firmware): spimirror
+                // slave on SPI0 (see attachSPIMirrors).
+                try { self.attachSPIMirrors(); } catch { /* attach never breaks boot */ }
                 // Wireless + wired net (stub mode, no live sockets):
                 // CYW43 for Pico W / Pico 2 W, W5500 board for pico-eth
                 // variants — same CLI calls minus --board-live (deferred).
@@ -428,6 +661,15 @@ export class PicoRunner extends ArmRunnerBase {
                     try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
                     // I2C mirror drain: polled transaction ring → models.
                     try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
+                    // SPI mirror drain: polled MOSI ring → bridge → models.
+                    try { self.drainSPIMirror(); } catch { /* drain never breaks tick */ }
+                    // ADC inject: pot wipers drive RP2040 ADC0-2 (GP26-28).
+                    try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
+                    // PWM observe: first enabled slice drives LED models.
+                    try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
+                    // Net leveling: model-driven pins (shift-register
+                    // outputs etc.) fan out across component-only nets.
+                    try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks tick */ }
                     return s;
                 } catch { return 0; }
             },

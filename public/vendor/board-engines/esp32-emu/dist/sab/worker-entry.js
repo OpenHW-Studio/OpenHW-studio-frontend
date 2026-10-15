@@ -3414,12 +3414,7 @@ var Esp32GpioMatrixEntries = [
 ];
 
 // src/peripherals/common/partition-table.js
-// OpenHW patch (browser): node:crypto has no browser build. The only use
-// is an MD5 over the partition table when a CUSTOM CSV is written
-// (writePartitionTable <- config.partitions). Default boot uses the
-// merged-bin image (no CSV path), so a lazy WebCrypto/subtle stub is safe:
-// it throws only if that path is ever hit, instead of killing module load.
-const createHash = (..._a) => { throw new Error("partition-table MD5 needs node:crypto (custom CSV partitions unsupported in browser)"); };
+import { createHash } from "node:crypto";
 var PARTITION_MAGIC = 20650;
 var PARTITION_ENTRY_SIZE = 32;
 var PARTITION_TABLE_OFFSET = 32768;
@@ -6865,6 +6860,34 @@ function doWriteMmio() {
   } catch {
   }
 }
+function doReadMmio() {
+  const hid = Atomics.load(ctrl, SAB_CMD_ARG0);
+  const addr = Atomics.load(ctrl, SAB_CMD_ARG1);
+  const size = Atomics.load(ctrl, SAB_CMD_ARG2);
+  let val = 0;
+  try {
+    const ex = chip?._wasmLoader?.exports;
+    if (hid === 99 && ex?.native_bt_diag) {
+      const scratch = ex.native_bt_diag_scratch?.() >>> 0 || 0;
+      if (scratch) {
+        ex.native_bt_diag(addr >>> 0, scratch);
+        const mem = new Uint32Array(chip._wasmLoader.memoryBuffer);
+        const base = scratch >>> 2;
+        Atomics.store(ctrl, SAB_CMD_ARG0, mem[base] >>> 0);
+        Atomics.store(ctrl, SAB_CMD_ARG1, mem[base + 1] >>> 0);
+        Atomics.store(ctrl, SAB_CMD_ARG2, mem[base + 2] >>> 0);
+        Atomics.store(ctrl, SAB_RESP, mem[base + 3] >>> 0);
+        Atomics.store(ctrl, SAB_STATUS, mem[base + 4] >>> 0);
+        Atomics.store(ctrl, SAB_PC, mem[base + 5] >>> 0);
+        Atomics.store(ctrl, SAB_NANOS_LO, mem[base + 6] >>> 0);
+        Atomics.store(ctrl, SAB_NANOS_HI, mem[base + 7] >>> 0);
+      }
+    } else if (ex?.native_diag_read) val = ex.native_diag_read(hid, addr, size);
+  } catch (_e) {
+    console.warn(`native_diag_read error: ${_e.message}`);
+  }
+  if (hid !== 99) Atomics.store(ctrl, SAB_CMD_ARG0, val);
+}
 function finishSim() {
   ctrl[SAB_RUN] = 0;
   ctrl[SAB_STATUS] = 1;
@@ -7245,6 +7268,14 @@ async function runSimChunk() {
         Atomics.store(ctrl, SAB_RESP, RESP_DONE);
         Atomics.store(ctrl, SAB_CMD, CMD_NONE);
       }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_READ_MMIO) {
+        try {
+          doReadMmio();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
       chip.step();
       steps++;
       cycles = chip.cycles;
@@ -7412,32 +7443,7 @@ function processCommand(cmd) {
       break;
     }
     case CMD_READ_MMIO: {
-      const hid = Atomics.load(ctrl, SAB_CMD_ARG0);
-      const addr = Atomics.load(ctrl, SAB_CMD_ARG1);
-      const size = Atomics.load(ctrl, SAB_CMD_ARG2);
-      let val = 0;
-      try {
-        const ex = chip?._wasmLoader?.exports;
-        if (hid === 99 && ex?.native_bt_diag) {
-          const scratch = ex.native_bt_diag_scratch?.() >>> 0 || 0;
-          if (scratch) {
-            ex.native_bt_diag(addr >>> 0, scratch);
-            const mem = new Uint32Array(chip._wasmLoader.memoryBuffer);
-            const base = scratch >>> 2;
-            Atomics.store(ctrl, SAB_CMD_ARG0, mem[base] >>> 0);
-            Atomics.store(ctrl, SAB_CMD_ARG1, mem[base + 1] >>> 0);
-            Atomics.store(ctrl, SAB_CMD_ARG2, mem[base + 2] >>> 0);
-            Atomics.store(ctrl, SAB_RESP, mem[base + 3] >>> 0);
-            Atomics.store(ctrl, SAB_STATUS, mem[base + 4] >>> 0);
-            Atomics.store(ctrl, SAB_PC, mem[base + 5] >>> 0);
-            Atomics.store(ctrl, SAB_NANOS_LO, mem[base + 6] >>> 0);
-            Atomics.store(ctrl, SAB_NANOS_HI, mem[base + 7] >>> 0);
-          }
-        } else if (ex?.native_diag_read) val = ex.native_diag_read(hid, addr, size);
-      } catch (_e) {
-        console.warn(`native_diag_read error: ${_e.message}`);
-      }
-      if (hid !== 99) Atomics.store(ctrl, SAB_CMD_ARG0, val);
+      doReadMmio();
       break;
     }
     case CMD_WATCHPOINT: {

@@ -25,7 +25,7 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
-import { createI2CBridge, createSPIBridge, collectI2CSlaveAddresses } from '../bus-bridge.ts';
+import { createI2CBridge, createSPIBridge, collectI2CSlaveAddresses, levelPassiveNets } from '../bus-bridge.ts';
 
 const ESP32_UART_TX = ['1', 'D1', 'TX', 'TX0', 'GPIO1'];
 const ESP32_UART_RX = ['3', 'D3', 'RX', 'RX0', 'GPIO3'];
@@ -125,7 +125,11 @@ export class Esp32Runner extends ArmRunnerBase {
                 // (4MB flash + 4MB PSRAM) via applyBoardPreset semantics;
                 // explicit sizes below always win (package contract).
                 const isCam = self.board === 'esp32-cam';
-                await self.sim.init(isCam ? 'esp32-cam' : 'ESP32', { flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000 }, flash, rom);
+                // NOTE: chipType is always 'ESP32' (the worker's only
+                // constructor); the cam preset rides config.board
+                // (init('esp32-cam') dies with "Unknown chip" and a
+                // silent dead sim — observed live as zero serial).
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 2_000_000 }, flash, rom);
                 try {
                     if (wasmBinary && typeof self.sim.loadWasm === 'function') {
                         await self.sim.loadWasm(wasmBinary);
@@ -271,6 +275,27 @@ export class Esp32Runner extends ArmRunnerBase {
                     }
                 }
             } catch { /* ignore */ }
+            // 1-Wire (DS18B20): the engine emulates the sensor once
+            // attached (attachOneWire + setOneWireTemp); the component
+            // model stays passive (never fed, so no double-drive) and
+            // gets rail power from driveEsp32ADC. No per-tick pump needed.
+            try {
+                for (const inst of this.instances.values()) {
+                    const t = String((inst as any)?.type || '').toLowerCase();
+                    if (!t.includes('ds18b20')) continue;
+                    const gpio = self.oneWireGpio(inst);
+                    if (gpio < 0) continue;
+                    let temp = 25;
+                    try {
+                        const a = (inst as any)?.attrs || {};
+                        const v = Number(a.temperature ?? a.temp);
+                        if (Number.isFinite(v)) temp = v;
+                    } catch { /* ignore */ }
+                    try { void self.sim?.attachOneWire?.(gpio)?.catch?.(() => {}); } catch { /* ignore */ }
+                    try { void (self.sim as any)?.setOneWireTemp?.(gpio, temp)?.catch?.(() => {}); } catch { /* ignore */ }
+                    try { self.owPins.add(gpio); } catch { /* ignore */ }
+                }
+            } catch { /* 1-wire never breaks boot */ }
         } catch { /* taps never break boot */ }
     }
 
@@ -339,12 +364,204 @@ export class Esp32Runner extends ArmRunnerBase {
                     }).catch(() => {});
                 } catch { /* ignore */ }
             }
+            // ADC inject + PWM observe (1.2.0 taps; no-ops without them).
+            try { self.driveEsp32ADC(); } catch { /* never breaks tick */ }
+            try { self.pollEsp32PWM(); } catch { /* never breaks tick */ }
+            // Net leveling: model-driven pins fan out across
+            // component-only nets (engine owns board nets).
+            try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks tick */ }
+            // 1-Wire pump: pollOneWire drives the sensor state machine
+            // (presence + scratchpad); without it the bus stays silent.
+            try {
+                const t = ((self.owTick || 0) + 1) % 3;
+                self.owTick = t;
+                if (t === 0 && self.owPins.size > 0 && typeof (self.sim as any)?.pollOneWire === 'function') {
+                    for (const pin of self.owPins) {
+                        try { void ((self.sim as any).pollOneWire(pin) as Promise<any>)?.catch?.(() => {}); } catch { /* ignore */ }
+                    }
+                }
+            } catch { /* never breaks tick */ }
+            // TWAI virtual-peer loopback: periodically offer one standard
+            // frame (0x123). Ignored unless firmware installed the TWAI
+            // driver (acceptance path); TWAI cells assert its reception.
+            try {
+                const c = ((self as any).twaiTick || 0) + 1;
+                (self as any).twaiTick = c % 200;
+                if (c % 200 === 0 && typeof (self.sim as any)?.sendTwaiFrame === 'function') {
+                    try { void ((self.sim as any).sendTwaiFrame(0x123, [0xDE, 0xAD, 0xBE, 0xEF]) as Promise<any>)?.catch?.(() => {}); } catch { /* ignore */ }
+                }
+            } catch { /* never breaks tick */ }
         } catch { /* poll never breaks tick */ }
     }
 
     /** Drive a GPIO input level (host-driven pin toggle, e.g. buttons). */
     async setGpioInput(pinNumber: number, high: boolean): Promise<void> {
         try { await this.sim?.setPinInput?.(pinNumber, high ? 1 : 0); } catch { /* ignore */ }
+    }
+
+    /** ADC inject: ESP32 ADC1 lives on GPIO32-39 (VP=36/VN=39). Wiper
+     * voltages ride setAnalogInput(pin, volts); rails power like the
+     * F1/Pico paths (boards source no power today). Taps verified
+     * against esp32-emu 1.2.0 (CMD 37). */
+    private driveEsp32ADC(): void {
+        try {
+            const sim = this.sim as any;
+            if (!sim || typeof sim.setAnalogInput !== 'function') return;
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                    for (const nm of ['VCC', '1']) {
+                        let v = 0;
+                        try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
+                        if (v > 0.2) continue;
+                        const net = (this as any).pinToNet?.get?.(`${(inst as any)?.id}:${nm}`);
+                        if (net === undefined) continue;
+                        for (const [node, netId] of (this as any).pinToNet) {
+                            if (netId !== net) continue;
+                            const sep = node.indexOf(':');
+                            if (sep < 0) continue;
+                            if (node.slice(0, sep) !== this.boardId) continue;
+                            if (!/3V3/i.test(node.slice(sep + 1))) continue;
+                            try { (inst as any).setPinVoltage(nm, 3.3); } catch { /* ignore */ }
+                            break;
+                        }
+                    }
+                } catch { /* one instance never breaks rails */ }
+            }
+            for (const [node, netId] of (this as any).pinToNet ?? []) {
+                try {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) !== this.boardId) continue;
+                    const gpio = Esp32Runner.adcGpio(node.slice(sep + 1));
+                    if (gpio < 0) continue;
+                    let volts: number | null = null;
+                    for (const [node2, net2] of (this as any).pinToNet) {
+                        if (net2 !== netId) continue;
+                        const s2 = node2.indexOf(':');
+                        if (s2 < 0) continue;
+                        if (node2.slice(0, s2) === this.boardId) continue;
+                        const inst = this.instances.get(node2.slice(0, s2));
+                        const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
+                        if (Number.isFinite(v)) { volts = v; break; }
+                    }
+                    if (volts !== null) {
+                        try { void sim.setAnalogInput(gpio, volts)?.catch?.(() => {}); } catch { /* ignore */ }
+                    }
+                } catch { /* one pin never breaks the drain */ }
+            }
+        } catch { /* ADC never breaks the tick */ }
+    }
+
+    private static adcGpio(label: string): number {
+        const m = /^(?:GPIO)?(\d{1,2})$/i.exec(String(label || '').trim());
+        if (!m) {
+            const u = String(label || '').toUpperCase();
+            if (u === 'VP') return 36;
+            if (u === 'VN') return 39;
+            return -1;
+        }
+        const n = Number(m[1]);
+        return n >= 32 && n <= 39 ? n : -1;
+    }
+
+    /** Board pin label → GPIO number for the 1-Wire DQ net. */
+    private oneWireGpio(inst: any): number {
+        try {
+            const nets = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!nets) return -1;
+            for (const [node, netId] of nets) {
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const m = /^(?:GPIO)?(\d{1,2})$/i.exec(node.slice(sep + 1));
+                if (!m) continue;
+                const gpio = Number(m[1]);
+                for (const [node2, net2] of nets) {
+                    if (net2 !== netId) continue;
+                    const s2 = node2.indexOf(':');
+                    if (s2 < 0) continue;
+                    if (node2.slice(0, s2) !== String(inst?.id)) continue;
+                    if (/^(DQ|DATA|IO)$/i.test(node2.slice(s2 + 1))) return gpio;
+                }
+            }
+        } catch { /* ignore */ }
+        return -1;
+    }
+
+    private espPwmTick = 0;
+    private ledcPinCache = new Map<number, number>();
+    private owPins = new Set<number>();
+    private owTick = 0;
+
+    /** PWM observe: LEDC channels 0-7 via getLedc (duty/freq) + getLedcPin
+     * (resolved once per channel, then cached). Strongest active duty
+     * drives LED models via onPWM. Resolution is not readable from the
+     * taps, so duty normalizes against 8-bit (255) below 256 and 13-bit
+     * full-scale above — exact for 8-bit firmware, monotonic otherwise. */
+    private pollEsp32PWM(): void {
+        try {
+            const sim = this.sim as any;
+            if (!sim || typeof sim.getLedc !== 'function') return;
+            const tick = ((this.espPwmTick || 0) + 1) % 5;
+            this.espPwmTick = tick;
+            if (tick !== 0) return;
+            for (let ch = 0; ch < 8; ch++) {
+                try {
+                    (sim.getLedc(ch) as Promise<any>).then((st) => {
+                        try {
+                            const duty = Number(st?.duty) || 0;
+                            const freq = Number(st?.freq) || 0;
+                            if (duty <= 0 || freq <= 0) return;
+                            const cached = this.ledcPinCache.get(ch);
+                            if (cached !== undefined) { this.driveEsp32Led(cached, duty, freq); return; }
+                            if (typeof sim.getLedcPin !== 'function') return;
+                            (sim.getLedcPin(ch) as Promise<any>).then((pin) => {
+                                try {
+                                    const gpio = Number(pin);
+                                    if (!Number.isFinite(gpio) || gpio < 0) return;
+                                    this.ledcPinCache.set(ch, gpio);
+                                    this.driveEsp32Led(gpio, duty, freq);
+                                } catch { /* ignore */ }
+                            }).catch(() => {});
+                        } catch { /* ignore */ }
+                    }).catch(() => {});
+                } catch { /* one channel never breaks the poll */ }
+            }
+        } catch { /* PWM never breaks the tick */ }
+    }
+
+    private driveEsp32Led(gpio: number, duty: number, freq: number): void {
+        try {
+            const duty01 = Math.max(0, Math.min(1, duty > 255 ? duty / 8191 : duty / 255));
+            if (duty01 <= 0) return;
+            const tag = `GPIO${gpio}`;
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.onPWM !== 'function') continue;
+                    if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                    let wired = false;
+                    try {
+                        for (const [node, netId] of (this as any).pinToNet ?? []) {
+                            const sep = node.indexOf(':');
+                            if (sep < 0) continue;
+                            if (node.slice(0, sep) !== this.boardId) continue;
+                            if (node.slice(sep + 1).toUpperCase() !== tag) continue;
+                            for (const [node2, net2] of (this as any).pinToNet) {
+                                if (net2 !== netId) continue;
+                                if (node2.slice(0, node2.indexOf(':')) === this.boardId) continue;
+                                if (node2.slice(0, node2.indexOf(':')) === (inst as any)?.id) { wired = true; break; }
+                            }
+                            if (wired) break;
+                        }
+                    } catch { /* ignore */ }
+                    if (!wired) continue;
+                    for (const pn of ['A', 'ANODE', '+']) {
+                        try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: freq }); } catch { /* ignore */ }
+                    }
+                } catch { /* one instance never breaks pwm */ }
+            }
+        } catch { /* ignore */ }
     }
 
     protected budgetForDelta(deltaMs: number): number {

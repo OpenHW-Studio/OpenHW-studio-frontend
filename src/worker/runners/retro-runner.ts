@@ -31,14 +31,17 @@
  *   8086 → INT 21h AH=09/02/06 (+OUT 01h, USART 50h echo); 8085 → OUT 01h;
  *   8051 → SBUF write; 6502 → STA $01/$F001; Z80 → OUT (01h),A;
  *   rv32 → ECALL write/exit semihosting. ALL of them land in ONE buffer:
- *   `out()` drain → TX queue → emit. RX inject: 8086 `push_key`,
- *   8051 `serial_rx`, others best-effort (usart_rx/port_write).
- *   GPIO: 8086/8085 `port_write`/`port_read` (ports kit E0h/28h/38h/50h/
+ *   `out()` drain → TX queue → emit. RX inject: universal `usart_rx`
+ *   (package 1.6, routed per ISA), legacy `push_key`/`serial_rx`/`set_sid`
+ *   aliases as fallback for old engine bytes.
+ *   GPIO: 8086/8085 `ppi_set_input` (package 1.6; RMW fallback) +
+ *   `port_write`/`port_read` (ports kit E0h/28h/38h/50h/
  *   68h mirrors the package ports8x examples); 8051 P0–P3 via port_write,
  *   SID/SOD + serial_rx for the 8085/8051 serial pins. Levels publish into
  *   pinStates + SAB pin bitfield via publishGpio, same contract as F1.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
+import { traversePassive } from '../signal/electrical.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 
 // Console pins per board (first = TX shown in monitor, second = RX inject).
@@ -212,7 +215,18 @@ export class RetroRunner extends ArmRunnerBase {
             stepBudget(budget: number): number {
                 if (!self.emu) return 0;
                 try {
+                    // Sim-time source: the package 1.6 cycle clock
+                    // (cycles() is nonzero on all six ISAs). Report the
+                    // cycle delta so the base simCycleCount advances in
+                    // engine cycles; old engine bytes without cycles() fall
+                    // back to the executed-step count (previous behavior).
+                    let before: bigint | null = null;
+                    try {
+                        if (typeof self.emu.cycles === 'function') before = self.emu.cycles();
+                    } catch { before = null; }
                     const n = Number(self.emu.run(Math.max(1, Math.floor(budget)))) || 0;
+                    // Rail power for passive inputs (see powerRailNets).
+                    try { self.powerRailNets(5.0); } catch { /* rails never break the tick */ }
                     // NOTE: no per-tick publishGpio here — the base
                     // pollGpioBidirectional() runs right after stepBudget and
                     // owns ALL output publishing (via sampleGpioOut below),
@@ -227,6 +241,12 @@ export class RetroRunner extends ArmRunnerBase {
                             txQueue.push(text.charCodeAt(i) & 0xff);
                         }
                     } catch { /* ignore */ }
+                    if (before !== null) {
+                        try {
+                            const d = Number((self.emu.cycles() as bigint) - before);
+                            if (Number.isFinite(d) && d > 0) return d;
+                        } catch { /* fall through to step count */ }
+                    }
                     return n;
                 } catch { return 0; }
             },
@@ -236,34 +256,50 @@ export class RetroRunner extends ArmRunnerBase {
             },
             injectUartByte(value: number) {
                 const b = value & 0xff;
-                // RX inject per ISA (package API): 8086 keyboard queue,
-                // 8051 SBUF+RI, 8085 SID pin; the rest best-effort.
+                // Universal RX inject (package 1.6 API): usart_rx(v) is
+                // routed per ISA (8086/8085/Z80 USART, 6502 ACIA,
+                // 8051 SBUF/SCON, rv32 board UART). Legacy per-ISA aliases
+                // kept as fallback for old engine bytes without usart_rx.
                 try {
+                    if (typeof self.emu?.usart_rx === 'function') { self.emu.usart_rx(b); return; }
                     if (self.isa === '8086' || self.isa === '8088') self.emu?.push_key?.(b);
                     else if (self.isa === '8051') self.emu?.serial_rx?.(b);
                     else if (self.isa === '8085') self.emu?.set_sid?.(b !== 0);
-                    else if (typeof self.emu?.usart_rx === 'function') self.emu.usart_rx(b);
                 } catch { /* ignore */ }
             },
             getPc(): number {
                 try { return Number(self.emu?.pc?.()) || 0; } catch { return 0; }
             },
             // Input injection for the base bidirectional poll. Per-ISA API:
-            // 8086/8085: PPI external pins (port E0h=PA/E2h=PC) — write the
-            //   ppi_in latch WITHOUT touching the firmware's output latch
-            //   (the 8255 model returns pa_in for input-mode ports, so a
-            //   button press never corrupts driven outputs);
+            // 8086/8085: ppi_set_input (package 1.6) drives the 8255
+            //   external-input latch (ports E0h=PA/E2h=PC) WITHOUT touching
+            //   the firmware's output latch; RMW fallback for old bytes;
             // 8051: P1 (port 1) / P2 (port 2) quasi-bidirectional pins;
             // 6502: VIA pa_pins/pb_pins via via_pins(port, byte);
-            // Z80: kit DEMO latch (E0h) read-modify-write; rv32: no GPIO
-            //   model (port_write is a no-op — skip so input sampling is inert).
+            // Z80: kit DEMO latch (E0h) read-modify-write; rv32: board GPIO
+            //   DATA (0xE0) inject, DIR at 0xE1 (package 1.6; inert no-op on
+            //   old engine bytes).
             setGpioInput(pinId: string, high: boolean): void {
                 try {
                     const bit = self.gpioBit(pinId);
                     if (bit < 0 || !self.emu) return;
                     const port = self.gpioPort(pinId);
                     const mask = 1 << (bit & 7);
-                    if (self.isa === 'rv32') return;
+                    if (self.isa === 'rv32') {
+                        // Board I/O block (package 1.6): port_write(0xE0, v)
+                        // injects GPIO input pins; port_read(0xE0/0xE1) reads
+                        // DATA/DIR. Single DATA byte, so both pin groups
+                        // merge onto 0xE0. On old engine bytes port_write is
+                        // a no-op, so this stays inert there.
+                        if (typeof self.emu?.port_write === 'function'
+                            && typeof self.emu?.port_read === 'function') {
+                            try {
+                                const cur = Number(self.emu.port_read(0xe0)) || 0;
+                                self.emu.port_write(0xe0, high ? (cur | mask) : (cur & ~mask));
+                            } catch { /* ignore */ }
+                        }
+                        return;
+                    }
                     if (self.isa === '6502') {
                         try {
                             const cur = Number(self.emu.via_read?.(port === 2 ? 0 : 1)) || 0;
@@ -285,16 +321,25 @@ export class RetroRunner extends ArmRunnerBase {
                         return;
                     }
                     if (self.isa === '8086' || self.isa === '8088' || self.isa === '8085') {
-                        // PPI external-input latch: input-mode ports read
-                        // pa_in/pb_in/pc_in (see ppi8255.rs read_pa/pb/pc),
-                        // so external levels coexist with the OUT latch.
-                        // NOTE: no public wasm accessor exists for the
-                        // pa_in latch — port_write(E0h) would CLOBBER the
-                        // firmware's output latch. Until the package exposes
-                        // ppi_set_input(port, val), do a read-modify-write on
-                        // the OUTPUT latch only for ports the firmware left
-                        // in INPUT mode (ctrl E3h dir bits); output-mode
-                        // ports ignore external drive (firmware owns them).
+                        // PPI external-input latch (package 1.6): input-mode
+                        // ports read pa_in/pb_in/pc_in (see ppi8255.rs
+                        // read_pa/pb/pc), so external levels coexist with the
+                        // OUT latch. Preferred path needs no direction check
+                        // — the engine merges by mode itself.
+                        if (typeof self.emu?.ppi_set_input === 'function') {
+                            try {
+                                const addr = port === 2 ? 0xe2 : 0xe0;
+                                const cur = Number(self.emu.port_read?.(addr)) || 0;
+                                self.emu.ppi_set_input(addr, high ? (cur | mask) : (cur & ~mask));
+                                return;
+                            } catch { /* fall through to RMW */ }
+                        }
+                        // Fallback (old engine bytes without ppi_set_input):
+                        // port_write(E0h) would CLOBBER the firmware's output
+                        // latch, so only do a read-modify-write on the
+                        // OUTPUT latch for ports the firmware left in INPUT
+                        // mode (ctrl E3h dir bits); output-mode ports ignore
+                        // external drive (firmware owns them).
                         try {
                             const ctrl = Number(self.emu.port_read?.(0xe3)) || 0;
                             const isInput = port === 2
@@ -307,7 +352,7 @@ export class RetroRunner extends ArmRunnerBase {
                         return;
                     }
                     // Z80 kit latch (plain output latch, no direction; rv32
-                    // returns early above — its port_write is a no-op).
+                    // returns early above — real GPIO since package 1.6).
                     // HIGH wins: a bit the firmware (or a previous inject)
                     // set HIGH is owned — external LOW must not clear it, or
                     // the INPUT half erases firmware outputs with stale
@@ -437,6 +482,57 @@ export class RetroRunner extends ArmRunnerBase {
             if (n >= 10 && n <= 17) return 2;
         }
         return 0;
+    }
+    /** Stamp supply pins of components sitting on a board rail net
+     * (AVR lowImpRails pattern). Kit shells source no power, so passive
+     * inputs (switches) would float at 0V; the wiper pin lives on a
+     * different net and stays untouched. Idempotent (skips pins already
+     * at/above rail). */
+    private powerRailNets(railV: number): void {
+        try {
+            const pinToNet = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!pinToNet) return;
+            const railNets = new Set<number>();
+            for (const [node, netId] of pinToNet) {
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                if (/^(SWD_3V3|3V3|5V|VCC|VDD|3\.3V)$/i.test(node.slice(sep + 1))) railNets.add(netId);
+            }
+            if (railNets.size === 0) return;
+            for (const [node, netId] of pinToNet) {
+                if (!railNets.has(netId)) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) === this.boardId) continue;
+                const inst = this.instances.get(node.slice(0, sep));
+                const pin = node.slice(sep + 1);
+                if (!inst || typeof (inst as any)?.getPinVoltage !== 'function'
+                    || typeof (inst as any)?.setPinVoltage !== 'function') continue;
+                let v = 0;
+                try { v = Number((inst as any).getPinVoltage(pin)) || 0; } catch { continue; }
+                // Traverse every tick (no skip): an early output-half LOW
+                // publish can zero the wiper once (same-level dedup never
+                // repairs it), so conduction must re-assert continuously.
+                // Stamp first if low; traverse with the ACTUAL voltage (a
+                // GND-side switch must stay LOW).
+                if (v < railV * 0.5) {
+                    try { (inst as any).setPinVoltage(pin, railV); v = railV; } catch { /* ignore */ }
+                }
+                try {
+                    const compId = node.slice(0, sep);
+                    traversePassive(inst as any, compId, pin, v, (target, nextV) => {
+                        try {
+                            const ts = String(target).indexOf(':');
+                            if (ts < 0) return;
+                            const tInst = this.instances.get(String(target).slice(0, ts));
+                            const tPin = String(target).slice(ts + 1);
+                            (tInst as any)?.setPinVoltage?.(tPin, nextV);
+                        } catch { /* one hop never breaks rails */ }
+                    }, () => []);
+                } catch { /* conduction never breaks rails */ }
+            }
+        } catch { /* rails never break the tick */ }
     }
     /** Read the engine's canonical GPIO port byte for an ISA. */
     private readGpioPort(port: number): number | null {

@@ -12,20 +12,35 @@ Status: **no changes required** — this package is the reference implementation
 4. **Package virtual devices**: `ext_devices: { i2c_oled, i2c_eeprom }` at create (`stm32f1-runner.ts:326-340`).
 5. **UART**: `usart1/usart2.onData` + `.send()`.
 
-## Optional improvement (runner works around it today)
+## Optional improvement (runner works around it today, engine closed it)
+
+Engine 3.3.0 proves per-batch GPIO-before-transfer ordering
+(`test_stm32f1_ordering.mjs` 9/9: pin drain lives inside `step()`).
+Our runner pre-publishes core CS + dedups to compensate — stays
+compatible (dedup is idempotent), no engine change needed.
 
 GPIO `change` events currently dispatch **after** the `execute()` batch, while `onTransfer` fires **during** it — so CS sampled mid-transfer reads stale. Our runner pre-publishes core CS + dedups to compensate. If cheap: deliver `change` callbacks synchronously as instructions retire, or guarantee post-step GPIO drain runs before the next step's transfer callbacks. Not urgent — do not refactor at the risk of this green path.
 
-## Further gaps (same agent, P1 — full protocol audit 2026-10)
+## Further gaps (same agent — full protocol audit 2026-10, closed 2026-10-06)
 
-Package classes today are only DMA/GPIO/GPIOPin/I2C/SPI/STM32F1/USART
-(verified in `pkg/stm32f1.js`) — no ADC or PWM/timer classes, and our
-runner wires neither:
+Package classes include DMA/GPIO/GPIOPin/I2C/SPI/STM32F1/USART plus
+ADC (`setVoltage`/`setCode`) and TIM (`enabled`/`duty`/`frequency`,
+new `TIM.pin(ch)` returning the output pin with live AFIO remap).
+Runner wires ADC inject + TIM duty observe; I2C2 remains unwired
+(engine has i2c2/i2c3).
 
-1. **ADC inject** (P1): per-channel voltage set for `analogRead` cells.
-2. **PWM/timer-out observe** (P1): frequency+duty readback for servo/LED/
-   buzzer cells (TIM register modeling like the F4 engine's buzzer is an
-   acceptable shape).
+1. **ADC inject** (DONE runner-side): per-channel voltage via
+   `adc1.setVoltage`; ADC3 completion-number fix landed engine-side.
+2. **PWM/timer-out observe** (DONE runner-side for LEDs): `TIM.duty`
+   into LED brightness; `TIM.pin(ch)` available for future
+   servo-angle routing.
+3. **I2C READ is observe-only — bridge-mode sensor reads need
+   pre-queued `injectRx`** (engine `i2c.rs`: byte consumed in-Rust at
+   DR-read, event pushed after; runner `onRead` return is discarded).
+   Runner-side pre-queueing at `onWrite` time is the future sensor
+   path; the runner's zero-filled `i2c_eeprom` ACK-sink currently
+   answers sensor addresses with sink zeros. Write-only cells
+   unaffected.
 
 ## Future-component guarantee (signal-level contract)
 

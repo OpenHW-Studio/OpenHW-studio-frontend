@@ -5,6 +5,7 @@ import {
   createI2CBridge,
   createSPIBridge,
   isSPISelected,
+  levelPassiveNets,
   spiBusForSck,
 } from '../../../src/worker/bus-bridge.ts';
 
@@ -95,5 +96,42 @@ describe('bus bridge (ARM I2C/SPI)', () => {
     assert.equal(spiBusForSck('openhw-stm32-bluepill', 'PB13'), 2);
     assert.equal(spiBusForSck('openhw-esp32', 'GPIO18'), 1);
     assert.equal(spiBusForSck('whatever', 'X1'), 0);
+  });
+
+  test('board-level CS wins over stale model pins', async () => {
+    const mod = await import('../../../src/worker/bus-bridge.ts');
+    // Net 7: bp1:PA4 <-> mx1:CS. Runner mirror says LOW (selected),
+    // model pin still reads HIGH (stale propagation).
+    const pinToNet = new Map([['bp1:PA4', 7], ['mx1:CS', 7]]);
+    const inst = { id: 'mx1', pins: { CS: 1 }, getPinVoltage: () => 3.3 };
+    const ctx = {
+      boardId: 'bp1', instances: new Map([['mx1', inst]]),
+      onStateUpdate: () => {}, getSimTimeMs: () => 0,
+      pinToNet, boardPinLevel: () => false,
+    };
+    assert.equal(mod.boardCsSelected(ctx, inst), true);
+    assert.equal(mod.isSPISelected(inst), false);
+  });
+
+  test('levelPassiveNets fans model-driven HIGH across component nets', async () => {
+    const mod = await import('../../../src/worker/bus-bridge.ts');
+    const mk = (volts) => {
+      const pins = { X: { voltage: volts } };
+      return {
+        id: 'c1', type: 'openhw-74hc595',
+        getPinVoltage: (p) => pins[p]?.voltage ?? 0,
+        setPinVoltage: (p, v) => { pins[p] = { voltage: v }; },
+        _pins: pins,
+      };
+    };
+    const drv = mk(5.0);
+    const led = { id: 'l1', type: 'openhw-led', getPinVoltage: (p) => (p === 'A' ? 0 : 0), setPinVoltage(p, v) { this._v = v; }, _v: 0 };
+    const pinToNet = new Map([['c1:X', 3], ['l1:A', 3], ['b1:PA4', 5], ['c2:Y', 5]]);
+    const drv2 = mk(0);
+    const inst = new Map([['c1', drv], ['l1', led], ['c2', drv2]]);
+    mod.levelPassiveNets('b1', pinToNet, inst);
+    assert.equal(led._v, 5.0);
+    // Untouched: driver-less net stays 0, board nets skipped.
+    assert.equal(drv2._pins.X.voltage, 0);
   });
 });

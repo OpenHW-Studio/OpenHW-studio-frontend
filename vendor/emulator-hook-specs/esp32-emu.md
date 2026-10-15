@@ -1,72 +1,60 @@
-# esp32-emu — hook spec (for emulator agent)
+# esp32-emu — hook spec (for simulator runner)
 
-Package: `esp32-emu 1.1.0` (npm). Our runner: `OpenHW-studio-frontend/src/worker/runners/esp32-runner.ts`.
-Status: **blocked at the engine boundary** — the runner wires no I2C/SPI because there is nothing to wire to. This is the highest-value package: it unblocks the entire ESP32 peripheral row.
+Our runner: `OpenHW-studio-frontend/src/worker/runners/esp32-runner.ts` over
+`esp32-emu@1.2.0` (`dist/sab/worker-proxy.js` `SimulatorWorker`, one logical
+event fabric with separate delivery lanes; SAB is the observation/transport
+plane — same contract as the other ARM runners).
 
-## What to add
+## What to keep stable (used live, green)
 
-1. **I2C slave tap** (mirror F1 semantics: `stm32f1-runner.ts:144-154` + `bus-bridge.ts:57-128`):
-   - Observe: `onStart(addr, read)`, `onWrite(byte)`, `onStop`.
-   - Respond: `onRead()` → byte to ACK back to firmware; NACK cleanly at unregistered addresses so `scan()` enumerates only attached models.
-   - Registration: attach slave(s) at 7-bit address(es) per I2C peripheral (I2C0/I2C1), callable post-create like F1 (`mcu.i2c0.onStart = …`), not only at construction.
-2. **SPI transfer tap** (mirror F1: `mcu.spi1.onTransfer` + `injectMiso`):
-   - `onTransfer(bus, txBytes[]) → rxBytes[]`, or split `onTransfer` + `injectMiso(resps[])` — either, but document which; our bridge adapts.
-   - Must fire per DR-write during `execute()`, same as F1, so transfer/GPIO ordering matches the proven path.
-3. **GPIO-output readback + events** (fixes today's `sampleGpioOut → null` stub, `esp32-runner.ts:160-168`):
-   - Fresh core-side level read per pin (output value, not input stimulus), direction + pull readback, and `on('change')`-style output events.
-   - `setPinInput` (input-only today) stays as-is; this is the reverse direction.
-4. **SAB worker-proxy slots**: extend the `CMD_*` enum (`dist/sab/worker-proxy.js:23-50`) with I2C/SPI/GPIO-out commands so the taps work in the Worker build, not just the main-thread build.
+1. **Boot**: `init('ESP32', { board, flashSizeMB: 4, mmuPages: 64,
+   strapValue: 0x13, budget })` — chipType is ALWAYS `'ESP32'` (the
+   worker's only constructor; anything else dies with "Unknown chip").
+   The cam preset rides `config.board: 'esp32-cam'`, never chipType.
+   Wasm + ROM bytes come from `/wasm/esp_engine_wasm.wasm` +
+   `/firmware/esp32-v3-rom.bin` (fetched by the runner, handed in).
+2. **UART**: `pollUart()` moves WASM-ring bytes to `_onUART`; `sendUart(ch)`
+   injects. TX capture is global (`usart1.onData` + usart2 hook).
+3. **I2C**: `attachI2cSlave(bus, addr)` both buses + `pollI2c(bus)` events
+   (`start/write/read/stop`) + `pushI2cTx(bus, addr, [bytes])` prestage.
+   Sensor over-reads fill `0xFF`; write-pointer + repeated-START reads work.
+4. **SPI**: `injectMiso(bus, [])` arms capture-only observation;
+   `pollSpiTx(bus)` drains MOSI (user buses 2/HSPI, 3/VSPI).
+5. **GPIO-out**: `pollGpioChanges()` edges → `publishGpio` (both Rust
+   paths: MMIO loop + matrix). No output readback (`sampleGpioOut`
+   returns null by design — documented engine gap).
+6. **GPIO-in**: `setPinInput(pin, level)` (async).
+7. **ADC**: `setAnalogInput(pin, volts)` per-pin (CMD 37).
+8. **LEDC**: `getLedc(ch) → { duty, freq, timer }` (CMD 38, integer-scale
+   duty post-1.2.0 16x fix) + `getLedcPin(ch)` (matrix-reg scan, works
+   mid-run). Resolution is NOT readable: normalize 8-bit-exact,
+   monotonic otherwise.
 
-## Constraints
+## Signal-level guarantees
 
-- Additive-only; ESP32 boot + serial + reset + GPIO-input cells pass today (`_onUART`/`pollUart`/`sendUart`/`setPinInput`/`pressResetButton`) — frozen behavior when taps are unregistered.
-- No firmware-specific casing: Arduino and MicroPython guests must see identical tap behavior (same registers, same responses).
+- `reset()`-family reinstalls a fresh model synchronously; instruction
+  clock is monotonic; DUTY register format is driver `<<4` (tap reports
+  integer scale — see LEDC fix).
+- v3 pin API (`ledcAttach(pin,freq,res)` + `ledcWrite(pin,duty)`) funnels
+  through IDF set+update; the START-only 1/1/0 pattern latches DUTY
+  (not a fade) — locked by `test-taps-host.mjs` v3 case.
 
-## Cross-cutting constraints (sync/SAB — engine side of the contract)
+## Known limits (documented, no runner work)
 
-Engines never touch SharedArrayBuffer: each engine runs as a plain
-synchronous step function inside its board Worker, and only our
-`arm-runner-base.ts` touches SAB (pin bitfields, barrier cells, STEP
-collect). Two things the engine must still guarantee so multi-board
-lockstep holds:
+- ESP32-CAM is NOT a bootable board: `boards-registry.ts` deliberately
+  excludes `openhw-esp32-cam` from the esp32 family (camera component
+  shell). The runner honors `board:'esp32-cam'` if one ever arrives;
+  the engine boots it byte-identically to devkit. A cam board family
+  entry is UI-registry ownership.
+- No camera/OV2640 tap: I2S-camera DMA plumbing exists engine-side, but
+  no SCCB sensor model, no frame source, no SAB camera API.
+- Ticks are ~1/sec in the browser worker and Arduino boot is slow —
+  LEDC config lands near the tail; PWM cells need ≥120 s windows.
+- Unclaimed-SPI MISO reads 0x0 (fine for write-only devices).
 
-1. **Reset clears everything, synchronously** — cores, peripherals, pending
-   events, and any `stopped`/fault flags. A sticky flag desyncs one board's
-   lane forever while the others advance.
-2. **Expose a cycle/instruction counter per step** — feeds sim-time edge
-   stamps (replacing the runner's wall-clock approximation) and the
-   skew/pace accounting. One counter serves both.
+## Acceptance
 
-## Further surface (same agent — full protocol audit 2026-10,
-verified against `dist/index.d.ts:54-129`)
-
-Already present, runner-unwired (our side after hooks land):
-
-5. **TWAI**: `sendTwaiFrame` + `getTwaiTx` is the ONLY full-duplex peripheral
-   in the package — wire first, it proves the tap pattern end to end.
-6. **ADC**: `setVoltageMv(mv)` is global (no channel/pin) — extend to
-   per-pin/channel ADC inject for `analogRead` cells.
-7. **PWM/LEDC-out**: absent — add duty/frequency readback for servo/LED cells.
-8. **Touch**: `setTouchInput` (input-only) is enough for button cells — no change.
-9. **I2S**: `feedI2SRX` (input-only) exists; TX-side tap is P2.
-10. **MMIO backdoor**: `readMmio/writeUint32/readMemory/step/pc` exist —
-    acceptable fallback substrate if a native tap is costly for any peripheral above.
-11. PIO (n/a on Xtensa), OneWire (via GPIO timing + `setPinInput`, P1),
-    SDIO, USB-device: P2 — no cells written yet.
-
-## Future-component guarantee (signal-level contract)
-
-Same invariant as the other specs: after §1–4 + §6–7, any future component
-on GPIO / I2C-RW / SPI-duplex / UART / ADC-in / PWM-out / TWAI works with
-zero further engine changes. I2C **read** + NACK-at-empty-address are
-mandatory (sensor shelf + `scan()`); GPIO-out must broadcast every edge with
-direction + pull (keypad/encoder/IRQ lines and the logic-analyzer part all
-ride the same broadcast).
-
-## Acceptance (our e2e, to be written after hooks land)
-
-1. ESP32 SSD1306 OLED `vramFill > 0` via I2C (mirrors green F1/Pico cells, same `bus-bridge.ts` underneath).
-2. ESP32 MAX7219 digits via SPI (mirrors F1 SPI cell).
-3. Firmware-driven GPIO-out LED cell (pin level read back through SAB, no `null`).
-
-Reference for the proven bridge side: `src/worker/bus-bridge.ts` (`createI2CBridge`, `createSPIBridge`, `isSPISelected`/`boardCsSelected`) — the engine only needs to supply the tap events; routing, framing and models already exist.
+- `test-taps-host.mjs` green (154 checks incl. v3 LEDC case);
+  `wasm-bench` + `test-wasm-standalone` pass.
+- ESP32 cells: devkit hello TX, I2C OLED, SPI MAX7219, ADC pot,
+  LEDC LED must stay green.

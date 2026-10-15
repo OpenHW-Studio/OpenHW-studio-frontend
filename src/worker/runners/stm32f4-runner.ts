@@ -29,6 +29,7 @@ import {
   collectI2CSlaveAddresses,
   createI2CBridge,
   createSPIBridge,
+  levelPassiveNets,
   type I2CBridge,
   type SPIBridge,
 } from '../bus-bridge.ts';
@@ -154,7 +155,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 address: a,
                 onStart: () => { try { br.start(a, false); } catch { /* ignore */ } },
                 onWrite: (b: number) => { try { br.write(Number(b) & 0xff); } catch { /* ignore */ } },
-                onRead: () => { try { return br.read() & 0xff; } catch { return 0xff; } },
+                onRead: () => { try { return [br.read() & 0xff]; } catch { return [0xff]; } },
                 onStop: () => { try { br.stop(); } catch { /* ignore */ } },
             }));
             // Virtual slaves (bus progress): the core stalls transactions
@@ -191,23 +192,82 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     || typeof (inst as any)?.onSPIByteExchange === 'function') { hasSpi = true; break; }
             }
         } catch { /* ignore */ }
+        // TIM3 buzzer tap for PWM observe (PA6 = TIM3_CH1; the engine's
+        // buzzer device reads freq/duty from the modeled timer regs —
+        // CCR1, so channel-1 pins). Polled in drainUartOut into onPWM.
+        // Read-only (no model writes); inert when firmware never enables
+        // the timer.
+        try {
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onPWM !== 'function') continue;
+                if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                const ext = (withAssets.ext_devices && typeof withAssets.ext_devices === 'object')
+                    ? withAssets.ext_devices : {};
+                if (!ext.buzzer) ext.buzzer = { tim: 'TIM3' };
+                withAssets.ext_devices = ext;
+                break;
+            }
+        } catch { /* buzzer never breaks boot */ }
         if (hasSpi) {
             const br = createSPIBridge(bridgeCtx);
             let lastMs = -1e9;
+            // CS discovery (generic): the engine only frames transfers
+            // between CS edges (parseSpi needs the assert to enter the
+            // transfer; without cs the byte stream is dropped). Trace the
+            // SPI peripheral model's CS pin net to the board pin label.
+            let csPin: string | null = null;
+            try {
+                for (const inst of this.instances.values()) {
+                    if (typeof (inst as any)?.onSPIByte !== 'function'
+                        && typeof (inst as any)?.onSPIByteExchange !== 'function') continue;
+                    const pins: string[] = [];
+                    try {
+                        const def = (this as any).compAttrById?.get?.(String((inst as any)?.id));
+                        void def;
+                    } catch { /* ignore */ }
+                    try {
+                        const p = (inst as any)?.pins;
+                        if (p && typeof p === 'object') pins.push(...Object.keys(p));
+                    } catch { /* ignore */ }
+                    const cands = pins.filter((p) => /^(CS|CSN|NSS|SS|STE)$/i.test(String(p || '').trim()));
+                    for (const cp of [...cands, 'CS']) {
+                        try {
+                            const net = (this as any).pinToNet?.get?.(`${(inst as any)?.id}:${cp}`);
+                            if (net === undefined) continue;
+                            for (const [node, netId] of (this as any).pinToNet) {
+                                if (netId !== net) continue;
+                                const sep = node.indexOf(':');
+                                if (sep < 0) continue;
+                                if (node.slice(0, sep) !== this.boardId) continue;
+                                csPin = node.slice(sep + 1).toUpperCase();
+                                break;
+                            }
+                        } catch { /* ignore */ }
+                        if (csPin) break;
+                    }
+                    if (csPin) break;
+                }
+            } catch { /* discovery never breaks boot */ }
             withAssets.spi = [{
                 peripheral: 'SPI1',
-                onTransfer: (_ch: string, tx: number[], _rx: number[]) => {
-                    void _ch; void _rx;
+                ...(csPin ? { cs: csPin } : {}),
+                onTransfer: (_ch: string, _tx: number[], _rx: number[]) => {
+                    // Frame close only: bytes already flowed per-byte
+                    // through onByte below (single feed, no doubling).
+                    void _ch; void _tx; void _rx;
                     try {
                         const nowMs = this.getSimulatedTimeMs();
                         if (nowMs - lastMs > 2.0) { try { br.frame(true); } catch { /* ignore */ } }
                         lastMs = nowMs;
-                        const arr = Array.isArray(tx) ? tx : [tx];
-                        for (let i = 0; i < arr.length; i++) br.exchange(Number(arr[i]) & 0xff, i);
                     } catch { /* transfer never breaks the tick */ }
                 },
                 onByte: (ch: string, byte: number, respond: (b: number) => void) => {
                     void ch;
+                    // Full-duplex per byte: bridge feeds the model and the
+                    // model's MISO response clocks back to the master.
+                    // Also arms small-quanta stepping (see stepBudget) so
+                    // drains interleave mid-transaction for MISO timing.
+                    try { (this as any).f4SpiHot = 4; } catch { /* ignore */ }
                     try {
                         const r = br.exchange(Number(byte) & 0xff, 0);
                         try { respond(r & 0xff); } catch { /* ignore */ }
@@ -354,11 +414,121 @@ export class Stm32f4Runner extends ArmRunnerBase {
             stepBudget(budget: number): number {
                 if (!self.mcu) return 0;
                 try {
-                    const r = self.mcu.execute(Math.max(1, Math.floor(budget)));
-                    return Number(r?.instCount ?? budget) || 0;
+                    // Adaptive quanta for SPI MISO timing: the engine pops
+                    // the MISO queue DURING the transfer but our model
+                    // responses only land via post-drain onByte pushes. One
+                    // coarse execute() per tick starves every read (whole
+                    // transactions complete before the first push). While
+                    // SPI traffic flows, step in small slices so drains
+                    // interleave mid-transaction (few-bytes lag, inside the
+                    // SD R1/R7 scan windows); otherwise full budget.
+                    const total = Math.max(1, Math.floor(budget));
+                    if (!((self as any).f4SpiHot > 0) || total <= 512) {
+                        const r = self.mcu.execute(total);
+                        return Number(r?.instCount ?? total) || 0;
+                    }
+                    (self as any).f4SpiHot--;
+                    let done = 0;
+                    let guarded = 0;
+                    while (done < total && guarded < 2048) {
+                        guarded++;
+                        const chunk = Math.min(512, total - done);
+                        let stepped = 0;
+                        try {
+                            const r = self.mcu.execute(chunk);
+                            stepped = Number(r?.instCount ?? chunk) || 0;
+                        } catch { break; }
+                        done += Math.max(1, stepped);
+                    }
+                    return done || 0;
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
+                // Net leveling: model-driven pins fan out across
+                // component-only nets (engine owns board nets).
+                try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
+                // PWM observe via the TIM3 buzzer tap (freq Hz + duty
+                // fraction, read from modeled timer regs). Drives LED
+                // models speaking onPWM (capability detection, no
+                // per-type code).
+                try {
+                    const buzz = (self.mcu as any)?.buzzer;
+                    const duty = Number(buzz?.duty) || 0;
+                    const freq = Number(buzz?.freq) || 0;
+                    if (duty > 0 && freq > 0) {
+                        for (const inst of self.instances.values()) {
+                            try {
+                                if (typeof (inst as any)?.onPWM !== 'function') continue;
+                                if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                                for (const pn of ['A', 'ANODE', '+']) {
+                                    try { (inst as any).onPWM(pn, { dutyCycle: Math.max(0, Math.min(1, duty)), frequencyHz: freq }); } catch { /* ignore */ }
+                                }
+                            } catch { /* one instance never breaks pwm */ }
+                        }
+                    }
+                } catch { /* PWM observe never breaks the drain */ }
+                // Per-tick ADC inject (facade setAdcChannel, raw 12-bit):
+                // Disco PA0-7/PB0-1/PC0-5 map to ADC123 channels 0-15.
+                // Wiper sources power like the F1 path (boards source no
+                // power today): VCC rails on 3V3 nets driven to 3.3V, models
+                // divide honestly, firmware analogRead samples it.
+                try {
+                    const mcu = self.mcu as any;
+                    if (mcu && typeof mcu.setAdcChannel === 'function') {
+                        const chFor: Record<string, number> = {
+                            PA0: 0, PA1: 1, PA2: 2, PA3: 3,
+                            PA4: 4, PA5: 5, PA6: 6, PA7: 7,
+                            PB0: 8, PB1: 9,
+                            PC0: 10, PC1: 11, PC2: 12, PC3: 13,
+                            PC4: 14, PC5: 15,
+                        };
+                        for (const inst of self.instances.values()) {
+                            try {
+                                if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                                for (const nm of ['VCC', '1']) {
+                                    let v = 0;
+                                    try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
+                                    if (v > 0.2) continue;
+                                    const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
+                                    if (net === undefined) continue;
+                                    for (const [node, netId] of self.pinToNet) {
+                                        if (netId !== net) continue;
+                                        const sep = node.indexOf(':');
+                                        if (sep < 0) continue;
+                                        if (node.slice(0, sep) !== self.boardId) continue;
+                                        if (!/3V3/i.test(node.slice(sep + 1))) continue;
+                                        try { (inst as any).setPinVoltage(nm, 3.3); } catch { /* ignore */ }
+                                        break;
+                                    }
+                                }
+                            } catch { /* one instance never breaks rails */ }
+                        }
+                        for (const [pin, ch] of Object.entries(chFor)) {
+                            try {
+                                let volts: number | null = null;
+                                for (const [node, netId] of self.pinToNet) {
+                                    const sep = node.indexOf(':');
+                                    if (sep < 0) continue;
+                                    if (node.slice(0, sep) !== self.boardId) continue;
+                                    if (node.slice(sep + 1).toUpperCase() !== pin) continue;
+                                    for (const [node2, net2] of self.pinToNet) {
+                                        if (net2 !== netId) continue;
+                                        const s2 = node2.indexOf(':');
+                                        if (s2 < 0) continue;
+                                        if (node2.slice(0, s2) === self.boardId) continue;
+                                        const inst = self.instances.get(node2.slice(0, s2));
+                                        const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
+                                        if (Number.isFinite(v)) { volts = v; break; }
+                                    }
+                                    break;
+                                }
+                                if (volts !== null) {
+                                    try { mcu.setAdcChannel('ADC1', ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
+                                }
+                            } catch { /* one pin never breaks the drain */ }
+                        }
+                    }
+                } catch { /* ADC inject never breaks the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },

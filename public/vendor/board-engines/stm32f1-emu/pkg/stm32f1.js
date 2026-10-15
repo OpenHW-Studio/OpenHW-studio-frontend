@@ -249,6 +249,17 @@ export class TIM {
     enabled() { return (this._mcu._emu.periphRead(this.base, 4) & 1) !== 0; }
     /** Output duty 0..100 for channel ch (0-based). 0 unless the timer runs. */
     duty(ch = 0) { return this.enabled() ? this._mcu._emu.pwmDuty(this.base, ch) : 0; }
+    /**
+     * Output pin carrying channel ch (0-based), with the live AFIO remap
+     * applied — e.g. `{ port: 'B', pin: 6 }` for TIM3 CH1 by default.
+     * Returns null when the timer/channel has no output pin (basic timers,
+     * out-of-range channels). Read-only; safe to call before firmware runs.
+     */
+    pin(ch = 0) {
+        const v = this._mcu._emu.timChanPin(this.n, ch | 0);
+        if (!(v >= 0)) return null;
+        return { port: 'ABCD'[(v >> 4) & 7], pin: v & 0xF };
+    }
     /** Output frequency in Hz from PSC/ARR and the clock tree. 0 unless the timer runs. */
     frequency() {
         if (!this.enabled()) return 0;

@@ -21,13 +21,17 @@ plus existing `_picoemu_write_uart` (REPL injection) and UART-out poll — all a
 Our runner injects via chunked `exec()` lines and the Arduino I2C path is
 green, but two MP-specific gaps remain in-engine:
 
-7. **Scan probes never ACK registered slaves.** `machine.I2C.scan()`
-   reports `[]` with a mirror attached at 0x3C. Writes to 0x3C work
-   (DATA_CMD write path hits the SDD), so the scan's address-probe
-   sequence (whatever DATA_CMD/flag pattern the SDK's zero-length write
-   uses) never reaches SDD start/ACK — and `TX_ABRT_SOURCE` hard-returns 0
-   so no abort is ever raised either. Fix: route the scan probe through
-   the attached slave's start/ACK.
+7. **Scan path — engine exonerated 2026-10-06, runner-side suspect.**
+   `machine.I2C.scan()` bit-bangs SIO GPIO (never touches the DW
+   controller — zero-length DW writes are register-invisible by SDK
+   design, so there is no DATA_CMD pattern to route). Native SIO
+   repro passes fully: 0x3C ACKs + ring `[0x13C, 0x200]`, all other
+   addresses NACK ring-silent, full 0x08–0x77 sweep finds exactly
+   `[0x3C]`; committed engine tests lock it. If live `scan()` still
+   reports `[]`, suspect runner-side mirror-attach timing vs. the scan
+   (diagnostic: dump `_picoemu_jsmirror_pending` right after a live
+   scan; each live probe leaves exactly 2 entries). NACKed-probe ring
+   visibility is a follow-up spec decision, not a bugfix.
 8. **`time.sleep()` never wakes.** Firmware goes silent inside `sleep`
    (no output, no traceback, engine appears halted); Arduino `delay()`
    works (busy-wait, no alarm). Prime suspect: TIMER alarm IRQ / WFI

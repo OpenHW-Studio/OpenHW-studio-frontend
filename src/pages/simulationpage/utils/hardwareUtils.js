@@ -65,7 +65,15 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
   // variants (Maple Mini, Nucleo, GD32, F401/…) compile for their own part.
   // Falls back to the kind table, then Uno.
   const typeKey = normalizeBoardKind(boardComp?.type || '');
-  void boardComp;
+  // RP2350 RISC-V: attrs arch=rv32 selects the riscv menu (toolchain
+  // present) so the firmware matches the Hazard3 core the runner boots.
+  try {
+    const archAttr = String(boardComp?.attrs?.arch || '').toLowerCase();
+    if ((typeKey === 'rp2350' || String(boardKind || '').toLowerCase().includes('rp2350'))
+      && (archAttr === 'rv32' || archAttr === 'riscv' || archAttr === 'risc-v')) {
+      if (BOARD_FQBN.pico_2_rv32) return BOARD_FQBN.pico_2_rv32;
+    }
+  } catch { /* fall through to the table */ }
   return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 

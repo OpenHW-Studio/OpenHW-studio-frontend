@@ -45,6 +45,9 @@ export const BOARD_FQBN = {
   arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   rp2040: 'rp2040:rp2040:rpipico',
   rp2350: 'rp2040:rp2040:rpipico2',
+  // RP2350 RISC-V (Hazard3): arduino-pico riscv menu (toolchain present).
+  // Selected per-board via attrs arch=rv32 (see resolveBoardFqbnForComponent).
+  pico_2_rv32: 'rp2040:rp2040:rpipico2:arch=riscv',
   // Pico W / Pico 2 W (CYW43) — arduino-pico board entries.
   pico_w: 'rp2040:rp2040:rpipicow',
   pico_2_w: 'rp2040:rp2040:rpipico2w',
