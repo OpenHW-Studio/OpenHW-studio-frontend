@@ -139,11 +139,16 @@ Connectivity extras not in the main tables:
 | Feature | Status |
 |---|---|
 | Pico-W CYW43 WiFi traffic | FULL 2026-10-15 — Arduino join + gateway DHCP (STATUS=3 IP=192.168.4.2) via unified gateway :5030; runner enables + WS pump in pico-runner.ts, engine from owner folder (vite alias) |
+| Pico-W LAN (2-board TCP) | FULL 2026-10-15 — STA+STA same room, TCP echo both directions observed (SRV-RX/SRV-ECHOED/CLI-RX). v4 DNS hostByName fails (no gateway v4 DNS egress) — recorded gap, unasserted. |
+| Pico-W HTTP client | FULL 2026-10-15 — Arduino HTTPClient GET via gateway NAT (10.150.211.85→host :8092): 200 + body exact. |
+| F4 HTTP client | FULL 2026-10-15 — owner eth_http.bin via gateway NAT (TCP + GET + 200 + body, byte-exact response); polling firmware (no ethIrq). |
+| Pico IPv6 (SLAAC) | PARTIAL 2026-10-15 — RV32 ping6 guest gets gateway RA (RA-OK live, SLAAC addressing works); ICMPv6 echo unproven (guest targets a hardcoded vnet peer, gateway answers NS only for its own addresses). |
+| Pico-W SoftAP | FULL 2026-10-15 — guest beginAP + STA join (AP DHCP lease) + TCP both directions (STA-server and AP-client directions proven in separate cells). AP subnet fixed at .4.1 by the engine (softAPConfig not honored); AP-terminated TCP untestable due to gateway .1 fast-reply collision — STA-server direction used instead. |
 | Pico-ETH W5500/W6300 traffic | FULL 2026-10-15 — Arduino Wiznet5500lwIP DORA via unified gateway :5030 (MACRAW sock0, tickMHz 125); runner board enables + WS pump in pico-runner.ts, engine from owner folder (vite alias). W6300 still explicit gap. |
 | Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell; real silicon does device+host) |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
 | Pico SD/FATFS (sdcard.c, fatfs.c) | NONE |
-| ESP32 WiFi link (wifi_bridge.rs) | RED 2026-10-15 — runner passes config.wifi (engine dials gateway itself) + stats telemetry wired, but guest stalls pre-print (second-stage, pc 0x400857b3, 800M inst no UART) in node AND browser with valid flash; engine-owner ticket needed (see session notes). Pico-W path proves the gateway side. |
+| ESP32 WiFi link | FULL 2026-10-15 — Arduino STA join + gateway DHCP (STATUS=3, scan + IP) via unified gateway :5030; runner passes config.wifi + throttled stats telemetry. Root cause of the RED was a host-side SAB wedge (stats CMD unserviced mid-run), fixed inline in the vendor mirror (see session notes); engine itself exonerated. |
 | ESP32 BLE | ABSENT (no engine model) |
 | ESP32 PCNT / SDMMC / ULP / FreeRTOS tasks / eFuse | NONE each (models exist) |
 | ESP32 USB-CDC (usbcdc.rs) | ABSENT at board level (classic ESP32, no USB silicon) |

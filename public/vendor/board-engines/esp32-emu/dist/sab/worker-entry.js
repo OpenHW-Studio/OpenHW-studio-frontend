@@ -7746,6 +7746,55 @@ async function runSimChunk() {
         Atomics.store(ctrl, SAB_RESP, RESP_DONE);
         Atomics.store(ctrl, SAB_CMD, CMD_NONE);
       }
+      // OPENHW MIRROR PATCH (wifi-stats wedge fix): service CMD_GET_WIFI_STATS
+      // inline in runSimChunk, mirroring the processCommand case below
+      // (_syncWifiStatus + bridge status into readResp). The proxy
+      // busy-spins for RESP_DONE, and while RUN=1 the worker never returns
+      // to commandLoop — so without this the runner's pollNetStats (every
+      // 2s after first UART flow) wedges the board worker on its FIRST call
+      // and no UART is ever drained again (observed class: ROM banner then
+      // silence with the engine running unwatched; same signature as the
+      // TWAI-TX wedge fixed above). Read-only status mirror, same class as
+      // the GET_TWAI_TX inline block — no silicon behavior invented.
+      // Propose upstream verbatim (esp32-emu worker-entry.js).
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_GET_WIFI_STATS) {
+        try {
+          let written = 0;
+          chip?._syncWifiStatus?.();
+          if (readResp && chip?._wifiBridge?.ap) {
+            try {
+              const s = chip._wifiBridge.ap.status;
+              const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+              dv.setInt32(0, s.state, true);
+              dv.setInt32(4, s.txFrames, true);
+              dv.setInt32(8, s.txBytes, true);
+              dv.setInt32(12, s.rxFrames, true);
+              dv.setInt32(16, s.rxBytes, true);
+              dv.setInt32(20, s.probeRequestCount, true);
+              dv.setInt32(24, s.connectedClients, true);
+              const enc = new TextEncoder();
+              let off = 28;
+              const writeStr = (str) => {
+                const b = enc.encode(str);
+                const len = Math.min(b.length, 39);
+                readResp.set(b.subarray(0, len), off);
+                readResp[off + len] = 0;
+                off += 40;
+              };
+              writeStr(s.ip || "");
+              writeStr(s.portForward || "");
+              writeStr(s.errorMessage || "");
+              writeStr(s.udpForward || "");
+              written = off;
+            } catch {
+            }
+          }
+          Atomics.store(ctrl, SAB_CMD_ARG1, written);
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
       if (Atomics.load(ctrl, SAB_CMD) === CMD_PRESS_RESET) {
         try {
           chip?.pressResetButton?.();
