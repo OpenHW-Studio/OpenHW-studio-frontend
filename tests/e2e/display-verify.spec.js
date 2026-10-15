@@ -36,8 +36,8 @@ test.describe('Display verification (TFT + OLED)', () => {
         ],
         wires: [
           { from: 'uno1:10', to: 'tft1:CS' },
-          { from: 'uno1:9', to: 'tft1:RESET' },
-          { from: 'uno1:8', to: 'tft1:DC' },
+          { from: 'uno1:9', to: 'tft1:DC' },
+          { from: 'uno1:8', to: 'tft1:RESET' },
           { from: 'uno1:11', to: 'tft1:MOSI' },
           { from: 'uno1:13', to: 'tft1:SCK' },
           { from: 'uno1:5V', to: 'tft1:LED' },

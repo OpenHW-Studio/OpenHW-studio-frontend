@@ -231,7 +231,11 @@ describe('whole-registry component sweep (headless harness)', () => {
           } catch { /* optional */ }
         }
 
-        // TM1637: two-wire command sequence writing digits 0-3.
+        // 5W speaker: tone path synthesizes a playable chunk (buzzer
+        // semantics over the chunk pipeline — no I2S source needed).
+        if (/5w-speaker/i.test(type) && typeof inst.onPWMSignal === 'function') {
+          try { inst.onPWMSignal('IN+', 440, 0.5, 1136); } catch { /* optional */ }
+        }
         if (/tm1637/i.test(type) && typeof inst.onTwoWireStart === 'function') {
           try {
             inst.onTwoWireStart();
@@ -294,6 +298,9 @@ describe('whole-registry component sweep (headless harness)', () => {
             } catch { /* ignore */ }
           } else if (/74hc595/i.test(type) || type === 'shift_register') {
             if (Number(st1.storageReg) === 0xff) tier = 'content';
+          } else if (/5w-speaker/i.test(type)) {
+            const ch = inst.state?.audioChunk;
+            if (Array.isArray(ch) && ch.length > 1000) tier = 'content';
           } else if (/pir-motion-sensor/i.test(type)) {
             if (st1.motion === true) tier = 'content';
           } else if (/photoresistor|photodiode/i.test(type)) {

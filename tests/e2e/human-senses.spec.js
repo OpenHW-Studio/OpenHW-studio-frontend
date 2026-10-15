@@ -26,7 +26,7 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     page.on('console', (msg) => {
       try {
         const t = `[${msg.type()}] ${msg.text()}`;
-        if (/AVRRunner DBG|inst id=(tft1|oled1|mic1|bz1|lcd1) /.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 500));
+        if (/AVRRunner DBG|inst id=(tft1|oled1|mic1|bz1|lcd1) |TFT-DIAG|Microphone access|mic_error/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 500));
       } catch { /* ignore */ }
     });
   });
@@ -141,8 +141,8 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
         ],
         wires: [
           { from: 'uno1:10', to: 'tft1:CS' },
-          { from: 'uno1:9', to: 'tft1:RESET' },
-          { from: 'uno1:8', to: 'tft1:DC' },
+          { from: 'uno1:9', to: 'tft1:DC' },
+          { from: 'uno1:8', to: 'tft1:RESET' },
           { from: 'uno1:11', to: 'tft1:MOSI' },
           { from: 'uno1:13', to: 'tft1:SCK' },
           { from: 'uno1:5V', to: 'tft1:LED' },
@@ -220,6 +220,21 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
 
+    // Harness check: can this browser even open a (fake) microphone?
+    const micProbe = await page.evaluate(async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const label = (s.getAudioTracks()[0] || {}).label || 'unlabeled';
+        s.getTracks().forEach((t) => t.stop());
+        return { ok: true, label };
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e).slice(0, 120) };
+      }
+    });
+    console.log('MIC-HARNESS getUserMedia:', JSON.stringify(micProbe));
+    // Worker-side ear: capture mic1 engine state (mic_data vs mic_error).
+    // (AVR DBG dump lines are captured by the shared beforeEach hook.)
+
     const setup = await page.evaluate(() =>
       window.OpenHWE2E.setupCircuit({
         components: [
@@ -244,6 +259,19 @@ test.describe('Human senses (displays, buzzer, mic — live)', () => {
     const mic = (verdict.telemetry || []).find((t) => t.id === 'mic1');
     expect(mic).toBeTruthy();
     const micCustom = mic.details?.custom || mic.details?.metrics?.custom || {};
+    // UI-side ear (palette-proof): the loudest green activity LED among
+    // ALL mic views must be lit — palette previews sit at 0 forever, so a
+    // positive reading can only come from the live canvas mic.
+    const ledAmps = await page.evaluate(() => {
+      const out = [];
+      for (const c of document.querySelectorAll('circle')) {
+        const m = String(c.getAttribute('fill') || '').match(/rgba\(0,\s*255,\s*0,\s*([0-9.]+)\)/);
+        if (m) out.push(Number(m[1]));
+      }
+      return out;
+    });
+    const ledMax = ledAmps.length ? Math.max(...ledAmps) : 0;
+    console.log('MIC-DOM max green LED opacity:', ledMax, 'samples:', ledAmps.length);
     expect(String(micCustom.liveMicEnabled || '')).toMatch(/yes/i);
     expect(Number(micCustom.peakAmplitude ?? 0)).toBeGreaterThan(0);
     // Raw mirror corroboration.

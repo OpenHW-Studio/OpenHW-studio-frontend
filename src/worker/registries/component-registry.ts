@@ -9,6 +9,7 @@ import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-s
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
 import { NeopixelLogic } from '@openhw/emulator/src/components/openhw-neopixel-matrix/logic';
 import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic';
+import { Logic as SpeakerLogic } from '@openhw/emulator/src/components/openhw-5w-speaker/logic';
 import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic';
 import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
@@ -107,6 +108,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ws2821b': NeopixelLogic,
     'wokwi-buzzer': BuzzerLogic,
     'openhw-buzzer': BuzzerLogic,
+    'openhw-5w-speaker': SpeakerLogic,
     'wokwi-motor': MotorLogic,
     'openhw-motor': MotorLogic,
     'wokwi-servo': ServoLogic,
