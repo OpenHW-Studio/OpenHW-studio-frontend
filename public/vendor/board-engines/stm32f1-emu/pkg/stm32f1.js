@@ -155,6 +155,14 @@ export class I2C {
     }
     /** Queue RX bytes the MCU reads during master-receiver transactions. */
     injectRx(bytes) { this._mcu._emu.i2cInjectRx(this.ch, Uint8Array.from(bytes)); }
+    /**
+     * Drop all queued RX bytes on this bus. Reactive runners call
+     * `clearRx()` then `injectRx(fresh)` at read-START (the pointer is
+     * already drained into the model by then), so stale leftovers from
+     * previous transactions never poison the front. An empty queue still
+     * NACKs the address phase.
+     */
+    clearRx() { this._mcu._emu.i2cClearRx(this.ch); }
     /** @internal */
     _start(addr) { if (this.onStart) this.onStart(addr); }
     /** @internal */

@@ -23,6 +23,7 @@ const NEED_TO_BOARD_CAPS: Record<string, string[]> = {
   'onewire': ['onewire'],
   'analog-in': ['analog-adc'],
   'i2s': ['i2s'],
+  'twai': ['twai'],
 };
 
 export type MatrixStatus = 'supported' | 'unsupported' | 'untested';

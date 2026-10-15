@@ -152,7 +152,24 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // read phase (the I2cDevice repeated-start path drains the
                 // pending pointer write and prefills the read queue).
                 let busIdle = true;
-                try { mcu.i2c1.onStart = (addr: number) => { try { br.start(Number(addr) & 0x7f, !busIdle); busIdle = false; } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try { mcu.i2c1.onStart = (addr: number) => { try {
+                    const readPhase = !busIdle;
+                    br.start(Number(addr) & 0x7f, readPhase);
+                    busIdle = false;
+                    // Deterministic prefill: clear the engine queue, then
+                    // mirror up to 32 bytes from the just-drained model
+                    // pointer state. Atomic at read-START (before any DR
+                    // read of this phase), so every transaction is exact
+                    // regardless of batch timing. No-op without clearRx.
+                    if (readPhase && typeof mcu.i2c1.clearRx === 'function') {
+                        try {
+                            mcu.i2c1.clearRx();
+                            const burst: number[] = [];
+                            for (let i = 0; i < 32; i++) burst.push(br.read() & 0xff);
+                            try { mcu.i2c1.injectRx(burst); } catch { /* ignore */ }
+                        } catch { /* prefill never breaks start */ }
+                    }
+                } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try { mcu.i2c1.onWrite = (byte: number) => { try { br.write(Number(byte) & 0xff); } catch { /* ignore */ } }; } catch { /* ignore */ }
                 try {
                     // NOTE: the engine's _read() calls onRead but IGNORES
@@ -316,6 +333,8 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         }
                     }
                     if (oledAddrs.length > 0 || sinkAddrs.length > 0) {
+                        // TEMP-DIAG (sink isolation — revert).
+                        try { console.log(`[F1Runner] SINK diag oled=${JSON.stringify(oledAddrs)} sink=${JSON.stringify(sinkAddrs)}`); } catch { /* ignore */ }
                         extDevices = {};
                         if (oledAddrs.length > 0) {
                             extDevices.i2c_oled = oledAddrs.slice(0, 4).map((address) => ({
@@ -352,6 +371,10 @@ export class Stm32f1Runner extends ArmRunnerBase {
             stepBudget(budget: number): number {
                 if (!self.mcu) return 0;
                 try {
+                    // NOTE: small quanta were tried for MISO/RX timing
+                    // (512-1024 inst slices) but starve the core (800+
+                    // FFI calls/tick); single coarse execute + START
+                    // prefill is the correct architecture instead.
                     const r = self.mcu.execute(Math.max(1, Math.floor(budget)));
                     return Number(r?.instCount ?? r?.totalSteps ?? budget) || 0;
                 } catch { return 0; }
@@ -417,7 +440,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         // rail pin — the model then divides honestly.
                         try {
                             const railSpecs: Array<{ pins: string[]; pat: RegExp; volts: number }> = [
-                                { pins: ['VCC', 'vcc', '1'], pat: /3V3/i, volts: 3.3 },
+                                { pins: ['VCC', 'vcc', 'VIN', 'vin', '1'], pat: /3V3/i, volts: 3.3 },
                                 { pins: ['V+', 'VCC5', 'vcc5'], pat: /^5V$/i, volts: 5.0 },
                             ];
                             for (const inst of self.instances.values()) {

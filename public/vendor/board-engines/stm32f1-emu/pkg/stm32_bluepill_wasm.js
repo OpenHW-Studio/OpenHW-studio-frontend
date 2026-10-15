@@ -533,6 +533,16 @@ export function has_pending_interrupt() {
 }
 
 /**
+ * Drop all queued injected RX bytes for an I2C channel. Reactive runners
+ * clear-then-prefill at read-START so stale leftovers never poison the
+ * front (empty queue still NACKs the address phase, as before).
+ * @param {number} channel
+ */
+export function i2c_clear_rx(channel) {
+    wasm.i2c_clear_rx(channel);
+}
+
+/**
  * SMBus ALERT input: peer pulled SMBA low on this channel → SR1 SMBALERT
  * flag (+ error IRQ when ITERREN). Returns false when disabled/no channel.
  * @param {number} channel

@@ -20,6 +20,9 @@ test.describe('Retro boards UART console (8086emu, asm-first)', () => {
     ['r86', 'openhw-8086',
       `ORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\nMOV AH, 4Ch\nINT 21h\nmsg: DB 'HELLO_R86!$'\nEND`,
       'HELLO_R86'],
+    ['r88', 'openhw-8088',
+      `ORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\nMOV AH, 4Ch\nINT 21h\nmsg: DB 'HELLO_R88!$'\nEND`,
+      'HELLO_R88'],
     ['r85', 'openhw-8085',
       `    MVI C, 05h\n    LXI H, msg\nloop:\n    MOV A, M\n    CPI '$'\n    JZ done\n    OUT 01h\n    INX H\n    JMP loop\ndone:\n    HLT\nmsg: DB 'HELLO_R85!', '$'\nEND`,
       'HELLO_R85'],
@@ -35,6 +38,10 @@ test.describe('Retro boards UART console (8086emu, asm-first)', () => {
       // NOTE: package Z80 assembler has no forward label refs (verified:
       // LD HL,label fails); unrolled OUT sequence like repo helloz80.asm.
       `    ORG 0\n    LD A, 'H'\n    OUT (1), A\n    LD A, 'i'\n    OUT (1), A\n    LD A, 10\n    OUT (1), A\n    HALT\n    END\n`,
+      'Hi'],
+    ['rrv', 'openhw-rv32',
+      // RV32 hello via the tiny ECALL ABI (repo hellorv32.asm).
+      `    ORG 0\n    ADDI a1, x0, 0x100\n    ADDI a2, x0, 3\n    ADDI a7, x0, 64\n    ECALL\n    ADDI a7, x0, 93\n    ECALL\n    ORG 0x100\n    DB 'H','i',10\n    END\n`,
       'Hi'],
   ];
 
