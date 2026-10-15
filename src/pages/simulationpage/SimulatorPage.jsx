@@ -1611,6 +1611,58 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
           const diag = sabReaderMod.getSabDiag(sab);
           if (diag) stats.lastSeq = diag.frameSeq;
+          // Pin region poll (§10.4 full map, Shape B): when the START
+          // postamble binds boardPinMaps, decode the pin bitfield + analog
+          // array into render mirror refs (no postMessage bytes). The
+          // per-message pins path in workerStateIngest.js stays authoritative
+          // (transition counts + plotter sample there); this mirror only
+          // covers wakeups that carry no pins payload (sabFastPath shrink).
+          try {
+            const pinMaps = (typeof window !== "undefined" ? window.__sabBoardPinMaps : null) || null;
+            if (sabReaderMod.readPinRegion && Array.isArray(pinMaps) && pinMaps.length > 0) {
+              const pinRegions = sabReaderMod.readPinRegion(sab, pinMaps);
+              let sawPins = false;
+              for (const b of pinMaps) {
+                const boardKey = String(b?.boardId || "").trim() || "default";
+                const reg = pinRegions[boardKey];
+                if (!reg) continue;
+                // Digital bits → per-board pin-name map via board pin order
+                // (allocateStateSab order == COMPONENT_REGISTRY pin order).
+                // Only publish when the bitfield is non-empty; unwritten
+                // regions read all-zero and must NOT clobber the richer
+                // postMessage pins mirror.
+                const names = Array.isArray(b?.pins) ? b.pins : [];
+                const words = Array.isArray(reg.bits) ? reg.bits : [];
+                const anyBit = words.some((w) => (w >>> 0) !== 0);
+                const analog = Array.isArray(reg.analog) ? reg.analog : [];
+                const anyAnalog = analog.some((v) => Number(v) !== 0);
+                if (!anyBit && !anyAnalog) continue;
+                sawPins = true;
+                const prev = renderPinsByBoardRef.current[boardKey] || {};
+                const next = { ...prev };
+                for (let pi = 0; pi < names.length; pi++) {
+                  const bit = (words[pi >>> 5] >>> (pi & 31)) & 1;
+                  next[names[pi]] = bit === 1;
+                }
+                renderPinsByBoardRef.current[boardKey] = next;
+                if (anyAnalog) renderAnalogByBoardRef.current[boardKey] = [...analog];
+              }
+              if (sawPins) stats.pinMirrors = (stats.pinMirrors || 0) + 1;
+            }
+          } catch { /* pin-region poll never breaks render loop */ }
+          // Display descriptors poll (§10.4, slot-oriented — never pixels):
+          // surface {compSlot,width,height,dirtyRect} for Playwright/deep-
+          // silicon tooling. Pixel frames stay on routeDisplayFrames.
+          try {
+            const ddOff = (typeof window !== "undefined" ? window.__sabDisplayDescOffset : 0) || 0;
+            if (sabReaderMod.readDisplayDescriptors && ddOff > 0) {
+              const descs = sabReaderMod.readDisplayDescriptors(sab, ddOff, 16);
+              if (Array.isArray(descs) && descs.length > 0
+                && typeof window !== "undefined") {
+                window.__sabDisplayMirror = descs;
+              }
+            }
+          } catch { /* descriptor poll never breaks render loop */ }
           // Serial TX ring (§10.4): worker→main bytes when bound. Strings
           // assemble here off-tick; postMessage serial stays authoritative
           // (overflow/dedup paths). Throttle: drain at most 256B per frame.

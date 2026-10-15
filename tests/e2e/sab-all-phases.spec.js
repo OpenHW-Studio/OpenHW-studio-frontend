@@ -476,4 +476,62 @@ test.describe('SAB all phases', () => {
     expect(result.hasPendingSteps).toBe(true);
     expect(errors.filter((e) => /debug|Debug|DEBUG/i.test(e))).toEqual([]);
   });
+
+  test('P12 full-map readers: pins + debug + display descriptors', async ({ page }) => {
+    await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(5000);
+    const result = await page.evaluate(async () => {
+      const layout = await import('/src/worker/sab/layout.ts');
+      const reader = await import('/src/pages/simulationpage/utils/sabReader.js');
+      // Full-map alloc: pin region partitioned by boardPinMaps (UNO-class
+      // 20 pins → 1 bit word + 20 analog f32), serial rings + debug +
+      // display descriptors laid out after telemetry.
+      const pins = Array.from({ length: 20 }, (_, k) => `D${k}`);
+      const alloc = layout.allocateStateSab(['led1', 'tft1'], 1024, [
+        { boardId: 'uno1', boardIdx: 0, pins },
+      ]);
+      const u32 = new Uint32Array(alloc.buffer);
+      // Publish digital bits via the real writer path (SabPinWriter +
+      // geometry from the alloc, same as avr/rp2040 runners at attach).
+      const pinWriter = new layout.SabPinWriter(alloc.buffer);
+      pinWriter.bindGeometry(alloc.pinBitWords, alloc.analogBase);
+      pinWriter.writeDigital(3, true); // D3 high
+      pinWriter.writeDigital(13, true); // D13 (LED) high
+      pinWriter.writeAnalog(3, 5.0);
+      // Debug region via the real writer (mirrors runner snapshot path).
+      const dbgWriter = new layout.SabDebugWriter(alloc.buffer, alloc.debugOffset);
+      dbgWriter.write({ pc: 0x1234, sp: 0x8ff, cycles: 16000, breakReason: 1, halted: true });
+      // Display descriptor via the real writer (routeDisplayFrames path).
+      const dispWriter = new layout.SabDisplayWriter(alloc.buffer, alloc.displayDescOffset);
+      dispWriter.write(0, 1, 240, 320, 0, 0xffffffff);
+      // Serial TX ring: worker→main bytes (SabSerialRing over the alloc).
+      const txRing = new layout.SabSerialRing(alloc.buffer, alloc.serialTxOffset);
+      for (const ch of 'HI') txRing.pushByte(ch.charCodeAt(0));
+      // Readers under test (pure sabReader.js, zero worker dependency).
+      const pinRegions = reader.readPinRegion(alloc.buffer, [{ boardId: 'uno1', pins }]);
+      const dbg = reader.readDebugRegion(alloc.buffer, alloc.debugOffset);
+      const descs = reader.readDisplayDescriptors(alloc.buffer, alloc.displayDescOffset, 16);
+      const serial = reader.drainSerialRing(alloc.buffer, alloc.serialTxOffset, 256);
+      return {
+        pinWords: pinRegions?.uno1?.bits || null,
+        pinAnalog3: pinRegions?.uno1?.analog ? pinRegions.uno1.analog[3] : null,
+        dbg, descs, serial,
+        emptyMaps: reader.readPinRegion(alloc.buffer, []),
+        badDebug: reader.readDebugRegion(new ArrayBuffer(64), 0),
+        badDescs: reader.readDisplayDescriptors(alloc.buffer, 0),
+      };
+    });
+    // Digital bits: D3 + D13 set → word0 = (1<<3)|(1<<13).
+    expect(result.pinWords).toEqual([(1 << 3) | (1 << 13)]);
+    expect(result.pinAnalog3).toBeCloseTo(5.0, 3);
+    expect(result.dbg).toMatchObject({ pc: 0x1234, sp: 0x8ff, halted: true, breakReason: 1 });
+    expect(result.dbg.cycles).toBe(16000);
+    expect(result.descs).toHaveLength(1);
+    expect(result.descs[0]).toMatchObject({ compSlot: 1, width: 240, height: 320 });
+    expect(result.serial).toEqual([72, 73]); // 'H','I'
+    // Fallback contracts: no maps → {}, bad offsets → null/[].
+    expect(result.emptyMaps).toEqual({});
+    expect(result.badDebug).toBeNull();
+    expect(result.badDescs).toEqual([]);
+  });
 });
