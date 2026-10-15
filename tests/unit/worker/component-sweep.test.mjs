@@ -122,12 +122,46 @@ describe('whole-registry component sweep (headless harness)', () => {
           try { inst.onI2CStop?.(); } catch { /* optional */ }
         }
 
+        // Parallel HD44780 (lcd1602/lcd2004 without backpack): 4-bit GPIO
+        // nibbles with EN strobes — init sequence + "Hi" as data.
+        if (/lcd1602|lcd2004/i.test(type) && typeof inst.onI2CStart !== 'function' && typeof inst.onPinStateChange === 'function') {
+          try {
+            const hasE = Object.keys(inst.pins || {}).some((p) => /^E$/i.test(p));
+            if (hasE) {
+              const nib = (b, rs) => {
+                for (const half of [(b >> 4) & 0xf, b & 0xf]) {
+                  inst.onPinStateChange('RS', !!rs, cyc);
+                  for (let i = 0; i < 4; i += 1) inst.onPinStateChange(`D${4 + i}`, !!((half >> i) & 1), cyc);
+                  inst.onPinStateChange('E', true, cyc);
+                  inst.onPinStateChange('E', false, cyc);
+                }
+              };
+              for (const b of [0x33, 0x32, 0x28, 0x0c, 0x06, 0x01]) nib(b, false);
+              for (const b of [0x48, 0x69]) nib(b, true);
+              inst.update(3000000, [], new Map());
+            }
+          } catch { /* optional */ }
+        }
+
         // SPI: CS assert, 4-byte exchange, CS deassert. Covers MOSI/MISO
         // parts plus DN/SCLK-style write-only displays (Nokia 5110).
         // ePaper needs its DC line driven: command 0x24 (DC low) then RAM
         // bytes (DC high) — proves vram ingestion, not just traffic.
+        // ili9341-touch likewise: RAMWR 0x2C then pixel bytes.
         const spiish = caps.has('spi-target') || Object.keys(inst.pins || {}).some((p) => /^(MOSI|MISO|DIN|SDI|DN|SCLK)$/i.test(p));
-        if (/epaper/i.test(type) && typeof inst.onSPIByte === 'function') {
+        if (/ili9341-touch/i.test(type) && typeof inst.onSPIByte === 'function') {
+          try {
+            if (inst.pins?.VCC) inst.setPinVoltage('VCC', 5.0);
+            if (inst.pins?.GND) inst.setPinVoltage('GND', 0.0);
+            const cs = typeof inst.getCSPinName === 'function' ? inst.getCSPinName() : 'CS';
+            inst.onPinStateChange('DC', false, cyc);
+            inst.onPinStateChange(cs, false, cyc);
+            inst.onSPIByte(0x2c);
+            inst.onPinStateChange('DC', true, cyc);
+            for (let i = 0; i < 16; i += 1) inst.onSPIByte(0xf8);
+            inst.onPinStateChange(cs, true, cyc);
+          } catch { /* optional */ }
+        } else if (/epaper/i.test(type) && typeof inst.onSPIByte === 'function') {
           try {
             if (inst.pins?.VCC) inst.setPinVoltage('VCC', 5.0);
             if (inst.pins?.GND) inst.setPinVoltage('GND', 0.0);
@@ -167,6 +201,10 @@ describe('whole-registry component sweep (headless harness)', () => {
         }
         if (caps.has('i2s') && typeof inst.onI2SFrame === 'function') {
           inst.onI2SFrame(0, 1234, 16);
+        }
+        // I2S DAC/amp: full-scale frame must move the analog outputs.
+        if (/max98357|pcm5102/i.test(type) && typeof inst.onI2SFrame === 'function') {
+          try { inst.onI2SFrame(0, 1073741824, 16); } catch { /* optional */ }
         }
 
         // DHT-22: host pulls DATA LOW ≥500us then releases; run its clock
@@ -354,7 +392,25 @@ describe('whole-registry component sweep (headless harness)', () => {
           } else if (type.includes('max7219')) {
             if (Number(st1.spiRxBytes || 0) > 0 && (st1.lastFrame?.length > 0 || st1.lastCommand != null)) tier = 'content';
           } else if (type.includes('ili9341')) {
-            if (Number(st1.spiRxBytes || 0) > 0) tier = 'content';
+            const vram = inst.vram || inst.state?.vram || st1.buffer;
+            if (Number(st1.spiRxBytes || 0) > 0 || Number(st1.writeCount || 0) > 0 ||
+                (vram && [...vram.slice(0, 64)].some((b) => b !== 0))) tier = 'content';
+          } else if (type.includes('max98357')) {
+            try {
+              const v = Number(inst.getPinVoltage('OUT+'));
+              if (Math.abs(v - 2.475) < 0.02) {
+                tier = 'content';
+                tiers.content.push(`${type}: OUT+ driven ${v.toFixed(3)}V`);
+              }
+            } catch { /* optional */ }
+          } else if (type.includes('pcm5102')) {
+            try {
+              const v = Number(inst.getPinVoltage('OUTL'));
+              if (Math.abs(v - 2.475) < 0.02) {
+                tier = 'content';
+                tiers.content.push(`${type}: OUTL driven ${v.toFixed(3)}V`);
+              }
+            } catch { /* optional */ }
           } else if (type.includes('ds18b20')) {
             if (Number(st1.rawValue) === 400 && Number(st1.temperature) === 25) tier = 'content';
           } else if (type.includes('mfrc522')) {

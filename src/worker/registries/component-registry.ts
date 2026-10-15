@@ -36,7 +36,8 @@ import { RotaryEncoderLogic } from '@openhw/emulator/src/components/openhw-rotar
 import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-5110/logic';
 import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic';
-// import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { Lcd2004ParallelLogic } from '@openhw/emulator/src/components/openhw-lcd2004/logic';
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
@@ -55,6 +56,7 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { ILI9341TouchLogic } from '@openhw/emulator/src/components/openhw-ili9341-touch/logic';
 import { EPaperLogic } from '@openhw/emulator/src/components/openhw-ePaperDisplay/logic';
 import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
 import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-module/logic';
@@ -64,6 +66,8 @@ import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/l
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { Logic as Inmp441Logic } from '@openhw/emulator/src/components/openhw-inmp441/logic';
 import { Logic as Sph0645Logic } from '@openhw/emulator/src/components/openhw-sph0645/logic';
+import { Logic as Max98357Logic } from '@openhw/emulator/src/components/openhw-max98357/logic';
+import { Logic as Pcm5102Logic } from '@openhw/emulator/src/components/openhw-pcm5102/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
@@ -124,8 +128,10 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CLogic,
     'openhw-lcd2004-i2c': Lcd2004I2CLogic,
-    // 'wokwi-lcd1602': Lcd1602Logic,
-    // 'openhw-lcd1602': Lcd1602Logic,
+    'wokwi-lcd1602': Lcd1602Logic,
+    'openhw-lcd1602': Lcd1602Logic,
+    'wokwi-lcd2004': Lcd2004ParallelLogic,
+    'openhw-lcd2004': Lcd2004ParallelLogic,
     'wokwi-lcd1602-i2c': Lcd2004I2CLogic,
     'openhw-lcd1602-i2c': Lcd2004I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
@@ -139,6 +145,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
+    'openhw-ili9341-touch': ILI9341TouchLogic,
     'openhw-ePaperDisplay': EPaperLogic,
     'wokwi-sd-card': SDCardLogic,
     'openhw-sd-card': SDCardLogic,
@@ -192,11 +199,10 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-logic-analyzer': SimulationMonitorLogic,
     'openhw-ks2e-m-dc5': Ks2eLogic,
 
-    // I2S Audio Components (microphones use their real logic classes so
-    // mic_data/mic_error events engage the sim; DAC/amp stay on the
-    // fallback until a live consumer test needs them).
-    'openhw-pcm5102': I2SProtocol,
-    'openhw-max98357': I2SProtocol,
+    // I2S Audio Components: real logic classes so frames decode to pins
+    // (mics) and pins decode to analog (DAC/amp).
+    'openhw-pcm5102': Pcm5102Logic,
+    'openhw-max98357': Max98357Logic,
     'openhw-inmp441': Inmp441Logic,
     'openhw-sph0645': Sph0645Logic,
 
@@ -428,6 +434,8 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
     'openhw-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'wokwi-lcd2004': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'openhw-lcd2004': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
     'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
@@ -441,6 +449,7 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
     'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ili9341-touch': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }, { id: 'SCL' }, { id: 'SDA' }],
     'openhw-ePaperDisplay': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CLK' }, { id: 'CS' }, { id: 'DC' }, { id: 'RST' }, { id: 'BUSY' }],
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
@@ -471,8 +480,8 @@ export const COMPONENT_PINS: Record<string, {
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'openhw-dip-switch-8': [{ id: '1a' }, { id: '1b' }, { id: '2a' }, { id: '2b' }, { id: '3a' }, { id: '3b' }, { id: '4a' }, { id: '4b' }, { id: '5a' }, { id: '5b' }, { id: '6a' }, { id: '6b' }, { id: '7a' }, { id: '7b' }, { id: '8a' }, { id: '8b' }],
-    'openhw-pcm5102': [{ id: 'VCC' }, { id: 'GND' }, { id: 'BCK' }, { id: 'LRCK' }, { id: 'DIN' }, { id: 'SCK' }, { id: 'FMT' }, { id: 'DEMP' }, { id: 'XSMT' }],
-    'openhw-max98357': [{ id: 'VDD' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRC' }, { id: 'DIN' }, { id: 'GAIN' }, { id: 'SD' }],
+    'openhw-pcm5102': [{ id: 'VCC' }, { id: 'GND' }, { id: 'BCK' }, { id: 'LRCK' }, { id: 'DIN' }, { id: 'SCK' }, { id: 'FMT' }, { id: 'DEMP' }, { id: 'XSMT' }, { id: 'OUTL' }, { id: 'OUTR' }],
+    'openhw-max98357': [{ id: 'VDD' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRC' }, { id: 'DIN' }, { id: 'GAIN' }, { id: 'SD' }, { id: 'OUT+' }, { id: 'OUT-' }],
     'openhw-inmp441': [{ id: 'VDD' }, { id: 'GND' }, { id: 'WS' }, { id: 'SCK' }, { id: 'SD' }, { id: 'LR' }],
     'openhw-sph0645': [{ id: '3V' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRCLK' }, { id: 'DOUT' }, { id: 'SEL' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
@@ -1099,7 +1108,7 @@ export function getComponentCapabilities(type: string): string[] {
     if (hasAny(['TX', 'TXD', 'RX', 'RXD'])) out.add('uart');
     if (hasAny(['DQ', 'DATA'])) out.add('onewire');
     if (hasAny(['AO', 'AOUT'])) out.add('analog-in');
-    if (has('BCK', 'BCLK') && hasAny(['LRCK', 'WS', 'LRC', 'LRCLK'])) out.add('i2s');
+    if (has('BCK', 'BCLK') && hasAny(['LRCK', 'LCK', 'WS', 'LRC', 'LRCLK'])) out.add('i2s');
     return Array.from(out);
 }
 

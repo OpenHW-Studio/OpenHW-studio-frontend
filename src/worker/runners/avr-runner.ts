@@ -2196,8 +2196,8 @@ export class AVRRunner {
         if (!inst.onI2SFrame) return;
 
         const pin    = changedPin.toLowerCase();
-        const isBclk = pin === 'bclk' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
-        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'wsel'   || pin === 'lrc';
+        const isBclk = pin === 'bclk' || pin === 'bck' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
+        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'lck' || pin === 'wsel'   || pin === 'lrc';
 
         if (!isBclk && !isWs) return;
 
@@ -2218,6 +2218,11 @@ export class AVRRunner {
                 state.wsLast   = isHigh;
                 state.shiftBuf = 0;
                 state.bitCount = 0;
+                // Re-arm the bit-clock edge detector: a new channel's first
+                // BCLK rising must always count, even if construction-time
+                // traversal left bclkLast stale-HIGH (which would otherwise
+                // eat the first data bit and shift the whole frame).
+                state.bclkLast = false;
             }
             return;
         }
