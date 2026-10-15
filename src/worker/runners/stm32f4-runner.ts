@@ -441,6 +441,16 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     uart_addr: f4SerialUsart(self.chip) === 2 ? 0x40004400 : 0x40011000,
                     enable_irqs: true,
                 };
+                // SDIO card bind (native SDIO cell): board attr sdio=true
+                // (or block count) binds an erased card image AFTER init
+                // (silicon boots slot-empty by default — never bind
+                // unconditionally). Mirrors the facade sdioBlocks sugar.
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const sd = (battrs as any)?.sdio;
+                    const n = sd === true ? 16 : Math.floor(Number(sd) || 0);
+                    if (n > 0) withAssets.sdioBlocks = Math.min(1024, n);
+                } catch { /* card bind never breaks boot */ }
                 if (svdXml) withAssets.svdXml = svdXml;
                 if (wasmBytes) withAssets.wasmInit = wasmBytes;
                 // SD FAT image: fetch the prebuilt FAT16 image when an SD
@@ -596,11 +606,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         for (const [pin, ch] of Object.entries(chFor)) {
                             try {
                                 let volts: number | null = null;
-                                for (const [node, netId] of self.pinToNet) {
+                                let netId: number | undefined = undefined;
+                                for (const [node, netId2] of self.pinToNet) {
                                     const sep = node.indexOf(':');
                                     if (sep < 0) continue;
                                     if (node.slice(0, sep) !== self.boardId) continue;
                                     if (node.slice(sep + 1).toUpperCase() !== pin) continue;
+                                    netId = netId2;
                                     for (const [node2, net2] of self.pinToNet) {
                                         if (net2 !== netId) continue;
                                         const s2 = node2.indexOf(':');
@@ -611,6 +623,48 @@ export class Stm32f4Runner extends ArmRunnerBase {
                                         if (Number.isFinite(v)) { volts = v; break; }
                                     }
                                     break;
+                                }
+                                // DAC loopback: no component drives this net,
+                                // but it touches a DAC output (PA4=ch1,
+                                // PA5=ch2) whose channel is ENABLED
+                                // (DAC_CR EN1/EN2) — poll DOR directly every
+                                // drain (change events lag hundreds of ms and
+                                // miss reset-zero writes). DOR readback IS
+                                // the pin value (no analog layer in the
+                                // engine), so it sources the ADC like a stiff
+                                // driver (cf. ESP32 dacOutputs). Untouched
+                                // DACs (EN clear) never drive the net, so
+                                // plain analog input on PA4/PA5 is unaffected.
+                                if (volts === null && netId !== undefined) {
+                                    try {
+                                        const emu = (self.mcu as any);
+                                        let cr = 0, d1 = 0, d2 = 0, ok = false;
+                                        try {
+                                            if (emu && typeof emu.periphRead === 'function') {
+                                                cr = emu.periphRead(0x40007400, 4) >>> 0;
+                                                d1 = emu.periphRead(0x4000742c, 4) >>> 0;
+                                                d2 = emu.periphRead(0x40007430, 4) >>> 0;
+                                                ok = true;
+                                            }
+                                        } catch { ok = false; }
+                                        if (ok) {
+                                            for (const [node3, net3] of self.pinToNet) {
+                                                if (net3 !== netId) continue;
+                                                const s3 = node3.indexOf(':');
+                                                if (s3 < 0) continue;
+                                                if (node3.slice(0, s3) !== self.boardId) continue;
+                                                const bp = node3.slice(s3 + 1).toUpperCase();
+                                                if (bp === 'PA4' && (cr & 0x1)) {
+                                                    volts = (d1 & 0xfff) / 4095 * 3.3;
+                                                    break;
+                                                }
+                                                if (bp === 'PA5' && (cr & 0x10000)) {
+                                                    volts = (d2 & 0xfff) / 4095 * 3.3;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    } catch { /* DAC bridge never breaks ADC */ }
                                 }
                                 if (volts !== null) {
                                     try { mcu.setAdcChannel('ADC1', ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
