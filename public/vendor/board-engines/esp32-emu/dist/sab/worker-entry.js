@@ -3414,7 +3414,12 @@ var Esp32GpioMatrixEntries = [
 ];
 
 // src/peripherals/common/partition-table.js
-import { createHash } from "node:crypto";
+// OpenHW patch (browser): node:crypto has no browser build. The only use
+// is an MD5 over the partition table when a CUSTOM CSV is written
+// (writePartitionTable <- config.partitions). Default boot uses the
+// merged-bin image (no CSV path), so a lazy WebCrypto/subtle stub is safe:
+// it throws only if that path is ever hit, instead of killing module load.
+const createHash = (..._a) => { throw new Error("partition-table MD5 needs node:crypto (custom CSV partitions unsupported in browser)"); };
 var PARTITION_MAGIC = 20650;
 var PARTITION_ENTRY_SIZE = 32;
 var PARTITION_TABLE_OFFSET = 32768;

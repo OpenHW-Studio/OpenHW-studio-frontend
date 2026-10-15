@@ -1288,6 +1288,14 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 const bw = new Worker(new URL('./board.worker.ts', import.meta.url), { type: 'module' });
                 const targetId = boardComp.id;
                 const targetType = boardType;
+                // Surface nested-worker failures (module load / wasm) to the
+                // monitor — otherwise a dead board worker is silent (no
+                // 'ready', no uart-tx, verdict just times out).
+                bw.onerror = (evt: any) => {
+                    const msg = String((evt as any)?.message || (evt as any)?.type || 'board worker error');
+                    console.error(`[Worker] board worker ${targetId} error:`, msg);
+                    postMessage({ type: 'error', message: `Board ${targetId}: ${msg}` });
+                };
                 bw.onmessage = (evt: MessageEvent) => {
                     const msg = (evt as any)?.data || {};
                     if (msg.type === 'ready') {

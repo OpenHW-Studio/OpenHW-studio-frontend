@@ -132,13 +132,26 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
-      alias: resolvedEmulatorPath ? {
-        '@openhw/emulator': resolvedEmulatorPath,
-      } : {},
+      alias: {
+        ...(resolvedEmulatorPath ? {
+          '@openhw/emulator': resolvedEmulatorPath,
+        } : {}),
+        // Board-engine SAB proxy: package exports map only exposes ".",
+        // whose root pulls node:crypto (no browser shim). Alias the deep
+        // file so `import 'esp32-emu/dist/sab/worker-proxy.js'` resolves in
+        // vite dev AND the worker build (file has zero node: imports).
+        'esp32-emu/dist/sab/worker-proxy.js': path.resolve(__dirname, 'node_modules/esp32-emu/dist/sab/worker-proxy.js'),
+      },
     },
     optimizeDeps: {
+      // Board-engine emulators are worker-side ES modules with node:fs
+      // fallbacks + relative wasm fetches. Pre-bundling them into
+      // .vite/deps breaks resolution (deep subpaths, wasm URLs), so keep
+      // them native: vite serves them as transformable ESM with proper
+      // relative URLs. (Pico works pre-bundled today; excluding it too
+      // keeps all four engines on one predictable path.)
       include: useAlias ? [] : ['@openhw/emulator'],
-      exclude: useAlias ? ['@openhw/emulator'] : [],
+      exclude: ['@openhw/emulator', 'pico-emu', 'stm32f1-emu', 'stm32f4-emu', 'esp32-emu'],
       esbuildOptions: {
          plugins: [
            {

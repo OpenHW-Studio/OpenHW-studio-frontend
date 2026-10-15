@@ -47,23 +47,47 @@ import { DebugService } from '../debug/service.ts';
 
 /**
  * importEngine — resolve a board engine module in both worlds:
- *  1. Bundler path (node_modules, works in vitest + vite build).
- *     NOTE: esp32-emu/stm32f1-emu/stm32f4-emu exports maps only expose ".",
- *     so deep paths throw ERR_PACKAGE_PATH_NOT_EXPORTED in Node — the
- *     switch below only lists specs that actually resolve; the rest go
- *     straight to the /vendor fallback.
+ *  1. Bundler path (node_modules, works in vitest + vite build AND vite
+ *     dev — bare-specifier imports are pre-bundled, so the package "exports"
+ *     map is honored: use the "." root or an exports-listed subpath only.
+ *     Deep paths (./pkg/..., ./site/...) throw ERR_PACKAGE_PATH_NOT_EXPORTED
+ *     and fall through to the vendor URL.)
  *  2. Runtime fallback (`/vendor/...` absolute URL, works in the deployed
  *     app where node_modules isn't served but public/ is). Under vitest,
  *     /vendor URLs can't resolve (public/ isn't served) — so swallow that
  *     failure and return null instead of an unhandled rejection. Runners
  *     treat null as "engine unavailable" and stay idle-but-constructed.
+ *     NOTE: vite dev REFUSES ?import on public-dir files, and blob-URLs
+ *     break the facades' relative imports (./emulator.js, wasm) — so the
+ *     vendor fallback is DEPLOY-ONLY. In vite dev the bundler path must win;
+ *     if it doesn't, the runner stays idle (honest warning, no silent HTML).
  */
 export async function importEngine(bundlerSpec: string, vendorUrl: string): Promise<any> {
-    if (bundlerSpec === 'pico-emu/picoemu.wasm.js') {
-        try {
-            return await import('pico-emu/picoemu.wasm.js');
-        } catch { /* fall through to vendor */ }
-    }
+    try {
+        switch (bundlerSpec) {
+            case 'pico-emu/picoemu.wasm.js':
+                return await import('pico-emu/picoemu.wasm.js');
+            case 'stm32f1-emu/pkg/stm32f1.js':
+                return await import('stm32f1-emu');
+            case 'stm32f1-emu/pkg/emulator.js':
+                return await import('stm32f1-emu/emulator');
+            case 'stm32f4-emu/site/stm32f4.js':
+                return await import('stm32f4-emu/stm32f4');
+            case 'stm32f4-emu/site/vendor/stm32_periph_wasm.js':
+                return await import('stm32f4-emu/vendor');
+            case 'esp32-emu/dist/sab/worker-proxy.js':
+                // MUST be a string vite can statically resolve at transform
+                // time (no /* @vite-ignore */ — that bypasses resolution and
+                // breaks in workers). The SAB proxy has no node: imports.
+                // (Root 'esp32-emu' pulls node:crypto via partition-table.)
+                return await import('esp32-emu/dist/sab/worker-proxy.js');
+            default:
+                return await import(/* @vite-ignore */ bundlerSpec);
+        }
+    } catch { /* fall through to vendor */ }
+    // Deployed app only: node_modules isn't served, public/ is. The
+    // facades' relative imports resolve against the /vendor/ URL, which
+    // works because the whole package dir is mirrored there.
     try {
         return await import(/* @vite-ignore */ vendorUrl);
     } catch {

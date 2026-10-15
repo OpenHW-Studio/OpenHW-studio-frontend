@@ -7,29 +7,46 @@
  *
  * Firmware contract (boardHexMap carries `compiled.hex`):
  *   Arduino `.bin` → backend `bin` artifact = `<sketch>.ino.bin` (raw app
- *   image), raw base64 → fromBin. Verified: boots, PD12 toggles via
- *   gpio hooks. UART STATUS: Disco `Serial.println` does NOT reach
- *   drainUart()/usart1.onData (probed 2026-10-02, see gapStm32f4.md) —
- *   likely USB CDC or an uncaptured USART base. Runner is GPIO-verified.
+ *   image), raw base64 → fromBin. Verified live 2026-10-03 on ALL F4 boards
+ *   (Disco F407VG + F401 + F429 serial needles green): uartAddr per board
+ *   (Disco USART2 0x40004400, others USART1) + enable_irqs:true, matching
+ *   the package's own site/test_arduino_boards.mjs harness.
  * `chip` option selects the F401/F411/F407/F407VE/F429 table (default
  *   stm32f407 Discovery; board TYPE implies the chip when the opt is absent).
  *   Per-chip LEDs follow the package BOARD_LED map (401/411→PC13,
  *   407→PD12, 407ve→PA6, 429→PG13); per-chip SVD is fetched from
  *   public/vendor (vendored this change).
  *
- * UART (when the package routes it): `usart1.onData` TX hook (single shared
- * model buffer — only usart1 fires, per package docs); `usart1.send`/`uartRx`
- * RX. GPIO: `gpio.pin()`.
+ * UART: TX capture is GLOBAL in the package (get_uart_output → usart1._emit
+ * regardless of port — verified: usart2.onData never fires, usart1.onData
+ * carries Disco USART2 bytes). RX inject targets the board's own port
+ * (usart2.send on Disco F407, usart1.send elsewhere) via uart_addr.
+ * GPIO: `gpio.pin()`.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 
-// F407 USART1: TX=PA9, RX=PA10.
+// F4 UART map (package docs/boards/*.md + site/test_arduino_boards.mjs):
+// Arduino `Serial` follows the core variant files per board —
+//   BlackPill F401/F411 + Black F407VE/ZE + F429-Disco → USART1 (PA9/PA10)
+//   Nucleo F401RE/F411RE + Disco F407VG                 → USART2 (PA2/PA3)
+// TX capture is GLOBAL (get_uart_output → usart1._emit, package model
+// limit), so the monitor hook stays usart1.onData on ALL boards; RX inject
+// must target the board's own USART base (usart2.send on Disco, else
+// usart1.send). USART bases are SVD-verified in the package.
+const F4_UART_TX = ['PA9', 'A9', 'TX', 'TX0', 'TX1'];
+const F4_UART_RX = ['PA10', 'A10', 'RX', 'RX0', 'RX1'];
+const F4_UART2_TX = ['PA2', 'A2', 'TX2'];
+const F4_UART2_RX = ['PA3', 'A3', 'RX2'];
+
 // Board LED map (package site/boards.js BOARD_LED — matches emulator shells):
 //   stm32f401/stm32f411 → PC13, stm32f407 → PD12, stm32f407ve → PA6,
 //   stm32f429 → PG13.
-const F4_UART_TX = ['PA9', 'A9', 'TX', 'TX0', 'TX1'];
-const F4_UART_RX = ['PA10', 'A10', 'RX', 'RX0', 'RX1'];
+function f4SerialUsart(chip: string): 1 | 2 {
+    // Only the plain-Discovery F407 build uses USART2; every other F4
+    // board (F401/F411/F407VE/F429) uses USART1.
+    return String(chip || '').toLowerCase() === 'stm32f407' ? 2 : 1;
+}
 
 function f4LedFor(chip: string): { bank: string; pin: number } {
     const c = String(chip || '').toLowerCase();
@@ -68,8 +85,11 @@ function b64ToU8(b64: string): Uint8Array {
 }
 
 export class Stm32f4Runner extends ArmRunnerBase {
-    protected uartTxPins = F4_UART_TX;
-    protected uartRxPins = F4_UART_RX;
+    // UART pin candidates depend on the board's Serial USART: Disco F407
+    // wires PA2/PA3 (USART2) as the monitor pair, all other F4 boards use
+    // PA9/PA10 (USART1). Set per instance in the constructor below.
+    protected uartTxPins: string[] = F4_UART_TX;
+    protected uartRxPins: string[] = F4_UART_RX;
     protected engine = this.makeEngine();
     private mcu: any = null;
     private chip = 'stm32f407';
@@ -88,6 +108,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
         const optChip = String((options as any)?.chip || '');
         const typeStr = String((options as any)?.boardType || '');
         this.chip = (/^[a-z0-9_+-]+$/i.test(optChip) && optChip ? optChip : f4ChipForType(typeStr)).toLowerCase();
+        if (f4SerialUsart(this.chip) === 2) {
+            this.uartTxPins = [...F4_UART2_TX, ...F4_UART_TX];
+            this.uartRxPins = [...F4_UART2_RX, ...F4_UART_RX];
+        }
         void this.boot('openhw-stm32f4');
     }
 
@@ -110,7 +134,11 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     '/vendor/board-engines/stm32f4-emu/site/vendor/stm32_periph_wasm.js',
                 );
                 const { STM32F4 } = engineMod ?? {};
-                const bindings = bindingsMod?.default ?? bindingsMod;
+                // Bindings: the wasm-bindgen glue is a NAMESPACE import
+                // (`import * as bindings`, like cli.mjs/index.mjs) — NOT
+                // .default (that's just the __wbg_init fn; init_svd lives on
+                // the namespace and only materializes after init).
+                const bindings = bindingsMod;
                 if (!STM32F4) {
                     console.warn('[Stm32f4Runner] engine unavailable (test env?) — idle.');
                     return;
@@ -140,7 +168,23 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // STM32F4._create(opts): opts.bindings defaults null (fine —
                 // the emulator inits wasm via bindings.default(wasmInit)),
                 // opts.svdXml wins over the node:fs fallback.
-                const withAssets: any = { chip: self.chip, bindings };
+                // uartAddr (package site/emulator.js opt, default USART1
+                // 0x40011000): Arduino Serial on Disco F407VG is USART2
+                // (0x40004400, package site/app.js + test_arduino_boards.mjs).
+                // Passing it makes uart_rx_byte injection (sendUart /
+                // Serial RX in the monitor) hit the firmware's own port;
+                // TX capture stays global (get_uart_output → usart1.onData).
+                // enable_irqs (package opt, default false): REQUIRED for
+                // Arduino Serial TX to reach the shared buffer at all —
+                // probed live in the source repo: without it gotLen=0 even
+                // with the right uartAddr; with it HELLO_F4A flows (matches
+                // the package's own test_arduino_boards.mjs which passes
+                // enable_irqs:true for every Arduino board row).
+                const withAssets: any = {
+                    chip: self.chip, bindings,
+                    uart_addr: f4SerialUsart(self.chip) === 2 ? 0x40004400 : 0x40011000,
+                    enable_irqs: true,
+                };
                 if (svdXml) withAssets.svdXml = svdXml;
                 if (wasmBytes) withAssets.wasmInit = wasmBytes;
                 const s = String(firmware || '').trim();
@@ -168,6 +212,11 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     self.mcu = await STM32F4.fromBin(fw.data as Uint8Array, withAssets);
                 }
                 try { self.mcu.usart1.onData = (b: number) => { txQueue.push(b & 0xff); }; } catch { /* ignore */ }
+                // Disco F407 Serial = USART2: the package TX tap is global
+                // (feeds usart1._emit regardless of port), so usart1.onData
+                // already carries Disco bytes too. Hook usart2 as well for
+                // forward-compat; RX inject below targets the board's port.
+                try { self.mcu.usart2.onData = (b: number) => { txQueue.push(b & 0xff); }; } catch { /* usart1-only */ }
                 self.hookGpio(gpioUnsubs);
             },
             stepBudget(budget: number): number {
@@ -182,7 +231,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },
             injectUartByte(value: number) {
-                try { self.mcu?.usart1?.send?.(String.fromCharCode(value & 0xff)); } catch { /* ignore */ }
+                // RX goes to the board's own Serial port: usart2 on plain
+                // Disco F407, usart1 everywhere else (mirrors uart_addr).
+                const ch = String.fromCharCode(value & 0xff);
+                try {
+                    if (f4SerialUsart(self.chip) === 2) self.mcu?.usart2?.send?.(ch);
+                    else self.mcu?.usart1?.send?.(ch);
+                } catch { /* ignore */ }
             },
             getPc(): number {
                 try { return Number(self.mcu?.getPc?.()) || 0; } catch { return 0; }

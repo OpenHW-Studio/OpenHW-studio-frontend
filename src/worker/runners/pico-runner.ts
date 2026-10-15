@@ -125,6 +125,12 @@ export class PicoRunner extends ArmRunnerBase {
                 } catch { /* glue falls back to its own URL */ }
                 self.mod = await (PicoemuModule as any)({
                     print: () => {}, printErr: () => {},
+                    // locateFile: the glue resolves its .wasm relative to
+                    // import.meta.url (vite serves the glue from
+                    // /src/... or /vendor/... where no .wasm sits, and the
+                    // HTML fallback then fails wasm magic). Point it at the
+                    // real public/wasm asset. wasmBinary above wins when set.
+                    locateFile: (f: string) => f === 'picoemu.wasm.wasm' ? '/wasm/picoemu.wasm.wasm' : f,
                     ...(wasmBinary ? { wasmBinary } : {}),
                 });
                 // Arch select: explicit attr (arch=m33/rv32/m0) wins, else
@@ -209,7 +215,10 @@ export class PicoRunner extends ArmRunnerBase {
     }
 
     private loadImage(u8: Uint8Array): void {
-        const looksUf2 = u8.length >= 512 && u8[0] === 0x55 && u8[1] === 0x46 && u8[2] === 0x44 && u8[3] === 0x32; // 'UF2\n' magic-ish
+        // UF2 magic is 'UF2\n' = 55 46 32 0A (NOT 55 46 44 32 = 'UFD2';
+        // probed live: every backend UF2 starts 55 46 32 0A and the old
+        // check misrouted all Arduino UF2 builds into the ELF loader).
+        const looksUf2 = u8.length >= 512 && u8[0] === 0x55 && u8[1] === 0x46 && u8[2] === 0x32 && u8[3] === 0x0a;
         const ptr = this.mod._malloc(u8.length);
         this.mod.HEAPU8.set(u8, ptr);
         try {

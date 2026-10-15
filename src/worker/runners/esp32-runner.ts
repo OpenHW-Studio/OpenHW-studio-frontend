@@ -65,8 +65,9 @@ export class Esp32Runner extends ArmRunnerBase {
                 // (partition-table) which Vite externalizes for browsers, and
                 // the package exports map only exposes ".". Lazy-load the
                 // vendored SAB worker-proxy (public/vendor mirror of the
-                // package file) and hand it the engine wasm + ROM fetched
-                // from public/.
+                // package file; its worker-entry.js is patched to stub the
+                // node:crypto MD5 — custom-CSV partitions only) and hand it
+                // the engine wasm + ROM fetched from public/.
                 const engineMod: any = await importEngine(
                     'esp32-emu/dist/sab/worker-proxy.js',
                     '/vendor/board-engines/esp32-emu/dist/sab/worker-proxy.js',
