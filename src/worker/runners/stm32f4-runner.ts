@@ -192,6 +192,55 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     || typeof (inst as any)?.onSPIByteExchange === 'function') { hasSpi = true; break; }
             }
         } catch { /* ignore */ }
+        // SD card in SPI mode: the engine answers synchronously via its
+        // model-side device (ext_devices.spi_sd — the JS tap round-trip is
+        // structurally one transfer late for CMD17 block reads). Attach the
+        // model here (taps snapshot at init) and suppress the JS-side MISO
+        // reply below (the bridge still feeds the component model so its
+        // telemetry stays live; its bytes never reach the wire).
+        // 16384 blocks = 8MB so CSD capacity decodes valid for SdFat init.
+        try {
+            for (const inst of this.instances.values()) {
+                const t = String((inst as any)?.type || '').toLowerCase();
+                if (t !== 'openhw-sd-card' && !t.includes('sd_card') && !t.includes('-sd')) continue;
+                // CS net → board pin label (same discovery as the SPI
+                // bridge below; the model gates on it like real silicon).
+                let sdCs: string | null = null;
+                try {
+                    const pins: string[] = [];
+                    try {
+                        const p = (inst as any)?.pins;
+                        if (p && typeof p === 'object') pins.push(...Object.keys(p));
+                    } catch { /* ignore */ }
+                    const cands = pins.filter((p) => /^(CS|CSN|NSS|SS|STE)$/i.test(String(p || '').trim()));
+                    for (const cp of [...cands, 'CS']) {
+                        try {
+                            const net = (this as any).pinToNet?.get?.(`${(inst as any)?.id}:${cp}`);
+                            if (net === undefined) continue;
+                            for (const [node, netId] of (this as any).pinToNet) {
+                                if (netId !== net) continue;
+                                const sep = node.indexOf(':');
+                                if (sep < 0) continue;
+                                if (node.slice(0, sep) !== this.boardId) continue;
+                                sdCs = node.slice(sep + 1).toUpperCase();
+                                break;
+                            }
+                        } catch { /* ignore */ }
+                        if (sdCs) break;
+                    }
+                } catch { /* discovery never breaks boot */ }
+                const ext = (withAssets.ext_devices && typeof withAssets.ext_devices === 'object')
+                    ? withAssets.ext_devices : {};
+                if (!ext.spi_sd) ext.spi_sd = [{ peripheral: 'SPI1', blocks: 8, cs: sdCs || 'PA4' }];
+                withAssets.ext_devices = ext;
+                // Wanted (not yet confirmed): loadFirmware confirms the
+                // export exists and flips sdModelLive; onByte skips the
+                // JS reply only then. Unconfirmed (old bytes) keeps the
+                // legacy JS path — degraded reads, never a silent hang.
+                (this as any).sdModelWanted = true;
+                break;
+            }
+        } catch { /* sd attach never breaks boot */ }
         // TIM3 buzzer tap for PWM observe (PA6 = TIM3_CH1; the engine's
         // buzzer device reads freq/duty from the modeled timer regs —
         // CCR1, so channel-1 pins). Polled in drainUartOut into onPWM.
@@ -267,10 +316,18 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     // model's MISO response clocks back to the master.
                     // Also arms small-quanta stepping (see stepBudget) so
                     // drains interleave mid-transaction for MISO timing.
+                    // Model-owned SD bypass: the engine's spi_sd answers
+                    // synchronously in-transfer; a JS respond() would land
+                    // one transfer late and poison the next transaction,
+                    // so the bridge feeds telemetry only (no reply).
+                    // Gated on confirmed attach (sdModelLive) — unconfirmed
+                    // keeps the legacy JS path (degraded, never a hang).
                     try { (this as any).f4SpiHot = 4; } catch { /* ignore */ }
                     try {
                         const r = br.exchange(Number(byte) & 0xff, 0);
-                        try { respond(r & 0xff); } catch { /* ignore */ }
+                        const live = (this as any).sdModelLive === true
+                            && (this as any).sdModelWanted === true;
+                        if (!live) { try { respond(r & 0xff); } catch { /* ignore */ } }
                     } catch { /* byte never breaks the tick */ }
                 },
             }];
@@ -323,6 +380,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // .default (that's just the __wbg_init fn; init_svd lives on
                 // the namespace and only materializes after init).
                 const bindings = bindingsMod;
+                // Model-side SD handshake: confirm the export exists on the
+                // served bundle before onByte suppresses JS replies (old
+                // bytes without it would hang the core on RXNE forever).
+                try { (self as any).sdModelWanted = false;
+                    (self as any).sdModelLive =
+                        typeof (bindingsMod as any)?.add_spi_sd_card === 'function';
+                } catch { try { (self as any).sdModelLive = false; } catch { /* ignore */ } }
                 if (!STM32F4) {
                     console.warn('[Stm32f4Runner] engine unavailable (test env?) — idle.');
                     return;

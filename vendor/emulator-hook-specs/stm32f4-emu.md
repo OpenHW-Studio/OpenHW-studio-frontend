@@ -43,6 +43,14 @@ Already present in-engine, runner-unwired (our side, listed so nothing is missed
    TIM3/TIM4) exists — generalize/document for servo/LED cells if cheap.
 7. **SDIO blocks / camera frame / FSMC / QSPI** (`stm32f4.js:634-669`):
    present; no cells written yet — P2, keep stable, do not expand scope.
+8. **SPI SD card** (`ext_devices.spi_sd`, engine 079e4f0): synchronous
+   model-side protocol engine (CMD0/8/55/41/58/16/13/9/10/17/18/24/12,
+   SDHC block addressing, Ncr=0). Runner attaches
+   `spi_sd: [{peripheral:'SPI1', blocks:8, cs:'PA4'}]` when an
+   `openhw-sd-card` is present and suppresses the JS-side MISO reply
+   while the model owns the bus (bridge still feeds component
+   telemetry). Firmware-side contract: sample R1 on the LAST command
+   byte (Ncr=0 — the model answers immediately, not one byte later).
 
 ## Acceptance (our e2e, in order)
 
