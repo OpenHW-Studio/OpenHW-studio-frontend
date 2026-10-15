@@ -93,3 +93,26 @@ export const STM32F4_UART_PINS = {
   tx: ['PA9', 'A9', 'TX', 'TX0', 'TX1'],
   rx: ['PA10', 'A10', 'RX', 'RX0', 'RX1'],
 };
+
+// ── Retro 8/16-bit boards (8086emu runner: 8086/8085/8051/6502/Z80/rv32) ──
+// Board shells expose L0–L19 (left) + R0–R19 (right); L0 = console TX
+// (drain), L1 = console RX (inject). GPIO mapping (matches the
+// retro-runner's gpioBit: Ln/Rn → PPA/PPB bit n&7):
+//   L2–L9/R2–R9   → PPI PA/PB bits 2–7/0–1 (per-board 8-bit GPIO view)
+//   L10–L17/R10–R17 → PPI PC bits 0–7 (upper/lower nibbles)
+//   L18/L19, R18/R19 → reserved (USART/SID-SOD serial pair)
+// TX/RX aliases cover the classic UART-ish pair so inter-board UART
+// wiring resolves.
+export const RETRO_GPIO_PINS = [
+  ...Array.from({ length: 20 }, (_, n) => `L${n}`),
+  ...Array.from({ length: 20 }, (_, n) => `R${n}`),
+  ...Array.from({ length: 8 }, (_, n) => `P${n}`),
+  ...Array.from({ length: 8 }, (_, n) => `D${n}`),
+  'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7',
+];
+export const RETRO_BOARD_PINS = [...RETRO_GPIO_PINS, '5V', 'GND', '3V3', 'RESET', 'CLK'];
+
+export const RETRO_UART_PINS = {
+  tx: ['TX', 'TX0', 'TXD', 'SOUT', '1', 'L0'],
+  rx: ['RX', 'RX0', 'RXD', 'SIN', '0', 'L1'],
+};

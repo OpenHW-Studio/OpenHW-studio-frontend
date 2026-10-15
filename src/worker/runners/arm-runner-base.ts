@@ -44,6 +44,8 @@ import {
     sabKindForType,
 } from '../sab/layout.ts';
 import { DebugService } from '../debug/service.ts';
+import { SabTransport } from '../hal/transport.ts';
+import type { SimTransport } from '../hal/types.ts';
 
 /**
  * importEngine — resolve a board engine module in both worlds:
@@ -81,6 +83,9 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
                 // breaks in workers). The SAB proxy has no node: imports.
                 // (Root 'esp32-emu' pulls node:crypto via partition-table.)
                 return await import('esp32-emu/dist/sab/worker-proxy.js');
+            case '8086emu/multi_cpu_emu.js':
+                // wasm-bindgen ESM, no node: imports — safe in workers.
+                return await import('8086emu/multi_cpu_emu.js');
             default:
                 return await import(/* @vite-ignore */ bundlerSpec);
         }
@@ -111,6 +116,25 @@ export interface ArmEngineHooks {    /** Load firmware (hexData string per board
     close?(): void;
     /** Optional: reset engine to reset vector. */
     resetEngine?(): void;
+    /**
+     * Optional: sample one engine-driven GPIO output level. Return
+     * `{ level: 0|1, driving: boolean }` — `driving:false` (or null/throw)
+     * means "not driven by firmware" and the line keeps whatever the
+     * external circuit (buttons, sensors, pull-ups) says. Engines that
+     * already push changes via hooks (stm32 gpio.on('change')) omit this.
+     */
+    sampleGpioOut?(pinId: string): { level: number; driving: boolean } | null;
+    /**
+     * Optional: force one engine-side GPIO input level (0|1). Used when a
+     * wired component (button press, sensor) drives a pin the firmware
+     * reads. Engines without input injection omit this (RX-only pins).
+     */
+    setGpioInput?(pinId: string, high: boolean): void;
+    /**
+     * Optional: sample one engine ADC channel in volts. Return NaN/null
+     * when the channel is unmodeled. `ref` selects the pin label.
+     */
+    readAnalog?(ref: string): number;
 }
 
 export abstract class ArmRunnerBase implements BoardRunner {
@@ -125,6 +149,8 @@ export abstract class ArmRunnerBase implements BoardRunner {
     protected speed = 1.0;
     protected serialBaudRate = 9600;
     protected lastTime = 0;
+    /** Monotonic executed-step counter fed to inst.update() as cpuCycles. */
+    protected simCycleCount = 0;
     protected timer: any = null;
     protected pinStates: Record<string, boolean> = {};
     protected statusIntervalEmitCount = 0;
@@ -150,6 +176,13 @@ export abstract class ArmRunnerBase implements BoardRunner {
     protected sabPinIndex: Map<string, number> = new Map();
     protected cmdReader: SabCommandReader | null = null;
     protected evtWriter: SabEventWriter | null = null;
+    /**
+     * Transport facade over the bound SAB writers (plan §5.4/§11.5).
+     * All publish paths go through here; raw SAB primitives stay only on
+     * read paths (RX drain, command reader, debug service) until Phase 2
+     * completes. Null when SAB is absent (message fallback needs no writer).
+     */
+    protected transport: SimTransport | null = null;
 
     constructor(
         protected hexData: string,
@@ -211,14 +244,33 @@ export abstract class ArmRunnerBase implements BoardRunner {
             // can't burst the engine. Baselines per core clock (see runners).
             const budget = Math.min(this.budgetForDelta(deltaMs), this.maxBudgetPerTick());
             if (budget > 0 && !this.engine.isHalted?.()) {
-                this.engine.stepBudget(budget);
+                let steps = 0;
+                try { steps = Number(this.engine.stepBudget(budget)) || 0; } catch { steps = 0; }
+                // Monotonic step counter for component update()/getSyncState()
+                // duty-cycle tracking (LEDs, etc.). AVR passes cpu.cycles;
+                // ARM/retro engines have no cycle counter, so accumulate
+                // executed steps (falls back to budget when engines report 0,
+                // e.g. halted cores still tick peripherals/animations).
+                this.simCycleCount += Math.max(1, Math.floor(steps)) || Math.max(1, Math.floor(budget));
+            } else {
+                this.simCycleCount += 1;
             }
             // TX drain → serial path (SAB ring + postMessage callback).
             const out = this.engine.drainUartOut();
             for (const b of out) this.emitTxByte(b & 0xff, 'uart0');
-            // Peripheral instances tick (animation/state only — engines own pins).
+            // Bidirectional GPIO: sample external inputs (buttons, sensors,
+            // pull-ups) into the engine, then publish engine-driven outputs
+            // back out. Push-model engines (stm32 on('change') hooks) already
+            // published during stepBudget; the poll here is a no-op for them
+            // (sampleGpioOut absent) and the source of truth for poll-model
+            // engines (pico/esp32/retro) that only expose a whole-port read.
+            this.pollGpioBidirectional();
+            // Peripheral instances tick. Pass the monotonic step counter
+            // (NOT 0): components derive duty cycles / PWM windows from
+            // cpuCycle deltas (e.g. LED getSyncState duty = illum/total).
+            // A constant 0 freezes every duty tracker at illuminated:false.
             for (const inst of this.instances.values()) {
-                try { inst.update(0, this.currentWires, this.instances as any); } catch { /* never break tick */ }
+                try { inst.update(this.simCycleCount, this.currentWires, this.instances as any); } catch { /* never break tick */ }
             }
         } catch (e) {
             console.error(`[${this.boardId}] tick error:`, e);
@@ -244,7 +296,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
     // ── Serial ───────────────────────────────────────────────────
     protected emitTxByte(value: number, source: string): void {
         const char = String.fromCharCode(value);
-        try { (this.sabSerialTx as any)?.pushByte(value & 0xff); } catch { /* ignore */ }
+        try { this.transport?.publishSerial(this.boardId, [value & 0xff], source); } catch { /* ignore */ }
         if (this.onByteTransmitCb) {
             this.onByteTransmitCb({ boardId: this.boardId, value, char, source });
         } else {
@@ -300,20 +352,26 @@ export abstract class ArmRunnerBase implements BoardRunner {
 
     forceEmitState(): void {
         const msg: any = { type: 'state', boardId: this.boardId, pins: { ...this.pinStates }, components: [] };
+        const slotFrames: Array<{ id: string; slot: number; version: number; kind: number; f: number[]; i: number[] }> = [];
         for (const inst of this.instances.values()) {
             try {
                 const syncState = getUnifiedComponentSyncState(inst);
                 msg.components.push({ id: inst.id, type: inst.type, state: syncState, ...collectComponentTelemetry(inst, undefined, undefined) });
-                if (this.sabWriter && (inst as any).sabSlot >= 0) {
+                if ((inst as any).sabSlot >= 0) {
                     try {
                         const ui = typeof (inst as any).uiState === 'function' ? (inst as any).uiState() : null;
                         const f = ui?.f ? Object.values(ui.f).map(Number) : [];
                         const i = ui?.i ? Object.values(ui.i).map(Number) : [];
-                        this.sabWriter.writeSlot((inst as any).sabSlot, (inst as any).stateVersion || 0, sabKindForType(inst.type), 0, f as number[], i as number[]);
+                        slotFrames.push({
+                            id: inst.id, slot: (inst as any).sabSlot,
+                            version: (inst as any).stateVersion || 0,
+                            kind: sabKindForType(inst.type), f, i,
+                        });
                     } catch { /* SAB write never breaks sim */ }
                 }
             } catch { /* never break emit */ }
         }
+        try { this.transport?.publishComponentSlots(slotFrames); } catch { /* never break emit */ }
         msg._emitSeq = ++this.statusIntervalEmitCount;
         msg._emitTime = performance.now();
         msg.simTimeMs = this.getSimulatedTimeMs();
@@ -369,6 +427,23 @@ export abstract class ArmRunnerBase implements BoardRunner {
             const v = Number(rawOffsets[key]);
             this.sabOffsets[key] = Number.isFinite(v) && v >= 64 ? Math.floor(v / 64) : (Number.isFinite(v) ? v : 0);
         }
+        // Board pin list is SAB-INDEPENDENT: the GPIO bidirectional poll
+        // iterates it every tick, including in postMessage-fallback mode
+        // (no SAB, e.g. dev without COOP/COEP). Resolve from boardPinMaps
+        // when present, else from COMPONENT_PINS (manifest truth).
+        try {
+            const maps = (options as any)?.boardPinMaps;
+            const myMap = Array.isArray(maps) ? maps.find((m: any) => String(m?.boardId) === String(this.boardId)) || maps[0] : null;
+            let pins: string[] = myMap && Array.isArray(myMap.pins) ? myMap.pins.map((p: any) => String(p)) : [];
+            if (!pins.length) {
+                const fb = (COMPONENT_PINS as any)[String((options as any)?.boardType || '')];
+                if (Array.isArray(fb)) pins = fb.map((p: any) => String(p?.id ?? p));
+            }
+            pins.forEach((p: any, i: number) => { this.sabPinIndex.set(String(p), i); });
+            try {
+                this.boardPinList = pins.map((p: any) => String(p));
+            } catch { this.boardPinList = []; }
+        } catch { /* board pin list stays empty → poll no-op */ }
         if (!this.sab) return;
         try {
             this.sabWriter = new SabStateWriter(this.sab as SharedArrayBuffer);
@@ -405,10 +480,6 @@ export abstract class ArmRunnerBase implements BoardRunner {
                     this.sabDebugWriter = new SabDebugWriter(this.sab as SharedArrayBuffer, debugBase + bi * 24);
                 }
             } catch { /* keep legacy bindings */ }
-            const maps = (options as any)?.boardPinMaps;
-            const myMap = Array.isArray(maps) ? maps.find((m: any) => String(m?.boardId) === String(this.boardId)) || maps[0] : null;
-            const pins = myMap && Array.isArray(myMap.pins) ? myMap.pins : [];
-            pins.forEach((p: any, i: number) => { this.sabPinIndex.set(String(p), i); });
             const cmdBuf = (options as any).cmdBuffer as SharedArrayBuffer | undefined;
             const evtBuf = (options as any).evtBuffer as SharedArrayBuffer | undefined;
             if (cmdBuf) this.cmdReader = new SabCommandReader(cmdBuf);
@@ -416,6 +487,23 @@ export abstract class ArmRunnerBase implements BoardRunner {
             if (this.cmdReader || this.evtWriter) {
                 this.debugService = new DebugService(this.sab as SharedArrayBuffer, { ...this.sabOffsets }, this.evtWriter);
             }
+            // Transport facade (plan §5.4): publish paths go through here
+            // from now on. Same writers, same order, same values — behavior
+            // identical to the direct calls above; the indirection is the
+            // point (runners stop knowing SAB primitives).
+            try {
+                this.transport = new SabTransport({
+                    buffer: this.sab as SharedArrayBuffer,
+                    pinIndex: this.sabPinIndex,
+                    pinWriter: this.sabPinWriter || undefined,
+                    stateWriter: this.sabWriter || undefined,
+                    serialTx: this.sabSerialTx || undefined,
+                    evtWriter: this.evtWriter || undefined,
+                    cmdReader: this.cmdReader || undefined,
+                    railVoltage: this.gpioRailV(),
+                    clock: () => performance.now(),
+                });
+            } catch { this.transport = null; }
         } catch { /* writers stay null → postMessage paths */ }
     }
 
@@ -436,22 +524,25 @@ export abstract class ArmRunnerBase implements BoardRunner {
 
     /** Publish one GPIO output level into pinStates + SAB pin bitfield,
      * then fan out to every connected component pin (same contract as
-     * AVRRunner.propagateBoardPin: voltage + isHigh + onPinStateChange). */
+     * AVRRunner.propagateBoardPin: voltage + isHigh + onPinStateChange).
+     * Retro boards are 5V TTL (8086/8085/8051/6502/Z80/rv32 kit); ARM
+     * boards are 3.3V CMOS. LEDs need ≥1.5V over drop and burn out >4V
+     * without a series resistor, so the rail voltage matters. */
     protected publishGpio(pinId: string, isHigh: boolean, analogV?: number): void {
         this.pinStates[pinId] = !!isHigh;
+        const railV = this.gpioRailV();
         try {
-            const idx = this.sabPinIndex;
-            const bit = idx?.get(String(pinId)) ?? idx?.get(String(pinId).replace(/^D/i, '')) ?? idx?.get(`D${pinId}`);
-            if (typeof bit === 'number') {
-                this.sabPinWriter?.writeDigital(bit, !!isHigh);
-                this.sabPinWriter?.writeAnalog(bit, Number.isFinite(analogV as number) ? (analogV as number) : (isHigh ? 3.3 : 0.0));
-            }
+            this.transport?.publishPins(
+                this.boardId,
+                { [pinId]: !!isHigh },
+                Number.isFinite(analogV as number) ? { [pinId]: analogV as number } : undefined,
+            );
         } catch { /* pin publish never breaks propagation */ }
         const boardInst = this.instances.get(this.boardId);
         try { boardInst?.onPinStateChange(pinId, !!isHigh, 0); } catch { /* ignore */ }
         // Component fan-out: LEDs light, buttons/sensors react, protocol
         // handlers (I2C/SPI/UART/PWM/OneWire) get their signal callbacks.
-        const voltage = isHigh ? 3.3 : 0.0;
+        const voltage = isHigh ? railV : 0.0;
         for (const endpoint of this.getProtocolEndpointsForPin(pinId)) {
             try {
                 endpoint.inst.setPinVoltage(endpoint.pinId, voltage);
@@ -462,6 +553,13 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 endpoint.inst.onPinStateChange(endpoint.pinId, !!isHigh, 0);
             } catch { /* one bad component never breaks the fan-out */ }
         }
+    }
+
+    /** Logic rail for publishGpio fan-out voltage. Retro TTL kit = 5V,
+     * everything else (AVR 5V excepted — AVR has its own runner) = 3.3V.
+     * Overridden per runner family via board-type sniff (no extra option). */
+    protected gpioRailV(): number {
+        return 3.3;
     }
 
     /** Board-pin aliases for netlist lookup (D13/13, GPIOx/GPx, PA9/A9…). */
@@ -475,6 +573,41 @@ export abstract class ArmRunnerBase implements BoardRunner {
         if (/^PA\d+$/.test(raw) || /^PB\d+$/.test(raw) || /^PC\d+$/.test(raw) || /^PD\d+$/.test(raw)) {
             out.add(raw.slice(1)); // PA9 → A9
         }
+        // Retro boards (8086/8085/8051/6502/Z80/rv32): shells expose
+        // L0–L19/R0–R19; L0 = console TX, L1 = console RX (never GPIO).
+        // GPIO view: Ln/Rn (2<=n<=17) → bit (n&7); L2–L9 = port-0 byte
+        // (PA/P1/ORA), L10–L17 = port-2 byte (PC/P2/ORB). Legacy Pn/Dn/An
+        // labels alias the same bits. So Pn aliases every Ln/Rn with
+        // (n&7)==b, and Ln aliases Pn plus its same-bit siblings:
+        //   P2 ↔ L2/R2/L10/R10; L2 ↔ P2/L10/R2/R10; L10 ↔ P2/L2/R2/R10.
+        // L0/L1/L18/L19/R18/R19 are console/serial — no GPIO aliases.
+        const lr = raw.match(/^[LR](\d{1,2})$/);
+        if (lr) {
+            const n = Number(lr[1]);
+            if (n >= 2 && n <= 17) {
+                const b = n & 7;
+                out.add(`P${b}`);
+                const sib = n <= 9 ? n + 8 : n - 8;
+                const side = raw[0];
+                const other = side === 'L' ? 'R' : 'L';
+                out.add(`${side}${sib}`); out.add(`${other}${n}`); out.add(`${other}${sib}`);
+            }
+        } else {
+            const pm = raw.match(/^(?:P|D|GPIO|GP|A)(\d{1,2})$/);
+            if (pm) {
+                // Every L/R pin whose bit (n&7) matches is the same net.
+                const b = Number(pm[1]) & 7;
+                for (let n = 2; n <= 17; n++) {
+                    if ((n & 7) === b) { out.add(`L${n}`); out.add(`R${n}`); }
+                }
+            }
+        }
+        // GND variants (GND/GND_1/GND.1…) share one net; 5V/VCC likewise.
+        if (raw === 'GND' || /^GND[._]?\d*$/.test(raw)) {
+            out.add('GND'); out.add('GND_1'); out.add('GND.1');
+        }
+        if (raw === '5V' || raw === 'VCC') { out.add('5V'); out.add('VCC'); }
+        if (raw === '3V3' || raw === '3.3V') out.add('3V3');
         return Array.from(out);
     }
 
@@ -563,5 +696,184 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 invokeOptional(endpoint.inst as any, ['onPWM', 'onPwm', 'onPWMSignal'], [endpoint.pinId, { boardPin: pinId, isHigh }]);
             } catch { /* ignore */ }
         }
+        // OneWire bit-bang decode rides the same edge (AVR parity):
+        // DS18B20 needs onOneWireReset (≥360µs low) + onOneWireWriteBit /
+        // onOneWireSlot (1–120µs low). Wall-clock approximation — engines
+        // don't expose cycle counters, so timing uses performance.now().
+        // Only fires when a OneWire-capable endpoint is actually wired.
+        try {
+            this.dispatchOptionalOneWire(pinId, isHigh);
+        } catch { /* ignore */ }
+    }
+
+    private oneWireState = new Map<string, { lowStartMs: number | null; highStartMs: number | null }>();
+
+    private dispatchOptionalOneWire(pinId: string, isHigh: boolean): void {
+        const key = String(pinId || '').toUpperCase();
+        let state = this.oneWireState.get(key);
+        if (!state) {
+            state = { lowStartMs: null, highStartMs: null };
+            this.oneWireState.set(key, state);
+        }
+        const nowMs = performance.now();
+        const endpoints = this.getProtocolEndpointsForPin(pinId);
+        const hasOneWire = endpoints.some((e: any) => {
+            const inst = e?.inst as any;
+            return inst && (typeof inst.onOneWireReset === 'function' || typeof inst.onOnewireReset === 'function'
+                || typeof inst.onOneWireWriteBit === 'function' || typeof inst.onOnewireWriteBit === 'function'
+                || typeof inst.onOneWireSlot === 'function' || typeof inst.onOnewireSlot === 'function'
+                || typeof inst.onPulseLow === 'function' || typeof inst.onDigitalPulseLow === 'function'
+                || typeof inst.onOneWirePulseLow === 'function' || typeof inst.onPulseHigh === 'function'
+                || typeof inst.onDigitalPulseHigh === 'function' || typeof inst.onOneWirePulseHigh === 'function');
+        });
+        if (!hasOneWire) {
+            if (isHigh) { state.lowStartMs = null; state.highStartMs = nowMs; }
+            else { state.highStartMs = null; state.lowStartMs = nowMs; }
+            return;
+        }
+        if (!isHigh) {
+            if (state.highStartMs != null) {
+                const highUs = Math.max(0, (nowMs - state.highStartMs) * 1000);
+                if (highUs > 0) {
+                    const meta = { protocol: 'pulse', boardPin: key, pulseUs: highUs, highUs, edge: 'falling' };
+                    for (const endpoint of endpoints) {
+                        invokeOptional(endpoint.inst as any, ['onPulseHigh', 'onDigitalPulseHigh', 'onOneWirePulseHigh'], [endpoint.pinId, meta]);
+                    }
+                }
+            }
+            state.highStartMs = null;
+            state.lowStartMs = nowMs;
+            return;
+        }
+        if (state.lowStartMs == null) return;
+        const lowUs = Math.max(0, (nowMs - state.lowStartMs) * 1000);
+        state.lowStartMs = null;
+        state.highStartMs = nowMs;
+        if (lowUs > 0) {
+            const meta = { protocol: 'pulse', boardPin: key, pulseUs: lowUs, lowUs, edge: 'rising' };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onPulseLow', 'onDigitalPulseLow', 'onOneWirePulseLow'], [endpoint.pinId, meta]);
+            }
+        }
+        if (lowUs >= 360) {
+            const meta = { protocol: 'onewire', boardPin: key, pulseUs: lowUs, kind: 'reset' };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireReset', 'onOnewireReset'], [endpoint.pinId, meta]);
+            }
+            return;
+        }
+        if (lowUs >= 1 && lowUs <= 120) {
+            const bit = lowUs < 20 ? 1 : 0;
+            const meta = { protocol: 'onewire', boardPin: key, pulseUs: lowUs, kind: 'slot', bit };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireWriteBit', 'onOnewireWriteBit'], [endpoint.pinId, bit, meta]);
+                invokeOptional(endpoint.inst as any, ['onOneWireSlot', 'onOnewireSlot'], [endpoint.pinId, meta]);
+            }
+        }
+    }
+
+    /**
+     * Bidirectional GPIO poll (runs every tick, after stepBudget):
+     *  1. INPUT: read each wired non-board pin's driven voltage and push it
+     *     into the engine (setGpioInput when available). Buttons/sensors own
+     *     the line here — publishGpio is NOT called for input-driven levels.
+     *  2. OUTPUT: ask the engine for each board pin it drives
+     *     (sampleGpioOut) and publishGpio on change (LEDs, protocol pins,
+     *     dispatchOptionalProtocols for PWM/OneWire edges).
+     * Engines with neither hook (pure push-model, e.g. stm32 change hooks)
+     * skip both halves silently.
+     */
+    protected pollGpioBidirectional(): void {
+        // Sampler resolution: engine hook wins; fall back to a runner-class
+        // method of the same name (a missing engine hook used to silently
+        // disable ALL GPIO publishing — never again).
+        const sampler: ((pinId: string) => { level: number; driving: boolean } | null) | null =
+            typeof this.engine.sampleGpioOut === 'function'
+                ? (pinId: string) => { try { return this.engine.sampleGpioOut!(pinId); } catch { return null; } }
+                : (typeof (this as any).sampleGpioOut === 'function'
+                    ? (pinId: string) => { try { return (this as any).sampleGpioOut(pinId); } catch { return null; } }
+                    : null);
+        if (!sampler && typeof this.engine.setGpioInput !== 'function') return;
+        // INPUT half: external components driving nets the board reads.
+        if (typeof this.engine.setGpioInput === 'function') {
+            try {
+                const seen = new Set<string>();
+                for (const wire of this.currentWires) {
+                    for (const end of [wire?.from, wire?.to]) {
+                        if (!end || typeof end !== 'string') continue;
+                        const [compId, pinId] = end.split(':');
+                        if (!compId || !pinId || compId === this.boardId) continue;
+                        if (seen.has(end)) continue;
+                        seen.add(end);
+                        const inst = this.instances.get(compId);
+                        if (!inst || typeof (inst as any).getPinVoltage !== 'function') continue;
+                        let voltage = 0;
+                        try { voltage = Number((inst as any).getPinVoltage(pinId)) || 0; } catch { continue; }
+                        // Find the board pin on the same net.
+                        const net = this.pinToNet.get(end);
+                        if (net === undefined) continue;
+                        for (const [node, netId] of this.pinToNet) {
+                            if (netId !== net) continue;
+                            const [bId, bPin] = node.split(':');
+                            if (bId !== this.boardId || !bPin) continue;
+                            try { this.engine.setGpioInput!(bPin, voltage > 0.5); } catch { /* ignore */ }
+                            break;
+                        }
+                    }
+                }
+            } catch { /* input sampling never breaks the tick */ }
+        }
+        // OUTPUT half: engine-driven levels → publishGpio on change.
+        if (!sampler) return;
+        try {
+            const boardMap = this.boardPinMap();
+            const published = new Set<string>();
+            for (const pinId of boardMap) {
+                let sample: { level: number; driving: boolean } | null = null;
+                try { sample = sampler(pinId); } catch { sample = null; }
+                if (!sample || !sample.driving) continue;
+                const high = !!sample.level;
+                // Retro alias guard: Ln/Rn and Pn are the SAME electrical
+                // net (see getPinAliases). Publishing both would double-fire
+                // edges into the component; publish the first label only.
+                const netKey = this.netKeyForPin(pinId);
+                if (published.has(netKey)) continue;
+                published.add(netKey);
+                if (this.pinStates[pinId] === high && this.pinStatesInit.has(pinId)) continue;
+                this.pinStatesInit.add(pinId);
+                this.publishGpio(pinId, high);
+                try { this.dispatchOptionalProtocols(pinId, high); } catch { /* ignore */ }
+            }
+        } catch { /* output poll never breaks the tick */ }
+    }
+
+    /** Board pins worth polling (manifest order; cached per runner). */
+    private pinPollCache: string[] | null = null;
+    private pinStatesInit = new Set<string>();
+    private boardPinList: string[] = [];
+
+    /** Net identity for the alias guard: board pins aliasing to the same
+     * net (Ln/Rn ↔ Pn on retro, Dx ↔ x on AVR-likes) share one key. */
+    private netKeyForPin(pinId: string): string {
+        const raw = String(pinId || '').toUpperCase();
+        const lr = raw.match(/^[LR](\d{1,2})$/);
+        if (lr) {
+            const n = Number(lr[1]);
+            if (n >= 2 && n <= 17) return `RETRO_P${n & 7}`;
+        }
+        const pm = raw.match(/^P([0-7])$/);
+        if (pm) return `RETRO_P${pm[1]}`;
+        return `PIN:${raw}`;
+    }
+
+    protected boardPinMap(): string[] {
+        if (this.pinPollCache) return this.pinPollCache;
+        try {
+            const pins = Array.isArray(this.boardPinList) ? this.boardPinList : [];
+            this.pinPollCache = pins.map(String).filter((p) => p && !/^(GND|5V|3V3|VIN|VBUS|VSYS|VCC|AGND|VBAT|RESET|RST|RUN|3V3_EN|ADC_VREF|SWD|SWCLK|SWDIO)/i.test(p));
+        } catch {
+            this.pinPollCache = [];
+        }
+        return this.pinPollCache;
     }
 }

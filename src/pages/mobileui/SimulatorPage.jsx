@@ -579,6 +579,12 @@ const BOARD_FQBN = {
   stm32f411: 'STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F411CE',
   stm32f407ve: 'STMicroelectronics:stm32:GenF4:pnum=BLACK_F407VE',
   stm32f429: 'STMicroelectronics:stm32:Disco:pnum=DISCO_F429ZI',
+  retro_8086: 'retro:8086',
+  retro_8085: 'retro:8085',
+  retro_8051: 'retro:8051',
+  retro_6502: 'retro:6502',
+  retro_z80: 'retro:z80',
+  retro_rv32: 'retro:rv32',
 };
 
 const BOARD_DISPLAY_NAME = {
@@ -603,6 +609,12 @@ const BOARD_DISPLAY_NAME = {
   stm32f411: 'STM32F411 BlackPill',
   stm32f407ve: 'STM32F407VE Black Board',
   stm32f429: 'STM32F429 Discovery',
+  retro_8086: 'Intel 8086 (16-bit)',
+  retro_8085: 'Intel 8085 (8-bit)',
+  retro_8051: 'Intel 8051 (MCS-51)',
+  retro_6502: 'MOS 6502 (8-bit)',
+  retro_z80: 'Zilog Z80 (8-bit)',
+  retro_rv32: 'RISC-V rv32i (32-bit)',
 };
 
 const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
@@ -814,6 +826,13 @@ function normalizeBoardKind(source) {
   // Pico 2 / RP2350 before Pico 1: 'pico-2' contains 'pico'.
   if (s.includes('pico-2') || s.includes('pico2') || s.includes('rp2350') || s.includes('2350')) return 'rp2350';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  if (s.includes('8086') || s.includes('8088')) return 'retro_8086';
+  if (s.includes('8085')) return 'retro_8085';
+  if (s.includes('8051') || s.includes('mcs-51') || s.includes('mcs51')) return 'retro_8051';
+  if (s.includes('6502')) return 'retro_6502';
+  if (s.includes('z80') || s.includes('z-80')) return 'retro_z80';
+  if (s.includes('rv32') || s.includes('risc-v') || s.includes('riscv')) return 'retro_rv32';
+  if (s.includes('retro')) return 'retro_8086';
   return 'arduino_uno';
 }
 
@@ -1159,7 +1178,7 @@ function resolveComponentAttrString(attrs, key, fallback = '') {
 
 
 function isProgrammableBoardType(type) {
-  return /(arduino|rp2040|pico|esp32|stm32)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(type || ''));
 }
 
 
@@ -1787,7 +1806,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
+      .filter(c => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
       .map(c => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
@@ -1818,7 +1837,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1851,7 +1870,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
-  const boardComponents = useMemo(() => components.filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type)), [components]);
+  const boardComponents = useMemo(() => components.filter(c => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
     boardComponents.forEach((component) => {
@@ -6416,7 +6435,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
         : '';
       const boardHexMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type));
+      const programmableBoards = components.filter(c => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type));
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -7798,7 +7817,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     setComponents(normalizedComponents);
     setWires(normalizedConnections);
 
-    const importedBoards = normalizedComponents.filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type));
+    const importedBoards = normalizedComponents.filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type));
     let normalizedFiles = normalizeProjectFiles(Array.isArray(meta?.projectFiles) ? meta.projectFiles : []);
 
     // Backward compatibility: older exports stored only top-level `code`.

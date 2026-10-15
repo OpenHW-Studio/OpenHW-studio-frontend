@@ -162,11 +162,15 @@ export class PicoRunner extends ArmRunnerBase {
                 if (!self.mod) return 0;
                 try {
                     const s = Number(self.mod._picoemu_step(Math.max(1, Math.floor(budget)))) || 0;
-                    self.pollGpio();
+                    // NOTE: no per-tick publishGpio here — the base
+                    // pollGpioBidirectional() runs right after stepBudget and
+                    // owns ALL output publishing (via sampleGpioOut below),
+                    // so edges fire once with dispatchOptionalProtocols.
                     // After MicroPython REPL is up, inject the user script once.
                     if (self.isMicroPython && !self.pyInjected && self.pyScript.trim()) {
                         self.tryInjectPython();
                     }
+                    try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
                     return s;
                 } catch { return 0; }
             },
@@ -194,6 +198,42 @@ export class PicoRunner extends ArmRunnerBase {
             },
             isHalted(): boolean {
                 try { return !!self.mod?._picoemu_is_halted?.(); } catch { return false; }
+            },
+            // Engine-driven output sampler for the base bidirectional poll.
+            // _get_gpio_out is the whole-port output latch; pins the
+            // firmware never drives read back their external level, so
+            // report driving:false for those (input sampling owns them).
+            sampleGpioOut(pinId: string): { level: number; driving: boolean } | null {
+                try {
+                    const m = self.mod;
+                    if (!m?.get_gpio_out && !m?._picoemu_get_gpio_out) return null;
+                    const getOut = m._picoemu_get_gpio_out?.bind(m) || m.get_gpio_out?.bind(m);
+                    const getOe = m._picoemu_get_gpio_oe?.bind(m) || m.get_gpio_oe?.bind(m);
+                    const n = self.gpioIndex(pinId);
+                    if (n < 0) return null;
+                    const out = Number(getOut()) || 0;
+                    // OE mask when available: only driven pins publish.
+                    if (getOe) {
+                        const oe = Number(getOe()) || 0;
+                        if (!((oe >> n) & 1)) return { level: 0, driving: false };
+                    }
+                    return { level: (out >> n) & 1, driving: true };
+                } catch { return null; }
+            },
+            setGpioInput(pinId: string, high: boolean): void {
+                try {
+                    const n = self.gpioIndex(pinId);
+                    if (n < 0) return;
+                    const setFn = self.mod?._picoemu_set_gpio || self.mod?.set_gpio;
+                    if (typeof setFn === 'function') setFn.call(self.mod, n, high ? 1 : 0);
+                } catch { /* ignore */ }
+            },
+            // ADC sampler (GP26/27/28 → ADC0/1/2): volts → raw level pushed
+            // through the engine's ADC pin override when the package
+            // exposes one (pico-emu has no ADC inject — returns NaN so the
+            // base falls back to pinStates voltage for analog widgets).
+            readAnalog(_ref: string): number {
+                return NaN;
             },
             close(): void { self.mod = null; },
             resetEngine(): void {
@@ -257,17 +297,31 @@ export class PicoRunner extends ArmRunnerBase {
     }
 
     private lastGpioOut = 0;
+    /** Board pin label → RP2040 GPIO index (GPn, Dn/An aliases, bare n). */
+    public gpioIndex(pinId: string): number {
+        const raw = String(pinId || '').toUpperCase();
+        let m = raw.match(/^GP(?:IO)?(\d{1,2})$/);
+        if (m) return Number(m[1]) <= 28 ? Number(m[1]) : -1;
+        m = raw.match(/^D(\d{1,2})$/);
+        if (m) {
+            const d = Number(m[1]);
+            // Arduino-pico mapping: D0..D21 → GP0..GP21 (D22+ unmapped here).
+            return d <= 21 ? d : -1;
+        }
+        m = raw.match(/^A([0-5])$/);
+        if (m) return [20, 21, 26, 27, 28, 22][Number(m[1])] ?? -1;
+        if (/^\d{1,2}$/.test(raw)) return Number(raw) <= 28 ? Number(raw) : -1;
+        return -1;
+    }
     private pollGpio(): void {
+        // Legacy whole-port publisher — superseded by pollGpioBidirectional
+        // → sampleGpioOut (direction-gated via OE, per-pin). Kept only for
+        // the onboard GP25 LED state mirror (the shell's builtInLed dot is
+        // not a wire net, so the base poll never touches it).
         try {
             const out = Number(this.mod?._picoemu_get_gpio_out?.()) || 0;
             const changed = (out ^ this.lastGpioOut) >>> 0;
-            if (!changed) return;
             this.lastGpioOut = out;
-            for (let pin = 0; pin < 29; pin++) {
-                if ((changed >> pin) & 1) {
-                    this.publishGpio(`GP${pin}`, !!((out >> pin) & 1));
-                }
-            }
             // Onboard LED is GP25.
             if ((changed >> 25) & 1) {
                 const ledInst = this.instances.get(this.boardId);

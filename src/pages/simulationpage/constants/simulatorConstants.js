@@ -8,6 +8,12 @@ export const BOARD_BAUD_PRESETS = {
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32f1: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32f4: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  retro_8086: ['9600', '19200', '38400', '57600', '115200'],
+  retro_8085: ['9600', '19200', '38400', '57600', '115200'],
+  retro_8051: ['9600', '19200', '38400', '57600', '115200'],
+  retro_6502: ['9600', '19200', '38400', '57600', '115200'],
+  retro_z80: ['9600', '19200', '38400', '57600', '115200'],
+  retro_rv32: ['9600', '19200', '38400', '57600', '115200'],
 };
 
 export const BOARD_DEFAULT_BAUD = {
@@ -18,6 +24,12 @@ export const BOARD_DEFAULT_BAUD = {
   esp32: '115200',
   stm32f1: '115200',
   stm32f4: '115200',
+  retro_8086: '9600',
+  retro_8085: '9600',
+  retro_8051: '9600',
+  retro_6502: '9600',
+  retro_z80: '9600',
+  retro_rv32: '9600',
 };
 
 export const SERIAL_LINE_ENDINGS = {
@@ -57,6 +69,14 @@ export const BOARD_FQBN = {
   stm32f411: 'STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F411CE',
   stm32f407ve: 'STMicroelectronics:stm32:GenF4:pnum=BLACK_F407VE',
   stm32f429: 'STMicroelectronics:stm32:Disco:pnum=DISCO_F429ZI',
+  // Retro 8/16-bit boards (8086emu, in-WASM assembler — no arduino FQBN;
+  // the runner assembles .asm source locally; backend `asm` passthrough).
+  retro_8086: 'retro:8086',
+  retro_8085: 'retro:8085',
+  retro_8051: 'retro:8051',
+  retro_6502: 'retro:6502',
+  retro_z80: 'retro:z80',
+  retro_rv32: 'retro:rv32',
 };
 
 export const BOARD_DISPLAY_NAME = {
@@ -82,6 +102,12 @@ export const BOARD_DISPLAY_NAME = {
   stm32f411: 'STM32F411 BlackPill',
   stm32f407ve: 'STM32F407VE Black Board',
   stm32f429: 'STM32F429 Discovery',
+  retro_8086: 'Intel 8086 (16-bit)',
+  retro_8085: 'Intel 8085 (8-bit)',
+  retro_8051: 'Intel 8051 (MCS-51)',
+  retro_6502: 'MOS 6502 (8-bit)',
+  retro_z80: 'Zilog Z80 (8-bit)',
+  retro_rv32: 'RISC-V rv32i (32-bit)',
 };
 
 export const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';

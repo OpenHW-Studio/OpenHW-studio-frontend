@@ -78,7 +78,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
         // a bundled static import — no await, so the START postamble keeps
         // its fire-and-forget call contract).
         const boardComps = components.filter((c) =>
-          /(arduino|rp2040|pico|esp32|stm32)/i.test(String(c?.type || "")),
+          /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(c?.type || "")),
         );
         const boardList = boardComps.length > 0 ? boardComps : [];
         const boardPinMaps = boardList.map((b, bi) => {

@@ -271,9 +271,14 @@ export const COMPONENT_PINS: Record<string, {
     'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
     'max30102': [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
     'openhw-5w-speaker': [{ id: 'IN+' }, { id: 'IN-' }],
+    'openhw-6502': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-74hc165': [{ id: 'vcc' }, { id: 'ce' }, { id: 'd3' }, { id: 'd2' }, { id: 'd1' }, { id: 'd0' }, { id: 'ds' }, { id: 'q7' }, { id: 'pl' }, { id: 'cp' }, { id: 'd4' }, { id: 'd5' }, { id: 'd6' }, { id: 'd7' }, { id: 'q7n' }, { id: 'gnd' }],
     'openhw-74hc595': [{ id: 'vcc' }, { id: 'q0' }, { id: 'ser' }, { id: 'oe' }, { id: 'rclk' }, { id: 'srclk' }, { id: 'srclr' }, { id: 'q7s' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'gnd' }],
     'openhw-7segment': [{ id: 'G' }, { id: 'F' }, { id: 'COM.2' }, { id: 'A' }, { id: 'B' }, { id: 'E' }, { id: 'D' }, { id: 'COM.1' }, { id: 'C' }, { id: 'DP' }],
+    'openhw-8051': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8085': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8086': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
+    'openhw-8088': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
     'openhw-adxl345': [{ id: 'GND' }, { id: 'VCC' }, { id: 'CS' }, { id: 'INT1' }, { id: 'INT2' }, { id: 'SDO' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-analog-joystick': [{ id: 'VCC' }, { id: 'VERT' }, { id: 'HORZ' }, { id: 'SEL' }, { id: 'GND' }],
@@ -354,6 +359,7 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
     'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-rv32': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'openhw-sd-card': [{ id: 'CD' }, { id: 'MISO' }, { id: 'GND' }, { id: 'SCK' }, { id: 'VCC' }, { id: 'MOSI' }, { id: 'CS' }],
     'openhw-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
     'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
@@ -379,6 +385,7 @@ export const COMPONENT_PINS: Record<string, {
     'openhw-text': [],
     'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-wifi-ap': [],
+    'openhw-z80': [{ id: 'L0' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }, { id: 'L4' }, { id: 'L5' }, { id: 'L6' }, { id: 'L7' }, { id: 'L8' }, { id: 'L9' }, { id: 'L10' }, { id: 'L11' }, { id: 'L12' }, { id: 'L13' }, { id: 'L14' }, { id: 'L15' }, { id: 'L16' }, { id: 'L17' }, { id: 'L18' }, { id: 'L19' }, { id: 'R0' }, { id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'R5' }, { id: 'R6' }, { id: 'R7' }, { id: 'R8' }, { id: 'R9' }, { id: 'R10' }, { id: 'R11' }, { id: 'R12' }, { id: 'R13' }, { id: 'R14' }, { id: 'R15' }, { id: 'R16' }, { id: 'R17' }, { id: 'R18' }, { id: 'R19' }, { id: 'SWD_3V3' }, { id: 'SWDIO' }, { id: 'SWCLK' }, { id: 'SWD_GND' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }],
 }[]> = {
     'wokwi-led': [{ id: 'A' }, { id: 'K' }],
@@ -1059,6 +1066,34 @@ export function resolveLogicClass(type: string): any {
     return BaseComponent;
 }
 
+/**
+ * Component capability declaration (plan §5.6/§11).
+ * Derives the capability vocabulary from manifest pin names — the same
+ * mapping resolveLogicClass uses to pick a protocol base — so tests and
+ * the conformance matrix can ask "what does this component need" without
+ * importing logic or touching runners. Additive; behavior-neutral.
+ * Vocabulary: digital-in/out, analog-in, pwm-in, i2c-target, spi-target,
+ * uart, onewire, i2s.
+ */
+export function getComponentCapabilities(type: string): string[] {
+    const out = new Set<string>();
+    const pins = ((COMPONENT_PINS as any)[type] || []).map((p: any) => String(p?.id ?? p).toUpperCase());
+    if (!pins.length) return [];
+    const has = (...names: string[]) => pins.some((p: string) => names.includes(p));
+    const hasAny = (names: string[]) => pins.some((p: string) => names.includes(p));
+    // Digital presence: any board-wirable signal pin implies digital I/O.
+    out.add('digital-in');
+    out.add('digital-out');
+    if (has('SDA') && has('SCL')) out.add('i2c-target');
+    if (hasAny(['MOSI', 'DIN', 'SDI', 'MISO'])) out.add('spi-target');
+    if (hasAny(['PWM', 'SIG'])) out.add('pwm-in');
+    if (hasAny(['TX', 'TXD', 'RX', 'RXD'])) out.add('uart');
+    if (hasAny(['DQ', 'DATA'])) out.add('onewire');
+    if (hasAny(['AO', 'AOUT'])) out.add('analog-in');
+    if (has('BCK', 'BCLK') && hasAny(['LRCK', 'WS', 'LRC', 'LRCLK'])) out.add('i2s');
+    return Array.from(out);
+}
+
 export const MEDIUM_COMPONENT_STATE_WEIGHT = 2_048;
 export const HEAVY_COMPONENT_STATE_WEIGHT = 8_192;
 export const MEDIUM_COMPONENT_MIN_SYNC_MS = 55;
@@ -1284,6 +1319,9 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
     };
 }
 
+/** River telemetry schema version (plan §5.5): additive evolution only. */
+export const TELEMETRY_SCHEMA_VERSION = 1;
+
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
         const targetFreq = (cpu as any)?.clock?.frequency || (cpu as any)?.freq || 16_000_000;
@@ -1476,5 +1514,9 @@ export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?:
         }
     }
 
+    // River telemetry schema marker (plan §5.5/§11.4): additive version tag
+    // so consumers can evolve without silent misreads. Unknown fields are
+    // ignored by older readers; removal/rename requires a version bump.
+    out.schemaVersion = TELEMETRY_SCHEMA_VERSION;
     return out;
 }

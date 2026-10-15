@@ -153,6 +153,47 @@ export function resolveBoardLoopPrologue(args, ctx) {
               return { disposition: 'continue', result };
             }
 
+            // Retro asm path: 8086emu boards assemble .asm source IN-WASM —
+            // no arduino compile. A main.<isa>.asm (or any non-empty .asm)
+            // becomes an ASM: payload the runner assembles locally.
+            // boardHexMap carries it verbatim; first-firmware-wins applies.
+            const isRetroKind = String(kind || '').startsWith('retro_');
+            if (isRetroKind) {
+              // setupCircuit/e2e writes sketch text without creating the
+              // project/r85/r85.asm file — but compileSource below already
+              // resolves it (compileUnit.mainCode || getBoardMainCode ||
+              // raw code). For retro boards that resolved source IS the
+              // assembly program: wrap it as ASM: and skip arduino compile.
+              // (An on-disk .asm file still wins when present.)
+              const asmFile = boardEnabledFiles.find(
+                (f) => fileExt(f.path) === '.asm' && String(f.content || '').trim(),
+              ) || boardEnabledFiles.find(
+                (f) => /\.(asm|s|a51)$/i.test(f.path) && String(f.content || '').trim(),
+              );
+              const earlySource = useBlocklyCode
+                ? blocklyGeneratedCode
+                : compileUnit.mainCode ||
+                  getBoardMainCode(boardComp.id) ||
+                  String(code || "");
+              const asmSrc = asmFile ? String(asmFile.content || '') : String(earlySource || '');
+              const asmName = asmFile ? (asmFile.name || 'main.asm') : `${boardComp.id}.asm`;
+              if (asmSrc.trim()) {
+                boardHexMap[boardComp.id] = `ASM:${asmSrc}`;
+                appendConsoleEntry(
+                  'info',
+                  `Using assembly source (${asmName}) for ${boardCompToDisplayName(boardComp, kind)} — assembled in-WASM, no compile needed.`,
+                  'simulator',
+                );
+                if (!result) {
+                  result = { hex: boardHexMap[boardComp.id], artifactName: asmName, asm: true };
+                }
+                return { disposition: 'continue', result };
+              }
+            // Empty source: fall through to the standard no-sketch guard
+            // below (boardsWithoutCompilableSketch), which tells the user
+            // exactly which board needs a source file.
+            }
+
             const compileSource = useBlocklyCode
               ? blocklyGeneratedCode
               : compileUnit.mainCode ||

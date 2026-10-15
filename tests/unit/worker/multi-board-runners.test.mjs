@@ -30,6 +30,16 @@ describe('multi-board runners', () => {
     const f4 = await createRunnerForBoard('openhw-stm32f4', '', [minimalBoard('f4', 'openhw-stm32f4')], [], noop, { boardId: 'f4' });
     assert.equal(f4.boardId, 'f4');
     f4.stop();
+
+    // Retro 8/16-bit boards route to RetroRunner with per-ISA select.
+    // (Engines idle in vitest — /vendor + /wasm aren't served — but
+    // routing + boardId + serial surface must hold, like ARM runners.)
+    for (const [type, id] of [['openhw-8086', 'r86'], ['openhw-8085', 'r85'], ['openhw-8051', 'r51'], ['openhw-6502', 'r65'], ['openhw-z80', 'rz'], ['openhw-rv32', 'rrv'], ['openhw-8088', 'r88']]) {
+      const r = await createRunnerForBoard(type, '', [minimalBoard(id, type)], [], noop, { boardId: id });
+      assert.equal(r.boardId, id);
+      assert.equal(typeof r.serialRxByteFromSource, 'function');
+      r.stop();
+    }
   }, 120000);
 
   test('two runners coexist with isolated boardIds (SAB-free)', async () => {

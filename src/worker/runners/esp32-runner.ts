@@ -137,6 +137,10 @@ export class Esp32Runner extends ArmRunnerBase {
                 // Free-running core: run() advances on its own cadence; the
                 // budget tick only keeps peripheral instances + TX flowing.
                 // Return nonzero so stepCycles() reports progress.
+                // NOTE: no per-tick publishGpio here — the base
+                // pollGpioBidirectional() owns output publishing via
+                // sampleGpioOut below, so edges fire once.
+                try { self.pollGpio(); } catch { /* never breaks tick */ }
                 return Math.max(1, Math.floor(_budget));
             },
             drainUartOut(): number[] {
@@ -153,6 +157,27 @@ export class Esp32Runner extends ArmRunnerBase {
             getPc(): number {
                 try { return Number(self.sim?.pc) || 0; } catch { return 0; }
             },
+            // Output sampler for the base bidirectional poll. The SAB
+            // proxy has NO GPIO-output readback (setPinInput is input-only;
+            // index.d.ts exposes no getPinLevel/onGpio — verified 2026-10).
+            // Return null (no poll-model output) so wired components keep
+            // whatever the rest of the net says; document as engine gap.
+            sampleGpioOut(_pinId: string): { level: number; driving: boolean } | null {
+                void _pinId;
+                return null;
+            },
+            // Input injection for the base bidirectional poll. Package API:
+            // sim.setPinInput(pinNumber, level) (index.d.ts) — async.
+            setGpioInput(pinId: string, high: boolean): void {
+                try {
+                    const n = parseInt(String(pinId || '').replace(/^(GPIO|D)/i, ''), 10);
+                    if (!Number.isFinite(n)) return;
+                    void self.sim?.setPinInput?.(n, high ? 1 : 0);
+                } catch { /* ignore */ }
+            },
+            readAnalog(_ref: string): number {
+                return NaN; // no ADC read path on the facade.
+            },
             isHalted(): boolean {
                 try { return !!self.sim?.stuck; } catch { return false; }
             },
@@ -165,6 +190,12 @@ export class Esp32Runner extends ArmRunnerBase {
             },
         };
     }
+
+    /** Poll pump for the (input-only) GPIO path: no output readback
+     * exists on the SAB proxy, so nothing to mirror here. Kept as
+     * a named hook for forward-compat (engine gap, not a silent
+     * no-op — see sampleGpioOut above). */
+    private pollGpio(): void { /* engine has no GPIO-output readback */ }
 
     /** Drive a GPIO input level (host-driven pin toggle, e.g. buttons). */
     async setGpioInput(pinNumber: number, high: boolean): Promise<void> {

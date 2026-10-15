@@ -1076,7 +1076,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1107,7 +1107,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1149,7 +1149,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino|rp2040|pico|esp32|stm32)/i.test(c.type),
+        /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type),
       ),
     [components],
   );
@@ -1253,6 +1253,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           !isFileDisabled(f.path),
       );
       if (ino?.content) return ino.content;
+
+      // Retro boards: assembly source instead of Arduino sketches.
+      const asm = (projectFiles || []).find(
+        (f) =>
+          f.path.startsWith(`project/${boardId}/`) &&
+          /\.(asm|s|a51)$/i.test(f.path) &&
+          !isFileDisabled(f.path),
+      );
+      if (asm?.content) return asm.content;
 
       return "";
     },
@@ -2727,6 +2736,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
           const ext = fileExt(file.path);
+          // Retro boards use assembly sources, not Arduino sketches.
+          if (String(kind || '').startsWith('retro')) return /\.(asm|s|a51)$/i.test(file.path);
           return ext === ".ino";
         });
 
@@ -4321,10 +4332,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             // not from `code` alone — without the file, firmware is empty.
             // Order: file+buffer first, active second — never setCode alone.
             const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
-              /(arduino|rp2040|pico|esp32|stm32)/i.test(String(c?.type || "")),
+              /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(c?.type || "")),
             );
             const boardId = boards[0]?.id || "uno1";
-            const inoPath = `project/${boardId}/${boardId}.ino`;
+            const boardType = String(boards[0]?.type || "");
+            // Retro boards edit assembly, not Arduino sketches.
+            const isRetroBoard = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(boardType);
+            const mainName = isRetroBoard ? `${boardId}.asm` : `${boardId}.ino`;
+            const inoPath = `project/${boardId}/${mainName}`;
             try {
               const store = useEditorStore.getState();
               store.setProjectFiles((prev) => {
@@ -4335,9 +4350,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 const base = {
                   id: inoPath,
                   path: inoPath,
-                  name: `${boardId}.ino`,
+                  name: mainName,
                   kind: "code",
-                  language: "arduino",
+                  language: isRetroBoard ? "asm" : "arduino",
                   boardId,
                   dirty: true,
                 };
@@ -4437,7 +4452,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let compileProbe = null;
         try {
           const boards = (componentsRef.current || []).filter((c) =>
-            /(arduino|rp2040|pico|esp32|stm32)/i.test(String(c?.type || "")),
+            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(c?.type || "")),
           );
           compileProbe = boards.map((b) => {
             let mainLen = -1;

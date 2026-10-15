@@ -31,6 +31,14 @@ export function normalizeBoardKind(source) {
   // Pico 2 / RP2350 before Pico 1: 'pico-2' contains 'pico'.
   if (s.includes('pico-2') || s.includes('pico2') || s.includes('rp2350') || s.includes('2350')) return 'rp2350';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  // Retro 8/16-bit boards (8086emu): specific ISAs before the catch-all.
+  if (s.includes('8086') || s.includes('8088')) return 'retro_8086';
+  if (s.includes('8085')) return 'retro_8085';
+  if (s.includes('8051') || s.includes('mcs-51') || s.includes('mcs51')) return 'retro_8051';
+  if (s.includes('6502')) return 'retro_6502';
+  if (s.includes('z80') || s.includes('z-80')) return 'retro_z80';
+  if (s.includes('rv32') || s.includes('risc-v') || s.includes('riscv')) return 'retro_rv32';
+  if (s.includes('retro')) return 'retro_8086';
   return 'arduino_uno';
 }
 
@@ -62,8 +70,35 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
 
 
 export function createDefaultMainCode(boardKind, boardId, options = {}) {
-  void boardKind; void boardId; void options;
+  void boardId; void options;
+  const kind = normalizeBoardKind(boardKind);
+  // Retro boards default to a per-ISA hello program (assembled in-WASM).
+  if (String(kind || '').startsWith('retro')) return defaultRetroAsm(kind);
   return `void setup() {\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // put your main code here, to run repeatedly:\n\n}\n`;
+}
+
+function defaultRetroAsm(kind) {
+  const k = String(kind || '');
+  if (k === 'retro_8085') {
+    return `; 8085 hello world: print chars via OUT 01h\n    MVI C, 05h\n    LXI H, msg\nloop:\n    MOV A, M\n    CPI '$'\n    JZ done\n    OUT 01h\n    INX H\n    JMP loop\ndone:\n    HLT\nmsg: DB 'Hello, 8085!', '$'\nEND`;
+  }
+  if (k === 'retro_8051') {
+    return `; 8051 hello world: write chars to SBUF (serial output)\n    MOV DPTR, #msg\n    MOV R1, #00h\nloop:\n    MOV A, R1\n    MOVC A, @A+DPTR\n    JZ done\n    MOV SBUF, A\n    INC R1\n    SJMP loop\ndone:\n    SJMP done\nmsg: DB 'Hello, 8051!', 0\nEND`;
+  }
+  if (k === 'retro_6502') {
+    // NOTE: package 6502 DB takes one literal per DB (repo hello6502.asm).
+    return `; 6502 hello world: STA $01 prints A\n    ORG 0\n    LDX #0\nloop:\n    LDA msg,X\n    BEQ done\n    STA $01\n    INX\n    JMP loop\ndone:\n    BRK\nmsg: DB 'H'\n    DB 'i'\n    DB 10\n    DB 0\n    END\n`;
+  }
+  if (k === 'retro_z80') {
+    // NOTE: package Z80 assembler has no forward label refs (verified) —
+    // unrolled OUT sequence like the repo helloz80.asm example.
+    return `; Z80 hello world: OUT (1),A prints A\n    ORG 0\n    LD A, 'H'\n    OUT (1), A\n    LD A, 'i'\n    OUT (1), A\n    LD A, 10\n    OUT (1), A\n    HALT\n    END\n`;
+  }
+  if (k === 'retro_rv32') {
+    return `# rv32 hello world: ECALL write semihosting\n    .text\n    la a0, msg\n    li a1, 12\n    li a7, 64\n    ecall\n    li a7, 93\n    ecall\nmsg:\n    .string "Hello, rv32!"\n`;
+  }
+  // retro_8086 default: DOS COM program (ORG 100h), INT 21h string output.
+  return `; 8086 hello world via DOS INT 21h\nORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\nMOV AH, 4Ch\nINT 21h\nmsg: DB 'Hello, 8086!$'\nEND`;
 }
 
 export function resolveComponentAttrString(attrs, key, fallback = '') {
@@ -81,7 +116,7 @@ export function resolveComponentAttrString(attrs, key, fallback = '') {
 
 export function isProgrammableBoardType(type) {
   const s = String(type || '').toLowerCase();
-  return /(arduino|rp2040|pico|esp32|stm32)/i.test(s);
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(s);
 }
 
 export function isBreadboardType(type) {

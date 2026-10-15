@@ -268,7 +268,13 @@ export function readTelemetryRing(buffer, sinceHead = 0, maxRecords = 64) {
       const c32 = new Uint32Array(buffer, base + 12, 2);
       out.push({ compSlot: u16[0], code: u16[1], v0: f32[0], v1: f32[1], cycles: c32[0] + c32[1] * 4294967296 });
     }
-    return { records: out, head };
+    // River loss accounting (plan §11.4): records overwritten before this
+    // reader saw them are reported, never silently dropped. The writer
+    // overwrites oldest without a shared tail word, but the reader knows
+    // `head`, its own cursor, and how many it consumed — so skipped is
+    // exact: arrived minus returned.
+    const skipped = Math.max(0, (head - sinceHead) - out.length);
+    return { records: out, head, skipped };
   } catch {
     return null;
   }
@@ -365,16 +371,30 @@ export function readPinRegion(buffer, boardPinMaps) {
 /**
  * Drain a serial byte ring (§10.4) at an absolute buffer offset.
  * Returns up to maxN byte values. Strings assemble on the caller off-tick.
+ * Shape preserved (array) for existing callers; use drainSerialRingCounted
+ * when loss accounting matters.
  */
 export function drainSerialRing(buffer, ringOffset, maxN = 256) {
+  return drainSerialRingCounted(buffer, ringOffset, maxN).bytes;
+}
+
+/**
+ * Counted serial drain (river loss accounting, plan §11.4): bytes the ring
+ * overwrote before this reader saw them are reported as `skipped`, never
+ * silently dropped. `tail` is this reader's cursor only when it is the sole
+ * drainer; with competing drainers `skipped` is a lower bound.
+ */
+export function drainSerialRingCounted(buffer, ringOffset, maxN = 256) {
   if (!isSabUsable(buffer) || !Number.isFinite(ringOffset) || ringOffset <= 0) {
-    return [];
+    return { bytes: [], skipped: 0 };
   }
   try {
     const u32 = new Uint32Array(buffer, ringOffset, 2);
     let tail = Atomics.load(u32, 1);
     const head = Atomics.load(u32, 0);
-    const n = Math.min(maxN, Math.max(0, head - tail));
+    const pending = Math.max(0, head - tail);
+    const n = Math.min(maxN, pending);
+    const skipped = pending - n;
     const u8 = new Uint8Array(buffer, ringOffset + 8, SAB_SERIAL_RING_B);
     const out = [];
     for (let k = 0; k < n; k++) {
@@ -382,9 +402,9 @@ export function drainSerialRing(buffer, ringOffset, maxN = 256) {
       tail++;
     }
     if (out.length) Atomics.store(u32, 1, tail);
-    return out;
+    return { bytes: out, skipped };
   } catch {
-    return [];
+    return { bytes: [], skipped: 0 };
   }
 }
 
@@ -466,4 +486,72 @@ export function applySabFrames(frames, liveOopStatesRef, runComponentUpdateCount
     changed.push(compId);
   }
   return changed;
+}
+
+/**
+ * readRiver — the single river intake (plan §11.5).
+ *
+ * One call returns every readable lane since the caller's cursor, each with
+ * loss accounting. Pure reads, zero worker dependency, never throws:
+ * unusable buffer → null (caller uses the postMessage path).
+ *
+ * @param {SharedArrayBuffer} buffer state SAB from START alloc
+ * @param {object} args
+ *   boardPinMaps: same order as allocateStateSab
+ *   offsets: componentId → slot index
+ *   cursor: { lastSeq, versions } from createSabCursor() (frames lane)
+ *   telemetrySinceHead/telemetryMax: telemetry ring window
+ *   serialRings: [{ boardId, offset }] byte-ring offsets to drain
+ *   serialMax: per-ring byte cap
+ *   debugOffset, displayDescOffset, displayMax: optional regions
+ * @returns null when the river is unusable; otherwise
+ *   { header, pins, frames, serial: {boardId: {bytes, skipped}},
+ *     telemetry: {records, head, skipped} | null,
+ *     debug, displays, skipped: {telemetry, serial} }
+ */
+export function readRiver(buffer, args = {}) {
+  if (!isSabUsable(buffer)) return null;
+  const {
+    boardPinMaps = [],
+    offsets = null,
+    cursor = null,
+    telemetrySinceHead = 0,
+    telemetryMax = 64,
+    serialRings = [],
+    serialMax = 256,
+    debugOffset = 0,
+    displayDescOffset = 0,
+    displayMax = SAB_DISPLAY_MAX,
+  } = args || {};
+  try {
+    const header = getSabDiag(buffer);
+    const pins = readPinRegion(buffer, boardPinMaps);
+    const frames = cursor ? (pollSabFrames(buffer, offsets, cursor) || []) : [];
+    const serial = {};
+    let serialSkipped = 0;
+    for (const ring of serialRings || []) {
+      if (!ring || !Number.isFinite(ring.offset) || ring.offset <= 0) continue;
+      const res = drainSerialRingCounted(buffer, ring.offset, serialMax);
+      serial[String(ring.boardId || '')] = res;
+      serialSkipped += res.skipped;
+    }
+    const telemetry = readTelemetryRing(buffer, telemetrySinceHead, telemetryMax);
+    const debug = debugOffset > 0 ? readDebugRegion(buffer, debugOffset) : null;
+    const displays = displayDescOffset > 0 ? readDisplayDescriptors(buffer, displayDescOffset, displayMax) : [];
+    return {
+      header,
+      pins,
+      frames,
+      serial,
+      telemetry,
+      debug,
+      displays,
+      skipped: {
+        telemetry: (telemetry && typeof telemetry === 'object' ? telemetry.skipped : 0) || 0,
+        serial: serialSkipped,
+      },
+    };
+  } catch {
+    return null;
+  }
 }

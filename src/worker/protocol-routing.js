@@ -7,10 +7,11 @@ import {
   ESP32_SOFTSERIAL_PINS,
   STM32F1_UART_PINS,
   STM32F4_UART_PINS,
+  RETRO_UART_PINS,
 } from './board-profiles';
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|rp2040|pico|esp32|stm32)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(type || ''));
 }
 
 export function endpointAliases(endpoint) {
@@ -53,6 +54,7 @@ export function getUartPinCandidates(boardType, source = 'uart0') {
     return STM32F1_UART_PINS;
   }
   if (t.includes('rp2040') || t.includes('pico')) return PICO_UART_PINS;
+  if (t.includes('8086') || t.includes('8088') || t.includes('8085') || t.includes('8051') || t.includes('6502') || t.includes('z80') || t.includes('rv32') || t.includes('retro')) return RETRO_UART_PINS;
   return UNO_UART_PINS;
 }
 

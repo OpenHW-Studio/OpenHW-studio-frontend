@@ -242,6 +242,19 @@ export class Stm32f4Runner extends ArmRunnerBase {
             getPc(): number {
                 try { return Number(self.mcu?.getPc?.()) || 0; } catch { return 0; }
             },
+            // Input injection for the base bidirectional poll. Package API:
+            // gpio.pin(bank, n).setInput(bool) (index.d.ts).
+            setGpioInput(pinId: string, high: boolean): void {
+                try {
+                    const raw = String(pinId || '').toUpperCase();
+                    const m = raw.match(/^P?([A-K])(\d{1,2})$/);
+                    if (!m) return;
+                    self.mcu?.gpio?.pin?.(m[1], Number(m[2]))?.setInput?.(!!high);
+                } catch { /* ignore */ }
+            },
+            readAnalog(_ref: string): number {
+                return NaN; // no ADC read path on the facade.
+            },
             close(): void {
                 try { gpioUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } }); } catch { /* ignore */ }
                 try { self.mcu?.close?.(); } catch { /* ignore */ }

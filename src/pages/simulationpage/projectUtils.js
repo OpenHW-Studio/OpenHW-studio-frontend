@@ -678,7 +678,9 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
 }
 */
 export function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  void boardKind; void options;
+  void options;
+  // Retro boards edit assembly, not Arduino sketches.
+  if (String(boardKind || '').startsWith('retro')) return `${boardId}.asm`;
   return `${boardId}.ino`;
 }
 

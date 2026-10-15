@@ -61,6 +61,16 @@ function b64ToU8(b64: string): Uint8Array {
     return out;
 }
 
+/** Board pin label → [PORT letter, pin number] (PA9/A9/9 → [A,9]). */
+function portPinFor(pinId: string): [string, number] | [null, -1] {
+    const raw = String(pinId || '').toUpperCase();
+    let m = raw.match(/^P([A-G])(\d{1,2})$/);
+    if (m) return [m[1], Number(m[2])];
+    m = raw.match(/^([A-G])(\d{1,2})$/);
+    if (m) return [m[1], Number(m[2])];
+    return [null, -1];
+}
+
 export class Stm32f1Runner extends ArmRunnerBase {
     protected uartTxPins = [...F1_UART_TX, ...F1_UART2_TX];
     protected uartRxPins = [...F1_UART_RX, ...F1_UART2_RX];
@@ -152,6 +162,20 @@ export class Stm32f1Runner extends ArmRunnerBase {
             },
             getPc(): number {
                 try { return Number(self.mcu?.getPc?.()) || 0; } catch { return 0; }
+            },
+            // Input injection for the base bidirectional poll: buttons and
+            // sensors drive wired pins into the core. Package API:
+            // gpio.pin(port, n).setInput(bool) / setAnalog(volts).
+            setGpioInput(pinId: string, high: boolean): void {
+                try {
+                    const [port, n] = portPinFor(pinId);
+                    if (!port) return;
+                    self.mcu?.gpio?.pin?.(port, n)?.setInput?.(!!high);
+                } catch { /* ignore */ }
+            },
+            readAnalog(ref: string): number {
+                void ref;
+                return NaN; // ADC inject is setAnalog (volts) — no read path.
             },
             close(): void {
                 try { gpioUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } }); } catch { /* ignore */ }

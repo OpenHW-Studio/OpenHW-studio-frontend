@@ -89,12 +89,14 @@ async function setLocalCompileCache(hash, data) {
  *   Pico (rp2040)  → uf2 (simulator) + elf (GDB)
  *   ESP32          → bin (merged flash image @0) + elf (GDB)
  *   STM32F1/F4     → bin (raw flash image) + elf (GDB)
+ *   Retro (8086emu)→ asm passthrough (assembled in-WASM; no compiler call)
  */
 export const DEFAULT_ARTIFACTS_BY_FAMILY = Object.freeze({
     avr: Object.freeze(['hex', 'elf']),
     rp2040: Object.freeze(['uf2', 'elf']),
     esp32: Object.freeze(['bin', 'elf']),
     stm32: Object.freeze(['bin', 'elf']),
+    retro: Object.freeze(['asm']),
 });
 
 export function defaultArtifactsForFqbn(fqbn) {
@@ -102,6 +104,7 @@ export function defaultArtifactsForFqbn(fqbn) {
     if (lowered.includes('rp2040')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.rp2040];
     if (lowered.includes('esp32')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.esp32];
     if (lowered.includes('stm32') || lowered.includes('stmicroelectronics')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.stm32];
+    if (lowered.startsWith('retro:')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.retro];
     return [...DEFAULT_ARTIFACTS_BY_FAMILY.avr];
 }
 
