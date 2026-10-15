@@ -5161,7 +5161,11 @@ var SpiTap = class {
   _ffiTransfer(mosiBytes, recvLen) {
     for (const b of mosiBytes) {
       this.mosiLog.push(b & 255);
-      if (this.mosiLog.length > 4096) this.mosiLog.shift();
+      // OPENHW MIRROR PATCH (display-burst loss fix): the old 4096 cap
+      // shift-dropped the middle of multi-KB display fills (observed: a
+      // 4800B ILI9341 burst arrived as ~4100B). 65536 matches READ_RESP_SIZE
+      // so a full drain never truncates; doSpiPoll already drains 65536.
+      if (this.mosiLog.length > 65536) this.mosiLog.shift();
     }
     if (typeof this.onTransfer === "function") {
       try {
@@ -5227,6 +5231,12 @@ var OneWireDevice = class {
     this.cmdBits = 0;
     this.txBytes = [];
     this.txBit = 0;
+    // OPENHW MIRROR PATCH (Dallas SEARCH/MATCH): search-triplet walker +
+    // match-ROM consumer state (see _searchSlot). Reset per transaction.
+    this.searchTriplet = 0;
+    this.searchServe = 1;
+    this.searchDropped = false;
+    this.matchBits = 0;
   }
   /** Clear transient parse state (chip.reset(); ROM/scratchpad survive). */
   _resetFlight() {
@@ -5255,6 +5265,10 @@ var OneWireDevice = class {
       this.log.push({ t: "presence" });
       this.cmdByte = 0;
       this.cmdBits = 0;
+      this.searchTriplet = 0;
+      this.searchServe = 1;
+      this.searchDropped = false;
+      this.matchBits = 0;
       return;
     }
     if (lowUs < 30) this._slotBit(1);
@@ -5262,6 +5276,21 @@ var OneWireDevice = class {
   }
   _slotBit(bit) {
     if (this.state === "serving") {
+      return;
+    }
+    // OPENHW MIRROR PATCH (Dallas SEARCH/MATCH): route search-triplet
+    // and match-ROM slots away from command accumulation (see _searchSlot).
+    if (this.state === "search") {
+      this._searchSlot(bit & 1);
+      return;
+    }
+    if (this.state === "match") {
+      this.matchBits++;
+      if (this.matchBits >= 64) {
+        this.state = "cmd";
+        this.cmdByte = 0;
+        this.cmdBits = 0;
+      }
       return;
     }
     if (this.state !== "cmd" && this.state !== "presence") return;
@@ -5285,8 +5314,52 @@ var OneWireDevice = class {
       this._serve(this.scratchpad);
     } else if (byte === 51) {
       this._serve(this.rom);
+      // OPENHW MIRROR PATCH (Dallas SEARCH/MATCH): 0xF0 SEARCH ROM (bit
+      // triplets, single-drop) and 0x55 MATCH ROM (64 written bits select
+      // the only device). Previously both fell into `idle`, so any
+      // DallasTemperature-style enumeration (begin() searches, reads use
+      // MATCH) found zero devices and reported -127.00 disconnected temp
+      // (observed on the CAM shell; SKIP-only bit-bang sketches worked).
+    } else if (byte === 240) {
+      this.state = "search";
+      this.searchTriplet = 0;
+      this.searchServe = 1;
+      this.searchDropped = false;
+    } else if (byte === 85) {
+      this.state = "match";
+      this.matchBits = 0;
     } else {
       this.state = "idle";
+    }
+  }
+  /** SEARCH ROM triplet walker (single device): slots arrive in
+   * [rom-bit read, complement read, direction write] triples, LSB-first
+   * over the 8 ROM bytes (64 bits). Phase 0/1 stage the serve bit that
+   * _ffiRead returns when the master samples; phase 2 consumes the
+   * master's direction (a mismatch drops this device out). After 192
+   * slots the selected device takes the next byte as a function command.
+   * Never throws (FFI-facing synchrony contract). */
+  _searchSlot(bit) {
+    try {
+      const pos = this.searchTriplet / 3 | 0;
+      if (pos >= 64) {
+        this.state = this.searchDropped ? "idle" : "cmd";
+        this.cmdByte = 0;
+        this.cmdBits = 0;
+        return;
+      }
+      const romBit = this.rom[pos >> 3] >> (pos & 7) & 1;
+      const phase = this.searchTriplet % 3;
+      if (phase === 0) this.searchServe = romBit;
+      else if (phase === 1) this.searchServe = romBit ^ 1;
+      else if (!this.searchDropped && (bit & 1) !== romBit) this.searchDropped = true;
+      this.searchTriplet++;
+      if (this.searchTriplet >= 192) {
+        this.state = this.searchDropped ? "idle" : "cmd";
+        this.cmdByte = 0;
+        this.cmdBits = 0;
+      }
+    } catch {
     }
   }
   _serve(bytes) {
@@ -5301,6 +5374,11 @@ var OneWireDevice = class {
       if (this.resetTick !== void 0 && this._usSince(tick, this.resetTick) <= 250) return 0;
       return 1;
     }
+    // OPENHW MIRROR PATCH (Dallas SEARCH/MATCH): serve the staged
+    // triplet bit while searching (see _searchSlot); MATCH slots are
+    // master-written only, bus stays released.
+    if (this.state === "search") return this.searchServe ? 1 : 0;
+    if (this.state === "match") return 1;
     if (this.state === "serving") {
       if (this.txBit >= this.txBytes.length * 8) {
         this.state = "idle";

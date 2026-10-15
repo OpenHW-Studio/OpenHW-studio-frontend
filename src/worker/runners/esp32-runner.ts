@@ -269,17 +269,46 @@ export class Esp32Runner extends ArmRunnerBase {
                 // the app entry at 0x40081xxx). Identity is what the proven
                 // paths use (test-boot.mjs, worker acceptance cells).
 
-                try {
-                    if (wasmBinary && typeof self.sim.loadWasm === 'function') {
-                        await self.sim.loadWasm(wasmBinary);
-                    }
-                } catch (e) { console.warn('[Esp32Runner] loadWasm failed:', e); }
-                self.sim.run();
-                // 1.2.0 peripheral taps: attach owned I2C slaves + start the
-                // async poll pumps (I2C events, SPI MOSI, GPIO-out edges).
-                // Preload nothing (displays are write-only); sensor ROM
-                // bytes prestage per-cell via pushI2cTx when needed.
+                // NOTE: sim.loadWasm does not exist on the SAB proxy (init
+                // already loads + resets with the wasmBinary riding config);
+                // the old guarded call here was dead code (typeof check
+                // always false). Removed.
+                // Tap attach BEFORE run(): every attach CMD carries its own
+                // RESP handshake and serializes through the live commandLoop,
+                // but run() is fire-and-forget (no handshake). Posting run()
+                // first lets the very next attach overwrite SAB_CMD before
+                // the loop's first exchange() — RUN is lost forever and the
+                // engine idles with total UART silence (observed: READY
+                // without RUN on I2C/1-Wire/SPI cells). Attaches first, RUN
+                // last: by the time RUN posts, the loop is pumping and
+                // consumes it within microseconds.
                 try { self.wireBusTaps(); } catch { /* taps never break boot */ }
+                self.sim.run();
+                // Proof-of-life wait: RUN is the ONLY handshake-less CMD
+                // (every other proxy call spins for RESP; run/stop just
+                // store+notify). SAB_CMD holds ONE slot, so any CMD posted
+                // before the engine's next exchange() overwrites a pending
+                // RUN — and the pump below posts its first poll CMDs within
+                // microseconds of RUN (observed: READY without RUN even
+                // with attaches first). Post NOTHING here until the core
+                // provably runs (retired instructions via the debug SAB, or
+                // UART bytes via pollUart — a pure shared-memory read, no
+                // CMD). Bounded 10s; on timeout re-post RUN once and carry
+                // on (the pump watchdog below nets the residue).
+                try {
+                    const t0 = Date.now();
+                    let alive = false;
+                    while (Date.now() - t0 < 10000) {
+                        try { self.sim.pollUart(); } catch { /* ignore */ }
+                        let inst = 0;
+                        try { inst = Number((self.sim as any)?.instTotal) || 0; } catch { inst = 0; }
+                        if (inst > 0) { alive = true; break; }
+                        try { if (txQueue.length > 0) { alive = true; break; } } catch { /* ignore */ }
+                        await new Promise((r) => setTimeout(r, 50));
+                    }
+                    if (!alive) { try { self.sim.run(); } catch { /* ignore */ } }
+                } catch { /* wait never breaks boot */ }
+                try { (self as any).bootWdT0 = Date.now(); (self as any).bootWdDone = false; } catch { /* ignore */ }
                 // Poll pump: SimulatorWorker needs pollUart() calls to move
                 // bytes from the WASM ring into _onUART. Reschedules
                 // unconditionally while the sim lives (NOT gated on
@@ -291,6 +320,30 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { self.sim.pollUart(); } catch { /* ignore */ }
                     try { self.pollBusTaps(); } catch { /* ignore */ }
                     try { self.pumpPythonInject(); } catch { /* inject never breaks the pump */ }
+                    // Boot watchdog: RUN is fire-and-forget, so a lost RUN
+                    // (see above) would idle silently for the whole window.
+                    // If the core retired zero instructions after 20s wall,
+                    // the engine provably never started — re-post RUN once
+                    // (attaches persist; no reset needed). Disarms on first
+                    // UART flow (txQueue observed here) or first retired
+                    // instruction.
+                    try {
+                        const w = (self as any);
+                        if (!w.bootWdDone) {
+                            let uartFlow = false;
+                            try { uartFlow = (txQueue.length > 0); } catch { uartFlow = false; }
+                            if (uartFlow) { w.bootWdDone = true; }
+                            else if (Date.now() - Number(w.bootWdT0 || Date.now()) > 20000) {
+                                let inst = -1;
+                                try { inst = Number((self.sim as any)?.instTotal); } catch { inst = -1; }
+                                if (Number.isFinite(inst) && inst <= 0) {
+                                    try { self.sim.run(); } catch { /* ignore */ }
+                                    try { console.log('[Esp32Runner] boot watchdog re-posted RUN (core idle 20s)'); } catch { /* ignore */ }
+                                }
+                                w.bootWdDone = true;
+                            }
+                        }
+                    } catch { /* watchdog never breaks the pump */ }
                     try { setTimeout(pump, 50); } catch { /* ignore */ }
                 };
                 pump();
@@ -368,8 +421,24 @@ export class Esp32Runner extends ArmRunnerBase {
             // sim.setPinInput(pinNumber, level) (index.d.ts) — async.
             setGpioInput(pinId: string, high: boolean): void {
                 try {
-                    const n = parseInt(String(pinId || '').replace(/^(GPIO|D)/i, ''), 10);
+                    const n = parseInt(String(pinId || '').replace(/^(GPIO|GP|D)/i, ''), 10);
                     if (!Number.isFinite(n)) return;
+                    // 1-Wire nets are owned by the engine's synchronous FFI
+                    // model (attachOneWire + pollOneWire): it answers
+                    // presence + data bits cycle-exactly inside the core.
+                    // The component model decodes bus traffic a full tick
+                    // late, so its tick-quantized LOW drives (presence/data
+                    // pulses at the wrong wall instant) must never reach the
+                    // engine pin — a stale LOW over a data-1 HIGH corrupts
+                    // the bit and the Dallas CRC fails. LOW pushes are
+                    // dropped here (single choke point, covers the input
+                    // half and the model's _driveBoardPin pushes); HIGH
+                    // pushes pass through: they are the idle pull-up the
+                    // Dallas reset() waits for before pulsing (it bails
+                    // with "no presence" on an idle-LOW wire), and the FFI
+                    // read override (presence/serving) wins over stimulus
+                    // whenever the sensor actively drives.
+                    try { if (!high && (self as any).owPins?.has?.(n)) return; } catch { /* ignore */ }
                     void self.sim?.setPinInput?.(n, high ? 1 : 0);
                 } catch { /* ignore */ }
             },
@@ -449,6 +518,10 @@ export class Esp32Runner extends ArmRunnerBase {
                         try { void self.sim?.injectSpiMiso?.(bus, [])?.catch?.(() => {}); } catch { /* ignore */ }
                     }
                 }
+                // Per-byte DC replay map (see spiDcPlanFor): which board
+                // GPIOs carry each SPI slave's DC/CS nets. Built once here
+                // (nets are constructor-fixed).
+                try { self.buildSpiDcMap(); } catch { /* dc map never breaks boot */ }
             } catch { /* ignore */ }
             // 1-Wire (DS18B20): the engine emulates the sensor once
             // attached (attachOneWire + setOneWireTemp); the component
@@ -537,29 +610,32 @@ export class Esp32Runner extends ArmRunnerBase {
                     } catch { /* ignore */ }
                 }
             }
-            if (this.spiBridge && typeof self.sim?.pollSpiTx === 'function') {
-                // User buses are 2/HSPI and 3/VSPI; poll both (+0/1 harmless).
-                for (const bus of [2, 3]) {
-                    try {
-                        (self.sim.pollSpiTx(bus) as Promise<number[]>).then((mosi) => {
-                            try {
-                                const br = self.spiBridge;
-                                if (!br || !Array.isArray(mosi) || mosi.length === 0) return;
-                                let idx = 0;
-                                for (const b of mosi) {
-                                    try { br.exchange(Number(b) & 0xff, idx++); } catch { /* ignore */ }
-                                }
-                                try { br.frame(true); } catch { /* ignore */ }
-                            } catch { /* feed never breaks poll */ }
-                        }).catch(() => {});
-                    } catch { /* ignore */ }
-                }
-            }
+            // Feed order (blocking SAB round-trips queue .then callbacks in
+            // call order): GPIO edges MUST publish before this round's MOSI
+            // bytes reach the models. Display models sample DC per byte at
+            // feed time; with SPI polled first, every setup-phase byte was
+            // fed while DC still read LOW — commands only, zero data bytes
+            // ingested (observed: writeCount/fillPercent/ramPointer ≡ 0 on
+            // TFT/LCD/EPD while DC-less MAX7219 works). GPIO block first.
             if (typeof self.sim?.pollGpioChanges === 'function') {
                 try {
                     (self.sim.pollGpioChanges() as Promise<Array<{ pin: number; level: number }>>).then((edges) => {
                         try {
                             if (!Array.isArray(edges)) return;
+                            // Stash this round's edges (board gpio + level, in
+                            // firmware order) for the SPI DC replay below:
+                            // the SPI .then callbacks queue after this one,
+                            // so the stash is always the current round's.
+                            // Overwritten per round (never consumed across
+                            // rounds); SPI drains with no edges use carryDC.
+                            try {
+                                const arr: Array<{ gpio: number; high: boolean }> = [];
+                                for (const e of edges) {
+                                    if (!e || !Number.isFinite(Number((e as any)?.pin))) continue;
+                                    arr.push({ gpio: Number((e as any).pin), high: !!Number((e as any)?.level) });
+                                }
+                                (self as any).spiEdgeStash = arr;
+                            } catch { /* stash never breaks poll */ }
                             for (const e of edges) {
                                 if (!e || !Number.isFinite(Number(e.pin))) continue;
                                 const label = `GPIO${Number(e.pin)}`;
@@ -570,6 +646,37 @@ export class Esp32Runner extends ArmRunnerBase {
                         } catch { /* edges never break poll */ }
                     }).catch(() => {});
                 } catch { /* ignore */ }
+            }
+            if (this.spiBridge && typeof self.sim?.pollSpiTx === 'function') {
+                // User buses are 2/HSPI and 3/VSPI; poll both (+0/1 harmless).
+                for (const bus of [2, 3]) {
+                    try {
+                        (self.sim.pollSpiTx(bus) as Promise<number[]>).then((mosi) => {
+                            try {
+                                const br = self.spiBridge;
+                                if (!br || !Array.isArray(mosi) || mosi.length === 0) return;
+                                // Per-byte DC replay (see spiDcPlanFor): pin
+                                // levels publish per round (end state), but
+                                // display models sample DC per byte — µs
+                                // toggles inside a round would otherwise all
+                                // read the round-final level and command/data
+                                // framing collapses (observed: currentCommand
+                                // stuck at 0x11, 0 data bytes ingested).
+                                let plan: boolean[] | null = null;
+                                try { plan = self.spiDcPlanFor(mosi.length); } catch { plan = null; }
+                                let idx = 0;
+                                for (const b of mosi) {
+                                    try {
+                                        if (plan) self.spiApplyDc(!!plan[idx]);
+                                    } catch { /* dc never breaks feed */ }
+                                    try { br.exchange(Number(b) & 0xff, idx); } catch { /* ignore */ }
+                                    idx++;
+                                }
+                                try { br.frame(true); } catch { /* ignore */ }
+                            } catch { /* feed never breaks poll */ }
+                        }).catch(() => {});
+                    } catch { /* ignore */ }
+                }
             }
             // ADC inject + PWM observe (1.2.0 taps; no-ops without them).
             try { self.driveEsp32ADC(); } catch { /* never breaks tick */ }
@@ -633,6 +740,199 @@ export class Esp32Runner extends ArmRunnerBase {
         try { await this.sim?.setPinInput?.(pinNumber, high ? 1 : 0); } catch { /* ignore */ }
     }
 
+    /** Firmware-driven output cache, fed by the pollGpioChanges edge pump
+     * above (keys are the reported `GPIO<n>` labels; lookups normalize
+     * across all ESP32 label forms). Declared (was an implicit dynamic
+     * prop): backs output-wins below. */
+    private gpioOutCache = new Map<string, boolean>();
+
+    /** Board pin label → GPIO number across the ESP32 label zoo (GPIO<n>,
+     * GP<n>, D<n>, bare <n>); -1 for rails/aliases that are not GPIO. */
+    private static gpioNum(label: string): number {
+        try {
+            const m = /^(?:GPIO|GP|D)?(\d{1,2})$/i.exec(String(label || '').trim());
+            if (!m) return -1;
+            const n = Number(m[1]);
+            return (Number.isInteger(n) && n >= 0 && n <= 39) ? n : -1;
+        } catch { return -1; }
+    }
+
+    /** Alias expansion for ESP32 nets: the base only links GPIO↔GP and
+     * D↔bare, but shells wire short labels (`esp1:21`) while engine edges
+     * arrive as `GPIO21` — without the full cross-product the component
+     * fan-out misses every short-label net (observed: TFT/LCD/EPD DC+CS+RST
+     * never delivered, writeCount/fillPercent/ramPointer all zero while
+     * MOSI bytes flow fine). Adds GPIO<n>↔GP<n>↔D<n>↔<n>. */
+    protected override getPinAliases(pinId: string): string[] {
+        const out = new Set<string>();
+        try {
+            for (const a of super.getPinAliases(pinId)) out.add(a);
+        } catch { out.add(String(pinId || '').toUpperCase()); }
+        try {
+            const n = Esp32Runner.gpioNum(pinId);
+            if (n >= 0) {
+                out.add(String(n)); out.add(`D${n}`); out.add(`GPIO${n}`); out.add(`GP${n}`);
+            }
+        } catch { /* aliases never break lookup */ }
+        return Array.from(out);
+    }
+
+    /** Board-to-board GPIO fan-out (mirrors the F1 override): after the
+     * normal component publish, forward the driven level into same-net
+     * board pins the firmware does NOT drive as outputs. The base has no
+     * board→board propagation, so a GPIO12→GPIO13 loopback wire is
+     * electrically dead without this (observed: EXTI ISR + PCNT counts
+     * pinned at 0 while static gpio-in reads fine). Output-vs-output is a
+     * short — firmware-driven targets (edge cache) are skipped. */
+    protected override publishGpio(pinId: string, isHigh: boolean, analogV?: number): void {
+        try { super.publishGpio(pinId, isHigh, analogV); } catch { /* never break propagation */ }
+        try {
+            const src = Esp32Runner.gpioNum(pinId);
+            if (src < 0) return;
+            let net: number | undefined;
+            for (const cand of [`${this.boardId}:${src}`, `${this.boardId}:D${src}`, `${this.boardId}:GPIO${src}`, `${this.boardId}:GP${src}`]) {
+                const v = this.pinToNet.get(cand);
+                if (v !== undefined) { net = v; break; }
+            }
+            if (net === undefined) return;
+            const srcKeys = new Set([String(src), `D${src}`, `GPIO${src}`, `GP${src}`]);
+            for (const [node, netId] of (this as any).pinToNet) {
+                if (netId !== net) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const bPin = node.slice(sep + 1);
+                if (!bPin || srcKeys.has(bPin.toUpperCase())) continue;
+                const tgt = Esp32Runner.gpioNum(bPin);
+                if (tgt < 0) continue;
+                try {
+                    let driven = false;
+                    for (const k of [`GPIO${tgt}`, `GP${tgt}`, `${tgt}`, `D${tgt}`]) {
+                        if (this.gpioOutCache.has(k.toUpperCase())) { driven = true; break; }
+                    }
+                    if (driven) continue; // firmware drives it: output wins
+                } catch { /* unknown drive: source wins */ }
+                try { this.engine.setGpioInput?.(bPin, !!isHigh); } catch { /* ignore */ }
+            }
+        } catch { /* board fan-out never breaks the tick */ }
+    }
+
+    /** Non-consuming output probe for the base bidirectional poll: pins the
+     * firmware drives (edge cache) report driving:true so the input half
+     * skips them (output wins) instead of pushing the lagging
+     * component-side voltage back over a firmware output (the pico
+     * `_set_gpio` latch-clear hazard, ESP32 flavor). Rails keep working:
+     * undriven pins return null (legacy push path). */
+    public peekGpioOut(pinId: string): { level: number; driving: boolean } | null {
+        try {
+            const n = Esp32Runner.gpioNum(pinId);
+            if (n < 0) return null;
+            for (const k of [`GPIO${n}`, `GP${n}`, `${n}`, `D${n}`]) {
+                const ku = k.toUpperCase();
+                if (this.gpioOutCache.has(ku)) {
+                    return { level: this.gpioOutCache.get(ku) ? 1 : 0, driving: true };
+                }
+            }
+        } catch { /* ignore */ }
+        return null;
+    }
+
+    /** SPI DC/CS net map for the per-byte DC replay (built in wireBusTaps;
+     * nets are constructor-fixed). One entry per SPI-slave instance that
+     * exposes a DC pin (TFT/LCD/EPD); DC-less slaves (MAX7219/SD) need no
+     * replay and are skipped. */
+    private spiDcEntries: Array<{ inst: any; dcGpios: Set<number>; csGpios: Set<number> }> = [];
+
+    private buildSpiDcMap(): void {
+        try {
+            const list: Array<{ inst: any; dcGpios: Set<number>; csGpios: Set<number> }> = [];
+            for (const inst of this.instances.values()) {
+                try {
+                    const hasByte = typeof (inst as any)?.onSPIByte === 'function';
+                    const hasXchg = typeof (inst as any)?.onSPIByteExchange === 'function';
+                    if (!hasByte && !hasXchg) continue;
+                    if (!(inst as any)?.pins?.['DC']) continue;
+                    let csName = 'CS';
+                    try {
+                        if (typeof (inst as any)?.getCSPinName === 'function') {
+                            csName = String((inst as any).getCSPinName()) || 'CS';
+                        }
+                    } catch { csName = 'CS'; }
+                    const nets = (this as any).pinToNet as Map<string, number> | undefined;
+                    if (!nets) continue;
+                    const dcNet = nets.get(`${(inst as any)?.id}:DC`);
+                    if (dcNet === undefined) continue;
+                    const csNet = nets.get(`${(inst as any)?.id}:${csName}`);
+                    const dcGpios = new Set<number>();
+                    const csGpios = new Set<number>();
+                    for (const [node, netId] of nets) {
+                        try {
+                            const sep = node.indexOf(':');
+                            if (sep < 0) continue;
+                            if (node.slice(0, sep) !== this.boardId) continue;
+                            const g = Esp32Runner.gpioNum(node.slice(sep + 1));
+                            if (g < 0) continue;
+                            if (netId === dcNet) dcGpios.add(g);
+                            if (csNet !== undefined && netId === csNet) csGpios.add(g);
+                        } catch { /* ignore */ }
+                    }
+                    if (dcGpios.size > 0) list.push({ inst, dcGpios, csGpios });
+                } catch { /* one instance never breaks mapping */ }
+            }
+            this.spiDcEntries = list;
+        } catch { /* dc map never breaks boot */ }
+    }
+
+    /** Per-byte DC plan for one SPI drain: replay the round's edge order so
+     * each byte pairs with the DC level of its own CS assertion (drivers
+     * set DC immediately before asserting CS — same round, exact order).
+     * Single-DC-entry only (all ESP32 cells); multi/zero entries return
+     * null (legacy: model samples the latched round-final level). The
+     * carry seeds rounds with no DC edge (burst continuation). */
+    private spiDcPlanFor(count: number): boolean[] | null {
+        try {
+            const entries = this.spiDcEntries || [];
+            if (entries.length !== 1 || count <= 0) return null;
+            const ent = entries[0];
+            const stash = (((this as any).spiEdgeStash as Array<{ gpio: number; high: boolean }> | undefined) || []);
+            let dc = (this as any).spiDcCarry === true;
+            const groups: boolean[] = [];
+            for (const e of stash) {
+                try {
+                    if (ent.dcGpios.has(Number(e.gpio))) dc = !!e.high;
+                    if (ent.csGpios.has(Number(e.gpio)) && !e.high) groups.push(dc);
+                } catch { /* one edge never breaks the plan */ }
+            }
+            (this as any).spiDcCarry = dc;
+            if (groups.length === 0) return new Array(count).fill(dc);
+            if (groups.length === 1) return new Array(count).fill(groups[0]);
+            const out: boolean[] = [];
+            for (let i = 0; i < count; i++) out.push(!!groups[Math.min(i, groups.length - 1)]);
+            return out;
+        } catch { return null; }
+    }
+
+    /** Apply one replayed DC level to the mapped slave: pin voltage (what
+     * TFT/LCD sample per byte) + pin-change event (what ePaper's dcHigh
+     * field tracks). Change-gated: consecutive same-level bytes cost one
+     * guarded setPinVoltage (self-no-op on same value). */
+    private spiApplyDc(high: boolean): void {
+        try {
+            const entries = this.spiDcEntries || [];
+            if (entries.length !== 1) return;
+            if ((this as any).spiDcApplied === !!high) return;
+            (this as any).spiDcApplied = !!high;
+            const ent = entries[0];
+            const v = high ? 3.3 : 0;
+            try { (ent.inst as any)?.setPinVoltage?.('DC', v); } catch { /* ignore */ }
+            try {
+                const pins = (ent.inst as any)?.pins;
+                if (pins && pins['DC']) { pins['DC'].isHigh = !!high; pins['DC'].voltage = v; }
+            } catch { /* ignore */ }
+            try { (ent.inst as any)?.onPinStateChange?.('DC', !!high, Math.floor(this.simCycleCount || 0)); } catch { /* ignore */ }
+        } catch { /* dc never breaks feed */ }
+    }
+
     /** Touch drive: host-driven counts from wired switch/button nets
      * (model truth, same philosophy as driveEsp32ADC — there is no
      * touch component model). Pads T0..T9 = GPIO
@@ -676,11 +976,66 @@ export class Esp32Runner extends ArmRunnerBase {
                         const v = Number((inst as any).getPinVoltage(node2.slice(s2 + 1)));
                         if (Number.isFinite(v) && v > maxV) maxV = v;
                     }
+                    // MNA switches (slide-switch et al.) never publish pin
+                    // voltages (getMnaStamps-only, solved off-runner), so the
+                    // scan above always reads 0V for them. Resolve the wiper
+                    // through the switch position instead: value "1" = wiper
+                    // (pin 2) follows pin 3, "0" follows pin 1; the followed
+                    // net reads HIGH off a board high rail, LOW off ground.
+                    // Unknown follow → engine default stands.
+                    try {
+                        const sw = this.mnaSwitchWiperVolts(netId);
+                        if (sw !== null) { anyModel = true; maxV = sw; }
+                    } catch { /* switch resolve never breaks drive */ }
                     if (!anyModel) continue;
                     try { void sim.setTouchInput(pad, maxV > 1.0 ? 10 : 1000)?.catch?.(() => {}); } catch { /* ignore */ }
                 } catch { /* one pad never breaks the drive */ }
             }
         } catch { /* touch never breaks the tick */ }
+    }
+
+    /** Wiper voltage through an MNA switch (slide-switch shape: pins 1/2/3,
+     * wiper = 2; value "1" follows pin 3, "0" follows pin 1). Returns the
+     * followed net's rail level (3.3 on a board high rail, 0 on ground) or
+     * null when no switch wiper is on this net or the follow is unknowable.
+     * Nets are constructor-fixed; the switch position reads live state. */
+    private mnaSwitchWiperVolts(netId: number): number | null {
+        try {
+            const nets = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!nets) return null;
+            for (const [node, net] of nets) {
+                try {
+                    if (net !== netId) continue;
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const compId = node.slice(0, sep);
+                    if (compId === this.boardId) continue;
+                    if (node.slice(sep + 1) !== '2') continue;
+                    const inst = this.instances.get(compId);
+                    if (!inst || typeof (inst as any)?.getMnaStamps !== 'function') continue;
+                    let val = '';
+                    try { val = String((inst as any)?.state?.value ?? (inst as any)?.attrs?.value ?? ''); } catch { val = ''; }
+                    const followPin = (val === '1' || val === '1.0') ? '3' : '1';
+                    const followNet = nets.get(`${compId}:${followPin}`);
+                    if (followNet === undefined) return null;
+                    let high = false;
+                    let low = false;
+                    for (const [node2, net2] of nets) {
+                        if (net2 !== followNet) continue;
+                        const s2 = node2.indexOf(':');
+                        if (s2 < 0) continue;
+                        if (node2.slice(0, s2) !== this.boardId) continue;
+                        const p = node2.slice(s2 + 1).toUpperCase();
+                        if (/^(3V3|3\.3V|5V|VCC)([._]?\d*)?$/.test(p)) high = true;
+                        else if (/^(GND|AGND)([._]?\d*)?$/.test(p)) low = true;
+                    }
+                    if (high) return 3.3;
+                    if (low) return 0;
+                    return null;
+                } catch { /* one node never breaks resolve */ }
+            }
+        } catch { /* ignore */ }
+        return null;
     }
 
     /** ADC inject: ESP32 ADC1 lives on GPIO32-39 (VP=36/VN=39). Wiper
