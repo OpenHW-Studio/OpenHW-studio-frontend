@@ -54,6 +54,17 @@ const CELLS = [
     forMs: 20000,
     extra: null,
   },
+  {
+    name: 'button A press',
+    fw: '/firmware/microbit/button_nrf.bin',
+    needle: 'BTN_A_REL',
+    components: [
+      { id: 'mb1', type: 'openhw-microbit-v2', attrs: {}, x: 100, y: 100 },
+    ],
+    wires: [],
+    forMs: 20000,
+    extra: null,
+  },
 ];
 
 test.describe('micro:bit v2 cells', () => {

@@ -162,6 +162,28 @@ export class MicrobitRunner extends ArmRunnerBase {
                     },
                     close: () => { try { self.cpu = null; } catch { /* ignore */ } },
                 };
+                // Button pull-ups + scripted Button-A press (board-level
+                // input stimulus): P5/P11 idle HIGH like the hardware
+                // pull-ups; A pulls LOW 3s after boot for 600ms so
+                // button-reading firmware observes a real press edge.
+                // Existing cells never sample P0.14/P0.23 — no-op for them.
+                try {
+                    self.mod?.gpio_set_input?.(0, 14, true);
+                    self.mod?.gpio_set_input?.(0, 23, true);
+                    const gen = ((self as any).btnGen = (((self as any).btnGen || 0) + 1));
+                    setTimeout(() => {
+                        try {
+                            if ((self as any).btnGen !== gen || !self.mod) return;
+                            self.mod.gpio_set_input(0, 14, false);
+                        } catch { /* ignore */ }
+                    }, 3000);
+                    setTimeout(() => {
+                        try {
+                            if ((self as any).btnGen !== gen || !self.mod) return;
+                            self.mod.gpio_set_input(0, 14, true);
+                        } catch { /* ignore */ }
+                    }, 3600);
+                } catch { /* button stimulus never breaks boot */ }
             },
             stepBudget(budget: number): number {
                 if (!self.cpu || !self.mod) return 0;
@@ -191,6 +213,7 @@ export class MicrobitRunner extends ArmRunnerBase {
                 } catch { /* ignore */ }
             },
             close(): void {
+                try { (self as any).btnGen = (((self as any).btnGen || 0) + 1); } catch { /* ignore */ }
                 try { self.cpu = null; } catch { /* ignore */ }
                 try { self.mcu = null; } catch { /* ignore */ }
             },

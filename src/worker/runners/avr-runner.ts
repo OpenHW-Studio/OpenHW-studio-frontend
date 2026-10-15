@@ -1,4 +1,4 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState, AVREEPROM, EEPROMMemoryBackend } from 'avr8js';
 import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig } from './mega-timers.ts';
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
@@ -41,6 +41,7 @@ export class AVRRunner {
     usart: AVRUSART | null = null;
     twi: AVRTWI | null = null;
     spi: AVRSPI | null = null;
+    eeprom: AVREEPROM | null = null;
     portA: AVRIOPort | null = null;
     portB: AVRIOPort | null = null;
     portC: AVRIOPort | null = null;
@@ -181,6 +182,7 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, megaUsart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, megaTwiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, megaSpiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(4096));
         } else if (isTiny) {
             // ATtiny85: standard 8-bit Timer0 + high-speed Timer1.
             // Flash/SRAM/USART/TWI/SPI/ADC stay Uno-class: the local hex
@@ -198,6 +200,7 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(512));
         } else {
             this.timers = [
                 new AVRTimer(this.cpu, timer0Config),
@@ -208,6 +211,7 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(1024));
         }
 
         this.usart.onByteTransmit = (value) => {
