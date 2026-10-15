@@ -123,6 +123,25 @@ export const ComponentContextMenu = ({
       }
     }
 
+    // STM32F4 clock preset (virtual time compression): divides the guest
+    // SysTick reload so virtual ms cost fewer host instructions. The F4
+    // runner honors board attr tickMHz (default = chip clock = untouched).
+    if (kind.includes('stm32f4')) {
+      const t = String(comp.type || '').toLowerCase();
+      const baseMHz = t.includes('429') ? 180 : (t.includes('401') ? 84 : (t.includes('411') ? 100 : 168));
+      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
+      const presets = [baseMHz, ...[84, 42, 24].filter((v) => v < baseMHz)];
+      menus.push({
+        label: 'Clock',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+        options: presets.map((mhz) => ({
+          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
+          active: String(currentTick) === String(mhz),
+          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
+        })),
+      });
+    }
+
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');
       const ledColors = [

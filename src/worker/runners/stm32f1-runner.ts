@@ -119,6 +119,43 @@ export class Stm32f1Runner extends ArmRunnerBase {
     private spiBridge: SPIBridge | null = null;
     private spiLastMs = 0;
 
+    // Per-drain throttle state (see drainUartOut): the USB-sink ref is
+    // cached per boot (O(1) liveness pin per tick; full instance scans
+    // only on first sight, plus every ~2s while sink-less so a
+    // late-added device is still picked up), and the power-mode FFI is
+    // sampled every 8th drain (~64ms wall — mode changes are
+    // firmware-rare). Emitted marker sequences are unchanged; only the
+    // sampling rate drops.
+    private f1DrainCount = 0;
+    private f1UsbSink: any = null;
+    private f1UsbSinkValid = false;
+    private f1UsbRescanAt = -1000;
+    private f1PwrTick = 0;
+    private f1PwrSupported: boolean | null = null;
+
+    // Per-boot net caches (F4 buildAdcCache pattern — nets never change
+    // mid-run): ADC board-pin nets + off-board drivers + rail targets +
+    // rail nets, onPWM listeners, one-wire presence. Drains walk the
+    // caches; no pinToNet/instance scans in the hot loop. Rebuilt every
+    // loadFirmware. The tickMHz cursors reset per boot AND per
+    // resetEngine: a recreated emulator serves fresh full-clock LOADs,
+    // which would otherwise match the stale cursors and skip
+    // re-division forever.
+    private f1AdcCache: {
+        pins: Array<{ pin: string; ch: number; netId: number | undefined }>;
+        driversOnNet: Map<number, Array<{ inst: any; pin: string }>>;
+        netsWith3V3: Set<number>;
+        netsWith5V: Set<number>;
+        rails: Array<{ inst: any; nm: string; netId: number | undefined; volts: number; hi5: boolean }>;
+    } | null = null;
+    private f1PwmInsts: any[] | null = null;
+    private f1DhtPresent: boolean | null = null;
+    private f1TickDiv = 0;
+    private f1TickRaw = 0;
+    private f1TickApplied = 0;
+    private f1PwmTick = 0;
+    private f1ChunkCount = 0;
+
     // SoftSerial TX observer — PB7 @ 9600 baud (documented convention, shared
     // with tests/e2e/stm32-softserial.spec.js whose firmware bit-bangs
     // SoftwareSerial soft(PB6, PB7): RX=PB6, TX=PB7). Mirrors the AVRRunner
@@ -403,9 +440,15 @@ export class Stm32f1Runner extends ArmRunnerBase {
                                     }
                                 }
                             } catch { /* pre-publish never breaks transfer */ }
+                            // Cycle-derived sim time (base getSimulatedTimeMs
+                            // = simCycleCount/sysclk, floored to integer ms):
+                            // a 2ms sim gap closes + posts the previous
+                            // frame (mirrors AVR's idle framing), starting
+                            // fresh. Same clock + same >2.0 predicate as the
+                            // drainUartOut idleFlush below, so both paths
+                            // frame identically; in-burst bytes sit µs apart
+                            // (same ms bucket) and never split.
                             const nowMs = self.getSimulatedTimeMs();
-                            // 2ms sim gap closes + posts the previous frame
-                            // (mirrors AVR's idle framing), starting fresh.
                             if (nowMs - self.spiLastMs > 2.0) {
                                 try { br.frame(true); } catch { /* ignore */ }
                             }
@@ -521,6 +564,12 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // I2C/SPI bridges (runner-owned; no-ops without matching
                 // peripherals or engine callbacks).
                 try { self.wireBusBridges(); } catch { /* bridges never break boot */ }
+                // Per-boot USB-sink cache reset (see drainUartOut).
+                try { self.f1UsbSinkValid = false; self.f1UsbSink = null; } catch { /* ignore */ }
+                // Per-boot net caches (ADC nets, PWM listeners, one-wire
+                // presence) + tickMHz cursor reset (see field comment).
+                try { self.buildF1Caches(); } catch { /* cache never breaks boot */ }
+                try { self.f1TickDiv = 0; self.f1TickRaw = 0; self.f1TickApplied = 0; } catch { /* ignore */ }
             },
             stepBudget(budget: number): number {
                 if (!self.mcu) return 0;
@@ -536,6 +585,14 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     // stepDhtFine for the remainder (512-instr slices for
                     // the 55us sensor-response window). ~50 FFI/tick — far
                     // from the 800+ starvation zone (see NOTE below).
+                    // Throttle: with no one-wire model on the board
+                    // (per-boot f1DhtPresent cache) the scheduler queue has
+                    // no producer (verified: no _scheduleBoardCycles callers
+                    // in-tree) and the GPIO poll only serves human-speed
+                    // inputs + stiff rails, so drain+poll run every 4th chunk
+                    // (lag ≤80K instr ≈1.1 sim-ms). The arm flush and the
+                    // WAKE-gate check below stay EVERY chunk (sub-bit
+                    // timing); DHT boards keep full per-chunk service.
                     // NOTE: small quanta were tried for MISO/RX timing
                     // (512-1024 inst slices) but starve the core (800+
                     // FFI calls/tick); single coarse execute + START
@@ -567,8 +624,14 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         // return to simCycleCount, so accumulate retired.
                         coarseTotal += self.retiredDelta(Number(r?.instCount), c);
                         try { self.softSerialFlushPendingArm(); } catch { /* ignore */ }
-                        try { self.drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
-                        try { self.pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
+                        // Throttled mid-chunk service (see NOTE above): full
+                        // rate while a one-wire model may be on the board.
+                        const needService = self.f1DhtPresent !== false || (self.f1ChunkCount & 3) === 0;
+                        self.f1ChunkCount++;
+                        if (needService) {
+                            try { self.drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
+                            try { self.pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
+                        }
                         remaining -= c;
                         if (r?.stopped) break;
                         // Mid-tick WAKE: a DHT edge landed in this chunk —
@@ -591,11 +654,73 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // etc.) fan out across component-only nets (engine owns
                 // board nets).
                 try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
+                // Clock preset (virtual time compression): board attr tickMHz
+                // (e.g. 24/36 on the 72MHz F1) divides the guest SysTick
+                // reload so virtual milliseconds cost fewer host instructions.
+                // Same design as the F4 runner (SysTick-LOAD divide + CSR
+                // re-latch + telemetry rescale + marker, default-off opt-in
+                // via board attr), adapted: the F1 facade exposes the
+                // peripheral bus on mcu._emu (verified in the vendored
+                // stm32f1.js — periphRead lives on the low-level emulator,
+                // not the facade, unlike F4). The cell itself is the same
+                // Cortex-M SysTick (CSR 0xE000E010, LOAD 0xE000E014). LOAD
+                // rewrite alone is not enough — the period latches on CSR
+                // writes (F4 engine behavior; on plain reload-latch hardware
+                // the verbatim CSR rewrite below is a harmless no-op —
+                // ENABLE/TICKINT/CLKSOURCE preserved, COUNTFLAG is
+                // read-only-on-write) — so the guest CSR value is rewritten
+                // verbatim to re-latch. Re-applies when the guest reconfigures
+                // (LOAD returns to a full-clock value); the divided value is
+                // remembered (f1TickApplied) so our own write is never
+                // re-divided on the next drain. Guest baud/timer prescalers
+                // are untouched (untimed in our models); PWM freq telemetry
+                // is rescaled below. Default off (div=1).
+                // NOTE: DWT/micros() busy-loops still assume the full clock —
+                // do not combine tickMHz with microsecond-critical firmware.
+                try {
+                    let div = self.f1TickDiv || 0;
+                    if (!div) {
+                        const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                        const want = Math.floor(Number((battrs as any)?.tickMHz) || 0);
+                        div = (want > 0 && want < 72) ? Math.max(1, Math.round(72 / want)) : 1;
+                        self.f1TickDiv = div;
+                    }
+                    if (div > 1) {
+                        const emu = (self.mcu as any)?._emu;
+                        if (emu && typeof emu.periphRead === 'function' && typeof emu.periphWrite === 'function') {
+                            let csr = 0, load = 0;
+                            try { csr = emu.periphRead(0xE000E010, 4) >>> 0; load = emu.periphRead(0xE000E014, 4) >>> 0; } catch { csr = 0; load = 0; }
+                            const lastRaw = self.f1TickRaw || 0;
+                            const lastApplied = self.f1TickApplied || 0;
+                            // lastApplied is the value this divider wrote: without
+                            // it the next drain would read back its own divided
+                            // LOAD (read-your-writes regs) and divide AGAIN —
+                            // runaway until LOAD <= div. A genuinely new guest
+                            // LOAD differs from both cursors, so reconfig still
+                            // re-applies exactly once.
+                            if ((csr & 1) && load > div && load !== lastRaw && load !== lastApplied) {
+                                const divided = Math.max(1, Math.floor(load / div));
+                                self.f1TickRaw = load;
+                                self.f1TickApplied = divided;
+                                try {
+                                    emu.periphWrite(0xE000E014, 4, divided);
+                                    emu.periphWrite(0xE000E010, 4, csr >>> 0);
+                                    const tag = `F1CLK:div=${div} `;
+                                    for (let i = 0; i < tag.length; i++) {
+                                        try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1clk'); } catch { break; }
+                                    }
+                                } catch { /* ignore */ }
+                            }
+                        }
+                    }
+                } catch { /* clock preset never breaks the drain */ }
                 // Per-tick SPI idle flush (runs every base tick): closes a
                 // frame whose last byte is older than the 2ms sim gap even
                 // when setup-only traffic never triggers another transfer
                 // or the real CS deassert never dispatches. See bus-bridge
                 // idleFlush (single-slave synth-close, multi-slave safe).
+                // nowMs is the same cycle-derived floored sim-ms the
+                // onTransfer gap check uses, so both frame identically.
                 try {
                     const br = self.spiBridge as any;
                     if (br && typeof br.idleFlush === 'function') {
@@ -611,75 +736,69 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 try {
                     const adc = (self.mcu as any)?.adc1;
                     if (adc && typeof adc.setVoltage === 'function') {
-                        const chFor: Record<string, number> = {
-                            PA0: 0, PA1: 1, PA2: 2, PA3: 3,
-                            PA4: 4, PA5: 5, PA6: 6, PA7: 7,
-                            PB0: 8, PB1: 9,
-                        };
-                        for (const [pin, ch] of Object.entries(chFor)) {
-                            try {
-                                let volts: number | null = null;
-                                for (const [node, netId] of self.pinToNet) {
-                                    const sep = node.indexOf(':');
-                                    if (sep < 0) continue;
-                                    if (node.slice(0, sep) !== self.boardId) continue;
-                                    if (node.slice(sep + 1).toUpperCase() !== pin) continue;
-                                    for (const [node2, net2] of self.pinToNet) {
-                                        if (net2 !== netId) continue;
-                                        const s2 = node2.indexOf(':');
-                                        if (s2 < 0) continue;
-                                        if (node2.slice(0, s2) === self.boardId) continue;
-                                        const inst = self.instances.get(node2.slice(0, s2));
-                                        const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
-                                        if (Number.isFinite(v)) { volts = v; break; }
-                                    }
-                                    break;
-                                }
-                                if (volts !== null) {
-                                    try { adc.setVoltage(ch, Math.max(0, Math.min(3300, volts * 1000))); } catch { /* ignore */ }
-                                }
-                            } catch { /* one pin never breaks the drain */ }
+                        // Net cache (built per boot — see buildF1Caches): the
+                        // drain only walks the cache, no pinToNet scans in the
+                        // hot loop (same pattern as F4 buildAdcCache — the old
+                        // code scanned pinToNet twice per channel plus a full
+                        // instance×rail×net scan for rails, every 8ms drain).
+                        let cache = self.f1AdcCache;
+                        if (!cache) {
+                            try { self.buildF1Caches(); } catch { /* ignore */ }
+                            cache = self.f1AdcCache;
                         }
-                        // Rail power for wiper sources (pots/dividers/servos):
-                        // board power pins source no voltage today, so a pot
-                        // wiper sits at 0V. Power VCC/5V rails (only) when the
-                        // pin reads ~0 and its net touches a matching board
-                        // rail pin — the model then divides honestly.
-                        try {
-                            const railSpecs: Array<{ pins: string[]; pat: RegExp; volts: number }> = [
-                                { pins: ['VCC', 'vcc', 'VIN', 'vin', '1'], pat: /3V3/i, volts: 3.3 },
-                                { pins: ['V+', 'VCC5', 'vcc5'], pat: /^5V$/i, volts: 5.0 },
-                            ];
-                            for (const inst of self.instances.values()) {
+                        if (cache) {
+                            for (const rec of cache.pins) {
                                 try {
-                                    if (typeof (inst as any)?.getPinVoltage !== 'function'
-                                        || typeof (inst as any)?.setPinVoltage !== 'function') continue;
-                                    for (const spec of railSpecs) {
-                                        for (const nm of spec.pins) {
-                                            let v = 0;
-                                            try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
-                                            if (v > 0.2) continue;
-                                            const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
-                                            if (net === undefined) continue;
-                                            let boardRail = false;
-                                            for (const [node, netId] of self.pinToNet) {
-                                                if (netId !== net) continue;
-                                                const sep = node.indexOf(':');
-                                                if (sep < 0) continue;
-                                                if (node.slice(0, sep) !== self.boardId) continue;
-                                                if (spec.pat.test(node.slice(sep + 1))) { boardRail = true; break; }
+                                    let volts: number | null = null;
+                                    if (rec.netId !== undefined) {
+                                        const dr = cache.driversOnNet.get(rec.netId);
+                                        if (dr) {
+                                            for (const d of dr) {
+                                                try {
+                                                    const v = Number(d.inst?.getPinVoltage?.(d.pin));
+                                                    if (Number.isFinite(v)) { volts = v; break; }
+                                                } catch { /* ignore */ }
                                             }
-                                            if (!boardRail) continue;
-                                            try { (inst as any).setPinVoltage(nm, spec.volts); } catch { /* ignore */ }
                                         }
                                     }
-                                } catch { /* one instance never breaks rails */ }
+                                    if (volts !== null) {
+                                        try { adc.setVoltage(rec.ch, Math.max(0, Math.min(3300, volts * 1000))); } catch { /* ignore */ }
+                                    }
+                                } catch { /* one pin never breaks the drain */ }
                             }
-                        } catch { /* rails never break the drain */ }
+                            // Rail power for wiper sources (pots/dividers/servos):
+                            // board power pins source no voltage today, so a pot
+                            // wiper sits at 0V. Power VCC/5V rails (only) when the
+                            // pin reads ~0 and its net touches a matching board
+                            // rail pin — the model then divides honestly. Same
+                            // rule as before, only the net resolution is cached.
+                            for (const rt of cache.rails) {
+                                try {
+                                    let v = 0;
+                                    try { v = Number(rt.inst?.getPinVoltage?.(rt.nm)) || 0; } catch { continue; }
+                                    if (v > 0.2) continue;
+                                    if (rt.netId === undefined) continue;
+                                    const onRail = rt.hi5
+                                        ? cache.netsWith5V.has(rt.netId)
+                                        : cache.netsWith3V3.has(rt.netId);
+                                    if (!onRail) continue;
+                                    try { rt.inst?.setPinVoltage?.(rt.nm, rt.volts); } catch { /* ignore */ }
+                                } catch { /* one rail never breaks the drain */ }
+                            }
+                        }
                         // PWM observe (3.3.0 TIM class): first enabled TIM in
                         // servo range (40-60Hz) drives wired servo PWM pins
                         // via onPWMSignal (measured freq/duty, no faking).
+                        // Throttled to every 4th drain (~32ms wall — LED
+                        // brightness tracks a cycle window, human-speed
+                        // signals; steady-state identical, same rule as the
+                        // pico slow-poll gate). Listeners resolved once per
+                        // boot (f1PwmInsts) instead of a per-drain instance
+                        // scan, and the ≤42-FFI TIM sweep (7 timers ×
+                        // enabled/frequency/4×duty) runs at 1/4 rate.
                         try {
+                            self.f1PwmTick++;
+                            if ((self.f1PwmTick & 3) === 0) {
                             const mcu = self.mcu as any;
                             if (mcu) {
                                 // Generalized: strongest duty across TIM1-7 drives
@@ -706,21 +825,272 @@ export class Stm32f1Runner extends ArmRunnerBase {
                                     }
                                 }
                                 if (best > 0) {
+                                    // Clock preset rescales wall-true frequencies:
+                                    // the timer regs still describe full-clock
+                                    // ticks (same rescale as the F4 buzzer tap).
+                                    const tdiv = self.f1TickDiv || 1;
+                                    const freqTrue = tdiv > 1 ? bestFreq / tdiv : bestFreq;
                                     const duty01 = Math.max(0, Math.min(1, best / 100));
-                                    for (const inst of self.instances.values()) {
+                                    let listeners = self.f1PwmInsts;
+                                    if (!listeners) {
+                                        try { self.buildF1Caches(); } catch { /* ignore */ }
+                                        listeners = self.f1PwmInsts || [];
+                                    }
+                                    for (const inst of listeners) {
                                         try {
                                             if (typeof (inst as any)?.onPWM !== 'function') continue;
                                             if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
                                             for (const pn of ['A', 'ANODE', '+']) {
-                                                try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreq }); } catch { /* ignore */ }
+                                                try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: freqTrue }); } catch { /* ignore */ }
                                             }
                                         } catch { /* one instance never breaks pwm */ }
                                     }
                                 }
                             }
+                            }
                         } catch { /* PWM observe never breaks the drain */ }
                     }
                 } catch { /* ADC inject never breaks the drain */ }
+                // System-cell markers (sys specs): arm host-observed
+                // event callbacks once + poll power-mode on change + emit
+                // the boot SYSCLK once. Additive; silent when unused.
+                try {
+                    const mcuS: any = self.mcu as any;
+                    const say = (line: string) => {
+                        try {
+                            const tag = line + '\n';
+                            for (let i = 0; i < tag.length; i++) {
+                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f1sys'); } catch { break; }
+                            }
+                        } catch { /* ignore */ }
+                    };
+                    try {
+                        if (mcuS && !((self as any).f1SysWired)) {
+                            (self as any).f1SysWired = true;
+                            try { mcuS.onWdogReset = (w: number) => { try { say('F1WDOG_RST:' + w); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onRtcAlarm = (a: number) => { try { say('F1RTC_ALARM:' + a); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onExtiEdge = (l: number) => { try { say('F1EXTI_EDGE:' + l); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'f1itm'); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                        }
+                    } catch { /* wiring never breaks the drain */ }
+                    // Power-mode poll, throttled to every 8th drain
+                    // (~64ms wall; transitions are firmware-rare, and the
+                    // emitted F1PWR_MODE sequence is unchanged — only the
+                    // sampling rate). Builds without the probe FFI disable
+                    // themselves after one check.
+                    try {
+                        self.f1PwrTick++;
+                        if (self.f1PwrSupported !== false && (self.f1PwrTick & 7) === 0) {
+                            const emu = mcuS?._emu;
+                            if (!emu || typeof emu.pwrMode !== 'function') self.f1PwrSupported = false;
+                            else {
+                                self.f1PwrSupported = true;
+                                const pm = Number(emu.pwrMode());
+                                if (pm >= 0 && pm !== Number((self as any).f1PwrLast ?? 0)) { (self as any).f1PwrLast = pm; say('F1PWR_MODE:' + pm); }
+                            }
+                        }
+                    } catch { /* ignore */ }
+                    try {
+                        if (!((self as any).f1RccSaid)) {
+                            (self as any).f1RccSaid = true;
+                            let hz = 0;
+                            try { hz = Number(mcuS?._emu?.rccSysclkHz?.()) || 0; } catch { hz = 0; }
+                            if (hz > 0) say('F1RCC_HZ:' + hz);
+                        }
+                    } catch { /* ignore */ }
+                } catch { /* f1sys markers never break the drain */ }
+                // USB-FS host (F1 USB cell): when an openhw-usb-device
+                // sink is on the board, play host against the guest
+                // control endpoint — bus reset, enumeration through
+                // SET_CONFIGURATION (the engine-side sequence, driven
+                // incrementally: one inject or inbox check per drain).
+                // Reports link state + IN bytes to the sink and emits
+                // USB_ markers into the serial stream. Idle cost when
+                // idle: one instanceof scan.
+                try {
+                    // Cached USB-sink ref (see field comment): O(1) per
+                    // tick once resolved; full instance scans only per boot
+                    // (plus every ~2s while sink-less, for late-added
+                    // devices). Skipping the scan also skips the whole host
+                    // block below when no sink exists — same silence as a
+                    // scan that finds nothing.
+                    self.f1DrainCount++;
+                    let usink: any = null;
+                    try {
+                        let needScan = !self.f1UsbSinkValid;
+                        if (!needScan && self.f1UsbSink) {
+                            let live = false;
+                            try { live = self.instances.get(String((self.f1UsbSink as any)?.id)) === self.f1UsbSink; } catch { live = false; }
+                            if (!live) { self.f1UsbSink = null; needScan = true; }
+                        } else if (!needScan) {
+                            needScan = (self.f1DrainCount - self.f1UsbRescanAt) >= 250;
+                        }
+                        if (needScan) {
+                            self.f1UsbRescanAt = self.f1DrainCount;
+                            self.f1UsbSink = null;
+                            for (const inst of self.instances.values()) {
+                                try {
+                                    if (String((inst as any)?.type || '').toLowerCase() === 'openhw-usb-device') { self.f1UsbSink = inst; break; }
+                                } catch { /* ignore */ }
+                            }
+                            self.f1UsbSinkValid = true;
+                        }
+                        usink = self.f1UsbSink;
+                    } catch { try { usink = self.f1UsbSink; } catch { usink = null; } }
+                    const mcu: any = self.mcu;
+                    const emu: any = mcu?._emu;
+                    if (usink && mcu && emu && typeof emu.usbInjectSetup === 'function') {
+                        const st: any = ((self as any).f1Usb = (self as any).f1Usb || { phase: 'init', waits: 0, rx: 0, echo: '', link: '', inbox: {} });
+                        if (!st.wired) {
+                            st.wired = true;
+                            try {
+                                mcu.onUsbIn = (ep: number, data: number[]) => {
+                                    try {
+                                        const arr: number[] = Array.isArray(data) ? data.slice() : Array.from(data || []);
+                                        st.rx = Number(st.rx || 0) + arr.length;
+                                        (st.inbox[ep] = st.inbox[ep] || []).push(...arr);
+                                        // Event counter (ZLP-observability fix): a
+                                        // zero-length status-IN fires onUsbIn with
+                                        // [] and leaves no bytes, so the inbox
+                                        // length alone can never observe it (cf.
+                                        // engine tests/test_usb_cdc.mjs, which
+                                        // takes one EVent per onUsbIn and asserts
+                                        // `.length === 0` for status stages).
+                                        // takeIn below pairs this counter with the
+                                        // inbox to report ZLP completions.
+                                        st.evc = st.evc || {};
+                                        st.evc[ep] = Number(st.evc[ep] || 0) + 1;
+                                    } catch { /* ignore */ }
+                                };
+                            } catch { /* ignore */ }
+                        }
+                        try {
+                            let chunk = '';
+                            const qlen = Math.min(txQueue.length, 1024);
+                            for (let i = 0; i < qlen; i++) chunk += String.fromCharCode(txQueue[i] & 0xff);
+                            if (chunk) st.uart = (String(st.uart || '') + chunk).slice(-8000);
+                        } catch { /* markers are best-effort */ }
+                        const uart: string = String(st.uart || '');
+                        const say = (line: string) => {
+                            try {
+                                const tag = line + '\n';
+                                for (let i = 0; i < tag.length; i++) {
+                                    try { (self as any).emitTxByte(tag.charCodeAt(i), 'usbhost'); } catch { break; }
+                                }
+                            } catch { /* ignore */ }
+                        };
+                        const report = (link: string) => {
+                            try {
+                                if (st.link !== link || st.repRx !== st.rx) {
+                                    st.link = link; st.repRx = st.rx;
+                                    (usink as any).onUsbState?.(link, st.rx, st.echo);
+                                }
+                            } catch { /* ignore */ }
+                        };
+                        const fail = (msg: string) => { st.phase = 'dead'; try { say('USB_HOST:FAIL ' + msg); } catch { /* ignore */ } };
+                        const takeIn = (ep: number): number[] | null => {
+                            try {
+                                const q: number[] = st.inbox[ep] || [];
+                                if (q.length) {
+                                    st.inbox[ep] = [];
+                                    try { st.evBase = Number((st.evc || {})[ep] || 0); } catch { /* ignore */ }
+                                    return q;
+                                }
+                                // ZLP completion: an onUsbIn event arrived
+                                // since the last take with no bytes attached
+                                // (status-IN of SET_ADDRESS/SET_CONFIGURATION).
+                                // Baseline re-syncs on every take so a stale
+                                // event can never satisfy a later phase.
+                                if (Number((st.evc || {})[ep] || 0) !== Number(st.evBase ?? 0)) {
+                                    try { st.evBase = Number(st.evc[ep] || 0); } catch { /* ignore */ }
+                                    return [];
+                                }
+                            } catch { /* ignore */ }
+                            return null;
+                        };
+                        const outZlp = (ep: number) => { try { emu.usbInjectOut(ep, new Uint8Array(0)); } catch { /* ignore */ } };
+                        const eq = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+                        const bump = () => { st.waits = Number(st.waits || 0) + 1; return Number(st.waits) > 3000; };
+                        report(uart.includes('USB enum done') ? 'enumerated' : (st.phase === 'init' || st.phase === 'waitRst' ? 'init' : 'reset'));
+                        switch (st.phase) {
+                            case 'init':
+                                if (uart.includes('USB init done')) {
+                                    try { emu.usbBusReset(); } catch { /* ignore */ }
+                                    say('USB_HOST:reset');
+                                    st.phase = 'waitRst'; st.waits = 0;
+                                } else if (bump()) fail('no init marker');
+                                break;
+                            case 'waitRst':
+                                if (uart.includes('USBRST')) {
+                                    st.phase = 'setupDev'; st.waits = 0;
+                                } else if (bump()) fail('no USBRST');
+                                break;
+                            case 'setupDev':
+                                try { emu.usbInjectSetup(new Uint8Array([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00])); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeDev'; st.waits = 0;
+                                break;
+                            case 'takeDev': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r[1] !== 1 || r.length < 18) fail('bad device desc');
+                                    else { outZlp(0); st.phase = 'setupCfg'; st.waits = 0; }
+                                } else if (bump()) fail('device desc timeout');
+                                break;
+                            }
+                            case 'setupCfg':
+                                try { emu.usbInjectSetup(new Uint8Array([0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0xFF, 0x00])); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeCfg'; st.waits = 0;
+                                break;
+                            case 'takeCfg': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    const total = (r[2] | (r[3] << 8)) >>> 0;
+                                    if (r[1] !== 2 || total !== 67 || r.length !== 67 || r[4] !== 2) fail('bad config desc');
+                                    else { outZlp(0); st.phase = 'setupLang'; st.waits = 0; }
+                                } else if (bump()) fail('config desc timeout');
+                                break;
+                            }
+                            case 'setupLang':
+                                try { emu.usbInjectSetup(new Uint8Array([0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0xFF, 0x00])); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeLang'; st.waits = 0;
+                                break;
+                            case 'takeLang': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (!eq(r.slice(0, 4), [4, 3, 9, 4])) fail('bad lang string');
+                                    else { outZlp(0); st.phase = 'setupAddr'; st.waits = 0; }
+                                } else if (bump()) fail('lang string timeout');
+                                break;
+                            }
+                            case 'setupAddr':
+                                try { emu.usbInjectSetup(new Uint8Array([0x00, 0x05, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00])); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeAddr'; st.waits = 0;
+                                break;
+                            case 'takeAddr': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_ADDRESS should ZLP');
+                                    else { st.phase = 'setupCfg1'; st.waits = 0; }
+                                } else if (bump()) fail('SET_ADDRESS timeout');
+                                break;
+                            }
+                            case 'setupCfg1':
+                                try { emu.usbInjectSetup(new Uint8Array([0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeCfg1'; st.waits = 0;
+                                break;
+                            case 'takeCfg1': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_CONFIGURATION should ZLP');
+                                    else { say('USB_HOST:PASS'); st.phase = 'done'; st.waits = 0; }
+                                } else if (bump()) fail('SET_CONFIGURATION timeout');
+                                break;
+                            }
+                            default:
+                                break; // done / dead: silent
+                        }
+                    }
+                } catch { /* USB host never breaks the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },
@@ -757,6 +1127,11 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // SoftSerial observer rebases (retired counter zeroes).
                 try { self.softSerialDisarm(); } catch { /* ignore */ }
                 try { self.softSerialLastAbs = -1; } catch { /* ignore */ }
+                // Fresh emulator = fresh full-clock SysTick LOADs: clear the
+                // divider cursors (keep f1TickDiv — the attr is unchanged) so
+                // the guest reconfig re-arms instead of matching stale
+                // cursors. Caches stay (nets/instances are reset-stable).
+                try { self.f1TickRaw = 0; self.f1TickApplied = 0; } catch { /* ignore */ }
                 try { void self.mcu?.reset?.(); } catch { /* ignore */ }
             },
         };
@@ -1078,6 +1453,11 @@ export class Stm32f1Runner extends ArmRunnerBase {
      * isTransactionActive(); anything else never engages. */
     private dhtFineEngaged(): boolean {
         try {
+            // Per-boot presence cache (built with the ADC cache): no
+            // one-wire model on the board means no transaction can ever be
+            // active — skip the instance scan (this gate also runs per
+            // 20K chunk in the coarse loop).
+            if (this.f1DhtPresent === false) return false;
             for (const inst of this.instances.values()) {
                 try {
                     if (typeof (inst as any)?.isTransactionActive === 'function'
@@ -1132,7 +1512,13 @@ export class Stm32f1Runner extends ArmRunnerBase {
         if (remaining > 0 && guard >= maxSlices) {
             try {
                 const r3 = mcu.execute(remaining);
-                this.retiredDelta(Number(r3?.instCount), remaining);
+                // Same direct-add discipline as the per-slice path above:
+                // without it this tail would advance the observer clock
+                // but never reach simCycleCount (sim time would lose the
+                // remainder; unreachable at the 1M budget cap, but the
+                // invariant must hold on every path).
+                const d3 = this.retiredDelta(Number(r3?.instCount), remaining);
+                try { this.simCycleCount += Math.max(1, Math.floor(d3)); } catch { /* ignore */ }
             } catch { /* ignore */ }
         }
         return 0;
@@ -1245,6 +1631,11 @@ export class Stm32f1Runner extends ArmRunnerBase {
      * wake release never arrives (proven: edges=1, WAKE_WAIT). */
     private dhtPollInput(): void {
         if (!this.mcu) return;
+        // No one-wire model on this boot: the scan below would find
+        // nothing — return on the cached flag (one property read). Runs
+        // per chunk in the coarse loop, so this saves an instance scan
+        // ~38×/tick on non-DHT boards.
+        if (this.f1DhtPresent === false) return;
         for (const [id, inst] of this.instances) {
             let bidi = false;
             try { bidi = typeof (inst as any)?.isTransactionActive === 'function'; } catch { bidi = false; }
@@ -1381,9 +1772,92 @@ export class Stm32f1Runner extends ArmRunnerBase {
         }
     }
 
+    /** Per-boot net caches (F4 buildAdcCache pattern): nets never change
+     * mid-run, so resolve the ADC board-pin nets + off-board drivers +
+     * rail targets + rail nets, the onPWM listener list, and one-wire
+     * presence once instead of scanning pinToNet / instances on every 8ms
+     * drain (and per 20K chunk for the DHT gates). Rebuilt every
+     * loadFirmware; drains only walk the results. Predicate-identical to
+     * the former per-drain scans, so the resolved sets match either way. */
+    private buildF1Caches(): void {
+        try {
+            const chFor: Record<string, number> = {
+                PA0: 0, PA1: 1, PA2: 2, PA3: 3,
+                PA4: 4, PA5: 5, PA6: 6, PA7: 7,
+                PB0: 8, PB1: 9,
+            };
+            const pins = Object.keys(chFor);
+            const boardNetOf = new Map<string, number | undefined>();
+            const driversOnNet = new Map<number, Array<{ inst: any; pin: string }>>();
+            const netsWith3V3 = new Set<number>();
+            const netsWith5V = new Set<number>();
+            for (const p of pins) boardNetOf.set(p, undefined);
+            for (const [node, netId] of this.pinToNet as Map<string, number>) {
+                try {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const id = node.slice(0, sep);
+                    const pn = node.slice(sep + 1);
+                    const up = pn.toUpperCase();
+                    if (id === this.boardId) {
+                        if (boardNetOf.has(up)) boardNetOf.set(up, netId);
+                        if (/3V3/i.test(pn)) netsWith3V3.add(netId);
+                        if (/^5V$/i.test(pn)) netsWith5V.add(netId);
+                    } else {
+                        const inst = this.instances.get(id);
+                        if (!inst) continue;
+                        let arr = driversOnNet.get(netId);
+                        if (!arr) { arr = []; driversOnNet.set(netId, arr); }
+                        arr.push({ inst, pin: pn });
+                    }
+                } catch { /* one node never breaks the cache */ }
+            }
+            const pinRecs = pins.map((pin) => ({ pin, ch: chFor[pin], netId: boardNetOf.get(pin) }));
+            // Rail specs preserved verbatim from the former per-drain loop.
+            const rails: Array<{ inst: any; nm: string; netId: number | undefined; volts: number; hi5: boolean }> = [];
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.getPinVoltage !== 'function'
+                        || typeof (inst as any)?.setPinVoltage !== 'function') continue;
+                    const specs: Array<{ nms: string[]; volts: number; hi5: boolean }> = [
+                        { nms: ['VCC', 'vcc', 'VIN', 'vin', '1'], volts: 3.3, hi5: false },
+                        { nms: ['V+', 'VCC5', 'vcc5'], volts: 5.0, hi5: true },
+                    ];
+                    for (const spec of specs) {
+                        for (const nm of spec.nms) {
+                            try {
+                                rails.push({
+                                    inst, nm,
+                                    netId: (this.pinToNet as Map<string, number>).get(`${(inst as any)?.id}:${nm}`),
+                                    volts: spec.volts, hi5: spec.hi5,
+                                });
+                            } catch { /* ignore */ }
+                        }
+                    }
+                } catch { /* one instance never breaks the cache */ }
+            }
+            this.f1AdcCache = { pins: pinRecs, driversOnNet, netsWith3V3, netsWith5V, rails };
+            const pwm: any[] = [];
+            let dht = false;
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.onPWM === 'function'
+                        && typeof (inst as any)?.getPWMPinNames !== 'function') pwm.push(inst);
+                } catch { /* ignore */ }
+                try {
+                    if (typeof (inst as any)?.isTransactionActive === 'function') dht = true;
+                } catch { /* ignore */ }
+            }
+            this.f1PwmInsts = pwm;
+            this.f1DhtPresent = dht;
+        } catch { try { this.f1AdcCache = null; } catch { /* ignore */ } }
+    }
+
     protected budgetForDelta(deltaMs: number): number {
         // F1 bench: adaptive 20K/50K batches; ~50K inst/ms keeps UI smooth.
-        return Math.floor(deltaMs * 50000 * this.speed);
+        // Raised toward cycle-honest 72K/ms: pace is now a first-class proof
+        // (pace specs assert guest-time advance), DHT exactness guards it.
+        return Math.floor(deltaMs * 72000 * this.speed);
     }
 
     protected maxBudgetPerTick(): number {

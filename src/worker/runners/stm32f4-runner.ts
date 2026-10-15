@@ -405,6 +405,245 @@ export class Stm32f4Runner extends ArmRunnerBase {
         } catch { /* handler never breaks stepping */ }
     }
 
+    // ---- F4 one-wire (DHT22/DS18B20) fine stepping (P4 port) ----
+    // Port of the F1 dhtFineEngaged/stepDhtFine/dhtPollInput design
+    // (stm32f1-runner.ts 1068-1180 + 1246-1310), adapted: F4 GPIOA base
+    // is 0x40020000 (+port*0x400), direction from MODER @+0x00 (2
+    // bits/pin; output iff field != 00); periphRead exists on the F4
+    // facade; accounting mirrors the SPI-hot 512-instr slices. Additive;
+    // idle cost is one instance scan per tick when no DHT is present.
+    /** Board steps per microsecond: F4 core clock per chip. */
+    protected override cyclesPerMicrosecond(): number {
+        try {
+            const c = String((this as any).chip || '').toLowerCase();
+            if (c.includes('429')) return 180;
+            if (c.includes('401')) return 84;
+            if (c.includes('411')) return 100;
+            return 168;
+        } catch { return 168; }
+    }
+
+    /** True while any DHT-22 component has an active transaction
+     * (WAKE negotiation, ACK, or bit send). The model exposes
+     * isTransactionActive(); anything else never engages. */
+    private dhtFineEngaged(): boolean {
+        try {
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.isTransactionActive === 'function'
+                        && (inst as any).isTransactionActive()) return true;
+                } catch { /* keep scanning */ }
+            }
+        } catch { /* gate never breaks stepping */ }
+        return false;
+    }
+
+    /** True while any one-wire model is on the board (even idle).
+     * Gates coarse chunking for mid-tick WAKE detection; the fine gate
+     * above decides slicing. */
+    private dhtPresent(): boolean {
+        try {
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.isTransactionActive === 'function') return true;
+                } catch { /* keep scanning */ }
+            }
+        } catch { /* gate never breaks stepping */ }
+        return false;
+    }
+
+    /** Fine stepping for DHT transactions: 512-instr slices with
+     * per-slice scheduler drain + GPIO poll, so release detection and
+     * the model's ACK schedule meet the firmware's bit reads in the
+     * same slot instead of quantizing to whole-tick batches.
+     * Discipline mirrors F1: facade instCount is a per-call delta on
+     * F4 (no retiredDelta needed); advance simCycleCount per slice so
+     * the scheduler domain matches firmware timing 1:1, then return
+     * ~0 so the base runLoop adds only its +1 floor instead of
+     * double-counting the budget. */
+    private stepDhtFine(budget: number): number {
+        const mcu = (this as any).mcu;
+        if (!mcu) return 0;
+        let remaining = Math.max(1, Math.floor(budget));
+        const slice = 512;
+        let guard = 0;
+        const maxSlices = 4096;
+        while (remaining > 0 && guard++ < maxSlices) {
+            const s = Math.min(slice, remaining);
+            let r: any = null;
+            try { r = mcu.execute(s); } catch { break; }
+            const d = Math.max(1, Math.floor(Number(r?.instCount ?? s)) || 1);
+            try { (this as any).simCycleCount += d; } catch { /* ignore */ }
+            try { (this as any).drainDueCallbacks(); } catch { /* scheduler never breaks the tick */ }
+            try { (this as any).pollGpioBidirectional(); } catch { /* poll never breaks the tick */ }
+            remaining -= s;
+            if (r?.stopped) break;
+        }
+        if (remaining > 0 && guard >= maxSlices) {
+            try { mcu.execute(remaining); } catch { /* ignore */ }
+        }
+        return 0;
+    }
+
+    /**
+     * Base poll + release detection for bidirectional one-wire nets.
+     * The engine's gpio change hooks fire on OUTPUT writes only, so a
+     * firmware release to INPUT (DHT wake release → pull-up HIGH)
+     * never publishes — the model would wait in WAKE_WAIT forever.
+     * dhtPollInput() detects the release via the MODER bits and
+     * emulates the pull-up the engine omits. Runs every tick via the
+     * base runLoop and every slice via stepDhtFine; same-level dedup
+     * keeps it a no-op when nothing moved.
+     */
+    protected override pollGpioBidirectional(): void {
+        try { super.pollGpioBidirectional(); } catch { /* never break the tick */ }
+        try { this.dhtPollInput(); } catch { /* poll never breaks the tick */ }
+    }
+
+    /** GPIO MODER bit for a board pin (RM0090 §GPIO_MODER): true when
+     * the firmware drives the pin as an output (field != 00). Null when
+     * unreadable — callers treat null as unknown. */
+    private gpioPinIsOutput(pinId: string): boolean | null {
+        try {
+            const raw = String(pinId || '').toUpperCase();
+            const m = raw.match(/^P?([A-K])(\d{1,2})$/);
+            if (!m) return null;
+            const port = m[1], n = Number(m[2]);
+            const emu = (this as any).mcu;
+            if (!emu || typeof emu.periphRead !== 'function') return null;
+            const base = 0x40020000 + (port.charCodeAt(0) - 65) * 0x400;
+            const moder = emu.periphRead(base + 0x00, 4) >>> 0;
+            return ((moder >>> (n * 2)) & 0x3) !== 0;
+        } catch { return null; }
+    }
+
+    /** Sample one-wire model drive on board pins netted to it and
+     * publish edges the output-only change hooks miss (see above).
+     * MODE-aware bus policy: while the firmware holds the pin as
+     * OUTPUT, hooks own the line (skip injection — output wins); once
+     * firmware releases to INPUT, the runner IS the pull-up: push HIGH
+     * while the model idles, or the model's driven level while it
+     * drives (_drivingBus), and publish changes so the model sees
+     * release + ACK edges. */
+    private dhtPollInput(): void {
+        if (!(this as any).mcu) return;
+        for (const [id, inst] of (this as any).instances) {
+            let bidi = false;
+            try { bidi = typeof (inst as any)?.isTransactionActive === 'function'; } catch { bidi = false; }
+            if (!bidi) continue;
+            let modelDriving = false;
+            let modelHigh = true;
+            try {
+                modelDriving = !!(inst as any)?._drivingBus;
+                const lv = Number((inst as any)?._lastDrivenVoltage);
+                if (Number.isFinite(lv)) modelHigh = lv > 1.8;
+            } catch { /* fall through to pull-up */ }
+            for (const cPin of ['DATA', 'SDA']) {
+                const net = (this as any).pinToNet.get(`${id}:${cPin}`);
+                if (net === undefined) continue;
+                for (const [node, netId] of (this as any).pinToNet) {
+                    if (netId !== net) continue;
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    if (node.slice(0, sep) !== (this as any).boardId) continue;
+                    const bPin = node.slice(sep + 1);
+                    const raw = String(bPin || '').toUpperCase();
+                    const mm = raw.match(/^P?([A-K])(\d{1,2})$/);
+                    if (!mm) continue;
+                    // MODER == 00 (input) → firmware released the bus.
+                    let inputMode = false;
+                    try {
+                        const emu = (this as any).mcu;
+                        if (emu && typeof emu.periphRead === 'function') {
+                            const base = 0x40020000 + (mm[1].charCodeAt(0) - 65) * 0x400;
+                            const moder = emu.periphRead(base + 0x00, 4) >>> 0;
+                            inputMode = (((moder >>> (Number(mm[2]) * 2)) & 0x3) === 0);
+                        }
+                    } catch { continue; }
+                    if (!inputMode) continue; // OUTPUT: hooks own it
+                    const high = modelDriving ? modelHigh : true; // idle pull-up
+                    try { (this as any).engine.setGpioInput?.(bPin, high); } catch { /* ignore */ }
+                    if ((this as any).pinStates[bPin] !== !!high) {
+                        try { (this as any).publishGpio(bPin, !!high); } catch { /* ignore */ }
+                    }
+                }
+            }
+        }
+    }
+
+    /** F4 delta contract: the facade reports CUMULATIVE instCount (zeroed
+     *  only on reset), so every execute() return must be differenced before
+     *  it reaches the base simCycleCount — otherwise the pace pill climbs
+     *  without bound. Same discipline as F1 retiredDelta. */
+    private f4LastAbs = -1;
+    private f4Delta(abs: number, fallback: number): number {
+        const a = Math.floor(Number(abs));
+        const fb = Math.max(1, Math.floor(Number(fallback)) || 1);
+        if (Number.isFinite(a) && a >= 0 && this.f4LastAbs >= 0 && a >= this.f4LastAbs) {
+            const d = a - this.f4LastAbs;
+            this.f4LastAbs = a;
+            return Math.max(1, d);
+        }
+        if (Number.isFinite(a) && a >= 0) this.f4LastAbs = a;
+        return fb;
+    }
+
+    /** Per-boot ADC net cache: nets never change mid-run, so resolve the
+     *  board-pin nets + off-board drivers + rail targets + 3V3 nets once
+     *  instead of scanning pinToNet (O(N²) string slicing) on every 8ms
+     *  drain. Rebuilt every loadFirmware; the drain below only walks it. */
+    private buildAdcCache(): void {
+        try {
+            const pins = ['PA0', 'PA1', 'PA2', 'PA3', 'PA4', 'PA5', 'PA6', 'PA7',
+                'PB0', 'PB1', 'PC0', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5'];
+            const chFor: Record<string, number> = {
+                PA0: 0, PA1: 1, PA2: 2, PA3: 3, PA4: 4, PA5: 5, PA6: 6, PA7: 7,
+                PB0: 8, PB1: 9, PC0: 10, PC1: 11, PC2: 12, PC3: 13, PC4: 14, PC5: 15,
+            };
+            const boardNetOf = new Map<string, number | undefined>();
+            const boardPinsOnNet = new Map<number, Set<string>>();
+            const driversOnNet = new Map<number, Array<{ inst: any; pin: string }>>();
+            const netsWith3V3 = new Set<number>();
+            for (const pin of pins) boardNetOf.set(pin, undefined);
+            for (const [node, netId] of (this.pinToNet as Map<string, number>)) {
+                try {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const id = node.slice(0, sep);
+                    const pn = node.slice(sep + 1);
+                    const up = pn.toUpperCase();
+                    if (id === this.boardId) {
+                        if (boardNetOf.has(up)) boardNetOf.set(up, netId);
+                        let set = boardPinsOnNet.get(netId);
+                        if (!set) { set = new Set(); boardPinsOnNet.set(netId, set); }
+                        set.add(up);
+                        if (/3V3/i.test(pn)) netsWith3V3.add(netId);
+                    } else {
+                        const inst = this.instances.get(id);
+                        if (!inst) continue;
+                        let arr = driversOnNet.get(netId);
+                        if (!arr) { arr = []; driversOnNet.set(netId, arr); }
+                        arr.push({ inst, pin: pn });
+                    }
+                } catch { /* one node never breaks the cache */ }
+            }
+            const pinRecs = pins.map((pin) => ({ pin, ch: chFor[pin], netId: boardNetOf.get(pin) }));
+            const rails: Array<{ inst: any; nm: string; netId: number | undefined }> = [];
+            for (const inst of this.instances.values()) {
+                try {
+                    if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                    for (const nm of ['VCC', '1']) {
+                        try {
+                            const key = `${(inst as any)?.id}:${nm}`;
+                            rails.push({ inst, nm, netId: (this.pinToNet as Map<string, number>).get(key) });
+                        } catch { /* ignore */ }
+                    }
+                } catch { /* ignore */ }
+            }
+            (this as any).f4AdcCache = { pins: pinRecs, driversOnNet, boardPinsOnNet, netsWith3V3, rails };
+        } catch { try { (this as any).f4AdcCache = null; } catch { /* ignore */ } }
+    }
+
     constructor(
         hexData: string,
         componentsDef: any[],
@@ -551,6 +790,8 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 try {
                     delete (self as any).f4Dcmi; delete (self as any).f4Qspi;
                     delete (self as any).f4Fsmc; delete (self as any).f4SaiDone; delete (self as any).f4SaiAcc;
+                    delete (self as any).f4TickDiv; delete (self as any).f4TickRaw;
+                    delete (self as any).f4LastAbs;
                     let cell = '';
                     for (const inst of self.instances.values()) {
                         try {
@@ -583,6 +824,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         const ed2: any = (withAssets.ext_devices = withAssets.ext_devices || {});
                         if (ed2.speaker === undefined) ed2.speaker = true;
                     } catch { /* ignore */ }
+                    // ADC net cache: nets are static per boot — resolve once
+                    // here so the 8ms drain never scans pinToNet.
+                    try { self.buildAdcCache(); } catch { /* cache never breaks boot */ }
                 } catch { /* display binds never break boot */ }
                 const s = String(firmware || '').trim();
                 const decode = (): { kind: 'elf' | 'hex' | 'bin'; data: Uint8Array | string } | null => {
@@ -640,9 +884,44 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     // interleave mid-transaction (few-bytes lag, inside the
                     // SD R1/R7 scan windows); otherwise full budget.
                     const total = Math.max(1, Math.floor(budget));
+                    // DHT bit-slot gate (P4): while a DHT-22 transaction
+                    // is active, coarse batches quantize the 28/70us data
+                    // slots — slice + drain mid-tick (see stepDhtFine).
+                    try {
+                        if ((self as any).dhtFineEngaged?.()) return (self as any).stepDhtFine(total);
+                    } catch { /* gate never breaks stepping */ }
                     if (!((self as any).f4SpiHot > 0) || total <= 512) {
-                        const r = self.mcu.execute(total);
-                        return Number(r?.instCount ?? total) || 0;
+                        // Coarse path with mid-tick WAKE handoff when a
+                        // one-wire model is on the board: a single coarse
+                        // execute would collapse the WAKE LOW duration
+                        // (both edges land in one tick with one stamp).
+                        // Chunk into 20K native batches and flip to fine
+                        // slicing the moment the model engages. Fast path
+                        // (no DHT on board) stays a single execute.
+                        let hasDht = false;
+                        try { hasDht = !!(self as any).dhtPresent?.(); } catch { hasDht = false; }
+                        if (!hasDht) {
+                            const r = self.mcu.execute(total);
+                            return self.f4Delta(Number(r?.instCount), total);
+                        }
+                        let coarseDone = 0;
+                        let remaining = total;
+                        while (remaining > 0) {
+                            const c = Math.min(20000, remaining);
+                            let r: any = null;
+                            try { r = self.mcu.execute(c); } catch { break; }
+                            coarseDone += self.f4Delta(Number(r?.instCount), c);
+                            remaining -= c;
+                            if (r?.stopped) break;
+                            try {
+                                if (remaining > 0 && (self as any).dhtFineEngaged?.()) {
+                                    try { (self as any).stepDhtFine(remaining); } catch { /* ignore */ }
+                                    remaining = 0;
+                                    break;
+                                }
+                            } catch { /* gate never breaks stepping */ }
+                        }
+                        return coarseDone || 0;
                     }
                     (self as any).f4SpiHot--;
                     let done = 0;
@@ -653,9 +932,18 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         let stepped = 0;
                         try {
                             const r = self.mcu.execute(chunk);
-                            stepped = Number(r?.instCount ?? chunk) || 0;
+                            stepped = self.f4Delta(Number(r?.instCount), chunk);
                         } catch { break; }
                         done += Math.max(1, stepped);
+                        // Mid-tick WAKE: a DHT edge landed in this slice —
+                        // hand the remainder to fine slicing now instead of
+                        // waiting for the next tick.
+                        try {
+                            if ((done < total) && (self as any).dhtFineEngaged?.()) {
+                                try { (self as any).stepDhtFine(total - done); } catch { /* ignore */ }
+                                break;
+                            }
+                        } catch { /* gate never breaks stepping */ }
                     }
                     return done || 0;
                 } catch { return 0; }
@@ -664,6 +952,46 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // Net leveling: model-driven pins fan out across
                 // component-only nets (engine owns board nets).
                 try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks drain */ }
+                // Clock preset (virtual time compression): board attr tickMHz
+                // (e.g. 24/42/84 on a 168MHz chip) divides the guest SysTick
+                // reload so virtual milliseconds cost fewer host instructions.
+                // LOAD rewrite alone is not enough — the model latches the
+                // period on CSR writes — so the guest CSR value is rewritten
+                // verbatim to re-latch. Re-applies when the guest reconfigures
+                // (LOAD returns to a full-clock value). Guest baud/timer
+                // prescalers are untouched (untimed in our models); PWM freq
+                // telemetry is rescaled below. Default off (div=1).
+                // NOTE: DWT/micros() busy-loops still assume the full clock —
+                // do not combine tickMHz with microsecond-critical firmware.
+                try {
+                    let div = Number((self as any).f4TickDiv) || 0;
+                    if (!div) {
+                        const chipMHz = /429/.test(self.chip) ? 180 : (/401/.test(self.chip) ? 84 : (/411/.test(self.chip) ? 100 : 168));
+                        const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                        const want = Math.floor(Number((battrs as any)?.tickMHz) || 0);
+                        div = (want > 0 && want < chipMHz) ? Math.max(1, Math.round(chipMHz / want)) : 1;
+                        (self as any).f4TickDiv = div;
+                    }
+                    if (div > 1) {
+                        const emu = (self.mcu as any);
+                        if (emu && typeof emu.periphRead === 'function' && typeof emu.periphWrite === 'function') {
+                            let csr = 0, load = 0;
+                            try { csr = emu.periphRead(0xE000E010, 4) >>> 0; load = emu.periphRead(0xE000E014, 4) >>> 0; } catch { csr = 0; load = 0; }
+                            const lastRaw = Number((self as any).f4TickRaw) || 0;
+                            if ((csr & 1) && load > div && load !== lastRaw) {
+                                (self as any).f4TickRaw = load;
+                                try {
+                                    emu.periphWrite(0xE000E014, 4, Math.floor(load / div));
+                                    emu.periphWrite(0xE000E010, 4, csr >>> 0);
+                                    const tag = `F4CLK:div=${div} `;
+                                    for (let i = 0; i < tag.length; i++) {
+                                        try { (self as any).emitTxByte(tag.charCodeAt(i), 'f4clk'); } catch { break; }
+                                    }
+                                } catch { /* ignore */ }
+                            }
+                        }
+                    }
+                } catch { /* clock preset never breaks the drain */ }
                 // PWM observe via the TIM3 buzzer tap (freq Hz + duty
                 // fraction, read from modeled timer regs). Drives LED
                 // models speaking onPWM (capability detection, no
@@ -672,13 +1000,17 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     const buzz = (self.mcu as any)?.buzzer;
                     const duty = Number(buzz?.duty) || 0;
                     const freq = Number(buzz?.freq) || 0;
-                    if (duty > 0 && freq > 0) {
+                    // Clock preset rescales wall-true frequencies: the timer
+                    // regs still describe full-clock ticks.
+                    const tdiv = Number((self as any).f4TickDiv) || 1;
+                    const freqTrue = tdiv > 1 ? freq / tdiv : freq;
+                    if (duty > 0 && freqTrue > 0) {
                         for (const inst of self.instances.values()) {
                             try {
                                 if (typeof (inst as any)?.onPWM !== 'function') continue;
                                 if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
                                 for (const pn of ['A', 'ANODE', '+']) {
-                                    try { (inst as any).onPWM(pn, { dutyCycle: Math.max(0, Math.min(1, duty)), frequencyHz: freq }); } catch { /* ignore */ }
+                                    try { (inst as any).onPWM(pn, { dutyCycle: Math.max(0, Math.min(1, duty)), frequencyHz: freqTrue }); } catch { /* ignore */ }
                                 }
                             } catch { /* one instance never breaks pwm */ }
                         }
@@ -686,105 +1018,66 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 } catch { /* PWM observe never breaks the drain */ }
                 // Per-tick ADC inject (facade setAdcChannel, raw 12-bit):
                 // Disco PA0-7/PB0-1/PC0-5 map to ADC123 channels 0-15.
-                // Wiper sources power like the F1 path (boards source no
-                // power today): VCC rails on 3V3 nets driven to 3.3V, models
-                // divide honestly, firmware analogRead samples it.
+                // Nets are resolved once per boot (buildAdcCache) — the drain
+                // only walks the cache, no pinToNet scans in the hot loop.
                 try {
                     const mcu = self.mcu as any;
-                    if (mcu && typeof mcu.setAdcChannel === 'function') {
-                        const chFor: Record<string, number> = {
-                            PA0: 0, PA1: 1, PA2: 2, PA3: 3,
-                            PA4: 4, PA5: 5, PA6: 6, PA7: 7,
-                            PB0: 8, PB1: 9,
-                            PC0: 10, PC1: 11, PC2: 12, PC3: 13,
-                            PC4: 14, PC5: 15,
-                        };
-                        for (const inst of self.instances.values()) {
+                    const cache = (self as any).f4AdcCache as any;
+                    if (mcu && typeof mcu.setAdcChannel === 'function' && cache) {
+                        for (const rt of cache.rails as Array<{ inst: any; nm: string; netId: number | undefined }>) {
                             try {
-                                if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
-                                for (const nm of ['VCC', '1']) {
-                                    let v = 0;
-                                    try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
-                                    if (v > 0.2) continue;
-                                    const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
-                                    if (net === undefined) continue;
-                                    for (const [node, netId] of self.pinToNet) {
-                                        if (netId !== net) continue;
-                                        const sep = node.indexOf(':');
-                                        if (sep < 0) continue;
-                                        if (node.slice(0, sep) !== self.boardId) continue;
-                                        if (!/3V3/i.test(node.slice(sep + 1))) continue;
-                                        try { (inst as any).setPinVoltage(nm, 3.3); } catch { /* ignore */ }
-                                        break;
-                                    }
+                                let v = 0;
+                                try { v = Number(rt.inst?.getPinVoltage?.(rt.nm)) || 0; } catch { continue; }
+                                if (v > 0.2) continue;
+                                if (rt.netId === undefined) continue;
+                                if ((cache.netsWith3V3 as Set<number>).has(rt.netId)) {
+                                    try { rt.inst?.setPinVoltage?.(rt.nm, 3.3); } catch { /* ignore */ }
                                 }
-                            } catch { /* one instance never breaks rails */ }
+                            } catch { /* one rail never breaks the drain */ }
                         }
-                        for (const [pin, ch] of Object.entries(chFor)) {
+                        for (const rec of cache.pins as Array<{ pin: string; ch: number; netId: number | undefined }>) {
                             try {
                                 let volts: number | null = null;
-                                let netId: number | undefined = undefined;
-                                for (const [node, netId2] of self.pinToNet) {
-                                    const sep = node.indexOf(':');
-                                    if (sep < 0) continue;
-                                    if (node.slice(0, sep) !== self.boardId) continue;
-                                    if (node.slice(sep + 1).toUpperCase() !== pin) continue;
-                                    netId = netId2;
-                                    for (const [node2, net2] of self.pinToNet) {
-                                        if (net2 !== netId) continue;
-                                        const s2 = node2.indexOf(':');
-                                        if (s2 < 0) continue;
-                                        if (node2.slice(0, s2) === self.boardId) continue;
-                                        const inst = self.instances.get(node2.slice(0, s2));
-                                        const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
-                                        if (Number.isFinite(v)) { volts = v; break; }
-                                    }
-                                    break;
-                                }
-                                // DAC loopback: no component drives this net,
-                                // but it touches a DAC output (PA4=ch1,
-                                // PA5=ch2) whose channel is ENABLED
-                                // (DAC_CR EN1/EN2) — poll DOR directly every
-                                // drain (change events lag hundreds of ms and
-                                // miss reset-zero writes). DOR readback IS
-                                // the pin value (no analog layer in the
-                                // engine), so it sources the ADC like a stiff
-                                // driver (cf. ESP32 dacOutputs). Untouched
-                                // DACs (EN clear) never drive the net, so
-                                // plain analog input on PA4/PA5 is unaffected.
-                                if (volts === null && netId !== undefined) {
-                                    try {
-                                        const emu = (self.mcu as any);
-                                        let cr = 0, d1 = 0, d2 = 0, ok = false;
-                                        try {
-                                            if (emu && typeof emu.periphRead === 'function') {
-                                                cr = emu.periphRead(0x40007400, 4) >>> 0;
-                                                d1 = emu.periphRead(0x4000742c, 4) >>> 0;
-                                                d2 = emu.periphRead(0x40007430, 4) >>> 0;
-                                                ok = true;
-                                            }
-                                        } catch { ok = false; }
-                                        if (ok) {
-                                            for (const [node3, net3] of self.pinToNet) {
-                                                if (net3 !== netId) continue;
-                                                const s3 = node3.indexOf(':');
-                                                if (s3 < 0) continue;
-                                                if (node3.slice(0, s3) !== self.boardId) continue;
-                                                const bp = node3.slice(s3 + 1).toUpperCase();
-                                                if (bp === 'PA4' && (cr & 0x1)) {
-                                                    volts = (d1 & 0xfff) / 4095 * 3.3;
-                                                    break;
-                                                }
-                                                if (bp === 'PA5' && (cr & 0x10000)) {
-                                                    volts = (d2 & 0xfff) / 4095 * 3.3;
-                                                    break;
-                                                }
-                                            }
+                                if (rec.netId !== undefined) {
+                                    const dr = (cache.driversOnNet as Map<number, Array<{ inst: any; pin: string }>>).get(rec.netId);
+                                    if (dr) {
+                                        for (const d of dr) {
+                                            try {
+                                                const v = Number(d.inst?.getPinVoltage?.(d.pin));
+                                                if (Number.isFinite(v)) { volts = v; break; }
+                                            } catch { /* ignore */ }
                                         }
-                                    } catch { /* DAC bridge never breaks ADC */ }
+                                    }
+                                    // DAC loopback: no component drives this net,
+                                    // but it touches a DAC output (PA4=ch1,
+                                    // PA5=ch2) whose channel is ENABLED — poll
+                                    // DOR directly (change events lag and miss
+                                    // reset-zero writes). Untouched DACs (EN
+                                    // clear) never drive the net.
+                                    if (volts === null) {
+                                        const bp = (cache.boardPinsOnNet as Map<number, Set<string>>).get(rec.netId);
+                                        if (bp && (bp.has('PA4') || bp.has('PA5'))) {
+                                            try {
+                                                const emu = (self.mcu as any);
+                                                let cr = 0, d1 = 0, d2 = 0, ok = false;
+                                                try {
+                                                    if (emu && typeof emu.periphRead === 'function') {
+                                                        cr = emu.periphRead(0x40007400, 4) >>> 0;
+                                                        d1 = emu.periphRead(0x4000742c, 4) >>> 0;
+                                                        d2 = emu.periphRead(0x40007430, 4) >>> 0;
+                                                        ok = true;
+                                                    }
+                                                } catch { ok = false; }
+                                                if (ok) {
+                                                    if (bp.has('PA4') && (cr & 0x1)) volts = (d1 & 0xfff) / 4095 * 3.3;
+                                                    else if (bp.has('PA5') && (cr & 0x10000)) volts = (d2 & 0xfff) / 4095 * 3.3;
+                                                }
+                                            } catch { /* DAC bridge never breaks ADC */ }
+                                        }
+                                    }
                                 }
                                 if (volts !== null) {
-                                    try { mcu.setAdcChannel('ADC1', ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
+                                    try { mcu.setAdcChannel('ADC1', rec.ch, Math.max(0, Math.min(4095, Math.round(volts / 3.3 * 4095)))); } catch { /* ignore */ }
                                 }
                             } catch { /* one pin never breaks the drain */ }
                         }
@@ -1162,6 +1455,34 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         }
                     }
                 } catch { /* display drains never break the drain */ }
+                // System-cell markers (sys specs): arm host-observed
+                // event callbacks once + poll power-mode on change.
+                // Additive; silent when unused.
+                try {
+                    const mcuS: any = self.mcu as any;
+                    const say = (line: string) => {
+                        try {
+                            const tag = line + '\n';
+                            for (let i = 0; i < tag.length; i++) {
+                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f4sys'); } catch { break; }
+                            }
+                        } catch { /* ignore */ }
+                    };
+                    try {
+                        if (mcuS && !((self as any).f4SysWired)) {
+                            (self as any).f4SysWired = true;
+                            try { mcuS.onDmaTc = (c: number, s: number) => { try { say('F4DMA_TC:' + c + ':' + s); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onWdogReset = (w: number) => { try { say('F4WDOG_RST:' + w); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onRtcAlarm = (a: number) => { try { say('F4RTC_ALARM:' + a); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onExtiEdge = (l: number) => { try { say('F4EXTI_EDGE:' + l); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'f4itm'); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                        }
+                    } catch { /* wiring never breaks the drain */ }
+                    try {
+                        const pm = (mcuS && typeof mcuS.pwrMode === 'function') ? Number(mcuS.pwrMode()) : -1;
+                        if (pm >= 0 && pm !== Number((self as any).f4PwrLast ?? 0)) { (self as any).f4PwrLast = pm; say('F4PWR_MODE:' + pm); }
+                    } catch { /* ignore */ }
+                } catch { /* f4sys markers never break the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },

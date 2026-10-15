@@ -417,7 +417,14 @@ export abstract class ArmRunnerBase implements BoardRunner {
     }
 
     getSimulatedTimeMs(): number {
-        return performance.now();
+        // REAL virtual time: executed steps ÷ core clock. (Previously wall
+        // time — the pace pill then read ~100% no matter how slow the
+        // engine ran. AVR already reports cpu.cycles honestly; ARM now
+        // matches via the monotonic step counter.)
+        try {
+            const cpus = Number(this.cyclesPerMicrosecond()) || 16;
+            return Math.floor(Number(this.simCycleCount || 0) / cpus / 1000);
+        } catch { return 0; }
     }
 
     forceEmitState(): void {

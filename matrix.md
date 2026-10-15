@@ -133,6 +133,18 @@ Connectivity extras not in the main tables:
 | LittleFS/SPIFFS anywhere | NONE (no cell) |
 
 
+## Infra notes (2026-10-10)
+
+- Pace pill now reports step-counted virtual time (was wall clock — always
+  ~100%). Expect single digits on F4 at 1x; that is the truth.
+- PROOF STANDARD (new): every board proves guest-time advance — pace specs
+  assert monotonic millis + divider markers vs wall elapsed, alongside the
+  serial needle. Speed is a main test now, not an observation.
+- F4 clock presets: board attr `tickMHz` (168/84/42/24, per-chip Full in the
+  Clock context menu) divides the SysTick reload; PWM telemetry rescaled.
+  Opt-in, default untouched. Applies on next Run (Stop+Run); mid-run changes
+wait for reboot since runners snapshot attrs at boot. ESP32 same pattern next.
+
 ## Deliberately out of scope (engine-limited)
 
 - USB-HOST everywhere (all engine USB models are device-only).
