@@ -138,6 +138,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
             getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
             instances: this.instances,
             compAttrById: this.compAttrById,
+            pinToNet: this.pinToNet,
+            boardPinLevel: (pin: string) => {
+                try {
+                    const v = (this.pinStates as any)?.[pin];
+                    return typeof v === 'boolean' ? v : null;
+                } catch { return null; }
+            },
         };
         const addrs = collectI2CSlaveAddresses(bridgeCtx);
         if (addrs.length > 0) {
@@ -147,6 +154,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 address: a,
                 onStart: () => { try { br.start(a, false); } catch { /* ignore */ } },
                 onWrite: (b: number) => { try { br.write(Number(b) & 0xff); } catch { /* ignore */ } },
+                onRead: () => { try { return br.read() & 0xff; } catch { return 0xff; } },
                 onStop: () => { try { br.stop(); } catch { /* ignore */ } },
             }));
             // Virtual slaves (bus progress): the core stalls transactions

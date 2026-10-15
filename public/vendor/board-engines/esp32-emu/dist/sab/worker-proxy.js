@@ -47,6 +47,24 @@ var CMD_BT_HCI_POLL = 24;
 var CMD_BT_HCI_PUSH = 25;
 var CMD_BT_HCI_RESP = 26;
 var CMD_BT_HCI_SEND = 27;
+var CMD_I2C_SET_SLAVE = 28;
+var CMD_I2C_TX_PUSH = 29;
+var CMD_I2C_RX_POP = 30;
+var CMD_I2C_POLL = 31;
+var CMD_SPI_INJECT = 32;
+var CMD_SPI_POLL = 33;
+var CMD_GET_GPIO_OUT = 34;
+var CMD_SAMPLE_GPIO_OUT = 35;
+var CMD_POLL_GPIO_CHANGES = 36;
+var CMD_SET_ANALOG_INPUT = 37;
+var CMD_GET_LEDC = 38;
+var CMD_I2S_POLL_TX = 39;
+var CMD_I2S_TX_ARM = 40;
+var CMD_OW_ATTACH = 41;
+var CMD_OW_SET_TEMP = 42;
+var CMD_OW_POLL = 43;
+var CMD_OW_SCRATCH = 44;
+var CMD_WRITE_MMIO = 45;
 var RESP_IDLE = 0;
 var SAB_NUM_SLOTS = 22;
 var UART_RING_SIZE = 16384;
@@ -345,6 +363,325 @@ var SimulatorWorker = class {
     Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
     while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
     }
+  }
+  // ---- Host peripheral taps (esp32-emu.md §1-4, Worker split mode) ----
+  // The worker thread owns the tap objects (same I2cTap/SpiTap classes);
+  // these methods sync wiring/preloads/polls across the SAB (no synchronous
+  // round-trip mid-transaction — preload reads BEFORE run, drain writes
+  // AFTER run chunks).
+  /**
+   * Attach/detach a host I2C slave model at a 7-bit address on a bus
+   * (0 = I2C0, 1 = I2C1). Registered addresses ACK; all others NACK, so
+   * scan() enumerates only attached models. Wiring survives reset.
+   */
+  async attachI2cSlave(bus, addr) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, addr & 127);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG2, 1);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2C_SET_SLAVE);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  async detachI2cSlave(bus, addr) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, addr & 127);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG2, 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2C_SET_SLAVE);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /**
+   * Pre-stage bytes a future master READ from `addr` will consume
+   * (sensor ROM, split-mode equivalent of onRead). Survives reset.
+   */
+  async pushI2cTx(bus, addr, bytes) {
+    this._checkReady();
+    const arr = Uint8Array.from(bytes ?? []).slice(0, 4096);
+    this.readResp.set(arr, 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, addr & 127);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG2, arr.length);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2C_TX_PUSH);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /** Drain bytes the master WROTE to `addr` since the last drain. */
+  async popI2cRx(bus, addr) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, addr & 127);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2C_RX_POP);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    return Array.from(this.readResp.subarray(0, Math.min(n, this.readResp.length)));
+  }
+  /**
+   * Drain staged I2C transaction events on a bus since the last poll.
+   * @returns {Promise<Array<{t:string,addr?:number,read?:boolean,byte?:number,wasRead?:boolean}>>}
+   */
+  async pollI2c(bus) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2C_POLL);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    const dv = new DataView(this.readResp.buffer, this.readResp.byteOffset, Math.min(n * 4, this.readResp.length));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const w = dv.getUint32(i * 4, true);
+      const type = w >>> 24, payload = w & 16777215;
+      if (type === 1) out.push({ t: "start", addr: payload >>> 1 & 127, read: !!(payload & 1) });
+      else if (type === 2) out.push({ t: "write", byte: payload & 255 });
+      else if (type === 3) out.push({ t: "read", byte: payload & 255 });
+      else if (type === 4) out.push({ t: "stop", wasRead: !!payload });
+    }
+    return out;
+  }
+  /**
+   * Pre-stage MISO bytes for future master transfers on a bus
+   * (0..3 = SPI1, SPI0, SPI2, SPI3; user buses are 2/HSPI and 3/VSPI).
+   * Split-mode equivalent of onTransfer; survives reset.
+   */
+  async injectSpiMiso(bus, bytes) {
+    this._checkReady();
+    const arr = Uint8Array.from(bytes ?? []).slice(0, 4096);
+    this.readResp.set(arr, 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, arr.length);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_SPI_INJECT);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /** Drain captured MOSI bytes on a bus since the last drain. */
+  async pollSpiTx(bus) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, bus >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_SPI_POLL);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    return Array.from(this.readResp.subarray(0, Math.min(n, this.readResp.length)));
+  }
+  /**
+   * Fresh core-side GPIO output readback (output value, NOT input stimulus).
+   * @returns {Promise<{level:number,dir:number,pull:number}>} dir 0=in,1=out,2=inout; pull 0=none,1=up,2=down,3=both.
+   */
+  async getGpioOut(pin) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_GET_GPIO_OUT);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    return {
+      level: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG0) >>> 0,
+      dir: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1) >>> 0,
+      pull: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG2) >>> 0
+    };
+  }
+  /** Snapshot of all 40 pins: {levels, dirs, pulls} arrays. */
+  async sampleGpioOut() {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_SAMPLE_GPIO_OUT);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Math.min(Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1), 40);
+    const levels = [], dirs = [], pulls = [];
+    for (let i = 0; i < n; i++) {
+      levels.push(this.readResp[i * 3] || 0);
+      dirs.push(this.readResp[i * 3 + 1] || 0);
+      pulls.push(this.readResp[i * 3 + 2] || 0);
+    }
+    return { levels, dirs, pulls };
+  }
+  /** Drain staged GPIO output edges since the last poll: [{pin, level}]. */
+  async pollGpioChanges() {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_POLL_GPIO_CHANGES);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    const dv = new DataView(this.readResp.buffer, this.readResp.byteOffset, Math.min(n * 4, this.readResp.length));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const w = dv.getUint32(i * 4, true);
+      out.push({ pin: w >>> 1, level: w & 1 });
+    }
+    return out;
+  }
+  /**
+   * Drive a per-pin analog voltage at runtime (host-driven ADC inject).
+   * @param {number} pin - GPIO pin number
+   * @param {number} volts - volts (full-scale per attenuation, see analogRead cells)
+   */
+  async setAnalogInput(pin, volts) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, Math.round(Number(volts) * 1e3));
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_SET_ANALOG_INPUT);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /**
+   * GPIO pin driven by an LEDC channel (-1 = none). Register-file scan of
+   * FUNC_OUT_SEL_CFG for the channel's matrix signal (71 + ch).
+   */
+  async getLedcPin(channel) {
+    this._checkReady();
+    const sig = 71 + (channel >>> 0);
+    for (let pin = 0; pin < 40; pin++) {
+      const sel = await this.readMmio(5, 1072971776 + 1328 + pin * 4 >>> 0, 4) & 511;
+      if (sel === sig) return pin;
+    }
+    return -1;
+  }
+  /**
+   * Drain staged I2S TX DMA words for a controller (guest→host).
+   * @returns {Promise<number[]>} u32 words in DMA order.
+   */
+  async pollI2sTx(idx = 0) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, idx >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2S_POLL_TX);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    const dv = new DataView(this.readResp.buffer, this.readResp.byteOffset, Math.min(n * 4, this.readResp.length));
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(dv.getUint32(i * 4, true) >>> 0);
+    return out;
+  }
+  /** Arm the I2S TX hook (sticky wiring; staging starts on next TX DMA). */
+  async armI2sTx() {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_I2S_TX_ARM);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /**
+   * Attach a DS18B20-compatible OneWire slave model to a pin (P1).
+   * The model answers presence + ROM/scratchpad reads synchronously on
+   * sim-time ticks — no host round-trip, so microsecond slots hold.
+   */
+  async attachOneWire(pin) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_OW_ATTACH);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /** Set the OneWire model's temperature in °C (recomputes scratchpad + CRC). */
+  async setOneWireTemp(pin, celsius) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, (Math.round(Number(celsius) * 1e3) | 0) >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_OW_SET_TEMP);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /** Replace the OneWire model's scratchpad (8 bytes → CRC recomputed; 9 used as-is). */
+  async preloadOneWireScratch(pin, bytes) {
+    this._checkReady();
+    const arr = Uint8Array.from(bytes ?? []).slice(0, 9);
+    this.readResp.set(arr, 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, arr.length);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_OW_SCRATCH);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /**
+   * Drain the OneWire model's decoded master traffic since the last poll.
+   * @returns {Promise<{log:Array<{t:string,byte?:number}>,presence:number}>}
+   */
+  async pollOneWire(pin) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, pin >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_OW_POLL);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    const n = Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1);
+    const dv = new DataView(this.readResp.buffer, this.readResp.byteOffset, Math.min(n * 4, this.readResp.length));
+    const log = [];
+    let presence = 0;
+    for (let i = 0; i < n; i++) {
+      const w = dv.getUint32(i * 4, true);
+      if (w >>> 24 === 1) {
+        log.push({ t: "presence" });
+        presence++;
+      } else if (w >>> 24 === 2) log.push({ t: "byte", byte: w & 255 });
+    }
+    return { log, presence };
+  }
+  /**
+   * 32-bit native MMIO backdoor write (mirrors readMmio; same HID dispatch
+   * as the guest path, so tap hooks fire identically).
+   */
+  async writeMmio(hid, addr, value) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, hid >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG1, addr >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG2, value >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_WRITE_MMIO);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+  }
+  /**
+   * LEDC/PWM readback for servo/LED cells.
+   * @returns {Promise<{duty:number,freq:number,timer:number}>} duty = effective duty, freq = derived Hz.
+   */
+  async getLedc(channel) {
+    this._checkReady();
+    Atomics.store(this.ctrl, SAB_SLOT_CMD_ARG0, channel >>> 0);
+    Atomics.store(this.ctrl, SAB_SLOT_RESP, RESP_IDLE);
+    Atomics.store(this.ctrl, SAB_SLOT_CMD, CMD_GET_LEDC);
+    Atomics.notify(this.ctrl, SAB_SLOT_CMD, 1);
+    while (Atomics.load(this.ctrl, SAB_SLOT_RESP) === RESP_IDLE) {
+    }
+    return {
+      duty: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG0) >>> 0,
+      freq: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG1) >>> 0,
+      timer: Atomics.load(this.ctrl, SAB_SLOT_CMD_ARG2) >>> 0
+    };
   }
   /**
    * Read back the last NORMAL-mode TX frame captured by the virtual peer.

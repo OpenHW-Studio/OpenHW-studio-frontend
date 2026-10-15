@@ -1,8 +1,15 @@
 /**
- * esp32-runner.ts — ESP32 DevKit BoardRunner over esp32-emu@1.1.0.
+ * esp32-runner.ts — ESP32 DevKit BoardRunner over esp32-emu@1.2.0.
  *
- * Engine: `SimulatorWorker` (WASM Xtensa + native peripherals). One worker
- * per board runner (verified isolated).
+ * Engine: `SimulatorWorker` (WASM Xtensa + native peripherals, SAB worker
+ * split mode). One worker per board runner (verified isolated).
+ *
+ * 1.2.0 taps (wired below; were engine gaps in 1.1.0): I2C slave attach +
+ * event poll + RX drain + TX preload (split-mode onStart/onWrite/onRead/
+ * onStop), SPI MISO inject + MOSI poll, GPIO-out readback + edge poll,
+ * per-pin ADC inject, LEDC readback, OneWire model, MMIO backdoor.
+ * Async polls feed the shared sync bridges (bus-bridge.ts) from .then
+ * callbacks — never mid-transaction (package contract).
  *
  * Firmware contract (boardHexMap carries `compiled.hex`):
  *   Arduino `.bin` → backend `bin` artifact = `<sketch>.ino.merged.bin`
@@ -18,6 +25,7 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
+import { createI2CBridge, createSPIBridge, collectI2CSlaveAddresses } from '../bus-bridge.ts';
 
 const ESP32_UART_TX = ['1', 'D1', 'TX', 'TX0', 'GPIO1'];
 const ESP32_UART_RX = ['3', 'D3', 'RX', 'RX0', 'GPIO3'];
@@ -124,11 +132,17 @@ export class Esp32Runner extends ArmRunnerBase {
                     }
                 } catch (e) { console.warn('[Esp32Runner] loadWasm failed:', e); }
                 self.sim.run();
+                // 1.2.0 peripheral taps: attach owned I2C slaves + start the
+                // async poll pumps (I2C events, SPI MOSI, GPIO-out edges).
+                // Preload nothing (displays are write-only); sensor ROM
+                // bytes prestage per-cell via pushI2cTx when needed.
+                try { self.wireBusTaps(); } catch { /* taps never break boot */ }
                 // Poll pump: SimulatorWorker needs pollUart() calls to move
                 // bytes from the WASM ring into _onUART.
                 const pump = () => {
                     if (!self.sim) return;
                     try { self.sim.pollUart(); } catch { /* ignore */ }
+                    try { self.pollBusTaps(); } catch { /* ignore */ }
                     if (self.running) setTimeout(pump, 50);
                 };
                 pump();
@@ -140,11 +154,22 @@ export class Esp32Runner extends ArmRunnerBase {
                 // NOTE: no per-tick publishGpio here — the base
                 // pollGpioBidirectional() owns output publishing via
                 // sampleGpioOut below, so edges fire once.
-                try { self.pollGpio(); } catch { /* never breaks tick */ }
+                try { self.pollBusTaps(); } catch { /* never breaks tick */ }
                 return Math.max(1, Math.floor(_budget));
             },
             drainUartOut(): number[] {
                 try { self.sim?.pollUart?.(); } catch { /* ignore */ }
+                // Per-tick SPI idle flush (same contract as the F1 runner):
+                // closes a frame whose last byte is older than the 2ms sim
+                // gap when the real CS deassert never dispatches.
+                try {
+                    const br = self.spiBridge as any;
+                    if (br && typeof br.idleFlush === 'function') {
+                        let nowMs = 0;
+                        try { nowMs = self.getSimulatedTimeMs(); } catch { nowMs = 0; }
+                        br.idleFlush(nowMs);
+                    }
+                } catch { /* flush never breaks the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },
@@ -191,11 +216,131 @@ export class Esp32Runner extends ArmRunnerBase {
         };
     }
 
-    /** Poll pump for the (input-only) GPIO path: no output readback
-     * exists on the SAB proxy, so nothing to mirror here. Kept as
-     * a named hook for forward-compat (engine gap, not a silent
-     * no-op — see sampleGpioOut above). */
-    private pollGpio(): void { /* engine has no GPIO-output readback */ }
+    /** 1.2.0 bus taps: attach owned I2C slaves on both buses, create the
+     * shared sync bridges (bus-bridge.ts). Async polls below feed them
+     * from .then callbacks — never mid-transaction (package contract). */
+    private i2cBridge: any = null;
+    private spiBridge: any = null;
+    private compAttrById = new Map<string, any>();
+    private wireBusTaps(): void {
+        const self = this;
+        try {
+            const defs: any[] = [];
+            try {
+                for (const inst of this.instances.values()) {
+                    self.compAttrById.set(String((inst as any)?.id || ''), {});
+                }
+                void defs;
+            } catch { /* ignore */ }
+            const ctx: any = {
+                boardId: this.boardId,
+                onStateUpdate: (msg: any) => { try { this.onStateUpdate(msg); } catch { /* ignore */ } },
+                getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
+                instances: this.instances,
+                compAttrById: this.compAttrById,
+                pinToNet: this.pinToNet,
+                boardPinLevel: (pin: string) => {
+                    try {
+                        const v = (this.pinStates as any)?.[pin];
+                        return typeof v === 'boolean' ? v : null;
+                    } catch { return null; }
+                },
+            };
+            const addrs = collectI2CSlaveAddresses({ instances: this.instances, compAttrById: this.compAttrById } as any);
+            if (addrs.length > 0) {
+                this.i2cBridge = createI2CBridge(ctx);
+                for (const a of addrs.slice(0, 8)) {
+                    for (const bus of [0, 1]) {
+                        try { void self.sim?.attachI2cSlave?.(bus, a & 0x7f)?.catch?.(() => {}); } catch { /* ignore */ }
+                    }
+                }
+            }
+            try {
+                let hasSpi = false;
+                for (const inst of this.instances.values()) {
+                    if (typeof (inst as any)?.onSPIByte === 'function'
+                        || typeof (inst as any)?.onSPIByteExchange === 'function') { hasSpi = true; break; }
+                }
+                if (hasSpi) this.spiBridge = createSPIBridge(ctx);
+                // Arm MOSI capture on all buses: the engine only hooks a
+                // bus after onTransfer/misoQueue/capture-arm; an empty
+                // inject arms capture-only observation (package contract).
+                if (hasSpi) {
+                    for (const bus of [0, 1, 2, 3]) {
+                        try { void self.sim?.injectSpiMiso?.(bus, [])?.catch?.(() => {}); } catch { /* ignore */ }
+                    }
+                }
+            } catch { /* ignore */ }
+        } catch { /* taps never break boot */ }
+    }
+
+    /** Async per-tick poll: I2C events → bridge, SPI MOSI → bridge,
+     * GPIO-out edges → publishGpio + cache. Fire-and-forget; each poll
+     * resolving feeds the sync bridges from .then (never blocks tick). */
+    private pollBusTaps(): void {
+        const self = this;
+        try {
+            if (this.i2cBridge && typeof self.sim?.pollI2c === 'function') {
+                for (const bus of [0, 1]) {
+                    try {
+                        (self.sim.pollI2c(bus) as Promise<any[]>).then((evts) => {
+                            try {
+                                const br = self.i2cBridge;
+                                if (!br || !Array.isArray(evts)) return;
+                                for (const e of evts) {
+                                    if (!e || typeof e.t !== 'string') continue;
+                                    if (e.t === 'start') { try { br.start(Number(e.addr) & 0x7f, !!e.read); } catch { /* ignore */ } }
+                                    else if (e.t === 'write') { try { br.write(Number(e.byte) & 0xff); } catch { /* ignore */ } }
+                                    else if (e.t === 'read') {
+                                        // Master consumed a byte: prestage next from model.
+                                        try {
+                                            const b = br.read() & 0xff;
+                                            void self.sim?.pushI2cTx?.(bus, Number(e.addr) & 0x7f, [b])?.catch?.(() => {});
+                                        } catch { /* ignore */ }
+                                    }
+                                    else if (e.t === 'stop') { try { br.stop(); } catch { /* ignore */ } }
+                                }
+                            } catch { /* event feed never breaks poll */ }
+                        }).catch(() => {});
+                    } catch { /* ignore */ }
+                }
+            }
+            if (this.spiBridge && typeof self.sim?.pollSpiTx === 'function') {
+                // User buses are 2/HSPI and 3/VSPI; poll both (+0/1 harmless).
+                for (const bus of [2, 3]) {
+                    try {
+                        (self.sim.pollSpiTx(bus) as Promise<number[]>).then((mosi) => {
+                            try {
+                                const br = self.spiBridge;
+                                if (!br || !Array.isArray(mosi) || mosi.length === 0) return;
+                                let idx = 0;
+                                for (const b of mosi) {
+                                    try { br.exchange(Number(b) & 0xff, idx++); } catch { /* ignore */ }
+                                }
+                                try { br.frame(true); } catch { /* ignore */ }
+                            } catch { /* feed never breaks poll */ }
+                        }).catch(() => {});
+                    } catch { /* ignore */ }
+                }
+            }
+            if (typeof self.sim?.pollGpioChanges === 'function') {
+                try {
+                    (self.sim.pollGpioChanges() as Promise<Array<{ pin: number; level: number }>>).then((edges) => {
+                        try {
+                            if (!Array.isArray(edges)) return;
+                            for (const e of edges) {
+                                if (!e || !Number.isFinite(Number(e.pin))) continue;
+                                const label = `GPIO${Number(e.pin)}`;
+                                const high = !!Number(e.level);
+                                try { self.gpioOutCache.set(label.toUpperCase(), high); } catch { /* ignore */ }
+                                try { (self as any).publishGpio(label, high); } catch { /* ignore */ }
+                            }
+                        } catch { /* edges never break poll */ }
+                    }).catch(() => {});
+                } catch { /* ignore */ }
+            }
+        } catch { /* poll never breaks tick */ }
+    }
 
     /** Drive a GPIO input level (host-driven pin toggle, e.g. buttons). */
     async setGpioInput(pinNumber: number, high: boolean): Promise<void> {

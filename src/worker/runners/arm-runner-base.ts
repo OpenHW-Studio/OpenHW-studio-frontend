@@ -84,10 +84,15 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
             case 'stm32f4-emu/site/vendor/stm32_periph_wasm.js':
                 return await import('stm32f4-emu/vendor');
             case 'esp32-emu/dist/sab/worker-proxy.js':
-                // MUST be a string vite can statically resolve at transform
-                // time (no /* @vite-ignore */ — that bypasses resolution and
-                // breaks in workers). The SAB proxy has no node: imports.
-                // (Root 'esp32-emu' pulls node:crypto via partition-table.)
+                // Vendor-first in every env: the proxy spawns
+                // ./worker-entry.js relatively, and the npm copy carries a
+                // static node:crypto import (1.2.0 partition-table) that
+                // vite externalizes for browsers. The /vendor mirror has
+                // the stub patch (custom-CSV partitions unsupported in
+                // browser; default merged-bin boot never hits it).
+                try {
+                    return await import(/* @vite-ignore */ vendorUrl);
+                } catch { /* fall through to bundler */ }
                 return await import('esp32-emu/dist/sab/worker-proxy.js');
             case '8086emu/multi_cpu_emu.js':
                 // wasm-bindgen ESM, no node: imports — safe in workers.
@@ -630,6 +635,13 @@ export abstract class ArmRunnerBase implements BoardRunner {
      * boards are 3.3V CMOS. LEDs need ≥1.5V over drop and burn out >4V
      * without a series resistor, so the rail voltage matters. */
     protected publishGpio(pinId: string, isHigh: boolean, analogV?: number): void {
+        // Same-level dedup: transfer callbacks fire during execute() while
+        // GPIO change events dispatch after it, so a stale assert arriving
+        // late would wipe an already-accumulated SPI frame (observed: F1
+        // MAX7219 10 bytes then late assert → empty frame). Identical
+        // re-delivery is semantically a no-op — skip it (analogV-carrying
+        // calls always fan out).
+        if (!Number.isFinite(analogV as number) && this.pinStates[pinId] === !!isHigh) return;
         this.pinStates[pinId] = !!isHigh;
         const railV = this.gpioRailV();
         try {

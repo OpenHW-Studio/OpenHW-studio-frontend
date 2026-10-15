@@ -30,6 +30,46 @@ const PICO_UART_TX = ['GP0', 'GPIO0', '0', 'D0', 'TX', 'TX0'];
 const PICO_UART_RX = ['GP1', 'GPIO1', '1', 'D1', 'RX', 'RX0'];
 const MICROPYTHON_RP2040_URL = '/firmware/micropython_rp2040.uf2';
 const MICROPYTHON_RP2350_URL = '/firmware/micropython_rp2350.uf2';
+
+/** Split a MicroPython script into exec()-ready escaped chunks (see
+ * PicoRunner.startPythonInject). Cuts only at blank lines or between
+ * zero-indent lines so indented blocks (try/while) never split; caps
+ * payloads at maxChars so no REPL line exceeds the readline buffer. */
+function chunkExecLines(script: string, maxChars: number): string[] {
+    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    const lines = String(script || '').split('\n');
+    const paras: string[][] = [];
+    let cur: string[] = [];
+    const push = () => { if (cur.length) paras.push(cur); cur = []; };
+    for (const ln of lines) {
+        if (ln.trim() === '') { push(); continue; }
+        cur.push(ln);
+        // Cut between zero-indent lines (never inside an indented block).
+        if (!/^\s/.test(ln)) {
+            const joined = cur.join('\n').length;
+            // Peek: cut here only if the block so far is closed (no open
+            // `:` block pending). Track simply: an opener (`...:`) followed
+            // only by indented lines stays open; a zero-indent non-continuation
+            // line after indented lines closes it — cut AFTER such a line only
+            // when the accumulated chunk fits.
+            void joined;
+        }
+    }
+    push();
+    // Sub-split long zero-indent runs (writeto sequences) every few lines.
+    const out: string[] = [];
+    for (const para of paras) {
+        let buf: string[] = [];
+        const flush = () => { if (buf.length) { out.push(esc(buf.join('\n'))); buf = []; } };
+        for (const ln of para) {
+            buf.push(ln);
+            const hasIndent = buf.some((l) => /^\s/.test(l));
+            if (!hasIndent && buf.join('\n').length >= maxChars) flush();
+        }
+        flush();
+    }
+    return out.filter((s) => s.length > 0);
+}
 // pico-emu arch ids (same as CLI --arch): 0 = M0+ (RP2040), 2 = M33
 // (RP2350 ARM, Pico 2 default), 1 = RV32 Hazard3 (RP2350 RISC-V).
 const PICO_ARCH_M0 = 0;
@@ -65,6 +105,20 @@ export class PicoRunner extends ArmRunnerBase {
     private mod: any = null;
     private isMicroPython = false;
     private pyInjected = false;
+    // Prompt-driven REPL injection (the old fire-once on first tick raced
+    // the REPL boot: bytes typed pre-prompt are lost and never retried).
+    // Paced + output-gated: the friendly REPL consumes input line by line,
+    // so a 1KB blast overruns the UART RX FIFO and wedges the core in an
+    // RX storm (observed live). 16 chars/tick matches REPL consumption;
+    // retry only while the script produced no MP_ output yet.
+    private pyPromptSeen = false;
+    private pyInjectAttempts = 0;
+    private pyLastInjectAt = 0;
+    private pyUartTail = '';
+    private pyQueue = '';
+    private pyQueuePos = 0;
+    private pyOutputSeen = false;
+    private pyExecBuf = '';
     private pyScript = '';
     private archOpt = '';
     private isPico2 = false;
@@ -346,9 +400,30 @@ export class PicoRunner extends ArmRunnerBase {
                     // pollGpioBidirectional() runs right after stepBudget and
                     // owns ALL output publishing (via sampleGpioOut below),
                     // so edges fire once with dispatchOptionalProtocols.
-                    // After MicroPython REPL is up, inject the user script once.
-                    if (self.isMicroPython && !self.pyInjected && self.pyScript.trim()) {
-                        self.tryInjectPython();
+                    // After MicroPython REPL is up, inject the user script.
+                    // Prompt-driven + paced: 16 chars/tick (a blind 1KB blast
+                    // overruns UART RX and wedges the core in an RX storm).
+                    // New attempt only while the previous queue fully drained
+                    // AND produced no output (a retype mid-drain interleaves
+                    // with the in-flight script — observed live as
+                    // overlapping fragments wedging both attempts).
+                    if (self.isMicroPython && self.pyScript.trim() && self.pyPromptSeen
+                        && self.pyInjectAttempts < 3 && !self.pyOutputSeen
+                        && self.pyQueuePos >= self.pyQueue.length
+                        && (performance.now() - self.pyLastInjectAt > 3000 || self.pyLastInjectAt === 0)) {
+                        self.startPythonInject();
+                        self.pyInjectAttempts++;
+                        self.pyLastInjectAt = performance.now();
+                    }
+                    // Pump the paced queue every tick until drained.
+                    if (self.pyQueuePos < self.pyQueue.length) {
+                        try {
+                            const chunk = self.pyQueue.slice(self.pyQueuePos, self.pyQueuePos + 16);
+                            for (const ch of chunk) {
+                                self.mod._picoemu_write_uart(ch.charCodeAt(0) & 0xff);
+                            }
+                            self.pyQueuePos += chunk.length;
+                        } catch { /* pump never breaks tick */ }
                     }
                     try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
                     // I2C mirror drain: polled transaction ring → models.
@@ -362,6 +437,52 @@ export class PicoRunner extends ArmRunnerBase {
                 try {
                     let ch: number; let guard = 0;
                     while ((ch = self.mod._picoemu_read_uart(0)) !== -1 && guard++ < 1024) out.push(ch & 0xff);
+                    // REPL prompt sniffing for script injection (MicroPython).
+                    // Execution proof = a BARE marker line (echoes carry the
+                    // source text, e.g. `>>> print("MP_READY")`, so only
+                    // bare lines count — otherwise retries die with the
+                    // first echo and a wedged script never recovers).
+                    if (self.isMicroPython && out.length > 0) {
+                        try {
+                            // Consume the WHOLE drain into the exec buffer
+                            // (per-drain tail-slicing drops markers when a
+                            // 1024-byte drain buries them mid-chunk —
+                            // observed: bare MP_READY printed but missed,
+                            // spawning a wedging retype).
+                            const text = String.fromCharCode(...out);
+                            // Reboot gate: the run-start engine reset cuts an
+                            // in-flight queue; its leftovers would poison the
+                            // fresh REPL. Abandon the stale queue and allow
+                            // an immediate clean retype (every run shows
+                            // exactly one banner repeat at run start).
+                            // Split-proof: banners can straddle two drains,
+                            // so match on (carry + text), not text alone.
+                            try {
+                                (self as any).pyBannerCarry = (((self as any).pyBannerCarry || '') + text).slice(-120);
+                            } catch { /* ignore */ }
+                            if (String((self as any).pyBannerCarry || '').includes('MicroPython v1.22.1')) {
+                                (self as any).pyReboots = (((self as any).pyReboots || 0) + 1);
+                                (self as any).pyBannerCarry = '';
+                                if (((self as any).pyReboots || 0) > 1) {
+                                    self.pyQueuePos = self.pyQueue.length;
+                                    self.pyOutputSeen = false;
+                                    self.pyLastInjectAt = 0;
+                                }
+                            }
+                            self.pyUartTail = (self.pyUartTail + text).slice(-8);
+                            if (self.pyUartTail.endsWith('>>> ')) self.pyPromptSeen = true;
+                            self.pyExecBuf = (self.pyExecBuf + text).slice(-600);
+                            const lines = self.pyExecBuf.split('\n');
+                            for (const ln of lines) {
+                                const t = ln.trim().replace(/\r/g, '');
+                                if (t === 'MP_READY' || t === 'MP_READY2' || t === 'MP_DRAWN'
+                                    || t === 'MP_PIXELS' || t === 'MP_TICK' || t.startsWith('MP_SCAN:')) {
+                                    self.pyOutputSeen = true;
+                                    break;
+                                }
+                            }
+                        } catch { /* sniffing never breaks drain */ }
+                    }
                 } catch { /* ignore */ }
                 return out;
             },
@@ -465,18 +586,25 @@ export class PicoRunner extends ArmRunnerBase {
         }
     }
 
-    private tryInjectPython(): void {
-        // Wait for the REPL prompt before injecting (drainUartOut feeds emit;
-        // we sniff via a lightweight direct read here).
+    private startPythonInject(): void {
+        // Chunked exec() injection: the REPL line buffer cannot swallow a
+        // 1.1KB one-liner (observed: full echo, zero execution), so the
+        // script rides sequential short exec('...') lines sharing __main__
+        // globals — imports/i2c state persist across them. Cuts only at
+        // blank lines or between zero-indent lines, so try/while blocks
+        // never split (generated scripts keep blocks blank-free and small).
+        // Single Ctrl-C prefix aborts strays; a cut line is a SyntaxError
+        // and the next retry retypes cleanly (self-healing).
         try {
-            // Send the script + \r\n; MicroPython echoes + runs it.
             const script = this.pyScript.replace(/\r\n/g, '\n');
-            for (const ch of `\r\n${script}\r\n`) {
-                this.mod._picoemu_write_uart(ch.charCodeAt(0) & 0xff);
-            }
+            const chunks = chunkExecLines(script, 150);
+            this.pyQueue = `\x03${chunks.map((c) => `exec('${c}')\r\n`).join('')}`;
+            this.pyQueuePos = 0;
+            this.pyOutputSeen = false;
             this.pyInjected = true;
         } catch { /* retry next tick */ }
     }
+
 
     private lastGpioOut = 0;
     /** Board pin label → RP2040 GPIO index (GPn, Dn/An aliases, bare n). */

@@ -141,6 +141,10 @@ export default defineConfig(({ mode }) => {
         // file so `import 'esp32-emu/dist/sab/worker-proxy.js'` resolves in
         // vite dev AND the worker build (file has zero node: imports).
         'esp32-emu/dist/sab/worker-proxy.js': path.resolve(__dirname, 'node_modules/esp32-emu/dist/sab/worker-proxy.js'),
+        // node:crypto has no browser build. The only in-repo consumer is
+        // esp32-emu's partition-table MD5 (custom CSV path, never hit on
+        // merged-bin boot) — stub it so the worker-entry transform loads.
+        'node:crypto': path.resolve(__dirname, 'src/worker/shims/node-crypto-stub.ts'),
       },
     },
     optimizeDeps: {

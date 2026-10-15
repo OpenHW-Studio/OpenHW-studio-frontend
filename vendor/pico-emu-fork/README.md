@@ -1,15 +1,15 @@
-# pico-emu fork (jsmirror SDD) — vendored build
+# pico-emu jsmirror build — FIRST-PARTY (was: vendored fork)
 
 Why: stock pico-emu 1.0.3 exposes no live I2C transaction channel
 (buslog is dead code, VCD needs FS which the Module omits, GDB
 watchpoints don't fire in the 1.0.3 build). Without it, Pico I2C
-displays/sensors stay blank. This fork adds one thing and nothing else.
+displays/sensors stay blank. The jsmirror SDD below adds one thing and
+nothing else.
 
-## Upstream source
+## Upstream source (first-party — the fork is retired)
 
-- Repo: https://github.com/danish9661/pico-emulator.git
-- Commit: `a47d098` ("Fix cli.js gateway uplink race")
-- License: MIT (fork complies; attribution retained)
+- Source: `/home/danish1075/Documents/rp2350/Pico-emu` (commit `a47d098`; jsmirror applied in-tree: `src/sdd_jsmirror.c`, `src/sdd.c`, `include/sdd.h`, `build_wasm.sh`)
+- The old `fork.patch` replay is obsolete — kept for history only.
 
 ## Fork diff (also saved as `fork.patch`, replayable onto the commit above)
 
@@ -26,14 +26,11 @@ displays/sensors stay blank. This fork adds one thing and nothing else.
 ## Rebuild recipe
 
 ```bash
-git clone https://github.com/danish9661/pico-emulator.git && cd pico-emulator
-git checkout a47d098
-git apply /path/to/fork.patch
-cp /path/to/sdd_jsmirror.c src/
+cd /home/danish1075/Documents/rp2350/Pico-emu  # first-party source, jsmirror in-tree
 docker run --rm -v $PWD:/mnt:z docker.io/emscripten/emsdk:3.1.50 \
   bash -c "cp -r /mnt /work && cd /work && source /emsdk/emsdk_env.sh \
   >/dev/null 2>&1 && bash build_wasm.sh && cp web/picoemu.wasm.js \
-  web/picoemu.wasm.wasm /mnt/staging-fork/"
+  web/picoemu.wasm.wasm /mnt/staging/"
 ```
 
 (Copy-out matters: emcc's final copy2 with xattrs fails on the

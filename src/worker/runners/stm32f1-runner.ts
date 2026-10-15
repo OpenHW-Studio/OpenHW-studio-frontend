@@ -129,6 +129,13 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
                 instances: this.instances,
                 compAttrById: this.compAttrById,
+                pinToNet: this.pinToNet,
+                boardPinLevel: (pin: string) => {
+                    try {
+                        const v = (this.pinStates as any)?.[pin];
+                        return typeof v === 'boolean' ? v : null;
+                    } catch { return null; }
+                },
             };
             // I2C: one callback set per bus (addresses route inside the
             // adapter by first-ACK-wins). Default Wire = I2C1 on all F1
@@ -166,6 +173,45 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     mcu.spi1.onTransfer = (ch: number, tx: number[], _rx: number[]) => {
                         void ch; void _rx;
                         try {
+                            // Core-CS pre-publish: transfer callbacks fire
+                            // DURING execute() while GPIO change events
+                            // dispatch after it, so model CS reads stale HIGH
+                            // mid-transfer (assert lands late and wipes the
+                            // accumulated frame). Sample the FRESH core level
+                            // per slave CS net and publish ahead of the bytes:
+                            // assert(empty, harmless) → bytes → late LOW
+                            // dedup-skipped → late HIGH closes the frame.
+                            try {
+                                for (const inst of self.instances.values()) {
+                                    if (typeof (inst as any)?.onSPIByte !== 'function'
+                                        && typeof (inst as any)?.onSPIByteExchange !== 'function') continue;
+                                    const pins = (inst as any)?.pins || {};
+                                    for (const nm of Object.keys(pins)) {
+                                        if (!/^(cs|ss|ssel|nss|cs_n|nce|sda|ce)$/i.test(nm)) continue;
+                                        const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
+                                        if (net === undefined) continue;
+                                        for (const [node, netId] of self.pinToNet) {
+                                            if (netId !== net) continue;
+                                            const sep = node.indexOf(':');
+                                            if (sep < 0) continue;
+                                            if (node.slice(0, sep) !== self.boardId) continue;
+                                            const [port, n] = portPinFor(node.slice(sep + 1));
+                                            if (!port) continue;
+                                            let coreHigh: boolean | null = null;
+                                            try {
+                                                const r = (self.mcu as any)?.gpio?.pin?.(port, n)?.read?.();
+                                                if (typeof r === 'boolean') coreHigh = r;
+                                                else if (typeof r === 'number') coreHigh = r !== 0;
+                                            } catch { /* ignore */ }
+                                            if (coreHigh === null) continue;
+                                            const cur = (self.pinStates as any)?.[node.slice(sep + 1)];
+                                            if (cur !== !!coreHigh) {
+                                                try { (self as any).publishGpio(node.slice(sep + 1), !!coreHigh); } catch { /* ignore */ }
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch { /* pre-publish never breaks transfer */ }
                             const nowMs = self.getSimulatedTimeMs();
                             // 2ms sim gap closes + posts the previous frame
                             // (mirrors AVR's idle framing), starting fresh.
@@ -293,6 +339,19 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
+                // Per-tick SPI idle flush (runs every base tick): closes a
+                // frame whose last byte is older than the 2ms sim gap even
+                // when setup-only traffic never triggers another transfer
+                // or the real CS deassert never dispatches. See bus-bridge
+                // idleFlush (single-slave synth-close, multi-slave safe).
+                try {
+                    const br = self.spiBridge as any;
+                    if (br && typeof br.idleFlush === 'function') {
+                        let nowMs = 0;
+                        try { nowMs = self.getSimulatedTimeMs(); } catch { nowMs = 0; }
+                        br.idleFlush(nowMs);
+                    }
+                } catch { /* flush never breaks the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },

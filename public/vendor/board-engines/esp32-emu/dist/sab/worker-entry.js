@@ -4172,11 +4172,103 @@ var WasmLoader = class {
         sd.set(mem.subarray(ptr, ptr + 512), block * 512);
       },
       // Native I2S TX data hook — forwards consumed DMA TX words to the JS
-      // host (JS parity with I2sPeripheral.onTxData).
+      // host (JS parity with I2sPeripheral.onTxData). Stages on the chip
+      // (chip._onI2sTxData → pollI2sTx); the legacy _i2sTxDataHook override
+      // still runs first when installed. NEVER throws (FFI must not unwind).
       js_i2s_tx_data: (idx, ptr, len) => {
-        if (!this._i2sTxDataHook) return;
-        const words = new Uint32Array(this.memBytes().slice(ptr, ptr + len * 4).buffer);
-        this._i2sTxDataHook(idx, words);
+        try {
+          const words = new Uint32Array(this.memBytes().slice(ptr, ptr + len * 4).buffer);
+          try {
+            this._i2sTxDataHook?.(idx, words);
+          } catch {
+          }
+          this.esp32?._onI2sTxData?.(idx >>> 0, words);
+        } catch {
+        }
+      },
+      // Synchronous GPIO edge responder (esp32-emu.md §11, OneWire P1).
+      // Notify on every responder-pin driven change AND release (level 2),
+      // with the APB tick for slot timing. Read override answers IN reads
+      // as a pure function of (edge history, now). NEVER throws.
+      js_gpio_edge: (pin, level, tick) => {
+        try {
+          this.esp32?._onGpioEdge?.(pin >>> 0, level >>> 0, tick >>> 0);
+        } catch {
+        }
+      },
+      js_gpio_read_override: (pin, tick) => {
+        try {
+          return this.esp32?._onGpioReadOverride?.(pin >>> 0, tick >>> 0) ?? 2;
+        } catch {
+          return 2;
+        }
+      },
+      // Host I2C slave taps (esp32-emu.md §1) — synchronous dispatch to the
+      // per-bus tap objects (chip.i2c0/i2c1). NEVER throws: FFI must not
+      // unwind into Rust. Unclaimed → NACK (0) / 0xFF / no-op, preserving
+      // the legacy sibling/virt routing.
+      js_i2c_slave_start: (bus, addr, read) => {
+        try {
+          const tap = bus === 0 ? this.esp32?.i2c0 : this.esp32?.i2c1;
+          if (!tap) return 0;
+          return tap._ffiStart(addr >>> 0, read >>> 0) ? 1 : 0;
+        } catch {
+          return 0;
+        }
+      },
+      js_i2c_slave_write: (bus, byte) => {
+        try {
+          const tap = bus === 0 ? this.esp32?.i2c0 : this.esp32?.i2c1;
+          if (!tap) return 0;
+          return tap._ffiWrite(byte >>> 0) ? 1 : 0;
+        } catch {
+          return 0;
+        }
+      },
+      js_i2c_slave_read: (bus) => {
+        try {
+          const tap = bus === 0 ? this.esp32?.i2c0 : this.esp32?.i2c1;
+          if (!tap) return 255;
+          return tap._ffiRead() & 255;
+        } catch {
+          return 255;
+        }
+      },
+      js_i2c_slave_stop: (bus, wasRead) => {
+        try {
+          const tap = bus === 0 ? this.esp32?.i2c0 : this.esp32?.i2c1;
+          tap?._ffiStop(wasRead !== 0);
+        } catch {
+        }
+      },
+      // Host SPI transfer tap (esp32-emu.md §2) — synchronous exchange.
+      // MOSI staged at the mosi scratch by Rust; MISO staged back at the
+      // miso scratch; returns MISO length (0 = not claimed → sibling/
+      // loopback path). NEVER throws.
+      js_spi_transfer: (bus, sendLen, recvLen) => {
+        try {
+          const tap = this.esp32?.spi?.[bus >>> 0];
+          if (!tap) return 0;
+          const mosiPtr = this.exports?.native_spi_xfer_mosi_ptr?.() >>> 0;
+          const misoPtr = this.exports?.native_spi_xfer_miso_ptr?.() >>> 0;
+          if (!mosiPtr || !misoPtr) return 0;
+          const mem = this.memBytes();
+          const mosi = mem.slice(mosiPtr, mosiPtr + (sendLen >>> 0));
+          const miso = tap._ffiTransfer(mosi, recvLen >>> 0) || [];
+          const n = Math.min(miso.length, 128);
+          for (let i = 0; i < n; i++) mem[misoPtr + i] = miso[i] & 255;
+          return n;
+        } catch {
+          return 0;
+        }
+      },
+      // GPIO output change events (esp32-emu.md §3) — queue only (listeners
+      // fan out on pollGpioChanges(), never re-entrant). NEVER throws.
+      js_gpio_changed: (pin, level) => {
+        try {
+          this.esp32?._onGpioChanged?.(pin >>> 0, level >>> 0);
+        } catch {
+        }
       },
       // Native RTC bridge: sleep wakeup on the rcSlow clock event queue.
       // Fires native_rtc_fire_sleep_wakeup when rcSlow ticks reach the target.
@@ -4215,7 +4307,9 @@ var WasmLoader = class {
       js_get_reset_reason: () => this.esp32?.resetReason ?? 0,
       js_reset_soc: () => {
         try {
+          const keep = this.esp32?.resetReason;
           this.esp32?.reset?.();
+          if (keep !== void 0) this.esp32.resetReason = keep >>> 0;
         } catch (e) {
           console.error("[WASM-RTC-RESET-ERR]", e?.message || e);
         }
@@ -4615,13 +4709,12 @@ var WasmLoader = class {
     if (!this.exports?.native_gpio_seed) return;
     const gpio = this.esp32?.gpio;
     if (!gpio?.pins) return;
-    const ptr = this.exports.native_gpio_seed_scratch();
-    const u32 = this.memU32(ptr, 41);
+    const ptr = this.exports.native_gpio_seed_scratch() >>> 0;
+    const dv = new DataView(this.memory.buffer);
     for (let i = 0; i < gpio.pins.length; i++) {
-      const pin = gpio.pins[i];
-      u32[i] = pin.inputValue ? 1 : 0;
+      dv.setUint32(ptr + i * 4, gpio.pins[i].inputValue ? 1 : 0, true);
     }
-    u32[40] = (gpio.strapValue ?? 0) >>> 0;
+    dv.setUint32(ptr + 160, (gpio.strapValue ?? 0) >>> 0, true);
     try {
       this.exports.native_gpio_seed();
     } catch {
@@ -4769,6 +4862,443 @@ var WasmCore = class {
   set nextInterruptPri(_v) {
   }
   attachMemorySystem(_pt, _mmio, _regions, _cbs) {
+  }
+};
+
+// src/peripherals/common/bus-taps.js
+var I2cTap = class {
+  constructor(chip2, bus) {
+    this.chip = chip2;
+    this.bus = bus >>> 0;
+    this.slaves = /* @__PURE__ */ new Map();
+    let _onStart = null, _onWrite = null, _onRead = null, _onStop = null;
+    Object.defineProperties(this, {
+      onStart: {
+        get: () => _onStart,
+        set: (fn) => {
+          _onStart = typeof fn === "function" ? fn : null;
+          this._syncHooks();
+        },
+        enumerable: true,
+        configurable: true
+      },
+      onWrite: {
+        get: () => _onWrite,
+        set: (fn) => {
+          _onWrite = typeof fn === "function" ? fn : null;
+          this._syncHooks();
+        },
+        enumerable: true,
+        configurable: true
+      },
+      onRead: {
+        get: () => _onRead,
+        set: (fn) => {
+          _onRead = typeof fn === "function" ? fn : null;
+          this._syncHooks();
+        },
+        enumerable: true,
+        configurable: true
+      },
+      onStop: {
+        get: () => _onStop,
+        set: (fn) => {
+          _onStop = typeof fn === "function" ? fn : null;
+        },
+        enumerable: true,
+        configurable: true
+      }
+    });
+    this._curAddr = null;
+    this._curRead = false;
+    this.events = [];
+    this._syncedAddrs = /* @__PURE__ */ new Set();
+    this._promiscSynced = false;
+  }
+  get _exports() {
+    return this.chip?._wasmLoader?.exports ?? null;
+  }
+  /** Push registry + promisc flag to Rust (no-op before loadWasm). */
+  _syncHooks() {
+    const ex = this._exports;
+    if (!ex) return;
+    try {
+      const promisc = !!(this.onStart || this.onWrite || this.onRead);
+      if (promisc !== this._promiscSynced) {
+        ex.native_i2c_set_promisc?.(this.bus, promisc ? 1 : 0);
+        this._promiscSynced = promisc;
+      }
+      for (const addr of this.slaves.keys()) {
+        if (!this._syncedAddrs.has(addr)) {
+          ex.native_i2c_set_host_slave?.(this.bus, addr, 1);
+          this._syncedAddrs.add(addr);
+        }
+      }
+      for (const addr of [...this._syncedAddrs]) {
+        if (!this.slaves.has(addr)) {
+          try {
+            ex.native_i2c_set_host_slave?.(this.bus, addr, 0);
+          } catch {
+          }
+          this._syncedAddrs.delete(addr);
+        }
+      }
+    } catch {
+    }
+  }
+  /**
+   * Attach a host slave model at a 7-bit address (post-create safe).
+   * handlers: {onWrite?(byte), onRead?()→byte, onStop?(wasRead), onStart?(addr,read)}.
+   */
+  attachSlave(addr7, handlers = {}) {
+    const addr = addr7 & 127;
+    let s = this.slaves.get(addr);
+    if (!s) {
+      s = { onWrite: null, onRead: null, onStop: null, onStart: null, readQueue: [], writeLog: [] };
+      this.slaves.set(addr, s);
+    }
+    for (const k of ["onWrite", "onRead", "onStop", "onStart"]) {
+      if (typeof handlers[k] === "function") s[k] = handlers[k];
+    }
+    this._syncHooks();
+    return s;
+  }
+  detachSlave(addr7) {
+    const addr = addr7 & 127;
+    this.slaves.delete(addr);
+    this._syncHooks();
+  }
+  clearSlaves() {
+    this.slaves.clear();
+    this._syncHooks();
+  }
+  /** Pre-stage bytes a future master READ will consume (sensor ROM, split mode). Survives reset. */
+  preloadRead(addr7, bytes) {
+    const s = this.attachSlave(addr7);
+    for (const b of bytes ?? []) s.readQueue.push(b & 255);
+    return s.readQueue.length;
+  }
+  /** Drain bytes the master WROTE to this slave since the last drain. */
+  drainWriteLog(addr7) {
+    const s = this.slaves.get(addr7 & 127);
+    if (!s) return [];
+    return s.writeLog.splice(0);
+  }
+  /** Drain staged transaction events [{t:'start'|'write'|'read'|'stop',...}]. */
+  pollEvents() {
+    return this.events.splice(0);
+  }
+  /** Clear in-flight state (called on chip.reset(); wiring + preloads survive). */
+  _resetFlight() {
+    this._curAddr = null;
+    this._curRead = false;
+    this.events.length = 0;
+  }
+  // ---- FFI-facing (called synchronously from wasm-loader; never throws) ----
+  _ffiStart(addr, read) {
+    this._curAddr = addr & 127;
+    this._curRead = !!read;
+    this.events.push({ t: "start", addr: this._curAddr, read: this._curRead });
+    if (typeof this.onStart === "function") {
+      try {
+        const r = this.onStart(this._curAddr, this._curRead);
+        if (r !== void 0) return r ? 1 : 0;
+      } catch {
+        return 0;
+      }
+    }
+    const s = this.slaves.get(this._curAddr);
+    if (!s) return 0;
+    try {
+      s.onStart?.(this._curAddr, this._curRead);
+    } catch {
+    }
+    return 1;
+  }
+  _ffiWrite(byte) {
+    const b = byte & 255;
+    this.events.push({ t: "write", byte: b });
+    if (typeof this.onWrite === "function") {
+      try {
+        const r = this.onWrite(b);
+        return r === void 0 ? 1 : r ? 1 : 0;
+      } catch {
+        return 0;
+      }
+    }
+    const s = this.slaves.get(this._curAddr);
+    if (!s) return 0;
+    s.writeLog.push(b);
+    if (s.writeLog.length > 4096) s.writeLog.splice(0, s.writeLog.length - 4096);
+    try {
+      const r = s.onWrite?.(b);
+      return r === void 0 ? 1 : r ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  }
+  _ffiRead() {
+    if (typeof this.onRead === "function") {
+      try {
+        const r = this.onRead();
+        if (r !== void 0) {
+          const b = r & 255;
+          this.events.push({ t: "read", byte: b });
+          return b;
+        }
+      } catch {
+      }
+    }
+    const s = this.slaves.get(this._curAddr);
+    if (s) {
+      if (s.readQueue.length) {
+        const b = s.readQueue.shift() & 255;
+        this.events.push({ t: "read", byte: b });
+        return b;
+      }
+      if (typeof s.onRead === "function") {
+        try {
+          const r = s.onRead();
+          if (r !== void 0) {
+            const b = r & 255;
+            this.events.push({ t: "read", byte: b });
+            return b;
+          }
+        } catch {
+        }
+      }
+    }
+    return 255;
+  }
+  _ffiStop(wasRead) {
+    this.events.push({ t: "stop", wasRead: !!wasRead });
+    try {
+      this.onStop?.(!!wasRead);
+    } catch {
+    }
+    try {
+      this.slaves.get(this._curAddr)?.onStop?.(!!wasRead);
+    } catch {
+    }
+    this._curAddr = null;
+    this._curRead = false;
+  }
+};
+var SpiTap = class {
+  constructor(chip2, bus) {
+    this.chip = chip2;
+    this.bus = bus >>> 0;
+    let _onTransfer = null;
+    Object.defineProperty(this, "onTransfer", {
+      get: () => _onTransfer,
+      set: (fn) => {
+        _onTransfer = typeof fn === "function" ? fn : null;
+        this._syncHooks();
+      },
+      enumerable: true,
+      configurable: true
+    });
+    this.misoQueue = [];
+    this.mosiLog = [];
+    this._captureArmed = false;
+  }
+  get _exports() {
+    return this.chip?._wasmLoader?.exports ?? null;
+  }
+  _syncHooks() {
+    const ex = this._exports;
+    if (!ex) return;
+    try {
+      if (this.onTransfer || this.misoQueue.length || this._captureArmed) {
+        ex.native_spi_set_transfer_hook?.(this.bus, 1);
+      }
+    } catch {
+    }
+  }
+  /** Pre-stage MISO bytes for future master reads (split mode). Survives reset.
+   * Calling with an empty array arms capture-only observation (no MISO). */
+  injectMiso(bytes) {
+    this._captureArmed = true;
+    for (const b of bytes ?? []) {
+      this.misoQueue.push(b & 255);
+      if (this.misoQueue.length > 4096) this.misoQueue.shift();
+    }
+    this._syncHooks();
+    return this.misoQueue.length;
+  }
+  /** Drain captured MOSI bytes (guest→host) since the last drain. */
+  drainMosi(maxBytes = 4096) {
+    return this.mosiLog.splice(0, maxBytes);
+  }
+  /** Alias for drainMosi (bridge-friendly name). */
+  pollTx(maxBytes) {
+    return this.drainMosi(maxBytes);
+  }
+  /** Clear in-flight/captured state (called on chip.reset(); preloads survive). */
+  _resetFlight() {
+    this.mosiLog.length = 0;
+  }
+  // ---- FFI-facing (called synchronously from wasm-loader; never throws) ----
+  _ffiTransfer(mosiBytes, recvLen) {
+    for (const b of mosiBytes) {
+      this.mosiLog.push(b & 255);
+      if (this.mosiLog.length > 4096) this.mosiLog.shift();
+    }
+    if (typeof this.onTransfer === "function") {
+      try {
+        const r = this.onTransfer(Array.from(mosiBytes), recvLen >>> 0);
+        if (Array.isArray(r) && r.length) return r.map((b) => b & 255).slice(0, 128);
+      } catch {
+      }
+    }
+    if (this.misoQueue.length) {
+      const n = Math.min(recvLen >>> 0, this.misoQueue.length, 128);
+      return this.misoQueue.splice(0, n);
+    }
+    return [];
+  }
+};
+function dallasCrc8(bytes) {
+  let crc = 0;
+  for (const byte of bytes ?? []) {
+    let b = byte & 255;
+    for (let i = 0; i < 8; i++) {
+      const mix = (crc ^ b) & 1;
+      crc >>>= 1;
+      if (mix) crc ^= 140;
+      b >>>= 1;
+    }
+  }
+  return crc & 255;
+}
+var OneWireDevice = class {
+  constructor(pin) {
+    this.pin = pin >>> 0;
+    this.rom = [40, 1, 2, 3, 4, 5, 6, 0];
+    this.rom[7] = dallasCrc8(this.rom.slice(0, 7));
+    this.scratchpad = [80, 5, 75, 70, 127, 255, 12, 16, 0];
+    this._fixScratchCrc();
+    this._resetState();
+    this.log = [];
+    this.presenceCount = 0;
+  }
+  _fixScratchCrc() {
+    this.scratchpad[8] = dallasCrc8(this.scratchpad.slice(0, 8));
+  }
+  /** Set temperature in °C (12-bit, 1/16th units, two's complement). */
+  setTemperature(celsius) {
+    const raw = Math.max(-880, Math.min(880, Math.round(Number(celsius) * 16)));
+    const u = raw & 65535;
+    this.scratchpad[0] = u & 255;
+    this.scratchpad[1] = u >> 8 & 255;
+    this._fixScratchCrc();
+    return raw / 16;
+  }
+  /** Replace the scratchpad (8 bytes → CRC recomputed; 9 bytes used as-is). */
+  preloadScratch(bytes) {
+    const arr = Array.from(bytes ?? []).slice(0, 9).map((b) => b & 255);
+    for (let i = 0; i < Math.min(8, arr.length); i++) this.scratchpad[i] = arr[i];
+    if (arr.length >= 9) this.scratchpad[8] = arr[8];
+    else this._fixScratchCrc();
+  }
+  _resetState() {
+    this.state = "idle";
+    this.lastFallTick = -1;
+    this.cmdByte = 0;
+    this.cmdBits = 0;
+    this.txBytes = [];
+    this.txBit = 0;
+  }
+  /** Clear transient parse state (chip.reset(); ROM/scratchpad survive). */
+  _resetFlight() {
+    this._resetState();
+    this.log.length = 0;
+    this.presenceCount = 0;
+  }
+  _usSince(tick, ref) {
+    return ((tick >>> 0) - (ref >>> 0) >>> 0) / 80;
+  }
+  // ---- FFI-facing (synchronous, never throws) ----
+  /** Edge notify: level 0 = fall, 1 = drive-high, 2 = release-to-float. tick = APB. */
+  _ffiEdge(level, tick) {
+    tick >>>= 0;
+    if (level === 0) {
+      this.lastFallTick = tick;
+      return;
+    }
+    if (this.lastFallTick < 0) return;
+    const lowUs = this._usSince(tick, this.lastFallTick);
+    this.lastFallTick = -1;
+    if (lowUs >= 480) {
+      this.state = "presence";
+      this.resetTick = tick;
+      this.presenceCount++;
+      this.log.push({ t: "presence" });
+      this.cmdByte = 0;
+      this.cmdBits = 0;
+      return;
+    }
+    if (lowUs < 30) this._slotBit(1);
+    else this._slotBit(0);
+  }
+  _slotBit(bit) {
+    if (this.state === "serving") {
+      return;
+    }
+    if (this.state !== "cmd" && this.state !== "presence") return;
+    this.state = "cmd";
+    this.cmdByte |= (bit & 1) << this.cmdBits;
+    this.cmdBits++;
+    if (this.cmdBits >= 8) {
+      const byte = this.cmdByte & 255;
+      this.log.push({ t: "byte", byte });
+      this.cmdByte = 0;
+      this.cmdBits = 0;
+      this._dispatch(byte);
+    }
+  }
+  _dispatch(byte) {
+    if (byte === 204) {
+      this.state = "cmd";
+    } else if (byte === 68) {
+      this.state = "idle";
+    } else if (byte === 190) {
+      this._serve(this.scratchpad);
+    } else if (byte === 51) {
+      this._serve(this.rom);
+    } else {
+      this.state = "idle";
+    }
+  }
+  _serve(bytes) {
+    this.txBytes = Array.from(bytes);
+    this.txBit = 0;
+    this.state = "serving";
+  }
+  /** IN-read override: pure function of (state, now). 2 = no override. */
+  _ffiRead(tick) {
+    tick >>>= 0;
+    if (this.state === "presence") {
+      if (this.resetTick !== void 0 && this._usSince(tick, this.resetTick) <= 250) return 0;
+      return 1;
+    }
+    if (this.state === "serving") {
+      if (this.txBit >= this.txBytes.length * 8) {
+        this.state = "idle";
+        return 1;
+      }
+      const bit = this.txBytes[this.txBit >> 3] >> (this.txBit & 7) & 1;
+      this.txBit++;
+      return bit;
+    }
+    return 2;
+  }
+  /** Drain decoded master traffic + presence count for host verification. */
+  pollLog() {
+    const log = this.log.splice(0);
+    const presence = this.presenceCount;
+    this.presenceCount = 0;
+    return { log, presence };
   }
 };
 
@@ -4989,6 +5519,19 @@ var ESP32 = class {
       new XtensaCore(this, 0, "PRO_CPU", 52685, XtensaRegisterTable),
       new XtensaCore(this, 1, "APP_CPU", 43947, XtensaRegisterTable)
     ], this.trace = new ESPTrace(), this.gdbTargetXml = "", this.stopped = true, this.writeWatchPoints = /* @__PURE__ */ new Set(), this.lastMappedAddress = 0, this.flash.fill(255), config.partitions && writePartitionTable(this.flash, config.partitions);
+    this.i2c0 = new I2cTap(this, 0);
+    this.i2c1 = new I2cTap(this, 1);
+    this.i2c = [this.i2c0, this.i2c1];
+    this.spi0 = new SpiTap(this, 0);
+    this.spi1 = new SpiTap(this, 1);
+    this.spi2 = new SpiTap(this, 2);
+    this.spi3 = new SpiTap(this, 3);
+    this.spi = [this.spi0, this.spi1, this.spi2, this.spi3];
+    this._gpioChangeQueue = [];
+    this._gpioChangeListeners = [];
+    this.onewire = /* @__PURE__ */ new Map();
+    this._i2sTxQueue = [[], []];
+    this._i2sTxListeners = [];
     const uartConfig = {
       hasTXState: true,
       toutMultiply: true,
@@ -5350,6 +5893,10 @@ Provide it via config.bootrom or chip.loadROM(romBytes).`
         } catch {
         }
       };
+      try {
+        this._applyTapHooks();
+      } catch {
+      }
       console.log(`WASM engine loaded (${this._wasmCores.length} cores). Mode: ${enabled}`);
       return true;
     } catch (err) {
@@ -5362,6 +5909,22 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
   }
   reset() {
     this._stepExp = void 0;
+    this.cycles = 0;
+    try {
+      this.i2c0?._resetFlight?.();
+      this.i2c1?._resetFlight?.();
+      this.spi0?._resetFlight?.();
+      this.spi1?._resetFlight?.();
+      this.spi2?._resetFlight?.();
+      this.spi3?._resetFlight?.();
+      if (this._gpioChangeQueue) this._gpioChangeQueue.length = 0;
+      for (const dev of this.onewire?.values?.() ?? []) dev?._resetFlight?.();
+      if (this._i2sTxQueue) {
+        this._i2sTxQueue[0].length = 0;
+        this._i2sTxQueue[1].length = 0;
+      }
+    } catch {
+    }
     for (let e of this.cores) e.reset();
     if (this._wasmCores) {
       for (let wc of this._wasmCores) wc.reset();
@@ -5399,6 +5962,270 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
     if (!value) return;
     let regIdx = this.peripherals.find((value2) => value2.baseAddr === addr);
     regIdx ? (applySingleResetValues(regIdx, Esp32FullResetValues), regIdx.reset()) : console.error("Peripheral to reset not found", addr.toString(16));
+  }
+  // ---- Host tap wiring sync (esp32-emu.md §1-4) ----
+  // Re-push tap registrations + hook flags to Rust (needed after loadWasm:
+  // a fresh instantiation starts all statics cleared; attach-time sync
+  // covers everything registered later). Safe to call anytime (no-op
+  // before WASM loads).
+  _applyTapHooks() {
+    try {
+      for (const tap of [this.i2c0, this.i2c1]) tap?._syncHooks?.();
+      for (const tap of [this.spi0, this.spi1, this.spi2, this.spi3]) tap?._syncHooks?.();
+      if (this._gpioChangeListeners?.length) {
+        this._wasmLoader?.exports?.native_gpio_set_change_hook?.(1);
+      }
+      for (const pin of this.onewire?.keys?.() ?? []) {
+        try {
+          this._wasmLoader?.exports?.native_gpio_set_responder?.(pin >>> 0, 1);
+        } catch {
+        }
+      }
+      if (this._i2sTxListeners?.length) this._armI2sTxHook();
+    } catch {
+    }
+  }
+  // ---- GPIO output readback + events (esp32-emu.md §3) ----
+  // Fresh core-side reads of Rust pin state (output value, NOT the
+  // input-stimulus holder). setPinInput (input-only) is unchanged.
+  /** Driven output level of a pin (0/1). 0 when WASM is absent. */
+  getGpioOut(pin) {
+    try {
+      return this._wasmLoader?.exports?.native_gpio_get_output?.(pin >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Direction of a pin: 0 = in, 1 = out, 2 = inout. */
+  getGpioDir(pin) {
+    try {
+      return this._wasmLoader?.exports?.native_gpio_get_direction?.(pin >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Pull mode of a pin: 0 = none, 1 = up, 2 = down, 3 = both. */
+  getGpioPull(pin) {
+    try {
+      return this._wasmLoader?.exports?.native_gpio_get_pull?.(pin >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Snapshot of all 40 pins: {levels, dirs, pulls} (arrays of 0/1, 0/1/2, 0..3). */
+  sampleGpioOut() {
+    const levels = [], dirs = [], pulls = [];
+    for (let pin = 0; pin < 40; pin++) {
+      levels.push(this.getGpioOut(pin));
+      dirs.push(this.getGpioDir(pin));
+      pulls.push(this.getGpioPull(pin));
+    }
+    return { levels, dirs, pulls };
+  }
+  /**
+   * Subscribe to GPIO output edges. Returns an unsubscribe function.
+   * Delivery is via pollGpioChanges() (host-driven, never re-entrant) plus
+   * an opportunistic drain at the end of step() while listeners exist.
+   * Listener MUST NOT call back into the engine (record-only).
+   */
+  onGpioOutChange(cb) {
+    if (typeof cb !== "function") return () => {
+    };
+    this._gpioChangeListeners.push(cb);
+    try {
+      this._wasmLoader?.exports?.native_gpio_set_change_hook?.(1);
+    } catch {
+    }
+    return () => {
+      const i = this._gpioChangeListeners.indexOf(cb);
+      if (i >= 0) this._gpioChangeListeners.splice(i, 1);
+    };
+  }
+  /** Drain staged output edges, fan out to listeners, return [{pin, level}]. */
+  pollGpioChanges() {
+    const q = this._gpioChangeQueue?.splice(0) ?? [];
+    if (q.length) {
+      for (const cb of [...this._gpioChangeListeners]) {
+        try {
+          cb(q);
+        } catch (e) {
+          console.warn(`[GPIO-TAP] listener threw: ${e?.message || e}`);
+        }
+      }
+    }
+    return q;
+  }
+  /** FFI sink for js_gpio_changed (never throws; queue is bounded). */
+  _onGpioChanged(pin, level) {
+    if (!this._gpioChangeQueue) this._gpioChangeQueue = [];
+    this._gpioChangeQueue.push({ pin: pin >>> 0, level: level ? 1 : 0 });
+    if (this._gpioChangeQueue.length > 4096) {
+      this._gpioChangeQueue.splice(0, this._gpioChangeQueue.length - 4096);
+    }
+  }
+  // ---- ADC (esp32-emu.md §6) ----
+  /** Read back a configured per-pin analog voltage (volts, undefined when unset). */
+  getAnalogInput(pin) {
+    return this.analogVolts?.[pin];
+  }
+  // ---- OneWire slave devices (esp32-emu.md §11, P1) ----
+  /**
+   * Attach a OneWire slave model (DS18B20-compatible subset) to a pin.
+   * Post-create safe; wiring survives reset (ROM/scratchpad/temperature
+   * survive, parse state clears). Arms the synchronous Rust edge responder
+   * for the pin (zero cost otherwise). Returns the device.
+   */
+  attachOneWire(pin, device = null) {
+    pin >>>= 0;
+    let dev = this.onewire.get(pin) ?? null;
+    if (!dev) {
+      dev = device instanceof OneWireDevice ? device : new OneWireDevice(pin);
+      dev.pin = pin;
+      this.onewire.set(pin, dev);
+    } else if (device instanceof OneWireDevice) {
+      this.onewire.set(pin, device);
+      device.pin = pin;
+      dev = device;
+    }
+    try {
+      this._wasmLoader?.exports?.native_gpio_set_responder?.(pin, 1);
+    } catch {
+    }
+    return dev;
+  }
+  /** Detach a OneWire slave model from a pin. */
+  detachOneWire(pin) {
+    pin >>>= 0;
+    this.onewire.delete(pin);
+    try {
+      this._wasmLoader?.exports?.native_gpio_set_responder?.(pin, 0);
+    } catch {
+    }
+  }
+  /** FFI sink for js_gpio_edge (never throws; pure dispatch). */
+  _onGpioEdge(pin, level, tick) {
+    try {
+      this.onewire.get(pin >>> 0)?._ffiEdge(level >>> 0, tick >>> 0);
+    } catch {
+    }
+  }
+  /** FFI sink for js_gpio_read_override (never throws; 2 = no override). */
+  _onGpioReadOverride(pin, tick) {
+    try {
+      const dev = this.onewire.get(pin >>> 0);
+      if (!dev) return 2;
+      return dev._ffiRead(tick >>> 0) & 255;
+    } catch {
+      return 2;
+    }
+  }
+  // ---- I2S TX capture (esp32-emu.md §9) ----
+  /** Arm the TX hook (wiring; survives reset). Called by onI2sTx. */
+  _armI2sTxHook() {
+    try {
+      this._wasmLoader?.exports?.native_i2s_set_tx_hook?.(1);
+    } catch {
+    }
+  }
+  /**
+   * Subscribe to guest→host I2S TX DMA words. Returns an unsubscribe fn.
+   * Staged per controller idx; drain with pollI2sTx (host-driven, never
+   * re-entrant). Listener must not re-enter the engine.
+   */
+  onI2sTx(cb) {
+    if (typeof cb !== "function") return () => {
+    };
+    this._i2sTxListeners.push(cb);
+    this._armI2sTxHook();
+    return () => {
+      const i = this._i2sTxListeners.indexOf(cb);
+      if (i >= 0) this._i2sTxListeners.splice(i, 1);
+    };
+  }
+  /** Drain staged TX words: pollI2sTx() → both, pollI2sTx(idx) → one. Fans out to listeners. */
+  pollI2sTx(idx = null) {
+    const out = [];
+    const idxs = idx === null ? [0, 1] : [idx >>> 0];
+    for (const i of idxs) {
+      const q = this._i2sTxQueue?.[i];
+      if (q?.length) {
+        const words = q.splice(0);
+        out.push({ idx: i, words });
+        for (const cb of [...this._i2sTxListeners]) {
+          try {
+            cb(i, words);
+          } catch (e) {
+            console.warn(`[I2S-TAP] listener threw: ${e?.message || e}`);
+          }
+        }
+      }
+    }
+    return out;
+  }
+  /** FFI sink for js_i2s_tx_data (never throws; bounded staging). */
+  _onI2sTxData(idx, words) {
+    try {
+      const q = this._i2sTxQueue?.[idx >>> 0];
+      if (!q) return;
+      for (const w of words) {
+        q.push(w >>> 0);
+        if (q.length > 16384) q.shift();
+      }
+    } catch {
+    }
+  }
+  // ---- LEDC/PWM readback (esp32-emu.md §7) ----
+  /** Number of LEDC channels (16: 8 HS + 8 LS), 0 when WASM absent. */
+  ledcChannelCount() {
+    try {
+      return this._wasmLoader?.exports?.native_ledc_channel_count?.() >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Effective duty of an LEDC channel (fade-interpolated). */
+  getLedcDuty(ch) {
+    try {
+      return this._wasmLoader?.exports?.native_ledc_get_duty?.(ch >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Selected timer index of an LEDC channel. */
+  getLedcTimer(ch) {
+    try {
+      return this._wasmLoader?.exports?.native_ledc_get_timer?.(ch >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Output frequency of an LEDC channel's timer, in Hz (derived from timer config). */
+  getLedcFreq(ch) {
+    try {
+      return this._wasmLoader?.exports?.native_ledc_get_freq?.(ch >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /**
+   * GPIO pin driven by an LEDC channel (-1 = none). Resolves the pin whose
+   * FUNC_OUT_SEL_CFG routes the channel's matrix signal (71 + ch). Lets a
+   * servo/LED cell attribute a duty to its pin without firmware knowledge.
+   * Pure register-file scan (no behavior change).
+   */
+  getLedcPin(ch) {
+    try {
+      const ex = this._wasmLoader?.exports;
+      if (!ex?.native_diag_read) return -1;
+      const sig = 71 + (ch >>> 0);
+      for (let pin = 0; pin < 40; pin++) {
+        const sel = ex.native_diag_read(5, 1072971776 + 1328 + pin * 4 >>> 0, 32) >>> 0;
+        if ((sel & 511) === sig) return pin;
+      }
+      return -1;
+    } catch {
+      return -1;
+    }
   }
   mapAddress(addr, value) {
     if (this.lastMappedAddress = addr, addr >= 1073397760 && addr <= 1073405951 && console.error("SRAM 2 mmu access:", addr.toString(16)), addr >= GpioBaseAddrAlt && addr < RegionDram1Base || addr >= RegionPeriBusBase && addr <= RegionUsbBase) {
@@ -5457,6 +6284,12 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
     if (this._sabU32) {
       this._sabU32[998] = this.clocks.cpu.ticks >>> 0;
       this._sabU32[999] = this.cycles >>> 0;
+    }
+    if (this._gpioChangeListeners?.length && this._gpioChangeQueue?.length) {
+      try {
+        this.pollGpioChanges();
+      } catch {
+      }
     }
   }
   // MMU-table entry governing `addr` (or undefined when not MMU-routed).
@@ -5622,6 +6455,24 @@ var CMD_BT_HCI_POLL = 24;
 var CMD_BT_HCI_PUSH = 25;
 var CMD_BT_HCI_RESP = 26;
 var CMD_BT_HCI_SEND = 27;
+var CMD_I2C_SET_SLAVE = 28;
+var CMD_I2C_TX_PUSH = 29;
+var CMD_I2C_RX_POP = 30;
+var CMD_I2C_POLL = 31;
+var CMD_SPI_INJECT = 32;
+var CMD_SPI_POLL = 33;
+var CMD_GET_GPIO_OUT = 34;
+var CMD_SAMPLE_GPIO_OUT = 35;
+var CMD_POLL_GPIO_CHANGES = 36;
+var CMD_SET_ANALOG_INPUT = 37;
+var CMD_GET_LEDC = 38;
+var CMD_I2S_POLL_TX = 39;
+var CMD_I2S_TX_ARM = 40;
+var CMD_OW_ATTACH = 41;
+var CMD_OW_SET_TEMP = 42;
+var CMD_OW_POLL = 43;
+var CMD_OW_SCRATCH = 44;
+var CMD_WRITE_MMIO = 45;
 var RESP_DONE = 1;
 var RESP_ERROR = 2;
 var UART_RING_SIZE = 16384;
@@ -5819,6 +6670,201 @@ function uartWriteByte(byte) {
 var needsEventLoop = true;
 var simChunkSize = 5e5;
 var twaiStage = [0, 0, 0];
+function tapI2c(bus) {
+  return bus >>> 0 === 0 ? chip?.i2c0 : chip?.i2c1;
+}
+function tapSpi(bus) {
+  return chip?.spi?.[bus >>> 0] ?? null;
+}
+function doI2cSetSlave() {
+  const t = tapI2c(Atomics.load(ctrl, SAB_CMD_ARG0));
+  if (!t) return;
+  const addr = Atomics.load(ctrl, SAB_CMD_ARG1) & 127;
+  if (Atomics.load(ctrl, SAB_CMD_ARG2)) t.attachSlave(addr);
+  else t.detachSlave(addr);
+}
+function doI2cTxPush() {
+  const t = tapI2c(Atomics.load(ctrl, SAB_CMD_ARG0));
+  if (!t || !readResp) return;
+  const addr = Atomics.load(ctrl, SAB_CMD_ARG1) & 127;
+  const len = Math.min(Atomics.load(ctrl, SAB_CMD_ARG2) >>> 0, readResp.length);
+  t.preloadRead(addr, readResp.subarray(0, len));
+}
+function doI2cRxPop() {
+  const t = tapI2c(Atomics.load(ctrl, SAB_CMD_ARG0));
+  let n = 0;
+  if (t && readResp) {
+    const bytes = t.drainWriteLog(Atomics.load(ctrl, SAB_CMD_ARG1) & 127);
+    n = Math.min(bytes.length, readResp.length);
+    for (let i = 0; i < n; i++) readResp[i] = bytes[i] & 255;
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doI2cPoll() {
+  const t = tapI2c(Atomics.load(ctrl, SAB_CMD_ARG0));
+  let n = 0;
+  if (t && readResp) {
+    const evs = t.pollEvents();
+    const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+    n = Math.min(evs.length, Math.floor(readResp.length / 4));
+    for (let i = 0; i < n; i++) {
+      const e = evs[i];
+      let w = 0;
+      if (e.t === "start") w = 1 << 24 | ((e.addr & 127) << 1 | (e.read ? 1 : 0));
+      else if (e.t === "write") w = 2 << 24 | e.byte & 255;
+      else if (e.t === "read") w = 3 << 24 | e.byte & 255;
+      else if (e.t === "stop") w = 4 << 24 | (e.wasRead ? 1 : 0);
+      dv.setUint32(i * 4, w >>> 0, true);
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doSpiInject() {
+  const t = tapSpi(Atomics.load(ctrl, SAB_CMD_ARG0));
+  if (!t || !readResp) return;
+  const len = Math.min(Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0, readResp.length);
+  t.injectMiso(readResp.subarray(0, len));
+}
+function doSpiPoll() {
+  const t = tapSpi(Atomics.load(ctrl, SAB_CMD_ARG0));
+  let n = 0;
+  if (t && readResp) {
+    const bytes = t.drainMosi(65536);
+    n = Math.min(bytes.length, readResp.length);
+    for (let i = 0; i < n; i++) readResp[i] = bytes[i] & 255;
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doGetGpioOut() {
+  const pin = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let level = 0, dir = 0, pull = 0;
+  try {
+    level = chip?.getGpioOut?.(pin) >>> 0 || 0;
+    dir = chip?.getGpioDir?.(pin) >>> 0 || 0;
+    pull = chip?.getGpioPull?.(pin) >>> 0 || 0;
+  } catch {
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, level);
+  Atomics.store(ctrl, SAB_CMD_ARG1, dir);
+  Atomics.store(ctrl, SAB_CMD_ARG2, pull);
+}
+function doSampleGpioOut() {
+  let n = 0;
+  if (readResp) {
+    const s = chip?.sampleGpioOut?.() ?? { levels: [], dirs: [], pulls: [] };
+    n = Math.min(40, s.levels.length);
+    for (let i = 0; i < n; i++) {
+      readResp[i * 3] = s.levels[i] & 255;
+      readResp[i * 3 + 1] = s.dirs[i] & 255;
+      readResp[i * 3 + 2] = s.pulls[i] & 255;
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doPollGpioChanges() {
+  let n = 0;
+  if (readResp && chip?.pollGpioChanges) {
+    const changes = chip.pollGpioChanges();
+    const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+    n = Math.min(changes.length, Math.floor(readResp.length / 4));
+    for (let i = 0; i < n; i++) dv.setUint32(i * 4, (changes[i].pin >>> 0 << 1 | (changes[i].level ? 1 : 0)) >>> 0, true);
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doSetAnalogInput() {
+  try {
+    chip?.setAnalogInput?.(
+      Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0,
+      (Atomics.load(ctrl, SAB_CMD_ARG1) | 0) / 1e3
+    );
+  } catch {
+  }
+}
+function doGetLedc() {
+  const ch = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let duty = 0, freq = 0, timer = 0;
+  try {
+    duty = chip?.getLedcDuty?.(ch) >>> 0 || 0;
+    freq = chip?.getLedcFreq?.(ch) >>> 0 || 0;
+    timer = chip?.getLedcTimer?.(ch) >>> 0 || 0;
+  } catch {
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, duty);
+  Atomics.store(ctrl, SAB_CMD_ARG1, freq);
+  Atomics.store(ctrl, SAB_CMD_ARG2, timer);
+}
+function doI2sPollTx() {
+  const idx = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let n = 0;
+  if (readResp && chip?.pollI2sTx) {
+    try {
+      const groups = chip.pollI2sTx(idx);
+      const words = [];
+      for (const g of groups) for (const w of g.words) words.push(w >>> 0);
+      const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+      n = Math.min(words.length, Math.floor(readResp.length / 4));
+      for (let i = 0; i < n; i++) dv.setUint32(i * 4, words[i], true);
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doI2sTxArm() {
+  try {
+    chip?._armI2sTxHook?.();
+  } catch {
+  }
+}
+function doOwAttach() {
+  try {
+    chip?.attachOneWire?.(Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0);
+  } catch {
+  }
+}
+function doOwSetTemp() {
+  try {
+    const pin = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+    const mc = Atomics.load(ctrl, SAB_CMD_ARG1) | 0;
+    chip?.onewire?.get?.(pin)?.setTemperature?.(mc / 1e3);
+  } catch {
+  }
+}
+function doOwPoll() {
+  const pin = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let n = 0;
+  if (readResp && chip?.onewire?.get?.(pin)?.pollLog) {
+    try {
+      const { log } = chip.onewire.get(pin).pollLog();
+      const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+      n = Math.min(log.length, Math.floor(readResp.length / 4));
+      for (let i = 0; i < n; i++) {
+        const e = log[i];
+        dv.setUint32(i * 4, (e.t === "presence" ? 1 << 24 : 2 << 24 | e.byte & 255) >>> 0, true);
+      }
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doOwScratch() {
+  try {
+    const pin = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+    const len = Math.min(Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0, 9, readResp?.length ?? 0);
+    chip?.onewire?.get?.(pin)?.preloadScratch?.(readResp.subarray(0, len));
+  } catch {
+  }
+}
+function doWriteMmio() {
+  try {
+    chip?._wasmLoader?.exports?.native_diag_write?.(
+      Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0,
+      Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0,
+      Atomics.load(ctrl, SAB_CMD_ARG2) >>> 0,
+      32
+    );
+  } catch {
+  }
+}
 function finishSim() {
   ctrl[SAB_RUN] = 0;
   ctrl[SAB_STATUS] = 1;
@@ -6052,6 +7098,150 @@ async function runSimChunk() {
         } catch {
         }
         Atomics.store(ctrl, SAB_CMD_ARG0, n);
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2C_SET_SLAVE) {
+        try {
+          doI2cSetSlave();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2C_TX_PUSH) {
+        try {
+          doI2cTxPush();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2C_RX_POP) {
+        try {
+          doI2cRxPop();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2C_POLL) {
+        try {
+          doI2cPoll();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_SPI_INJECT) {
+        try {
+          doSpiInject();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_SPI_POLL) {
+        try {
+          doSpiPoll();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_GET_GPIO_OUT) {
+        try {
+          doGetGpioOut();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_SAMPLE_GPIO_OUT) {
+        try {
+          doSampleGpioOut();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_POLL_GPIO_CHANGES) {
+        try {
+          doPollGpioChanges();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_SET_ANALOG_INPUT) {
+        try {
+          doSetAnalogInput();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_GET_LEDC) {
+        try {
+          doGetLedc();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2S_POLL_TX) {
+        try {
+          doI2sPollTx();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_I2S_TX_ARM) {
+        try {
+          doI2sTxArm();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_OW_ATTACH) {
+        try {
+          doOwAttach();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_OW_SET_TEMP) {
+        try {
+          doOwSetTemp();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_OW_POLL) {
+        try {
+          doOwPoll();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_OW_SCRATCH) {
+        try {
+          doOwScratch();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_WRITE_MMIO) {
+        try {
+          doWriteMmio();
+        } catch {
+        }
         Atomics.store(ctrl, SAB_RESP, RESP_DONE);
         Atomics.store(ctrl, SAB_CMD, CMD_NONE);
       }
@@ -6442,6 +7632,80 @@ function processCommand(cmd) {
       Atomics.store(ctrl, SAB_CMD_ARG0, n);
       break;
     }
+    // Host peripheral taps (esp32-emu.md §1-4): same bodies as the inline
+    // servicing above (shared do* helpers — keep behaviour identical).
+    case CMD_I2C_SET_SLAVE: {
+      doI2cSetSlave();
+      break;
+    }
+    case CMD_I2C_TX_PUSH: {
+      doI2cTxPush();
+      break;
+    }
+    case CMD_I2C_RX_POP: {
+      doI2cRxPop();
+      break;
+    }
+    case CMD_I2C_POLL: {
+      doI2cPoll();
+      break;
+    }
+    case CMD_SPI_INJECT: {
+      doSpiInject();
+      break;
+    }
+    case CMD_SPI_POLL: {
+      doSpiPoll();
+      break;
+    }
+    case CMD_GET_GPIO_OUT: {
+      doGetGpioOut();
+      break;
+    }
+    case CMD_SAMPLE_GPIO_OUT: {
+      doSampleGpioOut();
+      break;
+    }
+    case CMD_POLL_GPIO_CHANGES: {
+      doPollGpioChanges();
+      break;
+    }
+    case CMD_SET_ANALOG_INPUT: {
+      doSetAnalogInput();
+      break;
+    }
+    case CMD_GET_LEDC: {
+      doGetLedc();
+      break;
+    }
+    case CMD_I2S_POLL_TX: {
+      doI2sPollTx();
+      break;
+    }
+    case CMD_I2S_TX_ARM: {
+      doI2sTxArm();
+      break;
+    }
+    case CMD_OW_ATTACH: {
+      doOwAttach();
+      break;
+    }
+    case CMD_OW_SET_TEMP: {
+      doOwSetTemp();
+      break;
+    }
+    case CMD_OW_POLL: {
+      doOwPoll();
+      break;
+    }
+    case CMD_OW_SCRATCH: {
+      doOwScratch();
+      break;
+    }
+    case CMD_WRITE_MMIO: {
+      doWriteMmio();
+      break;
+    }
     // CMD_BT_HCI_RESP: copy the last stashed JSON control line (see the
     // socket 'data' handler) into readResp, report length in ARG1
     // (0 = none pending). Lets the host test consume connect/read results
@@ -6491,7 +7755,7 @@ function blockingCommandLoop() {
     if (cmd !== CMD_NONE) {
       let ok = true;
       try {
-        if (cmd === CMD_STEP || cmd === CMD_RESET || cmd === CMD_SEED_MMU || cmd === CMD_WRITE_UINT32 || cmd === CMD_READ_MEMORY || cmd === CMD_GET_PCAP || cmd === CMD_GET_WIFI_STATS || cmd === CMD_READ_MMIO || cmd === CMD_UART_RX || cmd === CMD_SET_PIN_INPUT || cmd === CMD_SET_TOUCH_INPUT || cmd === CMD_SET_VOLTAGE || cmd === CMD_FEED_I2S_RX || cmd === CMD_SEND_TWAI || cmd === CMD_PUSH_TWAI || cmd === CMD_GET_TWAI_TX || cmd === CMD_WATCHPOINT || cmd === CMD_PCTRACE || cmd === CMD_PRESS_RESET || cmd === CMD_PRESS_BOOT || cmd === CMD_BT_HCI_POLL || cmd === CMD_BT_HCI_PUSH || cmd === CMD_BT_HCI_RESP || cmd === CMD_BT_HCI_SEND) {
+        if (cmd === CMD_STEP || cmd === CMD_RESET || cmd === CMD_SEED_MMU || cmd === CMD_WRITE_UINT32 || cmd === CMD_READ_MEMORY || cmd === CMD_GET_PCAP || cmd === CMD_GET_WIFI_STATS || cmd === CMD_READ_MMIO || cmd === CMD_UART_RX || cmd === CMD_SET_PIN_INPUT || cmd === CMD_SET_TOUCH_INPUT || cmd === CMD_SET_VOLTAGE || cmd === CMD_FEED_I2S_RX || cmd === CMD_SEND_TWAI || cmd === CMD_PUSH_TWAI || cmd === CMD_GET_TWAI_TX || cmd === CMD_WATCHPOINT || cmd === CMD_PCTRACE || cmd === CMD_PRESS_RESET || cmd === CMD_PRESS_BOOT || cmd === CMD_BT_HCI_POLL || cmd === CMD_BT_HCI_PUSH || cmd === CMD_BT_HCI_RESP || cmd === CMD_BT_HCI_SEND || cmd === CMD_I2C_SET_SLAVE || cmd === CMD_I2C_TX_PUSH || cmd === CMD_I2C_RX_POP || cmd === CMD_I2C_POLL || cmd === CMD_SPI_INJECT || cmd === CMD_SPI_POLL || cmd === CMD_GET_GPIO_OUT || cmd === CMD_SAMPLE_GPIO_OUT || cmd === CMD_POLL_GPIO_CHANGES || cmd === CMD_SET_ANALOG_INPUT || cmd === CMD_GET_LEDC || cmd === CMD_I2S_POLL_TX || cmd === CMD_I2S_TX_ARM || cmd === CMD_OW_ATTACH || cmd === CMD_OW_SET_TEMP || cmd === CMD_OW_POLL || cmd === CMD_OW_SCRATCH || cmd === CMD_WRITE_MMIO) {
           processCommand(cmd);
         } else if (cmd === CMD_RUN) {
           ctrl[SAB_STATUS] = 0;
@@ -6706,10 +7970,12 @@ function setupNativeWifiBridge(chip2, config) {
   const packetBuffer = [];
   let socket = null;
   const roomQuery = wifiOpts.room ? `?sessionId=${encodeURIComponent(wifiOpts.room)}` : "";
+  const gatewayBase = wifiOpts.gatewayUrl || typeof process !== "undefined" && process.env && process.env.GATEWAY_URL || "ws://127.0.0.1:5030";
+  const gatewayUrl = `${String(gatewayBase).replace(/\/$/, "")}/api/network-gateway${roomQuery}`;
   const connectGateway = () => {
     if (socket) return;
     try {
-      socket = new WebSocket(`ws://127.0.0.1:5085/api/network-gateway${roomQuery}`);
+      socket = new WebSocket(gatewayUrl);
       socket.binaryType = "arraybuffer";
       socket.onopen = () => {
         while (packetBuffer.length > 0) socket.send(packetBuffer.shift());
@@ -7017,7 +8283,6 @@ async function onMessage(type, data) {
               const mac = parseMacAddress(config.macAddress);
               const lo = (mac[0] | mac[1] << 8 | mac[2] << 16 | mac[3] << 24) >>> 0;
               const hi = (mac[4] | mac[5] << 8) >>> 0;
-              if (config.vddMv !== void 0) chip.setVddMv?.(config.vddMv);
               if (chip._wasmLoader?.exports?.native_wifi_mac_set_mac) {
                 chip._wasmLoader.exports.native_wifi_mac_set_mac(lo, hi);
               }
@@ -7057,6 +8322,10 @@ async function onMessage(type, data) {
               setupBtHciProxy(chip, config);
             } catch (e) {
               console.error("[BT-HCI] setup FAILED:", e?.message || e);
+            }
+            try {
+              chip._wasmLoader?.exports?.native_gpio_set_change_hook?.(1);
+            } catch (_) {
             }
             if (config.camFrameBytes !== void 0) {
               try {
