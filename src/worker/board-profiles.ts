@@ -116,3 +116,11 @@ export const RETRO_UART_PINS = {
   tx: ['TX', 'TX0', 'TXD', 'SOUT', '1', 'L0'],
   rx: ['RX', 'RX0', 'RXD', 'SIN', '0', 'L1'],
 };
+
+// BBC micro:bit v2 edge connector (nRF52833). P17/P18 absent on the
+// edge (P17 reserved, P18 USB); power rails mirror the UNO convention.
+export const MICROBIT_EDGE_PINS = [
+  'P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10',
+  'P11', 'P12', 'P13', 'P14', 'P15', 'P16', 'P19', 'P20',
+  '3V3', 'GND',
+];

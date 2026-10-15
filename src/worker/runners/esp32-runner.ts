@@ -26,6 +26,8 @@
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 import { createI2CBridge, createSPIBridge, collectI2CSlaveAddresses, levelPassiveNets } from '../bus-bridge.ts';
+import { armEsp32I2sTx, pollEsp32I2sTx } from './esp32-i2s-pump.ts';
+import { wireEsp32CameraTap, pollEsp32CameraTap } from './esp32-camera-pump.ts';
 
 const ESP32_UART_TX = ['1', 'D1', 'TX', 'TX0', 'GPIO1'];
 const ESP32_UART_RX = ['3', 'D3', 'RX', 'RX0', 'GPIO3'];
@@ -319,6 +321,8 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { (self as any).rmtDhtStarts = 0; } catch { /* ignore */ }
                 }
             } catch { /* rmt-dht never breaks boot */ }
+            try { armEsp32I2sTx(self.sim); } catch { /* i2s never breaks boot */ }
+            try { wireEsp32CameraTap(self.sim); } catch { /* camera tap never breaks boot */ }
         } catch { /* taps never break boot */ }
     }
 
@@ -416,6 +420,8 @@ export class Esp32Runner extends ArmRunnerBase {
             } catch { /* never breaks tick */ }
             // RMT-DHT pump: re-inject sensor response per captured start.
             try { self.pollRmtDht(); } catch { /* never breaks tick */ }
+            try { pollEsp32I2sTx(self.sim, self.instances); } catch { /* never breaks tick */ }
+            try { pollEsp32CameraTap(self.sim); } catch { /* never breaks tick */ }
         } catch { /* poll never breaks tick */ }
     }
 

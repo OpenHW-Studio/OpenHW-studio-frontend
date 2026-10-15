@@ -20,7 +20,7 @@ export function isProgrammableBoardType(type) {
   // firmware on AVRRunner (documented attiny-path). It IS a programmable
   // board for run routing — without this the run falls back to a ghost
   // Uno id whose nets never touch the attiny pins.
-  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|mega|nano|attiny)/i.test(s);
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|mega|nano|attiny|microbit|nrf52)/i.test(s);
 }
 
 export function endpointAliases(endpoint) {

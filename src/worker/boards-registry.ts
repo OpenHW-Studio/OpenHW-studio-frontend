@@ -309,6 +309,16 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     firmware: ['asm-source'],
     limits: NO_LIMITS,
   },
+  {
+    family: 'microbit_v2',
+    match: ['microbit', 'micro-bit', 'nrf52833', 'nrf52'],
+    railVoltage: 3.3,
+    engine: 'nrf52833-periph-wasm',
+    runner: 'runners/microbit-runner.ts',
+    capabilities: ['digital-gpio', 'uart', 'i2c-target', 'spi-target'],
+    firmware: ['fixed-bin'],
+    limits: NO_LIMITS,
+  },
 ];
 
 export const UNKNOWN_BOARD_FAMILY: BoardFamily = {

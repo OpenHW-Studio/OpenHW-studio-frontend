@@ -1,4 +1,13 @@
 import { BaseComponent } from '@openhw/emulator';
+// Micro:bit v2 board shell: edge-connector pins only (the nRF52833 core
+// is driven by MicrobitRunner; this shell carries pin state for wiring
+// + board telemetry like matrixLit). No package changes needed.
+export class MicrobitBoardLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { matrixLit: 0, ...this.state };
+    }
+}
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
 import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic';
@@ -87,11 +96,13 @@ import { CC1101Logic } from '@openhw/emulator/src/components/openhw-cc1101/logic
 import { NRF24L01Logic } from '@openhw/emulator/src/components/openhw-nrf24l01/logic';
 
 import { UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
+import { MICROBIT_EDGE_PINS } from '../board-profiles';
 
 
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
+import { Mcp2518fdLogic } from '../components/mcp2518fd';
 
 // Provide fallback protocols since base protocols are now integrated directly into BaseComponent
 const I2CProtocol = BaseComponent;
@@ -108,6 +119,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
+    'openhw-microbit-v2': MicrobitBoardLogic,
 
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
@@ -278,6 +290,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ir-remote': IRRemoteLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,
+    'openhw-mcp2518fd': Mcp2518fdLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly.
@@ -291,6 +304,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-microbit-v2': MICROBIT_EDGE_PINS.map((id: string) => ({ id })),
     'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
     'logic-buffer-gate': [{ id: 'IN' }, { id: 'OUT' }],
     'logic-clock-generator': [{ id: 'OUT' }],
@@ -484,6 +498,7 @@ export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'wokwi-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }], // ORPHAN: no manifest — hand-checked
     'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }], // ORPHAN: no manifest — hand-checked
     'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }], // ORPHAN: no manifest — hand-checked
+    'openhw-mcp2518fd': [{ id: 'CS' }, { id: 'MOSI' }, { id: 'MISO' }, { id: 'SCK' }, { id: 'VCC' }, { id: 'GND' }, { id: 'INT' }, { id: 'TXCAN' }, { id: 'RXCAN' }], // ORPHAN: local model (src/worker/components/mcp2518fd.ts) — hand-checked
     'DHT-22': [{ id: 'VCC' }, { id: 'DATA' }, { id: 'NC' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked
     'MQ-2 Gas Sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }], // ORPHAN: no manifest — hand-checked
     'openhw-pir-motion-sensor': [{ id: 'VCC' }, { id: 'OUT' }, { id: 'GND' }], // ORPHAN: no manifest — hand-checked

@@ -1076,7 +1076,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1107,7 +1107,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1149,7 +1149,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type),
+        /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type),
       ),
     [components],
   );
@@ -4588,7 +4588,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let compileProbe = null;
         try {
           const boards = (componentsRef.current || []).filter((c) =>
-            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(c?.type || "")),
+            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(String(c?.type || "")),
           );
           compileProbe = boards.map((b) => {
             let mainLen = -1;

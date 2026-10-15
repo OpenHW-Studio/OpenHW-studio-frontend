@@ -95,7 +95,7 @@ export async function runPreflight(args, ctx) {
         const boardPythonFilesMap = {};
         const boardRuntimeEnvMap = {};
         const boardBaudMap = {};
-        const programmableBoards = components.filter(c => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(c.type));
+        const programmableBoards = components.filter(c => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type));
 
         const isBackendProxy = false;
         const singleProgrammableBoardId =

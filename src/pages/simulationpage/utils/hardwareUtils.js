@@ -125,7 +125,7 @@ export function resolveComponentAttrString(attrs, key, fallback = '') {
 
 export function isProgrammableBoardType(type) {
   const s = String(type || '').toLowerCase();
-  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(s);
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(s);
 }
 
 export function isBreadboardType(type) {

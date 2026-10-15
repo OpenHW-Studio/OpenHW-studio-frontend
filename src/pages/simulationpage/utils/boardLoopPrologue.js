@@ -153,6 +153,27 @@ export function resolveBoardLoopPrologue(args, ctx) {
               return { disposition: 'continue', result };
             }
 
+            // Fixed-binary path: boards with no backend core (micro:bit
+            // v2, PicoRV32 proofs) boot a curated image via the board
+            // `firmware` attr (URL). Skips arduino compile entirely; the
+            // runner fetches + loads the image (FIXEDBIN: sentinel, same
+            // first-firmware-wins rule as PYSCRIPT/ASM above).
+            const fixedFwAttr = String(
+              resolveComponentAttrString(boardComp?.attrs, 'firmware', ''),
+            ).trim();
+            if (fixedFwAttr) {
+              boardHexMap[boardComp.id] = `FIXEDBIN:${fixedFwAttr}`;
+              appendConsoleEntry(
+                'info',
+                `Using fixed firmware (${fixedFwAttr}) for ${boardCompToDisplayName(boardComp, kind)} — no compile needed.`,
+                'simulator',
+              );
+              if (!result) {
+                result = { hex: boardHexMap[boardComp.id], artifactName: fixedFwAttr, fixedbin: true };
+              }
+              return { disposition: 'continue', result };
+            }
+
             // Retro asm path: 8086emu boards assemble .asm source IN-WASM —
             // no arduino compile. A main.<isa>.asm (or any non-empty .asm)
             // becomes an ASM: payload the runner assembles locally.

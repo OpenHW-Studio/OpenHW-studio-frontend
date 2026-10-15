@@ -75,6 +75,13 @@ export async function createRunnerForBoard(
         const { Stm32f4Runner } = await import('./runners/stm32f4-runner.ts');
         return new Stm32f4Runner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
     }
+    // BBC micro:bit v2 (nRF52833) over nrf52833-periph-wasm. Fixed .bin
+    // firmware via the board `firmware` attr (no backend core) — same
+    // pattern as PicoRV32. Must precede the retro catch-alls below.
+    if (t.includes('microbit') || t.includes('micro-bit') || t.includes('nrf52') || t.includes('nrf52833')) {
+        const { MicrobitRunner } = await import('./runners/microbit-runner.ts');
+        return new MicrobitRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
+    }
     // Retro 8/16-bit boards over 8086emu (ISA opt/attr: 8086/8088/8085/8051/
     // 6502/Z80/rv32; board TYPE implies it). ASM-first: no compiler needed.
     if (t.includes('8086') || t.includes('8088') || t.includes('8085') || t.includes('8051') || t.includes('mcs-51') || t.includes('mcs51') || t.includes('6502') || t.includes('z80') || t.includes('z-80') || t.includes('rv32') || t.includes('risc') || t.includes('retro')) {
