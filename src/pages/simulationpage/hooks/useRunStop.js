@@ -47,6 +47,7 @@ export function useRunStop({
   notifyLiveOopStateListeners,
   setSerialHistory,
   plotDataRef,
+  plotBoundsRef,
   setSerialPaused,
   setPlotterPaused,
   serialPlotBufferRef,
@@ -54,6 +55,8 @@ export function useRunStop({
   latestParsedSerialRef,
   serialIngressArbitrationRef,
   serialPausedQueueRef,
+  pendingSerialLogsRef,
+  serialOverflowRef,
   appendConsoleEntry,
 }) {
     const handleStop = useCallback(() => {
@@ -177,6 +180,12 @@ export function useRunStop({
       Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
       setSerialHistory([]);
       plotDataRef.current = [];
+      // Perf: reset sticky plot bounds + drain serial ingress queues so a new
+      // run starts clean (bounds only expand at ingest; stale backlog would
+      // replay into the fresh run).
+      if (plotBoundsRef) plotBoundsRef.current.clear();
+      if (pendingSerialLogsRef) pendingSerialLogsRef.current = [];
+      if (serialOverflowRef) serialOverflowRef.current = 0;
       setSerialPaused(false);
       setPlotterPaused(false);
       serialPlotBufferRef.current = "";

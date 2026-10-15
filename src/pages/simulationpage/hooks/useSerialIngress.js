@@ -12,6 +12,9 @@ export function getSerialTimestamp() {
 const MAX_HISTORY = 2000;
 const TRIM_TO = 1800;
 const MAX_PAUSED_QUEUE = 1000;
+// Perf: bound the running-mode pending queue so a serial flood can never grow
+// unbounded memory between 100ms flushes (e.g. a tight loop with no delay()).
+const MAX_PENDING_QUEUE = 2000;
 
 /**
  * Serial-console ingress pipeline, extracted verbatim from SimulatorPage.jsx.
@@ -43,6 +46,10 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
   const pendingSerialLogsRef = useRef([]);
+  const serialOverflowRef = useRef(0);
+  // Perf: stable per-entry ids so the monitor list can use stable React keys
+  // (index keys force full DOM churn on every trim/flush).
+  const serialIdRef = useRef(0);
 
   useEffect(() => {
     serialPausedRef.current = serialPaused;
@@ -166,6 +173,7 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
           return [
             ...next,
             {
+              id: ++serialIdRef.current,
               dir: "rx",
               text: chunk,
               ts,
@@ -176,12 +184,18 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
         });
       } else {
         // Queue serial output chunks to batch-update state and prevent main-thread re-render choking
-        pendingSerialLogsRef.current.push({
-          chunk,
-          boardId: normalizedBoardId,
-          source: normalizedSource,
-          ts,
-        });
+        // Perf: single timestamp per push is fine (flush only reads it); the
+        // pending queue is capped so floods degrade to a coalesced count note.
+        if (pendingSerialLogsRef.current.length < MAX_PENDING_QUEUE) {
+          pendingSerialLogsRef.current.push({
+            chunk,
+            boardId: normalizedBoardId,
+            source: normalizedSource,
+            ts,
+          });
+        } else {
+          serialOverflowRef.current += 1;
+        }
       }
     },
     [parseSerialForPlotter, isRunning, setSerialHistory],
@@ -219,13 +233,17 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
 
   const flushSerialLogs = useCallback(() => {
     const logsToFlush = pendingSerialLogsRef.current;
-    if (logsToFlush.length === 0) return;
+    const overflow = serialOverflowRef.current;
+    if (logsToFlush.length === 0 && overflow === 0) return;
     pendingSerialLogsRef.current = [];
+    serialOverflowRef.current = 0;
+    // Perf: timestamp once per flush (was: new Date() per chunk at ingress).
+    const flushTs = getSerialTimestamp();
 
     setSerialHistory((prev) => {
       let next = prev.length > MAX_HISTORY ? prev.slice(prev.length - TRIM_TO) : [...prev];
 
-      logsToFlush.forEach(({ chunk, boardId, source, ts }) => {
+      logsToFlush.forEach(({ chunk, boardId, source }) => {
         if (next.length > 0) {
           const last = next[next.length - 1];
           if (
@@ -239,13 +257,27 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
           }
         }
         next.push({
+          id: ++serialIdRef.current,
           dir: "rx",
           text: chunk,
-          ts,
+          ts: flushTs,
           boardId,
           source,
         });
       });
+
+      // Perf: surface dropped-chunk overflow as one coalesced sys line instead
+      // of unbounded history growth (prevents freeze on tight-loop floods).
+      if (overflow > 0) {
+        next.push({
+          id: ++serialIdRef.current,
+          dir: "sys",
+          text: `… +${overflow} lines coalesced (output faster than display)\n`,
+          ts: flushTs,
+          boardId: "all",
+          source: "sys",
+        });
+      }
 
       if (next.length > MAX_HISTORY) {
         next = next.slice(next.length - TRIM_TO);
@@ -274,19 +306,24 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
     (text, boardId = "all", source = "sim") => {
       setSerialHistory((prev) => [
         ...prev,
-        { dir: "tx", text, ts: getSerialTimestamp(), boardId, source },
+        { id: ++serialIdRef.current, dir: "tx", text, ts: getSerialTimestamp(), boardId, source },
       ]);
     },
     [setSerialHistory],
   );
 
   const clearSerialMonitor = useCallback(() => {
+    // Perf: setSerialHistory([]) alone races with the 100ms flush loop — a
+    // flush queued just before Clear would re-append its backlog AFTER the
+    // clear. Drain the queues first, then clear, so Clear truly empties.
+    pendingSerialLogsRef.current = [];
+    serialOverflowRef.current = 0;
+    serialPausedQueueRef.current = [];
     setSerialHistory([]);
     serialPlotBufferRef.current = "";
     serialPlotLabelsRef.current = [];
     latestParsedSerialRef.current = [];
     serialIngressArbitrationRef.current.clear();
-    serialPausedQueueRef.current = [];
   }, [setSerialHistory]);
 
   return {
@@ -298,6 +335,7 @@ export function useSerialIngress({ isRunning, serialPaused, setSerialHistory, pu
     serialPausedRef,
     serialPausedQueueRef,
     pendingSerialLogsRef,
+    serialOverflowRef,
     pushSerialRxChunkRef,
     // pipeline API
     parseSerialForPlotter,

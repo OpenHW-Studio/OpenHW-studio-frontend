@@ -1035,9 +1035,34 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   // Plotter State
   const plotDataRef = useRef([]);
+  // Perf: incremental sticky serial bounds (boardId:label -> {min,max}) updated
+  // O(channels) per plot point at ingest in workerStateIngest.js, so the
+  // canvas never re-scans the buffer per frame. Cleared with plot data on stop.
+  const plotBoundsRef = useRef(new Map());
+  // Perf: set of subscribed serial labels ("boardId:label"). workerStateIngest
+  // only materializes serialVars for subscribed labels while the plotter is
+  // visible — otherwise every state message allocates an object for nobody.
+  const subscribedSerialKeysRef = useRef(new Set());
   const [selectedPlotPins, setSelectedPlotPins] = useState([]); // Array<{ boardId, pinId }>
   const [plotterPaused, setPlotterPaused] = useState(false);
   const [plotterTimeDiv, setPlotterTimeDiv] = useState(1000); // ms per division (not used as divisions yet, but as total window size)
+  // Perf: plotter visibility gate — plot ingest + canvas rAF loop skip all work
+  // while the user is on the monitor tab (or the panel is closed).
+  const isPlotterVisible = codeTab === "serial" && serialViewMode === "plotter" && isPanelOpen;
+
+  // Perf: keep the subscribed serial-key set in sync with channel selection so
+  // ingest knows which serialVars to materialize (pin channels need no keys).
+  useEffect(() => {
+    const next = new Set();
+    for (const rawChan of selectedPlotPins) {
+      const chan = typeof rawChan === "string" ? { boardId: "default", pinId: rawChan } : rawChan;
+      if (!chan?.pinId) continue;
+      const isAnalog = typeof chan.pinId === "string" && chan.pinId.startsWith("A");
+      const isLogic = !Number.isNaN(parseInt(chan.pinId));
+      if (!isAnalog && !isLogic) next.add(`${chan.boardId}:${chan.pinId}`);
+    }
+    subscribedSerialKeysRef.current = next;
+  }, [selectedPlotPins]);
 
 
   const serialBoardOptions = useMemo(() => {
@@ -2294,13 +2319,21 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     return { type: comp.type, label: comp.label || comp.type, group: "Custom" };
   }, [selected, components]);
 
-  // ── Serial auto-scroll ────────────────────────────────────────────────────────
+  // ── Serial auto-scroll (sticky + rAF-throttled) ───────────────────────────
+  // Perf: only scrolls when the user is already near the bottom, and the DOM
+  // write is deferred to rAF so the 100ms serial flush never forces sync layout.
+  // (RightPanel owns an identical effect for its own pane refs; this covers the
+  // page-level serialOutputRef.)
   useEffect(() => {
     const activeAutoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
     const activePaused = boardPausedStates[serialBoardFilter] ?? serialPaused;
-    if (activeAutoscroll && !activePaused && serialOutputRef.current) {
-      serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
-    }
+    const el = serialOutputRef.current;
+    if (!activeAutoscroll || activePaused || !el) return;
+    const raf = requestAnimationFrame(() => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
   }, [serialHistory, serialPaused, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
 
   // Serial-console ingress pipeline (plotter parse, arbitration, pause
@@ -2316,6 +2349,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     serialPausedRef,
     serialPausedQueueRef,
     pendingSerialLogsRef,
+    serialOverflowRef,
     parseSerialForPlotter,
     appendSerialRxChunk,
     pushSerialRxChunk,
@@ -2970,6 +3004,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     isPanningRef,
     panStartRef,
     didPanRef,
+    isCanvasLockedRef,
     wireStartRef,
     showInspector,
     liveOopStatesRef,
@@ -3838,6 +3873,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           latestParsedSerialRef,
           serialPlotLabelsRef,
           plotDataRef,
+          plotBoundsRef,
+          subscribedSerialKeysRef,
+          isPlotterVisible,
           renderNeopixelsByBoardRef,
           applyLiveNeopixelData,
           runComponentUpdateCountsRef,
@@ -3998,6 +4036,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     notifyLiveOopStateListeners,
     setSerialHistory,
     plotDataRef,
+    plotBoundsRef,
     setSerialPaused,
     setPlotterPaused,
     serialPlotBufferRef,
@@ -4005,6 +4044,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     latestParsedSerialRef,
     serialIngressArbitrationRef,
     serialPausedQueueRef,
+    pendingSerialLogsRef,
+    serialOverflowRef,
     appendConsoleEntry,
   });
   // ── Run timing/status effects ───────────────────────────────────────────────
@@ -5099,11 +5140,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 plotterPaused={plotterPaused}
                 setPlotterPaused={setPlotterPaused}
                 plotDataRef={plotDataRef}
+                plotBoundsRef={plotBoundsRef}
                 selectedPlotPins={selectedPlotPins}
                 setSelectedPlotPins={setSelectedPlotPins}
                 serialPlotLabelsRef={serialPlotLabelsRef}
                 plotterTimeDiv={plotterTimeDiv}
                 setPlotterTimeDiv={setPlotterTimeDiv}
+                isPlotterVisible={isPlotterVisible}
                 showConnectionsPanel={showConnectionsPanel}
                 wires={wires}
                 updateWireColor={updateWireColor}

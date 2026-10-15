@@ -32,6 +32,7 @@ export function useCanvasDragInteractions({
   isPanningRef,
   panStartRef,
   didPanRef,
+  isCanvasLockedRef,
   wireStartRef,
   showInspector,
   liveOopStatesRef,

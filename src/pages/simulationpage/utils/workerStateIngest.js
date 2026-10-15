@@ -1,5 +1,9 @@
 import { normalizeBoardKind } from "./hardwareUtils";
 
+// Perf: shared frozen empty serialVars — avoids allocating one {} per state
+// message when no serial channel is subscribed (the common case).
+const EMPTY_SERIAL_VARS = Object.freeze({});
+
 /**
  * Worker state-ingestion domain, extracted verbatim from SimulatorPage.jsx
  * handleRun > worker.onmessage.
@@ -24,6 +28,9 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
     latestParsedSerialRef,
     serialPlotLabelsRef,
     plotDataRef,
+    plotBoundsRef,
+    subscribedSerialKeysRef,
+    isPlotterVisible,
     renderNeopixelsByBoardRef,
     applyLiveNeopixelData,
     runComponentUpdateCountsRef,
@@ -62,20 +69,57 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
             }
 
             livePinStatesRef.current = msg.pins;
-            if (!plotterPaused) {
-              // Record plot history when simulation state arrives
-              const serialVars = {};
-              latestParsedSerialRef.current.forEach((val, idx) => {
-                const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
-                serialVars[lbl] = val;
-              });
+            // Perf: sample plot points (~30Hz max) — the worker can emit state
+            // messages far faster than the plotter can draw, and every point
+            // costs a retained object + a future canvas scan.
+            const nowPt = Date.now();
+            const lastPt = plotDataRef.current.length > 0
+              ? plotDataRef.current[plotDataRef.current.length - 1]
+              : null;
+            const plotDue = !lastPt || nowPt - lastPt.time >= 33;
+            if (!plotterPaused && plotDue) {
+              // Perf: only materialize serialVars when the plotter is actually
+              // visible AND a serial channel is subscribed. Otherwise this
+              // allocates a fresh object per state message for nobody.
+              let serialVars = EMPTY_SERIAL_VARS;
+              const subs = subscribedSerialKeysRef?.current;
+              if (isPlotterVisible && subs && subs.size > 0) {
+                serialVars = {};
+                const parsed = latestParsedSerialRef.current;
+                const labels = serialPlotLabelsRef.current;
+                for (let idx = 0; idx < parsed.length; idx++) {
+                  const lbl = labels[idx] || `SVar${idx}`;
+                  if (subs.has(lbl)) serialVars[lbl] = parsed[idx];
+                }
+              }
               const newPt = {
-                time: Date.now(),
+                time: nowPt,
                 pins: msg.pins,
                 analog: msg.analog || [],
                 serialVars,
                 boardId: msg.boardId || "default",
               };
+
+              // Perf: incremental sticky plot bounds (boardId:label -> min/max)
+              // updated O(channels) per point at ingest. PlotterCanvas used to
+              // re-scan the FULL 1000-pt buffer per serial channel per frame
+              // (60fps x channels x 1000 pts) — the single hottest plotter loop.
+              const boundsMap = plotBoundsRef?.current;
+              if (boundsMap && serialVars !== EMPTY_SERIAL_VARS) {
+                const bId = newPt.boardId;
+                for (const lbl in serialVars) {
+                  const v = serialVars[lbl];
+                  if (typeof v !== "number" || Number.isNaN(v)) continue;
+                  const key = `${bId}:${lbl}`;
+                  let b = boundsMap.get(key);
+                  if (!b) {
+                    b = { min: Infinity, max: -Infinity };
+                    boundsMap.set(key, b);
+                  }
+                  if (v < b.min) b.min = v;
+                  if (v > b.max) b.max = v;
+                }
+              }
 
               plotDataRef.current.push(newPt);
               if (plotDataRef.current.length > 1000) {
