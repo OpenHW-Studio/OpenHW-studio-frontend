@@ -26,11 +26,13 @@
  *   {type:'SERIAL_RX', bytes:number[]} (inter-board UART inject) |
  *   {type:'SERIAL_STR', data:string} (UI serial fan-out) |
  *   {type:'INTERACT_EVT', compId, event} |
+ *   {type:'BOARD_STEP', quantumMs, seq} (lockstep tick → ACK step-done) |
+ *   {type:'SET_TELEMETRY', enabled, mode} | {type:'FLUSH'} |
  *   {type:'DEBUG_CMD', cmd:'halt'|'resume'|'step'|'watch'|'unwatch'|
  *     'pcbreak'|'pcbreak-clear'|'snapshot'|'readmem', ...} |
  *   {type:'PAUSE'} | {type:'RESUME'}
  * This worker → parent:
- *   {type:'ready'} | {type:'uart-tx', boardId, value, char, source} |
+ *   {type:'ready'} | {type:'step-done', boardId, seq} | {type:'uart-tx', boardId, value, char, source} |
  *   {type:'state', state} (runner state snapshots for postRunnerState) |
  *   {type:'interact-done'|'interact-miss'} | {type:'debug-state'} |
  *   {type:'debug-snapshot', boardId, snapshot} |
@@ -68,7 +70,11 @@ self.onmessage = async (e: MessageEvent) => {
         // postMessage (parent relays into evtWriter if needed).
         const { cmdBuffer: _cmd, evtBuffer: _evt, ...restOptions } = (data.options || {}) as any;
         void _cmd; void _evt;
-        const options = { ...restOptions, boardId, boardIdx, pyScript: data.pyScript || '' };
+        // Phase B serial coherence: this runner's monitor serial travels by
+        // postMessage (line-buffered by the parent). The SAB TX ring stays
+        // unbound so UI polls don't deliver a second interleaved copy.
+        // RX rings stay bound (UI serial input path unchanged).
+        const options = { ...restOptions, sabSerialTxDisabled: true, boardId, boardIdx, pyScript: data.pyScript || '' };
         try {
             runner = await createRunnerForBoard(
                 boardType,
@@ -107,11 +113,14 @@ self.onmessage = async (e: MessageEvent) => {
         return;
     }
 
-    // Phase A lockstep tick: advance one scheduler quantum. Fire-and-forget
-    // (no ACK) — delivery jitter is sub-millisecond, bounded by design;
-    // true barrier ACKs are Phase C tuning.
+    // Phase A lockstep tick: advance one scheduler quantum. The ACK
+    // (step-done with the quantum seq) lets the parent bound skew; delivery
+    // jitter is sub-millisecond vs the 8ms quantum. True SAB-Atomics barrier
+    // waits are future tuning — the no-burst chain already bounds skew.
     if (data.type === 'BOARD_STEP') {
+        const seq = Math.max(0, Number(data.seq) || 0);
         try { (runner as any)?.stepQuantum?.(Number(data.quantumMs) || 8); } catch { /* ignore */ }
+        post({ type: 'step-done', boardId, seq });
         return;
     }
 

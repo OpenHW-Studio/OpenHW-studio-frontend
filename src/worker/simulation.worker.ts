@@ -132,8 +132,18 @@ let mode: 'single' | 'multi' = 'single';
 // Phase A lockstep scheduler (multi-board only): one wall timer drives
 // fixed sim-time quanta across all board runners, so N boards share one
 // sim-time base (no wall-clock drift). Single-board path untouched.
+// Phase C bounded skew: each quantum carries a sequence number; board
+// workers ACK it (step-done). Skew = seq - minAck across workers, bounded
+// by SKEW_BOUND_QUANTA — the scheduler never bursts to catch up (one
+// setTimeout chain, no backlog), so a slow board stretches wall-time but
+// can never run more than SKEW_BOUND quanta behind/ahead. Engine weights
+// live in each runner's budgetForDelta (pico/stm32/esp32/avr clocks).
 let lockstepTimer: any = null;
 const LOCKSTEP_QUANTUM_MS = 8;
+const SKEW_BOUND_QUANTA = 4;
+let lockstepSeq = 0;
+const boardStepAck: Map<string, number> = new Map();
+let lockstepSkewWarned = false;
 let pinToNet: Map<string, number> = new Map();
 let boardSerialOutput: Map<string, string> = new Map();
 
@@ -143,6 +153,43 @@ function appendBoardSerialOutput(boardId: string, chunk: string) {
     const id = String(boardId || '').trim() || 'default';
     const merged = (boardSerialOutput.get(id) || '') + String(chunk ?? '');
     boardSerialOutput.set(id, merged.length > 8192 ? merged.slice(-8192) : merged);
+}
+
+// Phase B serial coherence (multi-board only): bytes from concurrent board
+// workers interleave on the shared monitor stream (byte-level mush breaks
+// needle asserts + the UX monitor). Buffer per board and emit whole lines.
+// UART routing (routeUartByte) and the recorder tap stay per-byte — only the
+// human/test monitor channel (mirror + postMessage) is line-buffered.
+// Single-board path keeps per-byte emit (untouched).
+const serialLineBuf: Map<string, string> = new Map();
+const SERIAL_LINE_FLUSH_CAP = 256;
+function emitSerialMonitorChunk(boardId: string, chunk: string, source: string, value: number): void {
+    appendBoardSerialOutput(boardId, chunk);
+    postMessage({ type: 'serial', data: chunk, boardId, value, source });
+}
+function pushSerialLineByte(boardId: string, char: string, source: string, value: number): void {
+    const id = String(boardId || '').trim() || 'default';
+    const buf = (serialLineBuf.get(id) || '') + String(char ?? '');
+    const nl = buf.lastIndexOf('\n');
+    if (nl >= 0) {
+        // Emit through the last newline; keep the tail buffered.
+        serialLineBuf.set(id, buf.slice(nl + 1));
+        emitSerialMonitorChunk(id, buf.slice(0, nl + 1), source, value);
+    } else if (buf.length >= SERIAL_LINE_FLUSH_CAP) {
+        // No newline for a long while (e.g. print() streams): flush to
+        // avoid starving the monitor, keep stream order intact.
+        serialLineBuf.set(id, '');
+        emitSerialMonitorChunk(id, buf, source, value);
+    } else {
+        serialLineBuf.set(id, buf);
+    }
+}
+function flushSerialLines(): void {
+    for (const [id, buf] of serialLineBuf) {
+        if (!buf) continue;
+        serialLineBuf.set(id, '');
+        emitSerialMonitorChunk(id, buf, 'uart0', 0);
+    }
 }
 let syncValidationEnabled = false;
 let syncFrameByBoard: Map<string, number> = new Map();
@@ -381,6 +428,9 @@ function stopAllRunners() {
         try { clearTimeout(lockstepTimer); } catch { /* ignore */ }
         lockstepTimer = null;
     }
+    // Deliver any buffered partial serial lines before tearing down.
+    try { flushSerialLines(); } catch { /* ignore */ }
+    serialLineBuf.clear();
     if (runner) {
         runner.stop();
         runner = null;
@@ -395,6 +445,9 @@ function stopAllRunners() {
     boardWorkers.clear();
     boardWorkerTypes.clear();
     boardWorkerReady.clear();
+    boardStepAck.clear();
+    lockstepSeq = 0;
+    lockstepSkewWarned = false;
     pendingBoardSnapshots.clear();
     pendingBoardSnapshotWant = 0;
     pendingBoardMem.clear();
@@ -1304,8 +1357,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 speed: initialSpeed,
                 sessionId: data.networkRoomCode || '',
                 onByteTransmit: ({ boardId, value, char, source }: any) => {
-                    appendBoardSerialOutput(String(boardId || ''), String(char || ''));
-                    postMessage({ type: 'serial', data: char, boardId, value, source });
+                    // Monitor channel is line-buffered (serial coherence);
+                    // routing + recorder stay per-byte immediate.
+                    pushSerialLineByte(String(boardId || ''), String(char || ''), source || 'uart0', value);
                     try {
                         agentRecorder.pushSerial(
                             String(boardId || ''), String(char || ''),
@@ -1358,11 +1412,15 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     const msg = (evt as any)?.data || {};
                     if (msg.type === 'ready') {
                         boardWorkerReady.set(targetId, true);
+                    } else if (msg.type === 'step-done') {
+                        // Phase C skew accounting: last ACKed quantum per board.
+                        boardStepAck.set(targetId, Math.max(0, Number(msg.seq) || 0));
                     } else if (msg.type === 'state') {
                         postRunnerState(msg.state, targetId);
                     } else if (msg.type === 'uart-tx') {
-                        appendBoardSerialOutput(targetId, String(msg.char || ''));
-                        postMessage({ type: 'serial', data: msg.char, boardId: targetId, value: msg.value, source: msg.source });
+                        // Monitor channel is line-buffered (serial coherence);
+                        // routing + recorder stay per-byte immediate.
+                        pushSerialLineByte(targetId, String(msg.char || ''), msg.source || 'uart0', msg.value);
                         try {
                             agentRecorder.pushSerial(targetId, String(msg.char || ''), String(msg.source || 'uart0'));
                         } catch { /* tap never breaks serial */ }
@@ -1423,6 +1481,25 @@ const coreMessageHandler = async (e: MessageEvent) => {
             }
         });
 
+        // Deterministic boot gate: wait until every board worker signals
+        // ready (first spawn pays the module-transform cost) or timeout.
+        // Without this, fixed verdict sleeps race worker boot and multi
+        // runs flake on cold starts. In-process runners need no gate.
+        if (boardWorkers.size > 0) {
+            try {
+                const deadline = Date.now() + 25000;
+                for (;;) {
+                    let allReady = true;
+                    for (const [id] of boardWorkers) {
+                        if (!boardWorkerReady.get(id)) { allReady = false; break; }
+                    }
+                    if (allReady) break;
+                    if (Date.now() >= deadline) break;
+                    await new Promise((r) => setTimeout(r, 100));
+                }
+            } catch { /* timeout still proceeds; verdict decides */ }
+        }
+
         // Hand each board loop to the lockstep scheduler: pause own timers
         // (a drained tick may still fire once and no-ops via the guard),
         // then step all boards together on one wall timer. Cross-board
@@ -1447,15 +1524,41 @@ const coreMessageHandler = async (e: MessageEvent) => {
             const stepAllBoards = () => {
                 lockstepTimer = null;
                 if (mode !== 'multi') return;
+                // Bounded skew: never burst to catch up. One tick schedules
+                // exactly one future tick; under tab jank wall-time stretches
+                // but sim-time per board stays within SKEW_BOUND quanta.
                 try {
+                    lockstepSeq++;
                     for (const [, br] of boardRunners) {
                         try { (br as any).stepQuantum?.(LOCKSTEP_QUANTUM_MS); } catch { /* one bad board never stalls the rest */ }
                     }
                     for (const [, bw] of boardWorkers) {
-                        try { bw.postMessage({ type: 'BOARD_STEP', quantumMs: LOCKSTEP_QUANTUM_MS }); } catch { /* ignore */ }
+                        try { bw.postMessage({ type: 'BOARD_STEP', quantumMs: LOCKSTEP_QUANTUM_MS, seq: lockstepSeq }); } catch { /* ignore */ }
+                    }
+                    // Skew check: min ACK across workers vs current seq. Skip
+                    // until every worker has ACKed at least once (boot /
+                    // in-flight first quanta are not skew).
+                    if (boardWorkers.size > 0) {
+                        let minAck = lockstepSeq;
+                        let allAcked = true;
+                        for (const [id] of boardWorkers) {
+                            const ack = boardStepAck.get(id);
+                            if (ack === undefined) { allAcked = false; break; }
+                            if (ack < minAck) minAck = ack;
+                        }
+                        if (allAcked) {
+                            const skew = lockstepSeq - minAck;
+                            if (skew > SKEW_BOUND_QUANTA && !lockstepSkewWarned) {
+                                lockstepSkewWarned = true;
+                                console.warn(`[Worker] lockstep skew ${skew} quanta exceeds bound ${SKEW_BOUND_QUANTA} (seq ${lockstepSeq}, minAck ${minAck}) — wall-time stretches, sim-time stays coherent`);
+                            }
+                        }
                     }
                 } finally {
                     if (mode === 'multi' && (boardRunners.size > 0 || boardWorkers.size > 0)) {
+                        // No catch-up burst: always schedule exactly one
+                        // quantum out, even if this tick ran long. Wall-time
+                        // stretches under load; sim-time skew stays bounded.
                         lockstepTimer = setTimeout(stepAllBoards, LOCKSTEP_QUANTUM_MS);
                     }
                 }

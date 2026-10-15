@@ -520,7 +520,11 @@ export abstract class ArmRunnerBase implements BoardRunner {
             const rxOff = Number((options as any)?.sabSerialRxOffset);
             const txOff = Number((options as any)?.sabSerialTxOffset);
             if (Number.isFinite(rxOff) && rxOff > 0) this.sabSerialRx = new SabSerialRing(this.sab as SharedArrayBuffer, rxOff);
-            if (Number.isFinite(txOff) && txOff > 0) this.sabSerialTx = new SabSerialRing(this.sab as SharedArrayBuffer, txOff);
+            // Phase B: worker-hosted runners emit serial via postMessage
+            // (single coherent channel); SAB TX stays unbound so the UI poll
+            // doesn't deliver every byte a second time. RX untouched.
+            const txDisabled = !!(options as any)?.sabSerialTxDisabled;
+            if (!txDisabled && Number.isFinite(txOff) && txOff > 0) this.sabSerialTx = new SabSerialRing(this.sab as SharedArrayBuffer, txOff);
             // v2 per-board override: rebind serial + debug to this board's
             // own regions so engines never share head/tail words. Stride
             // math mirrors boardSerialOffsets()/boardDebugOffset() in
@@ -536,7 +540,11 @@ export abstract class ArmRunnerBase implements BoardRunner {
                     const rx = serialBase + bi * stride;
                     const tx = rx + 8 + 4096;
                     this.sabSerialRx = new SabSerialRing(this.sab as SharedArrayBuffer, rx);
-                    this.sabSerialTx = new SabSerialRing(this.sab as SharedArrayBuffer, tx);
+                    // TX unbound for worker-hosted runners (see above); the
+                    // per-board RX rebind always applies (UI input path).
+                    if (!txDisabled) {
+                        this.sabSerialTx = new SabSerialRing(this.sab as SharedArrayBuffer, tx);
+                    }
                 }
                 if (Number.isFinite(debugBase) && debugBase > 0 && (!nBoards || bi < nBoards)) {
                     this.sabDebugWriter = new SabDebugWriter(this.sab as SharedArrayBuffer, debugBase + bi * 24);

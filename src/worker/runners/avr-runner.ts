@@ -261,7 +261,11 @@ export class AVRRunner {
                         if (Number.isFinite(rxOff) && rxOff > 0) {
                             (this as any).sabSerialRx = new SabSerialRing(sabBuf2, rxOff);
                         }
-                        if (Number.isFinite(txOff) && txOff > 0) {
+                        // Phase B: worker-hosted runners emit serial via
+                        // postMessage (single coherent channel); the SAB TX
+                        // ring stays unbound so the UI poll doesn't deliver
+                        // every byte a second time. RX untouched (UI input).
+                        if (Number.isFinite(txOff) && txOff > 0 && !(options as any)?.sabSerialTxDisabled) {
                             (this as any).sabSerialTx = new SabSerialRing(sabBuf2, txOff);
                         }
                     } catch { /* serial rings stay null */ }
