@@ -8,6 +8,10 @@ import { test, expect } from '@playwright/test';
 // buzzer tap are chip-agnostic (all four chips list i2c:[1,2,3],
 // spi 1..5, timers incl. TIM3 in the package CHIPS table; every shell
 // exposes PA0/PA4/PA5/PA6/PA7/PB6/PB7/3V3/GND.1/SWD_GND).
+// F429 VARIANT PINOUT (STM32 core 2.12.0 variant_DISCO_F429ZI.h): Arduino
+// defaults are Wire=I2C3 (PC9/PA8) and SPI=SPI5 (PF9/PF8/PF7). The shared
+// sketches remap to I2C1/SPI1 (Wire.setSDA/SCL, SPI.setMOSI/MISO/SCLK)
+// before begin() — same-peripheral moves, no-ops on the siblings.
 const TYPES = [
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },
   { tag: 'F411', type: 'openhw-stm32f411', id: 'f411' },
@@ -15,9 +19,9 @@ const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f429' },
 ];
 
-const OLED_CODE = '#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 d(128,64,&Wire,-1);\nvoid setup(){Serial.begin(9600);Serial.println("OLEDI2C_READY");delay(500);Wire.begin();d.begin(SSD1306_SWITCHCAPVCC,0x3C);d.clearDisplay();d.setTextSize(2);d.setTextColor(SSD1306_WHITE);d.setCursor(0,0);d.println("HiF4");d.display();Serial.println("OLEDI2C_DRAWN");}\nvoid loop(){Serial.println("OLEDI2C_TICK");delay(1000);}\n';
+const OLED_CODE = '#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 d(128,64,&Wire,-1);\nvoid setup(){Serial.begin(9600);Serial.println("OLEDI2C_READY");delay(500);Wire.setSDA(PB7);Wire.setSCL(PB6);Wire.begin();d.begin(SSD1306_SWITCHCAPVCC,0x3C);d.clearDisplay();d.setTextSize(2);d.setTextColor(SSD1306_WHITE);d.setCursor(0,0);d.println("HiF4");d.display();Serial.println("OLEDI2C_DRAWN");}\nvoid loop(){Serial.println("OLEDI2C_TICK");delay(1000);}\n';
 
-const SPI_CODE = '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(PA4,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(PA4,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("F4SPI_READY");delay(300);SPI.begin();pinMode(PA4,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("F4SPI_DRAWN");}\nvoid loop(){Serial.println("F4SPI_TICK");delay(1000);}\n';
+const SPI_CODE = '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(PA4,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(PA4,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("F4SPI_READY");delay(300);SPI.setMOSI(PA7);SPI.setMISO(PA6);SPI.setSCLK(PA5);SPI.begin();pinMode(PA4,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("F4SPI_DRAWN");}\nvoid loop(){Serial.println("F4SPI_TICK");delay(1000);}\n';
 
 const ADC_CODE = 'void setup(){Serial.begin(9600);Serial.println("F4ADC_READY");analogReadResolution(12);}\nvoid loop(){Serial.println("F4ADC_PRE");int v=analogRead(PA0);Serial.print("F4ADC_VAL:");Serial.println(v);Serial.println("F4ADC_POST");delay(500);}\n';
 

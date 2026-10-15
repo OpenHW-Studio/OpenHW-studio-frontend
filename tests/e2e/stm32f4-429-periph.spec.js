@@ -11,14 +11,21 @@ import { test, expect } from '@playwright/test';
 //     Proof is oled vramFillPercentage > 0, not guest serial.
 //   SPI: same MAX7219 sketch as stm32f4-spi (SPI1 PA7/PA5, manual CS PA4).
 //     Proof is host-observed matrix rows 0x7E/0x30 + shutdown false.
+// F429 VARIANT PINOUT (STM32 core 2.12.0 variant_DISCO_F429ZI.h:225-229,
+// 214-221): Arduino defaults are Wire=I2C3 (PC9/PA8) and SPI=SPI5
+// (PF9/PF8/PF7) — NOT the I2C1/SPI1 the runner taps and the circuit
+// wires (PB7/PB6, PA7/PA5/PA4). Both sketches therefore remap with the
+// standard STM32duino API (Wire.setSDA/SCL, SPI.setMOSI/MISO/SCLK) to
+// I2C1/SPI1 before begin() — real firmware selecting the wired bus,
+// same-peripheral moves that are no-ops on the sibling variants.
 // Kept as three tests (not one circuit) because PA4 is both the DAC output
 // and the SPI manual-CS pin — sharing it would short two drivers.
 
 const DAC_CODE = 'void setup() {\n  Serial.begin(9600);\n  Serial.println("F429DAC_READY");\n  analogWriteResolution(12);\n  analogReadResolution(12);\n}\nvoid loop() {\n  int outs[3] = {0, 2048, 4095};\n  int vals[3];\n  for (int i = 0; i < 3; i++) {\n    analogWrite(PA4, outs[i]);\n    delay(100);\n    vals[i] = analogRead(PA0);\n  }\n  Serial.print("F429DAC_LOOP:");\n  Serial.print(vals[0]); Serial.print(",");\n  Serial.print(vals[1]); Serial.print(",");\n  Serial.println(vals[2]);\n  delay(2000);\n}\n';
 
-const OLED_CODE = '#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 d(128,64,&Wire,-1);\nvoid setup(){Serial.begin(9600);Serial.println("F429OLED_READY");delay(500);Wire.begin();d.begin(SSD1306_SWITCHCAPVCC,0x3C);d.clearDisplay();d.setTextSize(2);d.setTextColor(SSD1306_WHITE);d.setCursor(0,0);d.println("Hi429");d.display();Serial.println("F429OLED_DRAWN");}\nvoid loop(){Serial.println("F429OLED_TICK");delay(1000);}\n';
+const OLED_CODE = '#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 d(128,64,&Wire,-1);\nvoid setup(){Serial.begin(9600);Serial.println("F429OLED_READY");delay(500);Wire.setSDA(PB7);Wire.setSCL(PB6);Wire.begin();d.begin(SSD1306_SWITCHCAPVCC,0x3C);d.clearDisplay();d.setTextSize(2);d.setTextColor(SSD1306_WHITE);d.setCursor(0,0);d.println("Hi429");d.display();Serial.println("F429OLED_DRAWN");}\nvoid loop(){Serial.println("F429OLED_TICK");delay(1000);}\n';
 
-const SPI_CODE = '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(PA4,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(PA4,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("F429SPI_READY");delay(300);SPI.begin();pinMode(PA4,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("F429SPI_DRAWN");}\nvoid loop(){Serial.println("F429SPI_TICK");delay(1000);}\n';
+const SPI_CODE = '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(PA4,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(PA4,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("F429SPI_READY");delay(300);SPI.setMOSI(PA7);SPI.setMISO(PA6);SPI.setSCLK(PA5);SPI.begin();pinMode(PA4,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("F429SPI_DRAWN");}\nvoid loop(){Serial.println("F429SPI_TICK");delay(1000);}\n';
 
 test.describe('F429 peripheral trio (DAC loopback + I2C OLED + SPI MAX7219)', () => {
   test.setTimeout(240000);

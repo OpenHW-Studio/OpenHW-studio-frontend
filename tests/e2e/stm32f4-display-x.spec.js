@@ -20,10 +20,22 @@ import { test, expect } from '@playwright/test';
 //   ILI9341: the ESP32-proven raw-SPI recipe (reset pulse, init, CASET/
 //     PASET, RAMWR fill) on SPI1 PA7/PA5 + PB0(CS)/PB1(DC)/PA9(RST).
 //     Proof is model-side (writeCount + vramFill), same shared SPI bridge.
+//     F429 remap note: DISCO_F429ZI SPI defaults to SPI5 — the sketch
+//     selects SPI1 explicitly (no-op on the siblings).
 // SINK BINDING: each ltdc-display sink MUST carry attrs.cell
 // ('dcmi'/'qspi'/'fsmc') — without it the runner binds nothing and the
 // cell is RED-by-construction (f4Cell='' → no cameraFrame/qspiImage/
 // fsmcDevices tap, DCMI_SRC/QSPI_MMAP/FSMC_PX markers never fire).
+// TFT STATUS (2026-10-11, lane/f4 bisected — engine NO-GO, specs
+// unchanged): the ILI9341 cell fails on all five boards. Bisection on
+// F401 (PB0-CS taps proven working via a MAX7219 control): SPI tap
+// bytes flow until the first guest delay ≥ ~20ms, then go silent
+// (post-delay transfers complete guest-side but emit zero tap events;
+// gpio change hooks likewise fire once and die). The ILI9341 power-on
+// sequence mandates 120ms+ delays, so the staged sketch cannot avoid
+// the trigger. F407/VE additionally never reach DRAWN (stall variant).
+// Engine-side (tap pump), not runner-fixable; the SPI-remap lines stay
+// (F429 needs SPI1).
 const DISP_TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'V407', type: 'openhw-stm32f407ve', id: 'f47e' },
@@ -43,7 +55,7 @@ const QSPI_CODE = '#define QSPI_BASE 0xA0001000UL\n#define QR(o) (*(volatile uin
 
 const FSMC_CODE = '#define RCC_AHB3ENR (*(volatile uint32_t*)0x40023838UL)\n#define FSMC_BCR1 (*(volatile uint32_t*)0xA0000000UL)\n#define FSMC_BTR1 (*(volatile uint32_t*)0xA0000004UL)\n#define LCD_CMD (*(volatile unsigned short*)0x60000000UL)\n#define LCD_DATA (*(volatile unsigned short*)(0x60000000UL + (1UL<<17)))\n#define BANK4_CELL (*(volatile unsigned short*)0x90000000UL)\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("FSMC_READY");\n  RCC_AHB3ENR |= 1UL;\n  FSMC_BCR1 = (1UL<<0)|(1UL<<4)|(1UL<<12);\n  FSMC_BTR1 = 0x1053UL;\n}\nvoid loop() {\n  LCD_CMD = 0x2A; LCD_DATA = 0x0000; LCD_DATA = 0x00EF;\n  LCD_CMD = 0x2C;\n  for (int i = 0; i < 64; i++) LCD_DATA = (unsigned short)(0xF800 + i);\n  LCD_CMD = 0x04;\n  delay(50);\n  unsigned short id = LCD_DATA;\n  Serial.print("FSMC_ID:"); Serial.println(id, HEX);\n  if (id == 0x9341) Serial.println("FSMC read OK");\n  BANK4_CELL = 0xDEAD;\n  if (BANK4_CELL == 0) Serial.println("FSMC_BANK4_OK");\n  delay(2000);\n}\n';
 
-const TFT_CODE = '#include <SPI.h>\n#define CS PB0\n#define DC PB1\n#define RST PA9\nvoid cmd(uint8_t c){digitalWrite(DC,LOW);digitalWrite(CS,LOW);SPI.transfer(c);digitalWrite(CS,HIGH);}\nvoid dat(uint8_t d){digitalWrite(DC,HIGH);digitalWrite(CS,LOW);SPI.transfer(d);digitalWrite(CS,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("TFT_READY");pinMode(CS,OUTPUT);pinMode(DC,OUTPUT);pinMode(RST,OUTPUT);digitalWrite(CS,HIGH);digitalWrite(RST,HIGH);delay(20);digitalWrite(RST,LOW);delay(20);digitalWrite(RST,HIGH);delay(150);SPI.begin();SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE0));cmd(0x01);delay(130);cmd(0x11);delay(130);cmd(0x3A);dat(0x55);cmd(0x36);dat(0x48);cmd(0x2A);dat(0);dat(0);dat(0);dat(239);cmd(0x2B);dat(0);dat(0);dat(1);dat(63);cmd(0x29);delay(20);cmd(0x2C);digitalWrite(DC,HIGH);digitalWrite(CS,LOW);for(int i=0;i<240*10;i++){SPI.transfer(0xF8);SPI.transfer(0x00);}digitalWrite(CS,HIGH);Serial.println("TFT_DRAWN");}\nvoid loop(){Serial.println("TFT_TICK");delay(2000);}\n';
+const TFT_CODE = '#include <SPI.h>\n#define CS PB0\n#define DC PB1\n#define RST PA9\nvoid cmd(uint8_t c){digitalWrite(DC,LOW);digitalWrite(CS,LOW);SPI.transfer(c);digitalWrite(CS,HIGH);}\nvoid dat(uint8_t d){digitalWrite(DC,HIGH);digitalWrite(CS,LOW);SPI.transfer(d);digitalWrite(CS,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("TFT_READY");pinMode(CS,OUTPUT);pinMode(DC,OUTPUT);pinMode(RST,OUTPUT);digitalWrite(CS,HIGH);digitalWrite(RST,HIGH);delay(20);digitalWrite(RST,LOW);delay(20);digitalWrite(RST,HIGH);delay(150);SPI.setMOSI(PA7);SPI.setMISO(PA6);SPI.setSCLK(PA5);SPI.begin();SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE0));cmd(0x01);delay(130);cmd(0x11);delay(130);cmd(0x3A);dat(0x55);cmd(0x36);dat(0x48);cmd(0x2A);dat(0);dat(0);dat(0);dat(239);cmd(0x2B);dat(0);dat(0);dat(1);dat(63);cmd(0x29);delay(20);cmd(0x2C);digitalWrite(DC,HIGH);digitalWrite(CS,LOW);for(int i=0;i<240*10;i++){SPI.transfer(0xF8);SPI.transfer(0x00);}digitalWrite(CS,HIGH);Serial.println("TFT_DRAWN");}\nvoid loop(){Serial.println("TFT_TICK");delay(2000);}\n';
 
 test.describe('F4 display remainder (DCMI/QSPI/FSMC + TFT)', () => {
   test.setTimeout(300000);

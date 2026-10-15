@@ -5,7 +5,12 @@ import { test, expect } from '@playwright/test';
 // F4 shells expose PB0/PB1/3V3/GND.1) and the DS1307 set/read cell over
 // I2C1 (PB7/PB6 + 3V3/SWD_GND, same wiring as the F429 OLED row). No
 // runner changes: the shared gpio.pin input path and I2C1 bridge are
-// chip-agnostic.
+// chip-agnostic. F429 remap note: DISCO_F429ZI Arduino defaults are
+// Wire=I2C3 (PC9/PA8), so the sketch selects I2C1 explicitly
+// (Wire.setSDA(PB7)/setSCL(PB6)) — same-peripheral no-op elsewhere.
+// RTC read path (runner): the tap-slave spec is skipped for RTC types so
+// the engine-native regfile serves guest reads (RX-queue pushes land one
+// transfer late); the drain mirrors regs into the JS model for telemetry.
 const TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },
@@ -16,7 +21,7 @@ const TYPES = [
 
 const GPIOIN_CODE = 'void setup(){Serial.begin(9600);Serial.println("GPIOIN_READY");pinMode(PB0,INPUT);pinMode(PB1,INPUT);}\nvoid loop(){Serial.print("PB0=");Serial.print(digitalRead(PB0));Serial.print(" PB1=");Serial.println(digitalRead(PB1));delay(500);}\n';
 
-const RTC_CODE = '#include <Wire.h>\n#include <RTClib.h>\nRTC_DS1307 rtc;\nvoid setup(){Serial.begin(9600);Serial.println("RTC_READY");Wire.begin();rtc.begin();rtc.adjust(DateTime(2026,10,7,12,0,0));}\nvoid loop(){DateTime n=rtc.now();Serial.print("RTC_NOW:");Serial.print(n.hour());Serial.print(":");Serial.print(n.minute());Serial.print(":");Serial.println(n.second());delay(1000);}\n';
+const RTC_CODE = '#include <Wire.h>\n#include <RTClib.h>\nRTC_DS1307 rtc;\nvoid setup(){Serial.begin(9600);Serial.println("RTC_READY");Wire.setSDA(PB7);Wire.setSCL(PB6);Wire.begin();rtc.begin();rtc.adjust(DateTime(2026,10,7,12,0,0));}\nvoid loop(){DateTime n=rtc.now();Serial.print("RTC_NOW:");Serial.print(n.hour());Serial.print(":");Serial.print(n.minute());Serial.print(":");Serial.println(n.second());delay(1000);}\n';
 
 test.describe('F4 GPIO-in + DS1307 (per-chip ports)', () => {
   test.setTimeout(240000);

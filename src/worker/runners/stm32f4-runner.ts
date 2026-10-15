@@ -179,7 +179,30 @@ export class Stm32f4Runner extends ArmRunnerBase {
         const addrs = collectI2CSlaveAddresses(bridgeCtx);
         if (addrs.length > 0) {
             const br = createI2CBridge(bridgeCtx);
-            withAssets.i2c = addrs.slice(0, 8).map((a) => ({
+            // RTC-type instances ride the engine-native regfile (attached
+            // as a sink below) with NO tap-slave spec: the tap-slave
+            // registration shadows the regfile, so guest reads would come
+            // from the RX queue — which the engine fills one transfer late
+            // (observed: DS1307 reads 165:165:85 on all match-healthy
+            // chips while writes flow fine; the regfile stays all-zeros
+            // behind the shadow). The native regfile stores guest writes
+            // and serves reads with pointer persistence — exact DS1307
+            // register semantics — while the drain mirrors the regs into
+            // the JS model for live telemetry (see drainRtc). Narrowly
+            // scoped to RTC types: every other address keeps the observer
+            // spec (status quo ante, zero regression surface).
+            let rtcAddrs: Set<number> = new Set();
+            try {
+                for (const inst of this.instances.values()) {
+                    const t = String((inst as any)?.type || '').toLowerCase();
+                    if ((t === 'openhw-ds1307-rtc' || t === 'wokwi-ds1307-rtc')
+                        && typeof (inst as any)?.onI2CStart === 'function') {
+                        const v = this.busAddrOf(inst);
+                        if (v >= 0) rtcAddrs.add(v & 0x7f);
+                    }
+                }
+            } catch { /* never breaks boot */ }
+            withAssets.i2c = addrs.slice(0, 8).filter((a) => !rtcAddrs.has(a & 0x7f)).map((a) => ({
                 peripheral: 'I2C1',
                 address: a,
                 onStart: () => { try { br.start(a, false); } catch { /* ignore */ } },
@@ -190,8 +213,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
             // Virtual slaves (bus progress): the core stalls transactions
             // with no device attached, so attach the package's own devices
             // at the owned addresses — OLED pairs get oled, everything else
-            // a regfile ACK-sink. Observer specs above feed the real
-            // component models (AVR-adapter pattern, zero patches).
+            // a regfile ACK-sink (RTC types: the regfile IS the read path —
+            // no tap-slave spec shadows it; see above). Observer specs above
+            // feed the real component models (AVR-adapter pattern, zero
+            // patches).
             try {
                 const oled = addrs.filter((a) => {
                     for (const inst of this.instances.values()) {
@@ -593,7 +618,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
     /** Sample one-wire model drive on board pins netted to it and
      * publish edges the output-only change hooks miss (see above).
      * MODE-aware bus policy: while the firmware holds the pin as
-     * OUTPUT, hooks own the line (skip injection — output wins); once
+     * OUTPUT, ODR-drive polling feeds the model (hooks are one-shot); once
      * firmware releases to INPUT, the runner IS the pull-up: push HIGH
      * while the model idles, or the model's driven level while it
      * drives (_drivingBus), and publish changes so the model sees
@@ -636,7 +661,30 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             inputMode = (((moder >>> (Number(mm[2]) * 2)) & 0x3) === 0);
                         }
                     } catch { continue; }
-                    if (!inputMode) continue; // OUTPUT: hooks own it
+                    if (!inputMode) {
+                        // OUTPUT: firmware drives the bus (e.g. the DHT
+                        // WAKE LOW). The engine gpio hooks are one-shot
+                        // (fire once per pin, then die), so poll ODR and
+                        // feed the model directly — otherwise WAKE never
+                        // arrives and reads stay NaN. Change-fed only.
+                        try {
+                            const emu = (this as any).mcu;
+                            if (emu && typeof emu.periphRead === 'function') {
+                                const base = 0x40020000 + (mm[1].charCodeAt(0) - 65) * 0x400;
+                                const odr = emu.periphRead(base + 0x14, 4) >>> 0;
+                                const low = ((odr >>> Number(mm[2])) & 1) === 0;
+                                const key = `dht:${id}:${cPin}`;
+                                const cache = ((this as any).f4DhtDrive = (this as any).f4DhtDrive || {});
+                                if (cache[key] !== low) {
+                                    cache[key] = low;
+                                    try { (inst as any).setPinVoltage?.(cPin, low ? 0 : 3.3); } catch { /* ignore */ }
+                                    try { (inst as any).onPinStateChange?.(cPin, !low, Math.floor((this as any).simCycleCount || 0)); } catch { /* ignore */ }
+                                    try { (this as any).engine.setGpioInput?.(bPin, !low); } catch { /* ignore */ }
+                                }
+                            }
+                        } catch { /* drive poll never breaks the tick */ }
+                        continue;
+                    }
                     const high = modelDriving ? modelHigh : true; // idle pull-up
                     try { (this as any).engine.setGpioInput?.(bPin, high); } catch { /* ignore */ }
                     if ((this as any).pinStates[bPin] !== !!high) {
@@ -683,6 +731,53 @@ export class Stm32f4Runner extends ArmRunnerBase {
             }
         } catch { /* ignore */ }
         return null;
+    }
+
+    /** Native→JS RTC mirror (see buildBusSpecs served-partition):
+     *  model-served read addresses have no tap-slave spec (it would shadow
+     *  the native regfile), so the JS RTC model never sees guest writes.
+     *  Poll the native regfile and rebase the JS clock on change; the JS
+     *  clock then ticks live from the guest-set time. Idle cost is one
+     *  property read when no RTC mirror is cached. */
+    private drainRtc(): void {
+        try {
+            const inst = (this as any).f4RtcMirror;
+            if (!inst || typeof inst.onI2CWriteRegister !== 'function') return;
+            const mcu = (this as any).mcu;
+            const rg = mcu?.regfileGet;
+            if (!mcu || typeof rg !== 'function') return;
+            const regs: number[] = [];
+            for (let o = 0; o < 7; o++) {
+                try { regs.push(Number(rg.call(mcu, 'I2C1', o)) & 0xff); } catch { return; }
+            }
+            const key = regs.join(',');
+            if ((this as any).f4RtcKey === key) return;
+            (this as any).f4RtcKey = key;
+            try { inst.onI2CWriteRegister(0, regs); } catch { /* ignore */ }
+        } catch { /* mirror never breaks the drain */ }
+    }
+
+    /** Push OS entropy words into the engine RNG pool (see boot seed).
+     *  No-op when the facade lacks the binding (older bundles). */
+    private f4SeedRng(n: number): void {
+        try {
+            const mcu = (this as any).mcu;
+            if (!mcu || typeof mcu.rngSeedEntropy !== 'function') return;
+            const count = Math.max(1, Math.min(64, Math.floor(n) || 0));
+            let words: number[] = [];
+            try {
+                const arr = new Uint32Array(count);
+                (globalThis as any)?.crypto?.getRandomValues?.(arr);
+                words = Array.from(arr);
+                if (words.every((w) => w === 0)) throw new Error('no crypto entropy');
+            } catch {
+                words = [];
+                for (let i = 0; i < count; i++) {
+                    words.push(Math.floor(Math.random() * 0x100000000) >>> 0);
+                }
+            }
+            mcu.rngSeedEntropy(words);
+        } catch { /* seed never breaks stepping */ }
     }
 
     /** Per-boot cached PWM listener list (same predicates as the former
@@ -911,6 +1006,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     delete (self as any).f4TickDiv; delete (self as any).f4TickRaw; delete (self as any).f4TickApplied;
                     delete (self as any).f4LastAbs;
                     delete (self as any).f4Sinks; delete (self as any).f4PwmInsts; delete (self as any).f4DhtPresent;
+                    delete (self as any).f4RtcMirror; delete (self as any).f4RtcKey; delete (self as any).f4DhtDrive;
                     delete (self as any).f4SaiTick;
                     delete (self as any).f4NeedsLevel; delete (self as any).f4AdcLast; delete (self as any).f4DrainCount;
                     let cell = '';
@@ -949,7 +1045,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     // so drains never scan the instance map (LTDC + USB +
                     // cell sinks, PWM listeners, one-wire presence).
                     try {
-                        let ltdcSink: any = null, usbSink: any = null;
+                        let ltdcSink: any = null, usbSink: any = null, rtcMirror: any = null;
                         const pwmInsts: any[] = [];
                         let dhtPresent = false;
                         for (const inst of self.instances.values()) {
@@ -957,6 +1053,8 @@ export class Stm32f4Runner extends ArmRunnerBase {
                                 const t = String((inst as any)?.type || '').toLowerCase();
                                 if (t === 'openhw-ltdc-display' && !ltdcSink) ltdcSink = inst;
                                 else if (t === 'openhw-usb-device' && !usbSink) usbSink = inst;
+                                else if ((t === 'openhw-ds1307-rtc' || t === 'wokwi-ds1307-rtc') && !rtcMirror
+                                    && typeof (inst as any)?.onI2CWriteRegister === 'function') rtcMirror = inst;
                                 try {
                                     if (typeof (inst as any)?.onPWM === 'function'
                                         && typeof (inst as any)?.getPWMPinNames !== 'function') pwmInsts.push(inst);
@@ -967,6 +1065,8 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             } catch { /* ignore */ }
                         }
                         (self as any).f4Sinks = { ltdc: ltdcSink, usb: usbSink };
+                        (self as any).f4RtcMirror = rtcMirror || null;
+                        try { delete (self as any).f4RtcKey; } catch { /* ignore */ }
                         (self as any).f4PwmInsts = pwmInsts;
                         (self as any).f4DhtPresent = dhtPresent;
                     } catch { /* ignore */ }
@@ -1043,6 +1143,12 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // already carries Disco bytes too. Hook usart2 as well for
                 // forward-compat; RX inject below targets the board's port.
                 try { self.mcu.usart2.onData = (b: number) => { txQueue.push(b & 0xff); }; } catch { /* usart1-only */ }
+                // RNG host entropy: the model consumes one pooled word per
+                // regen (FIFO; empty pool = deterministic LCG fallback, so
+                // an unseeded guest reads at most one live word). Seed OS
+                // entropy at boot; the drain tops up while RNG stays
+                // enabled. Same host-machine class as ADC inject.
+                try { self.f4SeedRng(16); } catch { /* seed never breaks boot */ }
                 self.hookGpio(gpioUnsubs);
             },
             stepBudget(budget: number): number {
@@ -1085,6 +1191,13 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             coarseDone += self.f4Delta(Number(r?.instCount), c);
                             remaining -= c;
                             if (r?.stopped) break;
+                            // Mid-chunk DHT poll: the engine gpio hooks are
+                            // one-shot, so a per-tick poll aliases the 2ms
+                            // WAKE LOW away (8ms wall ≈ 50ms guest). Polling
+                            // per 20K chunk (120us guest) catches WAKE +
+                            // release inside firmware timeouts; engagement
+                            // then flips to 512-instr fine slicing below.
+                            try { (self as any).pollGpioBidirectional(); } catch { /* poll never breaks stepping */ }
                             try {
                                 if (remaining > 0 && (self as any).dhtFineEngaged?.()) {
                                     try { (self as any).stepDhtFine(remaining); } catch { /* ignore */ }
@@ -1134,6 +1247,21 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 // Drain counter for rare-event poll cadences below (pwrMode:
                 // F1 f1PwrTick parity — every 8th drain, ~64ms wall).
                 try { (self as any).f4DrainCount = (Number((self as any).f4DrainCount) || 0) + 1; } catch { /* ignore */ }
+                // Native→JS RTC mirror (served-partition read addresses):
+                // keeps the JS RTC clock tracking the guest-set time.
+                try { (self as any).drainRtc(); } catch { /* mirror never breaks the drain */ }
+                // RNG entropy top-up: while the guest holds RNGEN, keep
+                // ≥8 words pooled (one word per regen; the boot seed covers
+                // short reads, sustained polling drains it). Gated on RNGEN
+                // so non-RNG boots cost two FFI reads, nothing more.
+                try {
+                    const emu = (self as any).mcu;
+                    if (emu && typeof emu.periphRead === 'function'
+                        && typeof emu.rngEntropyAvail === 'function'
+                        && ((emu.periphRead(0x50060800, 4) >>> 0) & 0x4)) {
+                        if ((Number(emu.rngEntropyAvail()) || 0) < 8) (self as any).f4SeedRng(8);
+                    }
+                } catch { /* top-up never breaks the drain */ }
                 // Clock preset (virtual time compression): board attr tickMHz
                 // (e.g. 24/42/84 on a 168MHz chip) divides the guest SysTick
                 // reload so virtual milliseconds cost fewer host instructions.

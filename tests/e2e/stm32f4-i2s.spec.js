@@ -12,6 +12,12 @@ import { test, expect } from '@playwright/test';
 // sketch touches no pins, so all five boards ride the same code.
 // If SPI2-DR never reaches the FIFO live, re-triage to NO-GO (I2S mode
 // unrouted) — the SAI DR path stays proven either way.
+// NO-GO CONFIRMED (2026-10-12, lane/f4 — specs unchanged): I2S cells fail
+// on all five chips (guest never reaches I2S_SUM; READY-repeat boot loop).
+// The F429 SAI control cell is GREEN (SAI_CAP:16:16120 via the same shared
+// FIFO + runner drain), so the FIFO path works — the SPI2 I2S register
+// block (I2SCFGR/I2SPR/TXE in I2S mode) is unrouted in the model.
+// Engine-owner territory; SAI proof stands.
 const TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },

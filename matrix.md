@@ -45,10 +45,10 @@ stm32f4-gpio-rtc, stm32f4-crc-rng-x, stm32f4-1wire, stm32f4-usb-ve.
 
 | Board | UART | SoftSerial | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | EEPROM | CAN-2.0 | CAN-FD (MCP2518FD) | I2S | 1-Wire/DHT | IR | USB-DEV | ETH | SD-SPI | Modbus | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-arduino-uno | FULL | PARTIAL (TX only, RX parked) | FULL (OLED/LCD/sensors) | FULL (FD host+MFRC522+TFT) | FULL | FULL | ABSENT | ABSENT | FULL | FULL (DS1307) | FULL (AB/CD) | NONE (no controller cell) | FULL (loopback) | FULL (TX+RX) | FULL (DS18B20+DHT22) | PARTIAL (NEC envelope, no 38kHz carrier) | ABSENT | ABSENT | FULL | FULL (two-Uno) | FULL (OLED/TFT/MAX7219/LCD/NeoPixel) |
-| openhw-arduino-mega | FULL | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE (Modbus side is Uno) | NONE |
-| openhw-arduino-nano | FULL | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE |
-| openhw-attiny85 | PARTIAL (Uno-compiled binary; NO UART silicon, no native tiny core) | NONE | NONE (USI-only silicon) | NONE (USI-only silicon) | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE |
+| openhw-arduino-uno | FULL | PARTIAL (TX only, RX parked) | FULL (OLED/LCD/sensors) | FULL (FD host+MFRC522+TFT) | FULL | FULL | ABSENT | ABSENT | FULL | FULL (DS1307) | FULL (AB/CD) | NO-GO (no controller on silicon) | FULL (loopback) | FULL (TX+RX) | FULL (DS18B20+DHT22) | PARTIAL (NEC envelope, no 38kHz carrier) | ABSENT | ABSENT | FULL | FULL (two-Uno) | FULL (OLED/TFT/MAX7219/LCD/NeoPixel) |
+| openhw-arduino-mega | FULL | FULL (TX) | FULL (OLED+sensors) | FULL (MAX7219+FD host) | FULL (range) | FULL | ABSENT | ABSENT | FULL | FULL (T0/T1) | FULL | NO-GO (no controller on silicon) | FULL (loopback) | FULL (40 frames) | FULL | FULL (NEC) | ABSENT | ABSENT | FULL | FULL (master) | FULL (OLED/MAX7219) |
+| openhw-arduino-nano | FULL | FULL (TX) | FULL (OLED) | FULL (MAX7219) | FULL (range) | FULL | ABSENT | ABSENT | FULL | FULL | FULL | NO-GO (no controller on silicon) | NONE | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | FULL | NONE | FULL (OLED/MAX7219) |
+| openhw-attiny85 | PARTIAL (Uno-compiled binary; NO UART silicon, no native tiny core) | PARTIAL (TX) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | PARTIAL (USI stand-in) | FULL | ABSENT | ABSENT | FULL (P2) | NONE | FULL | NONE | NONE | FULL | FULL | FULL (NEC) | ABSENT | ABSENT | NONE | NONE | NONE |
 
 Specs: avr-eeprom, avr-i2s, avr-inmp441, avr-dht22, avr-mcp2518fd, avr-modbus,
 avr-softserial-tx, avr-softproto, avr-control, board-input, board-family-sweep,

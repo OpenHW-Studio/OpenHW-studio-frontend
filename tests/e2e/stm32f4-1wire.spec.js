@@ -1,13 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-// F4 DHT22 single-wire (all five chips) — STAGED: requires
-// stm32-patches.md P4 (F4 one-wire fine-stepping port) before it can
-// pass. Same wiring + sketch as the green F1 DHT22 cell (PB0 data,
-// 3V3/VCC, GND.1/GND — all F4 shells expose these): the DHT22 model
-// drives 28/70us bit slots that coarse engine batches quantize, so the
-// runner must slice while a transaction is active (the F1-proven
-// dhtFineEngaged/stepDhtFine design). Proof is the decoded T/H pair,
-// which cannot be faked by serial alone.
+// F4 DHT22 single-wire (all five chips) — NO-GO (2026-10-12, lane/f4
+// bisected, specs unchanged): reads return NaN on all chips. Runner-side
+// delivery verified working (ODR-drive WAKE feed + per-20K-chunk polling +
+// 512-instr fine slicing all engage — isTransactionActive goes live), but
+// the guest decodes bit slots with micros(), which is 1ms-quantized on
+// this engine (probed: 200K-iteration busy loop reads 7000us while
+// delayMicroseconds(500) reads 0) — 26/70us slots cannot decode (DWT /
+// SysTick-VAL sub-ms modeling gap, engine-owner territory). Same P4
+// fine-stepping design as the green F1 cell; blocked on guest time
+// resolution, not on delivery.
 const TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },

@@ -70,12 +70,8 @@ export function createI2CBridge(ctx: BridgeCtx): I2CBridge {
                 // read path (drains the pending pointer write, prefills the
                 // read queue) only on read-mode START. Hardcoding false
                 // starves every sensor read (observed: all 0xFF).
-                // TEMP-DIAG (bmp claim isolation — revert).
                 try {
                     ack = !!inst.onI2CStart(addr, !!read);
-                    if ((((globalThis as any).__ackN || 0) < 6)) {
-                        console.log(`[Bridge] CLAIM diag addr=${addr} inst=${(inst as any)?.id}:${ack ? 1 : 0}`);
-                    }
                 } catch { ack = false; }
                 if (ack && !claimed) claimed = inst;
             }
@@ -88,20 +84,9 @@ export function createI2CBridge(ctx: BridgeCtx): I2CBridge {
             activeAddr = addr & 0x7f;
             buf = [];
             activeSlave = findClaim(activeAddr, !!read);
-            // TEMP-DIAG (sensor trace isolation — revert).
-            try {
-                const n = (((globalThis as any).__trN || 0) + 1);
-                (globalThis as any).__trN = n;
-                if (n <= 60) console.log(`[Bridge] TR ev=start:${activeAddr}${read ? '/R' : ''} claimed=${(activeSlave as any)?.id || 'none'}`);
-            } catch { /* ignore */ }
         },
         write(byte: number): void {
             buf.push(byte & 0xff);
-            // TEMP-DIAG (sensor trace isolation — revert).
-            try {
-                const n = Number((globalThis as any).__trN || 0);
-                if (n <= 60) console.log(`[Bridge] TR ev=w:${(byte & 0xff).toString(16)}`);
-            } catch { /* ignore */ }
             try {
                 // Addressed-slave-only (no broadcast corruption); general
                 // call (no claim) fans out like AVR's fallback.
@@ -116,11 +101,6 @@ export function createI2CBridge(ctx: BridgeCtx): I2CBridge {
             try {
                 if (activeSlave && typeof activeSlave.onI2CReadByte === 'function') {
                     const b = activeSlave.onI2CReadByte() & 0xff;
-                    // TEMP-DIAG (sensor trace isolation — revert).
-                    try {
-                        const n = Number((globalThis as any).__trN || 0);
-                        if (n <= 60) console.log(`[Bridge] TR ev=r:${b.toString(16)}`);
-                    } catch { /* ignore */ }
                     return b;
                 }
                 if (activeSlave && typeof activeSlave.readByte === 'function') {

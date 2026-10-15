@@ -8,6 +8,12 @@ import { test, expect } from '@playwright/test';
 // Clock gates are F4-global (RCC_AHB1ENR bit 12 CRC, RCC_AHB2ENR bit 6
 // RNG) and the CRC/RNG bases are identical across F4 dies, so the
 // sketches are byte-identical; only the board type varies.
+// RNG STATUS (2026-10-11, lane/f4 bisected — engine NO-GO, specs
+// unchanged): RNG fails on all three rng:true chips (F407/VE/F429,
+// N:1 STUCK). Runner seeds host entropy (pool fills, drains live per
+// rngEntropyAvail), but RNG_SR sticks at 0x60 (SECS|CECS) and DRDY never sets — the
+// model's regen never completes (clock-domain gating vs model bug is
+// engine-owner territory). CRC passes 4/4.
 const CRC_TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },
