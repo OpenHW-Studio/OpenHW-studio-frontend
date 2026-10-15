@@ -26,11 +26,11 @@ stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep.
 
 | Board | UART | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI/FS | LTDC | DCMI | QSPI | FSMC | SAI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | NONE (exports exist, no cell) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
+| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | NONE (deferred — user takes ETH/WiFi later) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
 | openhw-stm32f401 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE (sdio:T) | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
 | openhw-stm32f411 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
-| openhw-stm32f407ve | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (MAC, no cell) | NONE | NONE | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | NONE |
-| openhw-stm32f429 | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE (DMA2D gate unused) | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (MAC, no cell) | NONE | NONE | FULL (scanout) | FULL (capture) | FULL (mmap) | FULL (8080) | PARTIAL (DR data-path only) | NONE | NONE (ext displays unproven; LTDC in LTDC col) |
+| openhw-stm32f407ve | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | NONE |
+| openhw-stm32f429 | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE (DMA2D gate unused) | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | FULL (scanout) | FULL (capture) | FULL* (model extension — NO QUADSPI on F4 silicon, F7-first; flash-image plumbing proven for reuse) | FULL (8080) | PARTIAL (DR data-path only) | NONE | NONE (ext displays unproven; LTDC in LTDC col) |
 
 Specs: stm32f4-sdio, stm32f4-ltdc, stm32f4-usb, stm32f4-dcmi, stm32f4-qspi,
 stm32f4-fsmc, stm32f4-sai, stm32f4-dac, stm32f4-adc, stm32f4-pwm, stm32f4-spi,
@@ -43,7 +43,7 @@ stm32f4-sd, stm32f4-sd-fs, stm32f4-sweep, multi-board-uart.
 | openhw-arduino-uno | FULL | PARTIAL (TX only, RX parked) | FULL (OLED/LCD/sensors) | FULL (FD host+MFRC522+TFT) | FULL | FULL | ABSENT | ABSENT | FULL | FULL (DS1307) | FULL (AB/CD) | NONE (no controller cell) | FULL (loopback) | FULL (TX+RX) | FULL (DS18B20+DHT22) | PARTIAL (NEC envelope, no 38kHz carrier) | ABSENT | ABSENT | FULL | FULL (two-Uno) | FULL (OLED/TFT/MAX7219/LCD/NeoPixel) |
 | openhw-arduino-mega | FULL | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE (Modbus side is Uno) | NONE |
 | openhw-arduino-nano | FULL | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE |
-| openhw-attiny85 | FULL | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE |
+| openhw-attiny85 | PARTIAL (Uno-compiled binary; NO UART silicon, no native tiny core) | NONE | NONE (USI-only silicon) | NONE (USI-only silicon) | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | ABSENT | ABSENT | NONE | NONE | NONE |
 
 Specs: avr-eeprom, avr-i2s, avr-inmp441, avr-dht22, avr-mcp2518fd, avr-modbus,
 avr-softserial-tx, avr-softproto, avr-control, board-input, board-family-sweep,
@@ -52,11 +52,11 @@ spi-delivery-disc, i2c-ack-disc.
 
 ## Pico (survey-verified 2026-10-09; W/ETH share the base die)
 
-| Board | UART | I2C | SPI | ADC | PWM | PIO | DMA | MicroPython | DAC | USB-DEV | Display-ext |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-pico (+W/+ETH) | FULL (6-variant sweep) | FULL (OLED+LCD) | FULL (MAX7219+595) | FULL | FULL | FULL (WS2812 3px) | FULL (64B exact) | FULL (I2C) | ABSENT | NONE (CDC->UART rewrite, no cell) | FULL (OLED/LCD/MAX7219) |
-| openhw-pico-2 (+W/+ETH, M33) | FULL | FULL | FULL | FULL | FULL | NONE | NONE | FULL (I2C) | ABSENT | NONE | FULL |
-| openhw-pico-2 (RV32) | PARTIAL (fixed image only; Arduino RV32 blocked upstream) | NONE | NONE | NONE | NONE | ABSENT | NONE | ABSENT | ABSENT | NONE | NONE |
+| Board | UART | I2C | SPI | ADC | PWM | PIO | DMA | MicroPython | DAC | USB-DEV | 1-Wire | I2S | CAN-2.0 | CAN-FD | RTC | GPIO-in | EEPROM | SD | IR | Camera | Display-ext |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| openhw-pico (+W/+ETH) | FULL (6-variant sweep) | FULL (OLED+LCD) | FULL (MAX7219+595) | FULL | FULL | FULL (WS2812 3px) | FULL (64B exact) | FULL (I2C) | ABSENT | NONE (CDC→UART rewrite, no cell) | NONE (GPIO/PIO-capable, no cell) | NONE (PIO-capable, no cell) | ABSENT (no CAN silicon) | ABSENT | ABSENT (no RTC silicon) | NONE (no input cell) | NONE (flash-emul capable) | NONE (sdcard.c model) | NONE | NONE (PIO-capable, no DCMI) | FULL (OLED/LCD/MAX7219) |
+| openhw-pico-2 (+W/+ETH, M33) | FULL | FULL | FULL | FULL | FULL | NONE | NONE | FULL (I2C) | ABSENT | NONE | NONE | NONE | ABSENT | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | FULL |
+| openhw-pico-2 (RV32) | PARTIAL (fixed image only; Arduino RV32 blocked upstream) | NONE | NONE | NONE | NONE | ABSENT | NONE | ABSENT | ABSENT | NONE | ABSENT (no GPIO model) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE |
 
 Specs: pico-uart-sweep, pico-i2c, pico-spi, pico-595, pico-adc, pico-pwm,
 pico-mp-i2c, pico-pio, pico-dma, pico2, pico2-spi, pico2-adc, pico2-pwm,
@@ -75,9 +75,9 @@ esp32-camboard (cam shell), esp32-mp-i2c.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09)
 
-| Board | UART | I2C | SPI | ADC | DMA | GPIO | Button/Touch | Display | RTC | NVS/EEPROM | MicroPython |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-microbit-v2 | PARTIAL (TX only; no RX path) | FULL (OLED) | FULL (loopback) | NONE (SAADC fill exists, no cell) | PARTIAL (EASYDMA pumps exercised, no memcpy cell) | PARTIAL (Button-A proven; generic digitalRead unproven) | PARTIAL (button-A FULL; capacitive touch unproven) | PARTIAL (OLED + matrix proven; SPI displays not) | NONE | NONE (NVMC-capable) | ABSENT (fixed-bin only) |
+| Board | UART | I2C | SPI | ADC | DMA | GPIO | Button/Touch | Display | RTC | NVS/EEPROM | MicroPython | I2S | 1-Wire |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| openhw-microbit-v2 | PARTIAL (TX only; no RX path) | FULL (OLED) | FULL (loopback) | NONE (SAADC fill exists, no cell) | PARTIAL (EASYDMA pumps exercised, no memcpy cell) | PARTIAL (Button-A proven; generic digitalRead unproven) | PARTIAL (button-A FULL; capacitive touch unproven) | PARTIAL (OLED + matrix proven; SPI displays not) | NONE | NONE (NVMC-capable) | ABSENT (fixed-bin only) | NONE (real I2S silicon) | NONE (GPIO-capable) |
 
 | Board | UART | GPIO | GPIO-in | Bit-bang (I2C/SPI/PWM/SD) | ADC | MicroPython |
 |---|---|---|---|---|---|---|
@@ -92,6 +92,11 @@ esp32-camboard (cam shell), esp32-mp-i2c.
 Specs: microbit-cells (5 cases), retro-boards (7 ISAs), retro-gpio(+in),
 retro-rx-echo (8086).
 
+Real-system chips with NO proof yet (all NONE): 8086 PIT/PIC/DMA (XT needs
+8253+8259+8237 for anything beyond polling loops), Z80 CTC, 6502 VIA timers,
+8051 timer/counter array. Real nRF52833 extras: BLE 5.1 (no engine model —
+needs owner work), NFC (NONE), USBD (ABSENT — not pinned on the v2 board).
+
 ## System, crypto & connectivity blocks (audited 2026-10-09 vs engine inventories)
 
 Same vocabulary. These have no protocol spec today; NONE = capable-or-modeled,
@@ -104,7 +109,7 @@ Pico `Pico-emu/*.c`, runners in `src/worker/runners/`.)
 | STM32F1 | NONE (crc.rs) | ABSENT (no RNG silicon) | ABSENT | NONE (iwdg+wwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE (bkp.rs) | NONE (rcc.rs) | NONE (swd.rs; bootloader.rs) |
 | STM32F4 | NONE (crc.rs) | NONE (rng.rs) | NONE (hash+cryp.rs) | NONE (iwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE | NONE | NONE (dbgmcu; ITM/DWT) |
 | AVR | ABSENT | ABSENT | ABSENT | NONE (no runner WDT) | NONE | NONE | EEPROM covered in main table | PARTIAL (arch-clocks: mega) | ABSENT |
-| Pico | ABSENT | NONE (ROSC jitter, no cell) | ABSENT | NONE | NONE (nvic.c) | NONE | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M33; clocks.c) | NONE (gdb.c) |
+| Pico | ABSENT | NONE (ROSC jitter, no cell) | NONE on RP2350 (real SHA-256 silicon); ABSENT on RP2040 | NONE | NONE (nvic.c) | NONE | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M33; clocks.c) | NONE (gdb.c) |
 | ESP32 | NONE | NONE (rng in rmt_rng_math.rs) | NONE (aes+rsa+sha_ecc_key.rs) | NONE (timers.rs MWDT) | NONE | NONE (ULP present, unproven) | NONE (partition_table+NVS) | NONE (clock(s).rs) | NONE (gdb_session) |
 | micro:bit v2 | ABSENT | NONE (nRF RNG+TEMP) | ABSENT | NONE | NONE (PPI+GPIOTE) | NONE | NONE (NVMC-backed NVS) | NONE | ABSENT |
 | Retro | ABSENT | ABSENT | ABSENT | ABSENT | NONE (chip PIC/CTC/VIA) | ABSENT | ABSENT | NONE | ABSENT |
@@ -113,12 +118,12 @@ Connectivity extras not in the main tables:
 
 | Feature | Status |
 |---|---|
-| Pico-W CYW43 WiFi traffic | NONE (cyw43.c model; no traffic proof) |
-| Pico-ETH W5500/W6300 traffic | NONE (w5500.c/w6300.c; boot flag only) |
-| Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell) |
+| Pico-W CYW43 WiFi traffic | NONE (deferred — user later) |
+| Pico-ETH W5500/W6300 traffic | NONE (deferred — user later) |
+| Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell; real silicon does device+host) |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
 | Pico SD/FATFS (sdcard.c, fatfs.c) | NONE |
-| ESP32 WiFi link (wifi_bridge.rs) | NONE (deferred per runner header) |
+| ESP32 WiFi link (wifi_bridge.rs) | NONE (deferred — user later) |
 | ESP32 BLE | ABSENT (no engine model) |
 | ESP32 PCNT / SDMMC / ULP / FreeRTOS tasks / eFuse | NONE each (models exist) |
 | ESP32 USB-CDC (usbcdc.rs) | ABSENT at board level (classic ESP32, no USB silicon) |
@@ -136,7 +141,10 @@ Connectivity extras not in the main tables:
 
 ## Next to prove (NONE cells worth a cell)
 
-1. F4 native ETH (model exists) — runner bridge + cell.
-2. F4 CAN-2.0 (bxCAN like F1) — same loopback recipe as stm32-can.
-3. SAI full-duplex wording stays narrow unless the model gains clocking.
-4. Mega/Nano/MapleMini sweeps (same cores, low risk).
+1. F4 CAN-2.0 (bxCAN like F1) — same loopback recipe as stm32-can.
+2. SAI full-duplex wording stays narrow unless the model gains clocking.
+3. Mega/Nano/MapleMini sweeps (same cores, low risk).
+4. F1 USB-DEV cell (real C8 silicon; engine taps verified, plan in .tmp-vitest/usb-f1-plan.md).
+
+Deferred to the user (not queued): all WiFi/ETH — F4 EMAC (plan in
+.tmp-vitest/eth-plan.md), ESP32 WiFi link, Pico CYW43/W5500 traffic.
