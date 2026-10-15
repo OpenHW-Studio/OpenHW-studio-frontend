@@ -495,7 +495,7 @@ export type ConnectedComponentPin = {
  * ComponentSignalAPI
  *
  * Formal TypeScript interface for every signal callback a component can implement.
- * Runners (esp32-runner, backend-proxy-runner) cast component instances against
+ * Runners cast component instances against
  * this interface before dispatching signals, e.g.:
  *
  *   const api = inst as unknown as ComponentSignalAPI;

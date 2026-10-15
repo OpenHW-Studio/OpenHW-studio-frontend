@@ -1,22 +1,17 @@
 import { boardCompToDisplayName } from "./hardwareUtils";
 import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
-import {
-  compileCode,
-  startEsp32Compile,
-  getEsp32CompileStatus,
-} from "../../../services/simulatorService.js";
+import { compileCode } from "../../../services/simulatorService.js";
 
 /**
  * Generic per-board compile domain, extracted verbatim from SimulatorPage.jsx
- * handleRun > per-board loop tail (non-RP2040 boards: AVR/ESP32/STM32).
- * (library.txt read, shared-cache key incl. esp32SimulationMode, cached or
- *  ESP32-frontend job-poll (500ms x180) or compileCode, cache write,
+ * handleRun > per-board loop tail (non-RP2040 boards: AVR only now that
+ * ESP32/STM32 workers were removed).
+ * (library.txt read, shared-cache key, compileCode, cache write,
  *  boardHexMap + first-firmware-wins result.)
  *
  * Pure function of (args, ctx); returns { result }. Mutations flow through
- * ctx.boardHexMap. Poll cadence (500ms), timeout (90s/180 polls), and the
- * progress-line replay are preserved verbatim.
- * Verify via AVR + ESP32-frontend + ESP32-backend run checks.
+ * ctx.boardHexMap.
+ * Verify via AVR run checks.
  */
 export async function compileGenericBoard(args, ctx) {
   const {
@@ -28,7 +23,6 @@ export async function compileGenericBoard(args, ctx) {
     projectFiles,
     activeCodeFileId,
     code,
-    esp32SimulationMode,
   } = args;
   const {
     boardHexMap,
@@ -49,7 +43,6 @@ export async function compileGenericBoard(args, ctx) {
               targetFqbn,
               ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
               librariesTxt,
-              kind === 'esp32' ? esp32SimulationMode : '',
             ].join('\n/*__SPLIT__*/\n');
 
             appendConsoleEntry(
@@ -63,69 +56,16 @@ export async function compileGenericBoard(args, ctx) {
             } else {
               logSerial(`Compiling ${boardComp.id}...`);
               try {
-                if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
-                  const startRes = await startEsp32Compile({
-                    code: compileSource,
-                    libraries_txt: librariesTxt,
-                    targetEngine: 'frontend'
-                  });
-
-                  if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-                    throw new Error('Failed to start ESP32 compilation.');
-                  }
-
-                  if (startRes.cache === 'hit') {
-                    logSerial(`Using server-cached compilation for ${boardComp.id}...`);
-                  }
-
-                  const jobId = startRes.jobId || startRes.buildId;
-                  let pollCount = 0;
-                  let lastPrintedProgressLen = 0;
-
-                  while (true) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    const statusRes = await getEsp32CompileStatus(jobId);
-
-                    if (!statusRes) continue;
-
-                    const progressLines = statusRes.progress || [];
-                    if (progressLines.length > lastPrintedProgressLen) {
-                      for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
-                        logSerial(progressLines[i]);
-                      }
-                      lastPrintedProgressLen = progressLines.length;
-                    }
-
-                    if (statusRes.status === 'success') {
-                      if (!statusRes.binary_content) {
-                        throw new Error('Compilation succeeded but no binary content was returned.');
-                      }
-                      compiled = {
-                        hex: statusRes.binary_content,
-                        stdout: statusRes.stdout || '',
-                        stderr: statusRes.stderr || ''
-                      };
-                      break;
-                    } else if (statusRes.status === 'failed') {
-                      const errMsg = statusRes.error || 'ESP32 compilation failed.';
-                      throw new Error(errMsg);
-                    }
-
-                    pollCount++;
-                    if (pollCount > 180) {
-                      throw new Error('ESP32 compilation timed out after 90 seconds.');
-                    }
-                  }
-                } else {
-                  compiled = await compileCode({
-                    code: compileSource,
-                    files: compileUnit.files,
-                    sketchName: compileUnit.sketchName,
-                    fqbn: targetFqbn,
-                    target: kind,
-                    libraries_txt: librariesTxt,
-                  });
-                }
+                compiled = await compileCode({
+                  code: compileSource,
+                  files: compileUnit.files,
+                  sketchName: compileUnit.sketchName,
+                  fqbn: targetFqbn,
+                  target: kind,
+                  libraries_txt: librariesTxt,
+                  // Uno simulator runs the .hex, GDB needs the .elf.
+                  artifacts: ['hex', 'elf'],
+                });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
                 throw compileErr;

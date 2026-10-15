@@ -2,8 +2,6 @@ import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants'
 
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
-  if (s.includes('esp32')) return 'esp32';
-  if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   if (s.includes('nano')) return 'arduino_nano';
   return 'arduino_uno';
@@ -297,7 +295,7 @@ export function applyRp2040MicroPythonCompat(sourceCode) {
 
 export function isProgrammableBoardType(type) {
   const s = String(type || '').toLowerCase();
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(s);
+  return /(arduino|rp2040|pico)/i.test(s);
 }
 
 export function isBreadboardType(type) {

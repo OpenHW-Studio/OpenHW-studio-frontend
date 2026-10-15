@@ -81,6 +81,45 @@ async function setLocalCompileCache(hash, data) {
     }
 }
 
+/**
+ * Board → default firmware artifacts requested from the compiler-worker.
+ * The backend derives the same defaults from the fqbn, so this is only
+ * about being explicit: the frontend states what it will consume.
+ *   Uno (avr)   → hex (simulator) + elf (GDB)
+ *   Pico (rp2040) → uf2 (simulator) + elf (GDB)
+ */
+export const DEFAULT_ARTIFACTS_BY_FAMILY = Object.freeze({
+    avr: Object.freeze(['hex', 'elf']),
+    rp2040: Object.freeze(['uf2', 'elf']),
+});
+
+export function defaultArtifactsForFqbn(fqbn) {
+    const lowered = String(fqbn || '').toLowerCase();
+    if (lowered.includes('rp2040')) return [...DEFAULT_ARTIFACTS_BY_FAMILY.rp2040];
+    return [...DEFAULT_ARTIFACTS_BY_FAMILY.avr];
+}
+
+/**
+ * Read one artifact out of a compile response, regardless of whether the
+ * caller uses the new `artifacts` map or the legacy top-level fields.
+ * Returns { fileName, encoding, data } or null.
+ */
+export function getResponseArtifact(compiled, name) {
+    const entry = compiled?.artifacts?.[name];
+    if (entry && typeof entry.data === 'string') return entry;
+    if (name === 'hex' && typeof compiled?.hex === 'string' && compiled.hex) {
+        return { fileName: compiled.artifactName || 'firmware.hex', encoding: 'utf8', data: compiled.hex.startsWith('UF2BASE64:') ? compiled.hex : compiled.hex };
+    }
+    if (name === 'uf2' && typeof compiled?.hex === 'string' && compiled.hex.startsWith('UF2BASE64:')) {
+        return { fileName: compiled.artifactName || 'firmware.uf2', encoding: 'base64', data: compiled.hex.slice('UF2BASE64:'.length) };
+    }
+    if (name === 'elf' && typeof compiled?.elf === 'string' && compiled.elf) {
+        const raw = compiled.elf.startsWith('ELFBASE64:') ? compiled.elf.slice('ELFBASE64:'.length) : compiled.elf;
+        return { fileName: compiled.elfName || 'firmware.elf', encoding: 'base64', data: raw };
+    }
+    return null;
+}
+
 async function computePayloadHash(payload) {
     const data = {
         code: payload.code || '',
@@ -89,7 +128,8 @@ async function computePayloadHash(payload) {
             : [],
         fqbn: payload.fqbn || 'arduino:avr:uno',
         builder: payload.builder || 'arduino-cli',
-        libraries_txt: payload.libraries_txt || ''
+        libraries_txt: payload.libraries_txt || '',
+        artifacts: Array.isArray(payload.artifacts) ? [...payload.artifacts].sort() : []
     };
     const str = JSON.stringify(data);
     const msgUint8 = new TextEncoder().encode(str);
@@ -114,10 +154,18 @@ const getAdminAuthConfig = () => {
 
 /**
  * Sends Arduino C++ code to the backend compiler.
+ *
+ * New contract: pass `artifacts` (e.g. ['hex','elf'] or ['uf2','elf','map'])
+ * alongside `fqbn`. The backend returns an `artifacts` map with exactly
+ * those files: `{ hex: { fileName, encoding, data }, ... }`, plus the
+ * legacy top-level fields (hex/elf/…) for back-compat.
  */
 export async function compileCode(input) {
     const payload = typeof input === 'string' ? { code: input } : (input || {});
     const targetFqbn = String(payload.fqbn || '').trim();
+    if (!Array.isArray(payload.artifacts) || payload.artifacts.length === 0) {
+        payload.artifacts = defaultArtifactsForFqbn(targetFqbn);
+    }
     const isUnoOrPico = targetFqbn.includes('avr') || targetFqbn.includes('rp2040') || payload.target === 'uno' || payload.target === 'pico';
 
     let hash = '';
@@ -163,33 +211,6 @@ export async function compileCode(input) {
             const body = highlights || details || error.response.data.error || 'Unknown compile failure';
             throw new Error(`Compilation Failed:${stage}${category}\n${body}${hint}`);
         }
-        throw error;
-    }
-}
-
-/**
- * Boots the ESP32 emulator using a precompiled base64 binary.
- */
-export async function runBinaryCode(firmware_b64) {
-    try {
-        const response = await axios.post(`${COMPILER_URL}/compile/esp32/run-binary`, { firmware_b64, target: 'esp32' }, getUserAuthConfig());
-        if (response.data && response.data.buildId) {
-            return response.data;
-        }
-        throw new Error('No buildId returned from runBinaryCode');
-    } catch (error) {
-        throw error;
-    }
-}
-
-export async function stopSession(buildId, target = 'esp32') {
-    const config = getUserAuthConfig();
-    try {
-        const endpoint = target === 'stm32' ? `compile/stm32/stop/${buildId}` : `compile/esp32/stop/${buildId}`;
-        const response = await axios.post(`${COMPILER_URL}/${endpoint}`, {}, config);
-        return response.data;
-    } catch (error) {
-        console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
         throw error;
     }
 }
@@ -511,38 +532,6 @@ export async function uploadCalibrationScripts(file) {
     const config = getAdminAuthConfig();
     config.headers['Content-Type'] = 'multipart/form-data';
     const response = await axios.put(`${COMPILER_URL}/admin/recalibrate/scripts`, formData, config);
-    return response.data;
-}
-
-export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
-    const response = await axios.post(`${COMPILER_URL}/compile/start`, {
-        code,
-        target: 'esp32',
-        libraries_txt,
-        targetEngine
-    }, getUserAuthConfig());
-    return response.data;
-}
-
-export async function getEsp32CompileStatus(jobId) {
-    const response = await axios.get(`${COMPILER_URL}/compile/status/${jobId}`, getUserAuthConfig());
-    return response.data;
-}
-
-export async function startStm32Compile({ code, files, target, fqbn, libraries_txt, targetEngine }) {
-    const response = await axios.post(`${COMPILER_URL}/compile/stm32/start`, {
-        code,
-        files,
-        target,
-        fqbn,
-        libraries_txt,
-        targetEngine
-    }, getUserAuthConfig());
-    return response.data;
-}
-
-export async function getStm32CompileStatus(jobId) {
-    const response = await axios.get(`${COMPILER_URL}/compile/stm32/status/${jobId}`, getUserAuthConfig());
     return response.data;
 }
 

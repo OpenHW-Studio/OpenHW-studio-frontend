@@ -3,8 +3,6 @@ import { normalizeBoardKind, resolveComponentAttrString } from "../utils/hardwar
 import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
 import {
   compileCode,
-  startEsp32Compile,
-  getEsp32CompileStatus,
 } from "../../../services/simulatorService.js";
 import { useHardwareFlashing } from "../useHardwareFlashing";
 import { useWebSerialHardware } from "../webSerialHardware";
@@ -83,48 +81,17 @@ export function useHardwareUpload({
 
         let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
         if (!compiled) {
-          if (kind === 'esp32') {
-            const startRes = await startEsp32Compile({
-              code: sourceCode,
-              libraries_txt: librariesTxt,
-              targetEngine: 'hardware'
-            });
-            if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-              throw new Error('Failed to start ESP32 compilation.');
-            }
-            const jobId = startRes.jobId || startRes.buildId;
-            let pollCount = 0;
-            while (true) {
-              await new Promise(resolve => setTimeout(resolve, 500));
-              const statusRes = await getEsp32CompileStatus(jobId);
-              if (!statusRes) continue;
-
-              if (statusRes.status === 'success') {
-                if (!statusRes.binary_content) {
-                  throw new Error('Compilation succeeded but no binary content was returned.');
-                }
-                compiled = { hex: statusRes.binary_content };
-                break;
-              } else if (statusRes.status === 'failed') {
-                throw new Error(statusRes.error || 'ESP32 compilation failed.');
-              }
-
-              pollCount++;
-              if (pollCount > 180) {
-                throw new Error('ESP32 compilation timed out after 90 seconds.');
-              }
-            }
-          } else {
-            compiled = await compileCode({
-              code: sourceCode,
-              files: compileUnit.files,
-              sketchName: compileUnit.sketchName,
-              fqbn,
-              target: kind,
-              libraries_txt: librariesTxt,
-              ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-            });
-          }
+          compiled = await compileCode({
+            code: sourceCode,
+            files: compileUnit.files,
+            sketchName: compileUnit.sketchName,
+            fqbn,
+            target: kind,
+            libraries_txt: librariesTxt,
+            ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+            // Hardware flash needs the runnable image; keep elf for verify.
+            artifacts: kind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+          });
           setCachedHex(cacheSource, cacheKeyBoard, compiled);
         }
         return compiled.hex;

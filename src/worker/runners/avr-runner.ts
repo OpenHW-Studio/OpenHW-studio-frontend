@@ -102,7 +102,7 @@ export class AVRRunner {
         this.speed = options.speed ?? 1.0;
         this.solverMode = 'logic';
         this.circuitDirty = true;
-        const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+        const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'openhw-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 

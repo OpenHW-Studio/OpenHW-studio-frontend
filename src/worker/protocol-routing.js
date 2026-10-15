@@ -6,7 +6,7 @@ import {
 } from './board-profiles';
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico)/i.test(String(type || ''));
 }
 
 export function endpointAliases(endpoint) {
@@ -49,13 +49,6 @@ export function getUartSources(boardType) {
 export function getUartPinCandidates(boardType, source = 'uart0') {
   const t = String(boardType || '').toLowerCase();
 
-  if (t.includes('esp32')) {
-    return {
-      tx: ['TX', 'TX0', 'U0TXD', 'GPIO1', '1', 'D1'],
-      rx: ['RX', 'RX0', 'U0RXD', 'GPIO3', '3', 'D3', '0', 'D0'],
-    };
-  }
-
   if (t.includes('rp2040') || t.includes('pico')) {
     const selectedSource = normalizeUartSource(source);
     if (selectedSource === 'uart1') return PICO_UART_SOURCE_PINS.uart1;
@@ -67,36 +60,14 @@ export function getUartPinCandidates(boardType, source = 'uart0') {
     return PICO_UART_SOURCE_PINS.uart0;
   }
 
-  if (t.includes('stm32')) {
-    return {
-      tx: ['TX', 'TX1', 'PA9', '1', 'D1'],
-      rx: ['RX', 'RX1', 'PA10', '0', 'D0'],
-    };
-  }
-
   return UNO_UART_PINS;
 }
 
 export function getSoftwareSerialPinCandidates(boardType) {
   const t = String(boardType || '').toLowerCase();
 
-  if (t.includes('esp32')) {
-    // Common SoftwareSerial example defaults in simulator projects.
-    return {
-      tx: ['17', 'D17', 'GPIO17'],
-      rx: ['16', 'D16', 'GPIO16'],
-    };
-  }
-
   if (t.includes('rp2040') || t.includes('pico')) {
     return PICO_SOFTSERIAL_PINS;
-  }
-
-  if (t.includes('stm32')) {
-    return {
-      tx: ['10', 'D10', 'PB10'],
-      rx: ['11', 'D11', 'PB11'],
-    };
   }
 
   // Arduino UNO / default: SoftwareSerial(11,10) => RX=11, TX=10

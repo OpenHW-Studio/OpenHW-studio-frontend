@@ -1182,11 +1182,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
         const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
         for (const board of boards) {
             const type = String(board.type || '');
-            if (/(stm32)/i.test(type)) {
-                import('./runners/backend-proxy-runner.ts').catch(() => {});
-            } else if (/(esp32)/i.test(type)) {
-                import('./runners/backend-proxy-runner.ts').catch(() => {});
-            } else if (/pico|rp2040/i.test(type)) {
+            if (/pico|rp2040/i.test(type)) {
                 import('./runners/rp2040-runner.ts').catch(() => {});
             } else {
                 import('./runners/avr-runner.ts').catch(() => {});
@@ -1260,7 +1256,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
             speed,
             telemetryEnabled,
             telemetryMode,
-            esp32SimulationMode,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
         const rp2040DebugEnabled = !!debugRp2040;
@@ -1334,18 +1329,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
                 && !!pyScript.trim();
 
-            let esp32Rom: Uint8Array | undefined;
-            if (singleBoardType.toLowerCase().includes('esp32') && esp32SimulationMode === 'frontend') {
-                try {
-                    const response = await fetch(self.location.origin + '/assets/esp32/esp32-v3-rom.bin');
-                    const arrayBuffer = await response.arrayBuffer();
-                    esp32Rom = new Uint8Array(arrayBuffer);
-                    console.log('[SimWorker] Loaded ESP32 BootROM from assets: ' + esp32Rom.length + ' bytes.');
-                } catch (err) {
-                    console.error('[SimWorker] Failed to load ESP32 BootROM:', err);
-                }
-            }
-
             console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
             try {
                 runner = await createRunnerForBoard(
@@ -1370,8 +1353,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
                         rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                         rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
-                        esp32SimulationMode: esp32SimulationMode || 'qemu',
-                        esp32Rom,
                         telemetryEnabled: activeTelemetryEnabled,
                         telemetryMode: activeTelemetryMode,
                         telemetryWatchedParams: activeTelemetryWatchedParamsMap,
@@ -1468,19 +1449,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
         mode = 'multi';
         buildNetIndex(wires || []);
 
-        let esp32Rom: Uint8Array | undefined;
-        const hasEsp32Board = (programmableBoards || []).some((b: any) => String(b.type || '').toLowerCase().includes('esp32'));
-        if (hasEsp32Board && esp32SimulationMode === 'frontend') {
-            try {
-                const response = await fetch(self.location.origin + '/assets/esp32/esp32-v3-rom.bin');
-                const arrayBuffer = await response.arrayBuffer();
-                esp32Rom = new Uint8Array(arrayBuffer);
-                console.log('[SimWorker] Loaded ESP32 BootROM for multi-board from assets: ' + esp32Rom.length + ' bytes.');
-            } catch (err) {
-                console.error('[SimWorker] Failed to load ESP32 BootROM for multi-board:', err);
-            }
-        }
-
         const uartInjectionScripts = new Map<string, string>();
         const circuitPythonInjectionFiles = new Map<string, Array<{ path: string; data: string }>>();
 
@@ -1553,7 +1521,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
                     rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
-                    esp32Rom,
                     sab: data.sab,
                     sabOffsets: data.sabOffsets,
                 }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listHardwarePorts } from '../../services/simulatorService.js';
-import { flashESP32WebSerial } from '../../esp32/esptoolFlasher.js';
 import { flashArduinoWebSerial } from '../../arduino/avrbroFlasher.js';
 
 export function useHardwareFlashing({
@@ -66,9 +65,8 @@ export function useHardwareFlashing({
       ? resolveBoardFqbn(boardComp, kind)
       : (boardFqbn[kind] || boardFqbn.arduino_uno);
     
-    const isESP32 = fqbn.toLowerCase().includes('esp32');
     const isArduino = fqbn.toLowerCase().includes('avr');
-    const requiresWebSerial = isESP32 || isArduino;
+    const requiresWebSerial = isArduino;
 
     const cleanPort = String(resolvedHardwarePort || '').trim();
     if (!requiresWebSerial && !cleanPort) {
@@ -82,7 +80,7 @@ export function useHardwareFlashing({
     if ('serial' in navigator) {
       try {
         if (requiresWebSerial) {
-          // Both ESP32 and Arduino Uno/Nano are now flashed via the browser!
+          // Arduino Uno/Nano are flashed via the browser!
           console.trace('Requesting Web Serial port (requiresWebSerial=true)...');
           webSerialPort = await navigator.serial.requestPort();
           console.trace('Acquired Web Serial Port for flashing:', webSerialPort);
@@ -96,13 +94,13 @@ export function useHardwareFlashing({
       } catch (e) {
         console.warn('Web Serial authorization prompt skipped or cancelled:', e);
         if (requiresWebSerial) {
-            alert(`Web Serial port selection is required to flash ${isESP32 ? 'ESP32' : 'Arduino'} natively.`);
+            alert('Web Serial port selection is required to flash Arduino natively.');
             setIsUploadingHardware(false);
             return;
         }
       }
     } else if (requiresWebSerial) {
-        alert(`Web Serial API is not supported in this browser. Please use Chrome or Edge to flash ${isESP32 ? 'ESP32' : 'Arduino'}.`);
+        alert('Web Serial API is not supported in this browser. Please use Chrome or Edge to flash Arduino.');
         setIsUploadingHardware(false);
         return;
     }
@@ -123,17 +121,7 @@ export function useHardwareFlashing({
       const hexText = await resolveBoardHex(boardComp);
 
       let flashResult = null;
-      if (isESP32) {
-        setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial...`);
-        await flashESP32WebSerial(webSerialPort, hexText, {
-          baudRate: 921600, // Force high speed for ESP32 flashing regardless of UI dropdown
-          onProgress: (msg) => {
-            setHardwareStatus(msg.trim());
-            pushSerialRxChunk(msg, hardwareBoardId, 'hw');
-          }
-        });
-        flashResult = { output: 'Flashed successfully via Web Serial' };
-      } else if (isArduino) {
+      if (isArduino) {
         setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial (AVR)...`);
         
         let avrBoardName = 'uno';

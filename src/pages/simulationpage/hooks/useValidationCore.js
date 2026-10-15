@@ -86,7 +86,15 @@ export function useValidationCore({
             : null;
         if (!compiled || !boardId) return;
 
-        const elfPayload = typeof compiled.elf === "string" ? compiled.elf : "";
+        // Prefer the artifacts map; fall back to legacy top-level fields.
+        const mapElf = compiled.artifacts?.elf;
+        const elfPayload =
+          (typeof mapElf?.data === "string" && mapElf.data
+            ? (mapElf.encoding === "base64" ? `ELFBASE64:${mapElf.data}` : mapElf.data)
+            : typeof compiled.elf === "string"
+              ? compiled.elf
+              : "");
+        const elfName = mapElf?.fileName || compiled.elfName || "";
         const gdbMeta =
           compiled.gdb && typeof compiled.gdb === "object" ? compiled.gdb : null;
         if (!elfPayload && !gdbMeta) return;
@@ -96,7 +104,7 @@ export function useValidationCore({
           boardKind,
           ts: Date.now(),
           elf: elfPayload,
-          elfName: compiled.elfName || "",
+          elfName,
           firmware: compiled.hex || "",
           artifactType: compiled.artifactType || "",
           gdb: gdbMeta,

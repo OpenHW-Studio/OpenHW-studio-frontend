@@ -84,7 +84,7 @@ export function useTeacherKeyCapture({
         return;
       }
 
-      const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("esp32"));
+      const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("arduino"));
       const peripheralComp = components.find((c) => c.id !== boardComp?.id);
       const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
       const peripheralName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";

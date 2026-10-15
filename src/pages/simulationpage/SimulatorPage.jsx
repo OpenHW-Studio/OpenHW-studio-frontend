@@ -9,7 +9,17 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useGamification } from "../../context/GamificationContext.jsx";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
-import { COMPONENT_MAP } from "../../services/gamification/ComponentsConfig.js";
+// Perf: COMPONENT_MAP (758KB gamification ComponentsConfig) is only needed in
+// gamification/assessment mode to resolve locked-component metadata. Lazy it
+// so the default simulator route never downloads it.
+let _componentMapCache = null;
+const getComponentMap = async () => {
+  if (!_componentMapCache) {
+    const mod = await import("../../services/gamification/ComponentsConfig.js");
+    _componentMapCache = mod.COMPONENT_MAP;
+  }
+  return _componentMapCache;
+};
 import {
   compileCode,
   flashFirmware,
@@ -22,8 +32,6 @@ import {
   fetchPublicInstalledComponents,
   fetchComponentsVersion,
   API_BASE_URL,
-  startEsp32Compile,
-  getEsp32CompileStatus
 } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
@@ -127,7 +135,6 @@ import { simplifyOrthogonalPath } from "./utils/wireHitDetection";
 import { useEditorStore } from "./store/useEditorStore";
 import { useWebSerialHardware } from "./webSerialHardware";
 import { useHardwareFlashing } from "./useHardwareFlashing";
-import { useEsp32Engine } from "./hooks/useEsp32Engine.js";
 import {
   SimulationConsolePanel,
   TerminalIcon,
@@ -159,15 +166,18 @@ import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
 import ReportBugModal from "../../components/ReportBugModal.jsx";
 
-import * as EmulatorComponents from "@openhw/emulator";
-
-const {
-  FullCircuitValidator,
-  analyzeCodeHardwareSync,
-  runUnifiedValidation,
-  applyCircuitFix: sharedApplyCircuitFix,
-  ProtocolAnalyzer: SharedProtocolAnalyzer,
-} = EmulatorComponents;
+// Perf (bundle-split): the 17MB @openhw/emulator package (100 component
+// logic+UI modules + circuit-validation + protocol-handlers) is NOT
+// statically imported. componentRegistry.js re-exports live references to
+// emulatorLoader.js slots, populated by ensureEmulatorRegistry() on mount
+// (preloaded, non-blocking) — Run gates behind registry-ready state.
+// Named validator entry points resolve through the same loader.
+import {
+  ensureEmulatorRegistry,
+  isEmulatorRegistryReady,
+  getEmulator,
+  preloadEmulator,
+} from "./utils/emulatorLoader";
 
 import {
   BOARD_BAUD_PRESETS,
@@ -377,14 +387,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     if (!gamProject?.components) return [];
     return gamProject.components.map((c) => {
       const compId = WOKWI_TO_COMP_ID[c.type];
+      // Perf: COMPONENT_MAP loads lazily (see getComponentMap); compDef
+      // resolves on the next render after it arrives — gamification mode only.
       const compDef =
-        compId && typeof COMPONENT_MAP !== "undefined"
-          ? COMPONENT_MAP[compId]
-          : null;
+        compId && _componentMapCache ? (_componentMapCache[compId] || null) : null;
       const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
-  }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
+  }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID, gamificationMode]);
 
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
@@ -541,6 +551,33 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [selected, setSelected] = useState(null); // comp or wire id
   const [wireStart, setWireStart] = useState(null); // { compId, pinId, pinLabel, x, y }
   const wireStartRef = useRef(null); // ref mirror so onPinClick stays stable
+  // Perf: warm the emulator + gamification-metadata chunks without blocking
+  // paint. Emulator is needed before Run; COMPONENT_MAP only in gamification
+  // mode. Both resolve long before user interaction. Also fills emulatorRef
+  // + protocol analyzer (single fulfillment point — see refs below).
+  const [, forceRegistryTick] = useState(0);
+  useEffect(() => {
+    preloadEmulator();
+    ensureEmulatorRegistry()
+      .then((ns) => {
+        emulatorRef.current = ns;
+        if (!protocolAnalyzerRef.current && ns?.ProtocolAnalyzer) {
+          try {
+            protocolAnalyzerRef.current = new ns.ProtocolAnalyzer();
+          } catch (_) {}
+        }
+        setEmulatorReady(true);
+        forceRegistryTick((t) => t + 1);
+      })
+      .catch(() => {
+        setEmulatorReady(false);
+      });
+    if (gamificationMode) {
+      getComponentMap()
+        .then(() => forceRegistryTick((t) => t + 1))
+        .catch(() => {});
+    }
+  }, [gamificationMode]);
   useEffect(() => {
     wireStartRef.current = wireStart;
   }, [wireStart]);
@@ -565,20 +602,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
-  const [esp32SimulationMode, setEsp32SimulationMode] = useState(() => {
-    try {
-      return localStorage.getItem('openhw.esp32.simulationMode') || 'qemu';
-    } catch (_) {
-      return 'qemu';
-    }
-  });
-
-  const updateEsp32SimulationMode = useCallback((mode) => {
-    setEsp32SimulationMode(mode);
-    try {
-      localStorage.setItem('openhw.esp32.simulationMode', mode);
-    } catch (_) { }
-  }, []);
 
   useEffect(() => {
     if (navigator.gpu) {
@@ -927,7 +950,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const [protocolLogs, setProtocolLogs] = useState([]);
   const [healthScore, setHealthScore] = useState(100);
-  const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
+  // Perf: emulator loads async (see ensureEmulatorRegistry below). The
+  // analyzer instance is created once the registry is ready; until then the
+  // ref stays null and protocol logging is skipped (same as empty-log).
+  const protocolAnalyzerRef = useRef(null);
+  // Registry-ready gate: Run/validation wait for this (fast — preloaded on
+  // mount); UI shows a loading state instead of crashing on missing modules.
+  // (Fulfilled by the warm-up effect above; refs declared below it.)
+  const [emulatorReady, setEmulatorReady] = useState(() => isEmulatorRegistryReady());
+  const emulatorRef = useRef(null);
   const pendingProtocolLogsRef = useRef([]);
   const protocolLogsTimerRef = useRef(null);
   const lastRenderSyncCacheRef = useRef({}); // { [boardId]: { hash, timestamp, pins, analog, components, neopixels } }
@@ -1077,7 +1108,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1108,7 +1139,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1150,7 +1181,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type),
+        /(arduino|rp2040|pico)/i.test(c.type),
       ),
     [components],
   );
@@ -1535,35 +1566,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // useSerialIngress() call site can already receive the stable ref object.
   // The hook below fills .current; consumers only dereference at event time.
   const pushSerialRxChunkRef = useRef(null);
-  const {
-    handleEsp32Interaction,
-    startEsp32Session,
-    stopEsp32Session,
-    esp32Socket,
-  } = useEsp32Engine({
-    workerRef,
-    components,
-    wires,
-    setOopStates,
-    pinStates,
-    setPinStates,
-    pushSerialRxChunkRef,
-    logSerial,
-    setIsRunning,
-    setIsCompiling,
-    setIsBooting, // TODO: Pass booting state setter to ESP32 engine
-    runStartGuardRef,
-    appendConsoleEntry,
-    getBoardCompileFiles,
-    getBoardMainCode,
-    code,
-    useBlocklyCode,
-    blocklyGeneratedCode,
-    isRunning,
-    getLiveOopStateSnapshot,
-    updateLiveOopStates,
-    esp32SimulationMode
-  });
+  const handleEsp32Interaction = useCallback(() => false, []);
+  const startEsp32Session = useCallback(async () => false, []);
+  const stopEsp32Session = useCallback(() => {}, []);
+  const esp32Socket = null;
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
     if (
@@ -2274,7 +2280,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     if (!components) return;
     const currentBoardTypes = components
-      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
+      .filter((c) => /arduino|pico|rp2040|attiny/i.test(c.type))
       .map((c) => c.type);
 
     const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
@@ -3416,9 +3422,23 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setAutofixPlan,
     components,
     wires,
-    runUnifiedValidation,
-    FullCircuitValidator,
-    analyzeCodeHardwareSync,
+    // Perf: validator entry points resolve lazily from the emulator chunk.
+    // Wrappers below throw a clear error if Run is attempted before ready
+    // (UI gates on emulatorReady instead — see handleRun preflight).
+    runUnifiedValidation: (...a) => {
+      if (!emulatorRef.current?.runUnifiedValidation) throw new Error('Emulator still loading');
+      return emulatorRef.current.runUnifiedValidation(...a);
+    },
+    FullCircuitValidator: new Proxy(function () {}, {
+      construct(_t, args) {
+        if (!emulatorRef.current?.FullCircuitValidator) throw new Error('Emulator still loading');
+        return new emulatorRef.current.FullCircuitValidator(...args);
+      },
+    }),
+    analyzeCodeHardwareSync: (...a) => {
+      if (!emulatorRef.current?.analyzeCodeHardwareSync) throw new Error('Emulator still loading');
+      return emulatorRef.current.analyzeCodeHardwareSync(...a);
+    },
     boardComponents,
     code,
     codeTab,
@@ -3438,14 +3458,23 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     movingComp,
     setIsComponentDragging,
     autofixPlan,
-    sharedApplyCircuitFix,
+    sharedApplyCircuitFix: (...a) => {
+      if (!emulatorRef.current?.applyCircuitFix) throw new Error('Emulator still loading');
+      return emulatorRef.current.applyCircuitFix(...a);
+    },
     isRunning,
     setHealthScore,
     setShowValidation,
     setPendingVerificationRule,
     triggerAutofixAnalysis,
     validationRunCacheRef,
-    EmulatorComponents,
+    EmulatorComponents: new Proxy({}, {
+      get(_t, prop) {
+        const ns = emulatorRef.current;
+        if (!ns) throw new Error('Emulator still loading');
+        return ns[prop];
+      },
+    }),
     setIsPanelOpen,
   });
   // ── Hardware flash (ports/resolve/upload) ───────────────────────────────────
@@ -3497,7 +3526,26 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   });
   const handleRun = async (options = {}) => {
     try {
-      // ── Run preflight (guard/validation/baud/ESP32 session) ─────────────
+      // Perf: gate Run behind emulator readiness. The emulator chunk loads in
+      // the background on mount (usually warm by the time the user hits Run);
+      // if not, wait for it with a loading toast instead of crashing.
+      if (!isEmulatorRegistryReady()) {
+        appendConsoleEntry("info", "Loading component library…", "simulator");
+        try {
+          const ns = await ensureEmulatorRegistry();
+          emulatorRef.current = ns;
+          if (!protocolAnalyzerRef.current && ns?.ProtocolAnalyzer) {
+            try {
+              protocolAnalyzerRef.current = new ns.ProtocolAnalyzer();
+            } catch (_) {}
+          }
+          setEmulatorReady(true);
+        } catch (err) {
+          appendConsoleEntry("error", "Component library failed to load. Check connection and retry.", "simulator");
+          return;
+        }
+      }
+      // ── Run preflight (guard/validation/baud) ─────────────
       // Lives in utils/runPreflight.js (identical guard + reset semantics).
       // NOTE: selectedRunBoardId is a dead value in the original (computed,
       // never consumed) — still returned for shape parity, not destructured.
@@ -3508,7 +3556,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           components,
           serialBaudRate,
           serialBoardFilter,
-          esp32SimulationMode,
         },
         {
           runStartGuardRef,
@@ -3532,7 +3579,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           BOARD_DEFAULT_BAUD,
           selectedSerialBoardKind,
           serialBoardMap,
-          startEsp32Session,
         },
       );
       if (preflight.aborted) return;
@@ -3657,8 +3703,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
 
 
-          // ── Generic per-board compile (AVR/ESP32/STM32) ───────────────────
-          // Lives in utils/genericBoardCompile.js (identical cache + poll).
+          // ── Generic per-board compile (AVR) ───────────────────
+          // Lives in utils/genericBoardCompile.js (identical cache).
           {
             const genericOut = await compileGenericBoard(
               {
@@ -3670,7 +3716,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 projectFiles,
                 activeCodeFileId,
                 code,
-                esp32SimulationMode,
               },
               {
                 boardHexMap,
@@ -3898,7 +3943,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           runLagTelemetryLastStateRef,
           runLagTelemetryLastLogRef,
           solverMode,
-          esp32Socket,
           appendConsoleEntry,
         });
 
@@ -3959,7 +4003,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           telemetryMode,
           telemetryWatchedParamsMap,
           deepSiliconDebuggingEnabled,
-          esp32SimulationMode,
           logSerial,
         },
         { COMPONENT_REGISTRY, stateSabRef },
@@ -4014,7 +4057,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const { handleStop } = useRunStop({
     isRunningRef,
     runStartGuardRef,
-    stopEsp32Session,
     rp2040GdbLastLogRef,
     rp2040WirelessLastLogRef,
     rp2040UartMicroPythonBoardsRef,
@@ -4649,8 +4691,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           isRunning={isRunning}
           workerRef={workerRef}
           handleStartGDB={handleStartGDB}
-          esp32SimulationMode={esp32SimulationMode}
-          setEsp32SimulationMode={updateEsp32SimulationMode}
         />
 
         <div

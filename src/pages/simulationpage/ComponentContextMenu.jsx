@@ -8,9 +8,7 @@ function normalizeBoardKind(source) {
   if (s.includes('arduino-uno') || s.includes('arduino_uno')) return 'arduino_uno';
   if (s.includes('arduino-mega') || s.includes('arduino_mega')) return 'arduino_mega';
   if (s.includes('arduino-nano') || s.includes('arduino_nano')) return 'arduino_nano';
-  if (s.includes('esp32')) return 'esp32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
-  if (s.includes('stm32')) return 'stm32';
   return s;
 }
 
@@ -504,7 +502,7 @@ export const ComponentContextMenu = ({
 
   if (!visible || !comp) return null;
 
-  const isBoard = /(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type);
+  const isBoard = /(arduino|rp2040|pico)/i.test(comp.type);
   const accentColor = boardColors[comp.id] || 'var(--accent)';
   const shadow = theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)';
 
@@ -678,7 +676,7 @@ export const ComponentContextMenu = ({
           <span>Pin Map</span>
         </button>
 
-        {/(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type) ? (
+        {/(arduino|rp2040|pico)/i.test(comp.type) ? (
           <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onOpenCode?.(comp); onClose(); }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
             <span>Code</span>
@@ -690,7 +688,7 @@ export const ComponentContextMenu = ({
           </button>
         )}
 
-        {programmableBoards.length > 0 && !/(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type) && (
+        {programmableBoards.length > 0 && !/(arduino|rp2040|pico)/i.test(comp.type) && (
           <div
             className="canvas-menu-item context-menu-item"
             style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px', position: 'relative' }}

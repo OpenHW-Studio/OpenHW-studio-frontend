@@ -6,16 +6,8 @@ export async function createRunnerForBoard(
     componentsDef: any[],
     wiresDef: any[],
     onStateUpdate: (state: any) => void,
-    options: AVRRunnerOptions & { pyScript?: string; esp32SimulationMode?: string } = {}
+    options: AVRRunnerOptions & { pyScript?: string } = {}
 ): Promise<BoardRunner> {
-    if (/(esp32)/i.test(String(boardType || ''))) {
-        const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');
-        return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
-    }
-    if (/(stm32)/i.test(String(boardType || ''))) {
-        const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');
-        return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
-    }
     if (/pico|rp2040/i.test(String(boardType || ''))) {
         // RP2040 path: emulate firmware in rp2040js with optional flash partitions.
         const { RP2040Runner } = await import('./runners/rp2040-runner.ts');

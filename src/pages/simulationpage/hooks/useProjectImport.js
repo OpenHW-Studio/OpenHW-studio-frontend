@@ -95,7 +95,7 @@ export function useProjectImport({
       setWires(normalizedConnections);
 
       const importedBoards = normalizedComponents.filter((c) =>
-        /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type),
+        /(arduino|rp2040|pico)/i.test(c.type),
       );
       let normalizedFiles = normalizeProjectFiles(
         Array.isArray(meta?.projectFiles) ? meta.projectFiles : [],

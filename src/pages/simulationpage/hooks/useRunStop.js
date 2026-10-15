@@ -2,7 +2,7 @@ import { useCallback } from "react";
 
 /**
  * Run-stop domain, extracted verbatim from SimulatorPage.jsx (handleStop).
- * (guard reset, ESP32 session stop, RP2040/log ref clears, runtime
+ * (guard reset, RP2040/log ref clears, runtime
  *  verification summaries, neopixel off-state sweep, worker + render
  *  worker teardown w/ display release event, serial/plotter reset,
  *  console close line.)
@@ -15,7 +15,6 @@ import { useCallback } from "react";
 export function useRunStop({
   isRunningRef,
   runStartGuardRef,
-  stopEsp32Session,
   rp2040GdbLastLogRef,
   rp2040WirelessLastLogRef,
   rp2040UartMicroPythonBoardsRef,
@@ -62,7 +61,6 @@ export function useRunStop({
     const handleStop = useCallback(() => {
       const wasRunning = isRunningRef.current;
       runStartGuardRef.current = false;
-      stopEsp32Session();
       rp2040GdbLastLogRef.current.clear();
       rp2040WirelessLastLogRef.current.clear();
       rp2040UartMicroPythonBoardsRef.current.clear();
@@ -195,7 +193,7 @@ export function useRunStop({
       serialPausedQueueRef.current = [];
       appendConsoleEntry("info", "Simulation stopped.", "simulator");
       },
-      // stopEsp32Session/appendConsoleEntry stable (useCallback); components read via functional updates where needed.
+      // appendConsoleEntry stable (useCallback); components read via functional updates where needed.
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [],
     );

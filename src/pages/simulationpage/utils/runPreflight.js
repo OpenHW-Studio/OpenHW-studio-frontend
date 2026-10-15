@@ -1,9 +1,10 @@
 import { normalizeBoardKind } from "./hardwareUtils";
+void normalizeBoardKind;
 
 /**
  * Run preflight domain, extracted verbatim from SimulatorPage.jsx handleRun
  * head (re-entry guard, BLOCKING validation gate, telemetry/log ref reset,
- * baud resolution, per-board maps, programmable-board scan, ESP32 session).
+ * baud resolution, per-board maps, programmable-board scan).
  *
  * NOTE on selectedRunBoardId: computed verbatim but never consumed
  * downstream (dead value in the original) — still computed + returned so
@@ -13,7 +14,7 @@ import { normalizeBoardKind } from "./hardwareUtils";
  * Returns null when the run must abort (guard/validation), else the
  * preflight bag. Early `return`s become `{ aborted: true }` so handleRun
  * keeps its exact console/guard semantics. Verify via double-run +
- * validation-blocked + ESP32-mode Playwright checks.
+ * validation-blocked Playwright checks.
  */
 export async function runPreflight(args, ctx) {
   const {
@@ -22,7 +23,6 @@ export async function runPreflight(args, ctx) {
     components,
     serialBaudRate,
     serialBoardFilter,
-    esp32SimulationMode,
   } = args;
   const {
     runStartGuardRef,
@@ -46,7 +46,6 @@ export async function runPreflight(args, ctx) {
     BOARD_DEFAULT_BAUD,
     selectedSerialBoardKind,
     serialBoardMap,
-    startEsp32Session,
   } = ctx;
         if (runStartGuardRef.current || isRunning || isCompiling) {
           appendConsoleEntry("info", "Run is already in progress.", "simulator");
@@ -109,15 +108,9 @@ export async function runPreflight(args, ctx) {
         const boardPythonFilesMap = {};
         const boardRuntimeEnvMap = {};
         const boardBaudMap = {};
-        const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
-        const hasEsp32 = programmableBoards.some(c => normalizeBoardKind(c.type) === 'esp32');
-        if (hasEsp32) {
-          const engineText = esp32SimulationMode === 'frontend' ? 'Frontend Engine' : 'Backend QEMU';
-          console.log(`[SimulatorPage] Selected ESP32 Emulation Engine: ${engineText}`);
-          appendConsoleEntry('info', `Selected ESP32 Emulation Engine: ${engineText}`, 'simulator');
-        }
+        const programmableBoards = components.filter(c => /(arduino|rp2040|pico)/i.test(c.type));
 
-        const isBackendProxy = await startEsp32Session(programmableBoards);
+        const isBackendProxy = false;
         const singleProgrammableBoardId =
           programmableBoards.length === 1 ? programmableBoards[0]?.id : "";
         const boardsWithoutCompilableSketch = [];

@@ -48,12 +48,14 @@ export async function compileFallbackBoard(args, ctx) {
             result = cached;
           } else {
             logSerial("Compiling...");
+            const fallbackFqbn = BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno;
             result = await compileCode({
               code: finalCode,
-              fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+              fqbn: fallbackFqbn,
               target: fallbackKind,
               libraries_txt: librariesTxt,
               ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
+              artifacts: fallbackKind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
             });
             setCachedHex(cacheStr, board, result);
             registerGdbArtifact(board || "default", fallbackKind, result);

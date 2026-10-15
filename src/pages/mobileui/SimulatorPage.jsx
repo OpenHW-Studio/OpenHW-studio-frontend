@@ -26,7 +26,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion, startEsp32Compile, getEsp32CompileStatus } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
@@ -533,15 +533,11 @@ const GROUP_COLORS = {
 
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
-  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
-  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
 };
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
-  esp32: '115200',
-  stm32: '115200',
   rp2040: '115200',
 };
 
@@ -554,15 +550,11 @@ const SERIAL_LINE_ENDINGS = {
 
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
-  esp32: 'esp32:esp32:esp32',
-  stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
 };
 
 const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
-  esp32: 'ESP32',
-  stm32: 'STM32',
   rp2040: 'Raspberry Pi Pico',
 };
 
@@ -781,8 +773,6 @@ function allocateComponentId(type, usedIdsInput) {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
-  if (s.includes('esp32')) return 'esp32';
-  if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
 }
@@ -852,7 +842,7 @@ function createDefaultMainCode(boardKind, boardId, options = {}) {
   if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
     return `# ${boardId} CircuitPython script\nimport time\nimport board\nimport digitalio\n\nled = digitalio.DigitalInOut(board.LED)\nled.direction = digitalio.Direction.OUTPUT\n\nwhile True:\n  led.value = not led.value\n  time.sleep(0.5)\n`;
   }
-  if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
+  if (boardKind === 'rp2040') {
     return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
   }
   return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
@@ -1374,7 +1364,7 @@ function applyRp2040MicroPythonCompat(sourceCode) {
 }
 
 function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+  return /(arduino|rp2040|pico)/i.test(String(type || ''));
 }
 
 
@@ -2011,7 +2001,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .filter(c => /(arduino|rp2040|pico)/i.test(c.type))
       .map(c => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
@@ -2042,7 +2032,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -2075,7 +2065,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
-  const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
+  const boardComponents = useMemo(() => components.filter(c => /(arduino|rp2040|pico)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
     boardComponents.forEach((component) => {
@@ -6266,7 +6256,14 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     const compiled = compiledResult && typeof compiledResult === 'object' ? compiledResult : null;
     if (!compiled || !boardId) return;
 
-    const elfPayload = typeof compiled.elf === 'string' ? compiled.elf : '';
+    // Prefer the artifacts map; fall back to legacy top-level fields.
+    const mapElf = compiled.artifacts?.elf;
+    const elfPayload =
+      (typeof mapElf?.data === 'string' && mapElf.data
+        ? (mapElf.encoding === 'base64' ? `ELFBASE64:${mapElf.data}` : mapElf.data)
+        : typeof compiled.elf === 'string'
+          ? compiled.elf
+          : '');
     const gdbMeta = compiled.gdb && typeof compiled.gdb === 'object' ? compiled.gdb : null;
     if (!elfPayload && !gdbMeta) return;
 
@@ -6275,7 +6272,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       boardKind,
       ts: Date.now(),
       elf: elfPayload,
-      elfName: compiled.elfName || '',
+      elfName: mapElf?.fileName || compiled.elfName || '',
       firmware: compiled.hex || '',
       artifactType: compiled.artifactType || '',
       gdb: gdbMeta,
@@ -6630,46 +6627,15 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      if (kind === 'esp32') {
-        const startRes = await startEsp32Compile({
-          code: sourceCode,
-          targetEngine: 'hardware'
-        });
-        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-          throw new Error('Failed to start ESP32 compilation.');
-        }
-        const jobId = startRes.jobId || startRes.buildId;
-        let pollCount = 0;
-        while (true) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const statusRes = await getEsp32CompileStatus(jobId);
-          if (!statusRes) continue;
-
-          if (statusRes.status === 'success') {
-            if (!statusRes.binary_content) {
-              throw new Error('Compilation succeeded but no binary content was returned.');
-            }
-            compiled = { hex: statusRes.binary_content };
-            break;
-          } else if (statusRes.status === 'failed') {
-            throw new Error(statusRes.error || 'ESP32 compilation failed.');
-          }
-
-          pollCount++;
-          if (pollCount > 180) {
-            throw new Error('ESP32 compilation timed out after 90 seconds.');
-          }
-        }
-      } else {
-        compiled = await compileCode({
-          code: sourceCode,
-          files: compileUnit.files,
-          sketchName: compileUnit.sketchName,
-          fqbn,
-          target: kind,
-          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-        });
-      }
+      compiled = await compileCode({
+        code: sourceCode,
+        files: compileUnit.files,
+        sketchName: compileUnit.sketchName,
+        fqbn,
+        target: kind,
+        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        artifacts: kind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
+      });
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -6807,7 +6773,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       const boardPythonFilesMap = {};
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      const programmableBoards = components.filter(c => /(arduino|rp2040|pico)/i.test(c.type));
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -7003,6 +6969,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
                   fqbn: targetFqbn,
                   target: kind,
                   builder,
+                  artifacts: ['uf2', 'elf'],
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -7026,76 +6993,23 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
             compileSource,
             targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-            kind === 'esp32' ? esp32SimulationMode : '',
-          ].join('\n/*__SPLIT__*/\n');
+                      ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
+          if (compiled) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
-                const startRes = await startEsp32Compile({
-                  code: compileSource
-                });
-
-                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-                  throw new Error('Failed to start ESP32 compilation.');
-                }
-
-                if (startRes.cache === 'hit') {
-                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
-                }
-
-                const jobId = startRes.jobId || startRes.buildId;
-                let pollCount = 0;
-                let lastPrintedProgressLen = 0;
-
-                while (true) {
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                  const statusRes = await getEsp32CompileStatus(jobId);
-
-                  if (!statusRes) continue;
-
-                  const progressLines = statusRes.progress || [];
-                  if (progressLines.length > lastPrintedProgressLen) {
-                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
-                      logSerial(progressLines[i]);
-                    }
-                    lastPrintedProgressLen = progressLines.length;
-                  }
-
-                  if (statusRes.status === 'success') {
-                    if (!statusRes.binary_content) {
-                      throw new Error('Compilation succeeded but no binary content was returned.');
-                    }
-                    compiled = {
-                      hex: statusRes.binary_content,
-                      stdout: statusRes.stdout || '',
-                      stderr: statusRes.stderr || ''
-                    };
-                    break;
-                  } else if (statusRes.status === 'failed') {
-                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
-                    throw new Error(errMsg);
-                  }
-
-                  pollCount++;
-                  if (pollCount > 120) {
-                    throw new Error('ESP32 compilation timed out after 60 seconds.');
-                  }
-                }
-              } else {
-                compiled = await compileCode({
-                  code: compileSource,
-                  files: compileUnit.files,
-                  sketchName: compileUnit.sketchName,
-                  fqbn: targetFqbn,
-                  target: kind,
-                });
-              }
+              compiled = await compileCode({
+                code: compileSource,
+                files: compileUnit.files,
+                sketchName: compileUnit.sketchName,
+                fqbn: targetFqbn,
+                target: kind,
+                artifacts: ['hex', 'elf'],
+              });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;
@@ -7136,11 +7050,13 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           result = cached;
         } else {
           logSerial('Compiling...');
+          const fallbackFqbn = BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno;
           result = await compileCode({
             code: finalCode,
-            fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            fqbn: fallbackFqbn,
             target: fallbackKind,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
+            artifacts: fallbackKind === 'rp2040' ? ['uf2', 'elf'] : ['hex', 'elf'],
           });
           setCachedHex(cacheStr, board, result);
           registerGdbArtifact(board || 'default', fallbackKind, result);
@@ -8542,7 +8458,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
       // ── Title block ───────────────────────────────────────────────────────
       const TBY = FY2, TBH2 = SH - OM - GL - FY2, divW = FW / 3;
-      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : board === 'pico' ? 'Raspberry Pi Pico' : 'ESP32';
+      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : 'Raspberry Pi Pico';
       const dateStr = new Date().toISOString().slice(0, 10);
       borderSVG += `
         <rect x="${FX1}" y="${TBY}" width="${FW}" height="${TBH2}" fill="white" stroke="#cc0000" stroke-width="1"/>
@@ -8655,7 +8571,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     setComponents(normalizedComponents);
     setWires(normalizedConnections);
 
-    const importedBoards = normalizedComponents.filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+    const importedBoards = normalizedComponents.filter((c) => /(arduino|rp2040|pico)/i.test(c.type));
     let normalizedFiles = normalizeProjectFiles(Array.isArray(meta?.projectFiles) ? meta.projectFiles : []);
 
     // Backward compatibility: older exports stored only top-level `code`.

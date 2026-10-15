@@ -230,6 +230,8 @@ export async function compileRp2040Board(args, ctx) {
                     target: kind,
                     builder,
                     libraries_txt: librariesTxt,
+                    // Pico simulator boots the .uf2, GDB needs the .elf.
+                    artifacts: ['uf2', 'elf'],
                   });
                   setCachedHex(cacheSource, cacheKeyBoard, compiled);
                 } catch (compileErr) {

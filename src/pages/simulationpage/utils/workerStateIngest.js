@@ -10,7 +10,7 @@ const EMPTY_SERIAL_VARS = Object.freeze({});
  * (state.pins -> pin-transition counts + render mirrors + live pins +
  *  plotter history; state.neopixels; state.components -> update counts +
  *  buzzer-latency trace + live OOP + telemetry; generic state -> wifi
- *  dispatch + LAG telemetry; backendGpioSync -> ESP32 socket; debug_telemetry.)
+ *  dispatch + LAG telemetry; debug_telemetry.)
  *
  * Pure function of (msg, msgArrivalMs, ctx); all live state flows through
  * ctx refs + setters. 1000-pt plot cap, 200-entry protocol caps, and the
@@ -43,7 +43,6 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
     runLagTelemetryLastStateRef,
     runLagTelemetryLastLogRef,
     solverMode,
-    esp32Socket,
     appendConsoleEntry,
   } = ctx;
           if (msg.type === "state" && msg.pins) {
@@ -255,11 +254,6 @@ export function handleWorkerStateMessage(msg, msgArrivalMs, ctx) {
                           appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
               */
               runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
-            }
-          }
-          if (msg.type === "backendGpioSync") {
-            if (esp32Socket && typeof esp32Socket.sendGpio === "function") {
-              esp32Socket.sendGpio(msg.pin, msg.value ? 1 : 0);
             }
           }
           if (msg.type === "debug_telemetry") {

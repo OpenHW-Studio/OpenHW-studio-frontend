@@ -33,7 +33,6 @@ export function postWorkerStartMessage(worker, args, ctx) {
     logSerial,
     telemetryWatchedParamsMap,
     deepSiliconDebuggingEnabled,
-    esp32SimulationMode,
   } = args;
   const { COMPONENT_REGISTRY, stateSabRef } = ctx;
         logSerial("Simulator started in Web Worker.");
@@ -95,7 +94,7 @@ export function postWorkerStartMessage(worker, args, ctx) {
         let teacherKeyProjectJson = null;
 
         if (isTeacherKeyCapture) {
-          const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico") || c.id.toLowerCase().includes("esp32"));
+          const boardComp = components.find((c) => c.id.toLowerCase().includes("uno") || c.id.toLowerCase().includes("pico"));
           const peripheralComp = components.find((c) => c.id !== boardComp?.id);
           teacherKeyBoardId = boardComp ? boardComp.type.split("-").pop() : "board";
           teacherKeyComponentId = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
@@ -141,7 +140,6 @@ export function postWorkerStartMessage(worker, args, ctx) {
           telemetryMode: telemetryMode,
           watchedParamsMap: telemetryWatchedParamsMap,
           deepSilicon: deepSiliconDebuggingEnabled,
-          esp32SimulationMode: esp32SimulationMode,
         };
   worker.postMessage(startPayload);
   return startPayload;

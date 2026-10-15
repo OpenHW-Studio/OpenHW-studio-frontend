@@ -57,8 +57,10 @@ export function handleProtocolObserverMessage(msg, ctx) {
               pushSerialRxChunk(msg.text + "\n", resolvedBoardId, msg.source || "wasm");
             }
             // Also log to protocol analyzer
-            const log = protocolAnalyzerRef.current.processSerial(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processSerial(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
 
           // ════════════════════════════════════════════════════════════════════
@@ -79,90 +81,118 @@ export function handleProtocolObserverMessage(msg, ctx) {
           // ── I2C (already hooked up from the original implementation) ──────────
           // LOG ONLY: actual I2C bus is handled by runner's onI2CWrite/onI2CRead
           if (msg.type === "protocol:i2c") {
-            const log = protocolAnalyzerRef.current.processI2C(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processI2C(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // LOG ONLY: ESP32-specific I2C transaction (different event type from AVR's protocol:i2c)
           if (msg.type === "esp32:i2c:transaction") {
-            const log = protocolAnalyzerRef.current.processI2C({
-              address: msg.addr, data: msg.data, isWrite: true
-            });
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processI2C({
+                address: msg.addr, data: msg.data, isWrite: true
+              });
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── SPI (already hooked up from the original implementation) ──────────
           // LOG ONLY: actual SPI bus is handled by runner's onSPIByte/onSPIBuffer
           if (msg.type === "protocol:spi") {
-            const log = protocolAnalyzerRef.current.processSPI(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processSPI(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
 
           // ── GPIO ─────────────────────────────────────────────────────────────
           // LOG ONLY: actual GPIO state is applied by runner's setState()
           if (msg.type === "GPIO_SYNC") {
-            const log = protocolAnalyzerRef.current.processGpio(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processGpio(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── PWM (analogWrite) ─────────────────────────────────────────────────
           // LOG ONLY: actual PWM duty is applied by runner's onPwmDuty()
           if (msg.type === "PWM_SYNC" || (msg.type === "state" && msg.pwm !== undefined)) {
-            const log = protocolAnalyzerRef.current.processPwm(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processPwm(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── LEDC PWM (ESP32 hardware PWM) ─────────────────────────────────────
           // LOG ONLY: actual LEDC routing is handled by runner's ledcChannelMap + onPwmDuty()
           if (msg.type === "LEDC_SYNC") {
-            const log = protocolAnalyzerRef.current.processLedc(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processLedc(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── DAC ───────────────────────────────────────────────────────────────
           // LOG ONLY: actual DAC voltage is applied by runner's onAnalogVoltage()
           if (msg.type === "DAC_SYNC" || msg.type === "esp32:dac:sync") {
-            const log = protocolAnalyzerRef.current.processDac(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processDac(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── ADC (analogRead) ──────────────────────────────────────────────────
           // LOG ONLY: ADC values are injected by useEsp32Engine → esp32Socket.setAdcValue()
           if (msg.type === "esp32:adc:sync") {
-            const log = protocolAnalyzerRef.current.processAdc(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processAdc(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── TONE (buzzer/speaker/piezo) ───────────────────────────────────────
           // LOG ONLY: actual TONE is routed via syncTone() → collectConnectedComponentPins → onTone()
           // Signal path: sim_tone() → >SIM:TONE:< → _handleSimFrame → worker → syncTone → component.onTone()
           if (msg.type === "TONE") {
-            const log = protocolAnalyzerRef.current.processTone(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processTone(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── Serial RX (UART component → firmware) ─────────────────────────────
           // LOG ONLY: actual serial injection is handled by runner's serialRx()
           if (msg.type === "esp32:uart:rx") {
-            const log = protocolAnalyzerRef.current.processSerialRx(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processSerialRx(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── TWAI / CAN Bus ────────────────────────────────────────────────────
           // LOG ONLY: actual CAN frame delivery is handled by runner's onCanFrame()
           if (msg.type === "TWAI_TX") {
-            const log = protocolAnalyzerRef.current.processTwai(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processTwai(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── RMT / IR pulses ───────────────────────────────────────────────────
           // LOG ONLY: actual RMT pulse delivery is handled by runner's onRmtPulse() / onInfraredSignal()
           if (msg.type === "RMT_PULSE") {
-            const log = protocolAnalyzerRef.current.processRmt(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processRmt(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── PCNT (pulse counter) ──────────────────────────────────────────────
           // LOG ONLY: actual counter value is injected by runner's onPulseCount()
           if (msg.type === "PCNT_UPDATE") {
-            const log = protocolAnalyzerRef.current.processPcnt(msg);
-            pendingProtocolLogsRef.current.push(log.message);
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processPcnt(msg);
+              pendingProtocolLogsRef.current.push(log.message);
+            }
           }
           // ── WS2812 / NeoPixel ─────────────────────────────────────────────────
           // LOG ONLY: actual pixel data is applied by runner's updatePixels()
           if (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0) {
             Object.entries(msg.neopixels).forEach(([ch, pixels]) => {
-              const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
-              pendingProtocolLogsRef.current.push(log.message);
+              if (protocolAnalyzerRef.current) {
+                const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
+                pendingProtocolLogsRef.current.push(log.message);
+              }
             });
           }
 
@@ -173,14 +203,18 @@ export function handleProtocolObserverMessage(msg, ctx) {
             setIsDeviceSleeping(true);
             const sec = msg.duration_us ? (msg.duration_us / 1_000_000).toFixed(2) + 's' : '∞';
             appendConsoleEntry("info", `💤 Device entering deep sleep (${sec})`, "simulator");
-            const log = protocolAnalyzerRef.current.processSleep(msg); // ← LOG ONLY line
-            pendingProtocolLogsRef.current.push(log.message);            // ← LOG ONLY line
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processSleep(msg); // ← LOG ONLY line
+              pendingProtocolLogsRef.current.push(log.message);            // ← LOG ONLY line
+            }
           }
           if (msg.type === "sim:wake") {
             setIsDeviceSleeping(false);
             appendConsoleEntry("info", "☀️ Device woke from deep sleep", "simulator");
-            const log = protocolAnalyzerRef.current.processWake(msg); // ← LOG ONLY line
-            pendingProtocolLogsRef.current.push(log.message);           // ← LOG ONLY line
+            if (protocolAnalyzerRef.current) {
+              const log = protocolAnalyzerRef.current.processWake(msg); // ← LOG ONLY line
+              pendingProtocolLogsRef.current.push(log.message);           // ← LOG ONLY line
+            }
           }
           // ════ END PROTOCOL OBSERVER BLOCK ════════════════════════════════════
 
@@ -251,8 +285,10 @@ export function handleProtocolObserverMessage(msg, ctx) {
 
             // LOG ONLY: record to protocol panel
             if (protocolAnalyzerRef.current?.processI2S) {
-              const log = protocolAnalyzerRef.current.processI2S(msg);
-              pendingProtocolLogsRef.current.push(log.message);
+              if (protocolAnalyzerRef.current) {
+                const log = protocolAnalyzerRef.current.processI2S(msg);
+                pendingProtocolLogsRef.current.push(log.message);
+              }
             }
           }
           // ── END I2S AUDIO ─────────────────────────────────────────────────────
