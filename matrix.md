@@ -12,15 +12,17 @@ missing) / `NONE` (silicon-capable, no proof yet) / `ABSENT` (no such silicon) /
 
 | Board | UART | SoftSerial | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire/DHT | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | FULL | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
-| openhw-stm32-maple-mini | FULL (sweep) | NONE | FULL (sweep OLED) | PARTIAL (same write-only gap) | NONE | NONE | ABSENT | NONE | NONE | NONE | NONE (bxCAN, no per-board cell) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT | ABSENT | NONE | NONE | FULL (sweep OLED+MAX7219) |
-| openhw-stm32f103cb | FULL (sweep) | NONE | FULL (sweep OLED) | PARTIAL (same write-only gap) | NONE | NONE | ABSENT | NONE | NONE | NONE | NONE (bxCAN, no per-board cell) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT | ABSENT | NONE | NONE | FULL (sweep OLED+MAX7219) |
+| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (nan regression under hunt; Maple/CB exact) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
+| openhw-stm32-maple-mini | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
+| openhw-stm32f103cb | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
 
 UART note: all FULL cells prove TX; HW-UART RX loopback unproven (SW-UART RX
 proven on bluepill only).
 Specs: stm32-can, stm32-softserial(+tx), stm32-dht22, stm32-rtc, stm32-gpio-in,
 stm32-i2c, stm32-spi, stm32-595, stm32-adc, stm32-pwm, stm32-mpu6050,
-stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep.
+stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep,
+stm32f1-maple-cb (6/6), stm32f1-maple-cb-2 (8/8), stm32f1-dma, stm32f1-crc,
+stm32f1-sys (WDG/EXTI/BKP, all three boards).
 
 ## STM32F4 (survey-verified 2026-10-09; chip flags from engine CHIPS table)
 
@@ -30,11 +32,14 @@ stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep.
 | openhw-stm32f401 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE (sdio:T) | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
 | openhw-stm32f411 | FULL | NONE | NONE | NONE | NONE | ABSENT | NONE | NONE | NONE | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | NONE | NONE | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | NONE |
 | openhw-stm32f407ve | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | NONE |
-| openhw-stm32f429 | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; cell ran Disco-only) | NONE (DMA2D gate unused) | NONE | NONE | NONE (CAN hw, no cell) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | FULL (scanout) | FULL (capture) | FULL* (model extension — NO QUADSPI on F4 silicon, F7-first; flash-image plumbing proven for reuse) | FULL (8080) | PARTIAL (DR data-path only) | NONE | NONE (ext displays unproven; LTDC in LTDC col) |
+| openhw-stm32f429 | FULL | NONE | NONE | NONE | NONE | NONE (dac:T; Disco loopback proven, no 429 cell) | NONE (DMA2D gate unused) | NONE | NONE | NONE (CAN hw; staged can-x spec unrun) | NO-GO | NONE | NONE | NONE | ABSENT | NONE (deferred — user takes ETH/WiFi later) | NONE | NONE | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | NONE (ext displays unproven; LTDC proven) |
 
 Specs: stm32f4-sdio, stm32f4-ltdc, stm32f4-usb, stm32f4-dcmi, stm32f4-qspi,
 stm32f4-fsmc, stm32f4-sai, stm32f4-dac, stm32f4-adc, stm32f4-pwm, stm32f4-spi,
-stm32f4-sd, stm32f4-sd-fs, stm32f4-sweep, multi-board-uart.
+stm32f4-sd, stm32f4-sd-fs, stm32f4-sweep, multi-board-uart,
+stm32f4-dcmi, stm32f4-qspi, stm32f4-fsmc, stm32f4-sai, stm32f4-can(+x),
+stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x, stm32f4-display-x,
+stm32f4-gpio-rtc, stm32f4-crc-rng-x, stm32f4-1wire, stm32f4-usb-ve.
 
 ## AVR (survey-verified 2026-10-09; no RED)
 
@@ -66,12 +71,17 @@ pico2-mp-i2c, pico2-rv32, multi-board-uart, arch-clocks.
 
 | Board | UART | I2C | SPI | ADC | PWM/LEDC | DAC | DMA | GPIO-in | 1-Wire | DHT-RMT | TWAI | I2S | Camera | MicroPython | WiFi/ETH | SD-SPI | Display-ext | Touch |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (25C) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | PARTIAL (SSD1306+MAX7219 proven; ILI9341/ePaper/N5110 not) | NONE |
+| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | PARTIAL (SSD1306+MAX7219 proven; ILI9341/ePaper/N5110 not) | NONE |
 | openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | NONE | NONE | NONE | NONE |
 
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
 esp32-dht22, esp32-twai (RX), esp32-i2s-tx, esp32-camcell (DevKit camera),
-esp32-camboard (cam shell), esp32-mp-i2c.
+esp32-camboard (cam shell), esp32-mp-i2c,
+esp32-twai-tx (RX proven; TX oracle NO-GO engine-side), esp32-rmt-ir,
+esp32-touch, esp32-cam-adc, esp32-gpio-in, esp32-nvs, esp32-interrupts
+(centrally green), esp32-ili9341 (centrally green), esp32-sys, esp32-pcnt,
+esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
+esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09)
 
@@ -133,7 +143,19 @@ Connectivity extras not in the main tables:
 | LittleFS/SPIFFS anywhere | NONE (no cell) |
 
 
-## Infra notes (2026-10-10)
+## Infra notes (2026-10-10/11)
+
+- F4 pace breakthrough: LOAD-sized chunking (same instructions, more SysTick
+  fires per tick) took Disco 45→288 guest-ms/s (6.4x), guardrails green.
+  TickMHz divider proven INERT (identical pace all presets) — menu removed.
+- Engine adoptions: F1 bytes (130 MIPS showcase), F4 bytes (42 MIPS warmed) —
+  both export-verified, guardrail-proven. ESP32 bytes refreshed (no speedup).
+- ESP32 boot chain fixed (crypto stub, WASM handoff, TWAI wedge, seedMMU
+  removal); OLED cell green centrally. TWAI-TX oracle + SD-SPI + sleep are
+  engine-side NO-GOs.
+- F1 DHT nan regression under active hunt (runner exonerated by A/B, engine
+  bytes verified, firmware stable) — bluepill cell marked RED until green.
+
 
 - Pace pill now reports step-counted virtual time (was wall clock — always
   ~100%). Expect single digits on F4 at 1x; that is the truth.
