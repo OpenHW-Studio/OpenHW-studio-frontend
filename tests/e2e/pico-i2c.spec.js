@@ -13,7 +13,7 @@ test.describe('Pico I2C (OLED + LCD backpack)', () => {
     page.on('console', (msg) => {
       try {
         const t = `[${msg.type()}] ${msg.text()}`;
-        if (/BUSLOG|SDD|VCD|EEPROM|GDBTRAP|PicoRunner GDB|GDBSTAT/i.test(t)) console.log('CAPTURED-BUSLOG:', t.slice(0, 900));
+        if (/BUSLOG|SDD|VCD|EEPROM|GDBTRAP|PicoRunner|engine unavailable|wasm|WASM|abort|Aborted/i.test(t)) console.log('CAPTURED-BUSLOG:', t.slice(0, 900));
       } catch { /* ignore */ }
     });
   });
@@ -72,13 +72,15 @@ test.describe('Pico I2C (OLED + LCD backpack)', () => {
         { from: 'pico1:3V3', to: 'lcd1:VCC' },
         { from: 'pico1:GND', to: 'lcd1:GND' },
       ],
-      code: '#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\nLiquidCrystal_I2C lcd(0x27,20,4);\nvoid setup(){Serial.begin(9600);Serial.println("PICO_LCD_READY");Wire.setSDA(4);Wire.setSCL(5);lcd.init();lcd.backlight();lcd.setCursor(0,0);lcd.print("Hello");lcd.setCursor(0,1);lcd.print("Pico");}\nvoid loop(){Serial.println("PICO_LCD_TICK");delay(1000);}\n',
+      code: '#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\nLiquidCrystal_I2C lcd(0x27,20,4);\nvoid setup(){Serial.begin(9600);Serial.println("PICO_LCD_READY");delay(500);Serial.println("PICO_LCD_READY2");Wire.setSDA(4);Wire.setSCL(5);lcd.init();lcd.backlight();lcd.setCursor(0,0);lcd.print("Hello");lcd.setCursor(0,1);lcd.print("Pico");}\nvoid loop(){Serial.println("PICO_LCD_TICK");delay(1000);}\n',
     }));
     expect(setup.ok).toBe(true);
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 20000, selectTelemetry: ['lcd1'], serialNeedle: 'PICO_LCD_READY', telemetryMode: 'detail',
+      forMs: 20000, selectTelemetry: ['lcd1'], serialNeedle: 'PICO_LCD_READY2', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
+    console.log('PICO-LCD reasons:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
+    console.log('PICO-LCD serial:', JSON.stringify((verdict.serial || '').slice(0, 300)));
     expect(verdict.pass).toBe(true);
     const lcd = (verdict.telemetry || []).find((t) => t.id === 'lcd1');
     expect(lcd).toBeTruthy();

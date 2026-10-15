@@ -20,6 +20,13 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
+import {
+  collectI2CSlaveAddresses,
+  createI2CBridge,
+  createSPIBridge,
+  type I2CBridge,
+  type SPIBridge,
+} from '../bus-bridge.ts';
 
 // Blue Pill USART1: TX=PA9, RX=PA10.
 // Board LED map (matches emulator shells + package chip table):
@@ -94,7 +101,89 @@ export class Stm32f1Runner extends ArmRunnerBase {
         const optChip = String((options as any)?.chip || '');
         const typeStr = String((options as any)?.boardType || '');
         this.chip = (/^[a-z0-9_+-]+$/i.test(optChip) && optChip ? optChip : f1ChipForType(typeStr)).toLowerCase();
+        // Snapshot component attrs for generic bus address resolution (the
+        // base doesn't retain componentsDef; bridges read this map).
+        try {
+            const defs = Array.isArray(componentsDef) ? componentsDef : [];
+            this.compAttrById = new Map();
+            for (const c of defs) {
+                if (c && c.id !== undefined) this.compAttrById.set(String(c.id), c.attrs || {});
+            }
+        } catch { /* snapshot never breaks construction */ }
         void this.boot('openhw-stm32-bluepill');
+    }
+
+    private compAttrById: Map<string, any> = new Map();
+    private i2cBridge: I2CBridge | null = null;
+    private spiBridge: SPIBridge | null = null;
+    private spiLastMs = 0;
+
+    /** Wire engine bus callbacks into the shared bridges (runner-owned, AVR-adapter pattern). */
+    private wireBusBridges(): void {
+        const mcu = this.mcu;
+        if (!mcu) return;
+        try {
+            const bridgeCtx = {
+                boardId: this.boardId,
+                onStateUpdate: (msg: any) => { try { this.onStateUpdate(msg); } catch { /* ignore */ } },
+                getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
+                instances: this.instances,
+                compAttrById: this.compAttrById,
+            };
+            // I2C: one callback set per bus (addresses route inside the
+            // adapter by first-ACK-wins). Default Wire = I2C1 on all F1
+            // variants; Wire1/I2C2 later (documented gap).
+            const addrs = collectI2CSlaveAddresses(bridgeCtx);
+            if (addrs.length > 0 && mcu.i2c1) {
+                this.i2cBridge = createI2CBridge(bridgeCtx);
+                const br = this.i2cBridge;
+                try { mcu.i2c1.onStart = (addr: number) => { try { br.start(Number(addr) & 0x7f, false); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try { mcu.i2c1.onWrite = (byte: number) => { try { br.write(Number(byte) & 0xff); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                try {
+                    mcu.i2c1.onRead = () => {
+                        try { return br.read() & 0xff; } catch { return 0xff; }
+                    };
+                } catch { /* ignore */ }
+                try { mcu.i2c1.onStop = () => { try { br.stop(); } catch { /* ignore */ } }; } catch { /* ignore */ }
+            }
+            // SPI: per-DR-write transfers grouped by 2ms sim gaps (mirrors
+            // AVR's framing); MISO responses queue immediately (timing
+            // validated live by the MFRC522 discriminator cells).
+            const hasSpi = (() => {
+                try {
+                    for (const inst of this.instances.values()) {
+                        if (typeof (inst as any)?.onSPIByte === 'function'
+                            || typeof (inst as any)?.onSPIByteExchange === 'function') return true;
+                    }
+                } catch { /* ignore */ }
+                return false;
+            })();
+            if (hasSpi && mcu.spi1) {
+                this.spiBridge = createSPIBridge(bridgeCtx);
+                const br = this.spiBridge;
+                const self = this;
+                try {
+                    mcu.spi1.onTransfer = (ch: number, tx: number[], _rx: number[]) => {
+                        void ch; void _rx;
+                        try {
+                            const nowMs = self.getSimulatedTimeMs();
+                            // 2ms sim gap closes + posts the previous frame
+                            // (mirrors AVR's idle framing), starting fresh.
+                            if (nowMs - self.spiLastMs > 2.0) {
+                                try { br.frame(true); } catch { /* ignore */ }
+                            }
+                            self.spiLastMs = nowMs;
+                            const resps: number[] = [];
+                            const arr = Array.isArray(tx) ? tx : [tx];
+                            for (let i = 0; i < arr.length; i++) {
+                                resps.push(br.exchange(Number(arr[i]) & 0xff, i) & 0xff);
+                            }
+                            try { mcu.spi1.injectMiso(resps); } catch { /* older builds */ }
+                        } catch { /* transfer never breaks the tick */ }
+                    };
+                } catch { /* ignore */ }
+            }
+        } catch { /* bridge wiring never breaks boot */ }
     }
 
     private makeEngine() {
@@ -129,14 +218,62 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     } catch { return null; }
                 };
                 const fw = decode();
+                // Virtual I2C devices (runner-owned bridge foundation): data
+                // callbacks (onWrite) only flow with a device attached, so
+                // attach the package's virtual devices at the owned slave
+                // addresses — OLED pairs get i2c_oled, everything else an
+                // i2c_eeprom ACK-sink. Our onStart/onWrite/onStop callbacks
+                // observe alongside and feed the real component models
+                // (AVR-adapter pattern, zero component patches).
+                let extDevices: any = undefined;
+                try {
+                    const seen = new Set<number>();
+                    const oledAddrs: number[] = [];
+                    const sinkAddrs: number[] = [];
+                    for (const inst of self.instances.values()) {
+                        if (typeof (inst as any)?.onI2CStart !== 'function') continue;
+                        const id = String((inst as any)?.id || '');
+                        const attrs = self.compAttrById?.get(id) || {};
+                        const cands = [
+                            (inst as any)?.i2cAddr,
+                            typeof (inst as any)?.getI2CAddress === 'function' ? (inst as any).getI2CAddress() : NaN,
+                            attrs?.address, attrs?.i2cAddress, attrs?.addr,
+                        ];
+                        for (const c of cands) {
+                            const v = Number(c);
+                            if (!Number.isFinite(v)) continue;
+                            const addr = v & 0x7f;
+                            if (seen.has(addr)) break;
+                            seen.add(addr);
+                            const type = String((inst as any)?.type || '').toLowerCase();
+                            if (type.includes('ssd1306') || type.includes('oled')) oledAddrs.push(addr);
+                            else sinkAddrs.push(addr);
+                            break;
+                        }
+                    }
+                    if (oledAddrs.length > 0 || sinkAddrs.length > 0) {
+                        extDevices = {};
+                        if (oledAddrs.length > 0) {
+                            extDevices.i2c_oled = oledAddrs.slice(0, 4).map((address) => ({
+                                peripheral: 'I2C1', address, width: 128, height: 64,
+                            }));
+                        }
+                        if (sinkAddrs.length > 0) {
+                            extDevices.i2c_eeprom = sinkAddrs.slice(0, 4).map((address) => ({
+                                peripheral: 'I2C1', address, data: new Uint8Array(1024),
+                            }));
+                        }
+                    }
+                } catch { /* devices never break boot */ }
+                const mkOpts = () => extDevices ? { chip: self.chip, ext_devices: extDevices } : { chip: self.chip };
                 if (!fw) {
-                    self.mcu = await STM32F1.create({ chip: self.chip });
+                    self.mcu = await STM32F1.create(mkOpts());
                 } else if (fw.kind === 'elf') {
-                    self.mcu = await STM32F1.fromELF(fw.data as Uint8Array, { chip: self.chip });
+                    self.mcu = await STM32F1.fromELF(fw.data as Uint8Array, mkOpts());
                 } else if (fw.kind === 'hex') {
-                    self.mcu = await STM32F1.fromHex(fw.data as string, { chip: self.chip });
+                    self.mcu = await STM32F1.fromHex(fw.data as string, mkOpts());
                 } else {
-                    self.mcu = await STM32F1.fromBin(fw.data as Uint8Array, { chip: self.chip });
+                    self.mcu = await STM32F1.fromBin(fw.data as Uint8Array, mkOpts());
                 }
                 self.mcu.usart1.onData = (b: number) => { txQueue.push(b & 0xff); };
                 // Nucleo USART2 (PA2/PA3 ST-Link VCP): same TX queue, tagged
@@ -144,6 +281,9 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 // older facade builds expose usart1 only.
                 try { self.mcu.usart2.onData = (b: number) => { txQueue.push(b & 0xff); }; } catch { /* usart1-only */ }
                 self.hookGpio(gpioUnsubs);
+                // I2C/SPI bridges (runner-owned; no-ops without matching
+                // peripherals or engine callbacks).
+                try { self.wireBusBridges(); } catch { /* bridges never break boot */ }
             },
             stepBudget(budget: number): number {
                 if (!self.mcu) return 0;

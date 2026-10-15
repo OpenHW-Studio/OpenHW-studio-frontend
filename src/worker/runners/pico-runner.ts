@@ -72,6 +72,20 @@ export class PicoRunner extends ArmRunnerBase {
     private wantWifi = false;
     private ethBoard: '' | 'w5500' = '';
     private ethSpi = 0;
+    // I2C mirror bridge (runner-owned, AVR-TWIAdapter pattern): boards that
+    // own I2C peripherals get the core's virtual mirror slaves attached at
+    // the models' addresses; per-tick ring drains feed the standard
+    // onI2CStart/onI2CByte/onI2CStop model interface. No component patches,
+    // no per-board special casing — addresses come from the instances
+    // themselves (generic accessor chain). Requires the fork core with the
+    // jsmirror SDD (stock 1.0.3 has no observation channel); without it the
+    // attach no-ops and behavior is exactly today's (blank I2C displays).
+    private wantI2CBridge = false;
+    private mirrorAttached = false;
+    private mirrorActiveAddr: number | null = null;
+    private mirrorBuf: number[] = [];
+    private mirrorSlave: any = null;
+    private compAttrById: Map<string, any> = new Map();
 
     constructor(
         hexData: string,
@@ -99,7 +113,157 @@ export class PicoRunner extends ArmRunnerBase {
         else if (/pico-?eth|picoeth|w5500/.test(typeStr)) this.ethBoard = 'w5500';
         const spiOpt = Number.parseInt(String((options as any)?.boardSpi ?? '0'), 10);
         this.ethSpi = spiOpt === 1 ? 1 : 0;
+        // Snapshot component attrs for generic I2C address resolution + arm
+        // the mirror bridge when any owned instance speaks the I2C slave
+        // interface (mirror attach happens post-engine-init in loadFirmware).
+        try {
+            const defs = Array.isArray(componentsDef) ? componentsDef : [];
+            for (const c of defs) {
+                if (c && c.id !== undefined) this.compAttrById.set(String(c.id), c.attrs || {});
+            }
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onI2CStart === 'function') { this.wantI2CBridge = true; break; }
+            }
+        } catch { /* detection never breaks construction */ }
         void this.boot(this.isPico2 ? 'openhw-pico-2' : 'openhw-pico');
+    }
+
+    /** Generic I2C slave addresses owned by this board (no per-type code). */
+    private i2cSlaveAddresses(): number[] {
+        const out = new Set<number>();
+        try {
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onI2CStart !== 'function') continue;
+                const id = String((inst as any)?.id || '');
+                const attrs = this.compAttrById.get(id) || {};
+                const cands = [
+                    (inst as any)?.i2cAddr,
+                    typeof (inst as any)?.getI2CAddress === 'function' ? (inst as any).getI2CAddress() : NaN,
+                    attrs?.address, attrs?.i2cAddress, attrs?.addr,
+                ];
+                for (const c of cands) {
+                    const v = Number(c);
+                    if (Number.isFinite(v)) { out.add(v & 0x7f); break; }
+                }
+            }
+        } catch { /* address scan never breaks the tick */ }
+        return [...out];
+    }
+
+    /** Attach one mirror call batching every owned address (single call — registry resets per call). */
+    private attachI2CMirrors(): void {
+        if (!this.wantI2CBridge || this.mirrorAttached) return;
+        try {
+            const mod = this.mod;
+            const addFn = mod?._picoemu_sdd_add;
+            if (typeof addFn !== 'function') return;
+            const addrs = this.i2cSlaveAddresses();
+            if (addrs.length === 0) return;
+            const arg = `jsmirror:i2c=0,${addrs.slice(0, 8).map((a) => `addr=0x${a.toString(16)}`).join(',')}`;
+            const ptr = mod._malloc(arg.length + 1);
+            mod.HEAPU8.set(new TextEncoder().encode(arg + '\0'), ptr);
+            let r = -1;
+            try { r = addFn(ptr); } finally { mod._free(ptr); }
+            if (r >= 0) {
+                this.mirrorAttached = true;
+            } else {
+                console.warn('[PicoRunner] jsmirror attach failed (stock core?) — I2C displays stay blank');
+            }
+        } catch { /* attach never breaks boot */ }
+    }
+
+    /** Drain mirror ring entries into the component models (AVR-adapter semantics). */
+    private drainI2CMirror(): void {
+        if (!this.mirrorAttached || !this.mod) return;
+        try {
+            const mod = this.mod;
+            if (typeof mod._picoemu_jsmirror_pending !== 'function'
+                || typeof mod._picoemu_jsmirror_pop !== 'function') return;
+            if ((mod._picoemu_jsmirror_pending() || 0) <= 0) return;
+            const max = 1024;
+            const ptr = mod._malloc(max * 2);
+            let n = 0;
+            try {
+                n = mod._picoemu_jsmirror_pop(ptr, max) || 0;
+                if (n <= 0) return;
+                const view = mod.HEAPU16
+                    ? new Uint16Array(mod.HEAPU16.buffer, ptr, n)
+                    : Array.from({ length: n }, (_, i) => mod.HEAPU16?.[ptr / 2 + i] || 0);
+                for (let i = 0; i < n; i++) this.feedMirrorEntry(view[i] & 0xffff);
+            } finally {
+                mod._free(ptr);
+            }
+        } catch { /* drain never breaks the tick */ }
+    }
+
+    private feedMirrorEntry(entry: number): void {
+        try {
+            if (entry === 0x200) {
+                this.mirrorStop();
+                return;
+            }
+            if ((entry & 0x100) !== 0) {
+                this.mirrorStart(entry & 0x7f);
+                return;
+            }
+            this.mirrorByte(entry & 0xff);
+        } catch { /* one bad entry never breaks the drain */ }
+    }
+
+    private mirrorStart(addr: number): void {
+        this.mirrorActiveAddr = addr & 0x7f;
+        this.mirrorBuf = [];
+        this.mirrorSlave = null;
+        try {
+            // First ACK wins (mirrors AVR connectToSlave); the core already
+            // ACKed via the mirror device, so this is purely JS-side routing.
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onI2CStart !== 'function') continue;
+                let ack = false;
+                try { ack = !!(inst as any).onI2CStart(this.mirrorActiveAddr, false); } catch { ack = false; }
+                if (ack && !this.mirrorSlave) this.mirrorSlave = inst;
+            }
+        } catch { /* start never breaks the drain */ }
+    }
+
+    private mirrorByte(value: number): void {
+        this.mirrorBuf.push(value & 0xff);
+        try {
+            // Addressed-slave-only delivery (mirrors AVR writeByte: no
+            // broadcast corruption across multi-slave buses). Falls back to
+            // all only when no slave claimed the address (general call).
+            const targets = this.mirrorSlave ? [this.mirrorSlave] : Array.from(this.instances.values());
+            for (const inst of targets) {
+                if (typeof (inst as any)?.onI2CByte !== 'function') continue;
+                try { (inst as any).onI2CByte(-1, value & 0xff); } catch { /* ignore */ }
+            }
+        } catch { /* byte never breaks the drain */ }
+    }
+
+    private mirrorStop(): void {
+        try {
+            const instArray = Array.from(this.instances.values());
+            for (const inst of instArray) {
+                try { if (typeof (inst as any)?.onI2CStop === 'function') (inst as any).onI2CStop(); } catch { /* ignore */ }
+            }
+            const addr = this.mirrorActiveAddr;
+            const data = this.mirrorBuf;
+            if (addr !== null && addr !== undefined && data.length > 0) {
+                try {
+                    this.onStateUpdate({
+                        type: 'protocol:i2c',
+                        boardId: this.boardId,
+                        address: addr,
+                        data: [...data],
+                        isWrite: true,
+                        timestamp: this.getSimulatedTimeMs(),
+                    });
+                } catch { /* protocol lane never breaks the drain */ }
+            }
+        } catch { /* stop never breaks the drain */ }
+        this.mirrorActiveAddr = null;
+        this.mirrorBuf = [];
+        this.mirrorSlave = null;
     }
 
     private makeEngine() {
@@ -109,8 +273,13 @@ export class PicoRunner extends ArmRunnerBase {
                 // Engine loader: bundler first (node_modules, works in
                 // vitest + vite build), public/vendor fallback at runtime
                 // (workers serving the built app resolve /vendor/...).
+                // Engine variant: I2C runs load the fork core (jsmirror SDD;
+                // see vendor/pico-emu-fork/README.md). Every other Pico run
+                // loads stock 1.0.3 byte-identically to before — the fork
+                // never touches non-I2C behavior.
+                const useFork = self.wantI2CBridge;
                 const engineMod: any = await importEngine(
-                    'pico-emu/picoemu.wasm.js',
+                    useFork ? '../engines/pico-emu-fork/picoemu.wasm.js' : 'pico-emu/picoemu.wasm.js',
                     '/vendor/board-engines/pico-emu/picoemu.wasm.js',
                 );
                 const PicoemuModule = engineMod?.default;
@@ -118,27 +287,38 @@ export class PicoRunner extends ArmRunnerBase {
                     console.warn('[PicoRunner] engine unavailable (test env?) — idle.');
                     return;
                 }
+                const wasmUrl = useFork ? '/wasm/picoemu-fork.wasm.wasm' : '/wasm/picoemu.wasm.wasm';
                 let wasmBinary: ArrayBuffer | undefined;
                 try {
-                    const r = await fetch('/wasm/picoemu.wasm.wasm');
+                    const r = await fetch(wasmUrl);
                     if (r.ok) wasmBinary = await r.arrayBuffer();
                 } catch { /* glue falls back to its own URL */ }
-                self.mod = await (PicoemuModule as any)({
-                    print: () => {}, printErr: () => {},
-                    // locateFile: the glue resolves its .wasm relative to
-                    // import.meta.url (vite serves the glue from
-                    // /src/... or /vendor/... where no .wasm sits, and the
-                    // HTML fallback then fails wasm magic). Point it at the
-                    // real public/wasm asset. wasmBinary above wins when set.
-                    locateFile: (f: string) => f === 'picoemu.wasm.wasm' ? '/wasm/picoemu.wasm.wasm' : f,
-                    ...(wasmBinary ? { wasmBinary } : {}),
-                });
+                try {
+                    self.mod = await (PicoemuModule as any)({
+                        print: () => {}, printErr: () => {},
+                        // locateFile: the glue resolves its .wasm relative to
+                        // import.meta.url (vite serves the glue from
+                        // /src/... or /vendor/... where no .wasm sits, and the
+                        // HTML fallback then fails wasm magic). Point it at the
+                        // real public/wasm asset. wasmBinary above wins when set.
+                        locateFile: (f: string) => f === 'picoemu.wasm.wasm'
+                            ? wasmUrl
+                            : f,
+                        ...(wasmBinary ? { wasmBinary } : {}),
+                    });
+                } catch (e) {
+                    console.log('[PicoRunner BOOT] factory threw:', String(e && (e as any).message || e).slice(0, 200));
+                    throw e;
+                }
                 // Arch select: explicit attr (arch=m33/rv32/m0) wins, else
                 // Pico 2 board default (M33), else UF2 family-ID auto-detect
                 // (CLI rule), else board default (M0 Pico / M33 Pico 2).
                 self.arch = self.resolveArch(payloadToU8(firmware));
                 self.mod._picoemu_init(self.arch);
                 self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
+                // I2C mirror attach (post-init, pre-firmware): one call for
+                // every owned slave address (see attachI2CMirrors).
+                try { self.attachI2CMirrors(); } catch { /* attach never breaks boot */ }
                 // Wireless + wired net (stub mode, no live sockets):
                 // CYW43 for Pico W / Pico 2 W, W5500 board for pico-eth
                 // variants — same CLI calls minus --board-live (deferred).
@@ -171,6 +351,8 @@ export class PicoRunner extends ArmRunnerBase {
                         self.tryInjectPython();
                     }
                     try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
+                    // I2C mirror drain: polled transaction ring → models.
+                    try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
                     return s;
                 } catch { return 0; }
             },

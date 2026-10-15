@@ -69,6 +69,12 @@ export async function importEngine(bundlerSpec: string, vendorUrl: string): Prom
         switch (bundlerSpec) {
             case 'pico-emu/picoemu.wasm.js':
                 return await import('pico-emu/picoemu.wasm.js');
+            case '../engines/pico-emu-fork/picoemu.wasm.js':
+                // OpenHW-studio fork (jsmirror SDD) for I2C runs. Committed
+                // under src so vite bundles it like any worker module; the
+                // .wasm twin is fetched explicitly by the runner (bytes win
+                // over locateFile), so no relative-URL fragility.
+                return await import('../engines/pico-emu-fork/picoemu.wasm.js');
             case 'stm32f1-emu/pkg/stm32f1.js':
                 return await import('stm32f1-emu');
             case 'stm32f1-emu/pkg/emulator.js':

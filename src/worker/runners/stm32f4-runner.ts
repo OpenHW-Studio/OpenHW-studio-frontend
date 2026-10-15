@@ -25,6 +25,13 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
+import {
+  collectI2CSlaveAddresses,
+  createI2CBridge,
+  createSPIBridge,
+  type I2CBridge,
+  type SPIBridge,
+} from '../bus-bridge.ts';
 
 // F4 UART map (package docs/boards/*.md + site/test_arduino_boards.mjs):
 // Arduino `Serial` follows the core variant files per board —
@@ -93,6 +100,114 @@ export class Stm32f4Runner extends ArmRunnerBase {
     protected engine = this.makeEngine();
     private mcu: any = null;
     private chip = 'stm32f407';
+    private compAttrById: Map<string, any> = new Map();
+
+    /** Generic slave address of one instance (same chain as the collector). */
+    private busAddrOf(inst: any): number {
+        try {
+            const id = String(inst?.id || '');
+            const attrs = this.compAttrById.get(id) || {};
+            const cands = [
+                inst?.i2cAddr,
+                typeof inst?.getI2CAddress === 'function' ? inst.getI2CAddress() : NaN,
+                attrs?.address, attrs?.i2cAddress, attrs?.addr,
+            ];
+            for (const c of cands) {
+                const v = Number(c);
+                if (Number.isFinite(v)) return v & 0x7f;
+            }
+        } catch { /* ignore */ }
+        return -1;
+    }
+
+    /** Snapshot component attrs for generic bus address resolution. */
+    private snapshotCompAttrs(componentsDef: any[]): void {        try {
+            const defs = Array.isArray(componentsDef) ? componentsDef : [];
+            this.compAttrById = new Map();
+            for (const c of defs) {
+                if (c && c.id !== undefined) this.compAttrById.set(String(c.id), c.attrs || {});
+            }
+        } catch { /* snapshot never breaks construction */ }
+    }
+
+    /** Build F4 I2C/SPI device specs into withAssets (called pre-create). */
+    private buildBusSpecs(withAssets: any): void {
+        const bridgeCtx = {
+            boardId: this.boardId,
+            onStateUpdate: (msg: any) => { try { this.onStateUpdate(msg); } catch { /* ignore */ } },
+            getSimTimeMs: () => { try { return this.getSimulatedTimeMs(); } catch { return 0; } },
+            instances: this.instances,
+            compAttrById: this.compAttrById,
+        };
+        const addrs = collectI2CSlaveAddresses(bridgeCtx);
+        if (addrs.length > 0) {
+            const br = createI2CBridge(bridgeCtx);
+            withAssets.i2c = addrs.slice(0, 8).map((a) => ({
+                peripheral: 'I2C1',
+                address: a,
+                onStart: () => { try { br.start(a, false); } catch { /* ignore */ } },
+                onWrite: (b: number) => { try { br.write(Number(b) & 0xff); } catch { /* ignore */ } },
+                onStop: () => { try { br.stop(); } catch { /* ignore */ } },
+            }));
+            // Virtual slaves (bus progress): the core stalls transactions
+            // with no device attached, so attach the package's own devices
+            // at the owned addresses — OLED pairs get oled, everything else
+            // a regfile ACK-sink. Observer specs above feed the real
+            // component models (AVR-adapter pattern, zero patches).
+            try {
+                const oled = addrs.filter((a) => {
+                    for (const inst of this.instances.values()) {
+                        const t = String((inst as any)?.type || '').toLowerCase();
+                        if ((t.includes('ssd1306') || t.includes('oled')) && this.busAddrOf(inst) === a) return true;
+                    }
+                    return false;
+                });
+                const sinks = addrs.filter((a) => !oled.includes(a));
+                const ext = (withAssets.ext_devices && typeof withAssets.ext_devices === 'object')
+                    ? withAssets.ext_devices : {};
+                if (oled.length > 0) {
+                    ext.oled = { i2c: 'I2C1', addr: oled[0] };
+                }
+                if (sinks.length > 0) {
+                    ext.regfile = sinks.slice(0, 4).map((address) => ({
+                        peripheral: 'I2C1', address, size: 256, init: [],
+                    }));
+                }
+                withAssets.ext_devices = ext;
+            } catch { /* devices never break boot */ }
+        }
+        let hasSpi = false;
+        try {
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onSPIByte === 'function'
+                    || typeof (inst as any)?.onSPIByteExchange === 'function') { hasSpi = true; break; }
+            }
+        } catch { /* ignore */ }
+        if (hasSpi) {
+            const br = createSPIBridge(bridgeCtx);
+            let lastMs = -1e9;
+            withAssets.spi = [{
+                peripheral: 'SPI1',
+                onTransfer: (_ch: string, tx: number[], _rx: number[]) => {
+                    void _ch; void _rx;
+                    try {
+                        const nowMs = this.getSimulatedTimeMs();
+                        if (nowMs - lastMs > 2.0) { try { br.frame(true); } catch { /* ignore */ } }
+                        lastMs = nowMs;
+                        const arr = Array.isArray(tx) ? tx : [tx];
+                        for (let i = 0; i < arr.length; i++) br.exchange(Number(arr[i]) & 0xff, i);
+                    } catch { /* transfer never breaks the tick */ }
+                },
+                onByte: (ch: string, byte: number, respond: (b: number) => void) => {
+                    void ch;
+                    try {
+                        const r = br.exchange(Number(byte) & 0xff, 0);
+                        try { respond(r & 0xff); } catch { /* ignore */ }
+                    } catch { /* byte never breaks the tick */ }
+                },
+            }];
+        }
+    }
 
     constructor(
         hexData: string,
@@ -112,6 +227,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
             this.uartTxPins = [...F4_UART2_TX, ...F4_UART_TX];
             this.uartRxPins = [...F4_UART2_RX, ...F4_UART_RX];
         }
+        try { this.snapshotCompAttrs(componentsDef); } catch { /* never breaks construction */ }
         void this.boot('openhw-stm32f4');
     }
 
@@ -187,6 +303,14 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 };
                 if (svdXml) withAssets.svdXml = svdXml;
                 if (wasmBytes) withAssets.wasmInit = wasmBytes;
+                // I2C/SPI device specs (runner-owned bridges via
+                // bus-bridge.ts, AVR-adapter pattern). One spec per owned
+                // slave address on the default bus (Wire=I2C1,
+                // SPI displays typically SPI1); the core routes each
+                // transaction to its address-matched spec queue.
+                try {
+                    self.buildBusSpecs(withAssets);
+                } catch { /* bridges never break boot */ }
                 const s = String(firmware || '').trim();
                 const decode = (): { kind: 'elf' | 'hex' | 'bin'; data: Uint8Array | string } | null => {
                     if (!s) return null;
