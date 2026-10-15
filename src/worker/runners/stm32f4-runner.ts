@@ -85,6 +85,35 @@ function f4SvdFor(chip: string): string {
     return 'stm32f407.svd'; // f407 + f407ve share the F407 SVD
 }
 
+// DCMI cell pattern: 4x4 grayscale bytes 0x10..0x1F (all nonzero so
+// every pixel lights the sink; sum 0x178 is the guest-side needle).
+function f4DcmiPattern(): Uint8Array {
+    const out = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) out[i] = 0x10 + i;
+    return out;
+}
+
+// QSPI cell image: 32x16 RGB565 gradient, R5=x, G6=y*4, B5=x+y.
+// Regenerated identically for bind + verify + sink push.
+function f4QspiImage(): Uint8Array {
+    const W = 32, H = 16;
+    const out = new Uint8Array(W * H * 2);
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const v = (((x & 0x1f) << 11) | (((y * 4) & 0x3f) << 5) | ((x + y) & 0x1f)) & 0xffff;
+            out[(y * W + x) * 2] = v & 0xff;
+            out[(y * W + x) * 2 + 1] = (v >> 8) & 0xff;
+        }
+    }
+    return out;
+}
+
+function f4Rgb565ToPacked(lo: number, hi: number): number {
+    const v = ((lo & 0xff) | ((hi & 0xff) << 8)) & 0xffff;
+    const r5 = (v >> 11) & 0x1f, g6 = (v >> 5) & 0x3f, b5 = v & 0x1f;
+    return ((((r5 << 3) | (r5 >> 2)) << 16) | (((g6 << 2) | (g6 >> 4)) << 8) | ((b5 << 3) | (b5 >> 2))) >>> 0;
+}
+
 function b64ToU8(b64: string): Uint8Array {
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
@@ -342,6 +371,40 @@ export class Stm32f4Runner extends ArmRunnerBase {
         }
     }
 
+    /** FSMC BANK1 8080-device handler (create-time tap): decodes RS
+     *  from offset bit 17, collects post-RAMWR pixels (cap 64), answers
+     *  RDDID reads with 0x9341. Read answers are pushed in event order. */
+    private fsmcHandler(events: any, push: any): void {
+        try {
+            const st: any = ((this as any).f4Fsmc = (this as any).f4Fsmc || { lastCmd: -1, pixels: [] as number[], pushed: false });
+            // Events arrive as a flat [hdr, value] word stream — a plain
+            // Array or a Uint32Array from the wasm bindgen edge.
+            let ev: number[];
+            try {
+                ev = Array.isArray(events) ? (events as number[]) : Array.from((events || []) as ArrayLike<number>);
+            } catch { ev = []; }
+            const answers: number[] = [];
+            for (let i = 0; i + 1 < ev.length; i += 2) {
+                const hdr = Number(ev[i]) >>> 0;
+                const val = Number(ev[i + 1]) & 0xffff;
+                const write = ((hdr >>> 31) & 1) === 1;
+                const off = hdr & 0x3fffffff;
+                if (write) {
+                    if (off & (1 << 17)) {
+                        if (st.lastCmd === 0x2c && st.pixels.length < 64) st.pixels.push(val);
+                    } else {
+                        st.lastCmd = val;
+                    }
+                } else {
+                    answers.push(st.lastCmd === 0x04 ? 0x9341 : 0x0000);
+                }
+            }
+            if (answers.length && typeof push === 'function') {
+                try { push(answers); } catch { /* ignore */ }
+            }
+        } catch { /* handler never breaks stepping */ }
+    }
+
     constructor(
         hexData: string,
         componentsDef: any[],
@@ -479,6 +542,48 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 try {
                     self.buildBusSpecs(withAssets);
                 } catch { /* bridges never break boot */ }
+                // Display-cell observation binds (DCMI/QSPI/FSMC): an
+                // openhw-ltdc-display sink with a `cell` attr selects which
+                // engine source feeds it. All three binds are create-time
+                // (same rule as the package SPI/FSMC taps + the
+                // qspiImage/cameraFrame sugars) and idle when no sink asks.
+                // Per-boot cell state resets here (drains only run post-boot).
+                try {
+                    delete (self as any).f4Dcmi; delete (self as any).f4Qspi;
+                    delete (self as any).f4Fsmc; delete (self as any).f4SaiDone; delete (self as any).f4SaiAcc;
+                    let cell = '';
+                    for (const inst of self.instances.values()) {
+                        try {
+                            if (String((inst as any)?.type || '').toLowerCase() === 'openhw-ltdc-display') {
+                                cell = String((self.compAttrById?.get?.((inst as any)?.id) as any)?.cell || '').toLowerCase();
+                                break;
+                            }
+                        } catch { /* ignore */ }
+                    }
+                    (self as any).f4Cell = cell;
+                    if (cell === 'dcmi') {
+                        withAssets.cameraFrame = { width: 4, height: 4, pixels: f4DcmiPattern() };
+                    } else if (cell === 'qspi') {
+                        withAssets.qspiImage = f4QspiImage();
+                    } else if (cell === 'fsmc') {
+                        const ed: any = (withAssets.ext_devices = withAssets.ext_devices || {});
+                        const devs: any[] = (ed.fsmcDevices = ed.fsmcDevices || []);
+                        devs.push({
+                            bank: 0,
+                            handler: (events: any, push: any) => {
+                                try { self.fsmcHandler(events, push); } catch { /* ignore */ }
+                            },
+                        });
+                    }
+                    // SAI speaker ring: observation plumbing only (no silicon
+                    // state), always on — the drain side only looks when the
+                    // capture FIFO is non-empty, so idle cost is one status
+                    // read per drain.
+                    try {
+                        const ed2: any = (withAssets.ext_devices = withAssets.ext_devices || {});
+                        if (ed2.speaker === undefined) ed2.speaker = true;
+                    } catch { /* ignore */ }
+                } catch { /* display binds never break boot */ }
                 const s = String(firmware || '').trim();
                 const decode = (): { kind: 'elf' | 'hex' | 'bin'; data: Uint8Array | string } | null => {
                     if (!s) return null;
@@ -493,7 +598,19 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         return { kind: 'bin', data: raw };
                     } catch { return null; }
                 };
-                const fw = decode();
+                const fw0 = decode();
+                // FIXEDBIN: sentinel (board `firmware` attr URL, e.g. the
+                // USB CDC image): fetch the curated image and boot it as a
+                // raw app image. Same first-firmware-wins rule as the
+                // micro:bit path; Arduino compile is bypassed main-thread.
+                let fw = fw0;
+                if (!fw && s.startsWith('FIXEDBIN:')) {
+                    try {
+                        const url = s.slice('FIXEDBIN:'.length).trim();
+                        const r = await fetch(url).catch(() => null);
+                        if (r && r.ok) fw = { kind: 'bin', data: new Uint8Array(await r.arrayBuffer()) };
+                    } catch { /* falls through to empty boot */ }
+                }
                 if (!fw) {
                     self.mcu = await STM32F4._create(withAssets);
                 } else if (fw.kind === 'elf') {
@@ -673,6 +790,378 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         }
                     }
                 } catch { /* ADC inject never breaks the drain */ }
+                // LTDC scanout push (F429 TFT cell): when an
+                // openhw-ltdc-display sink is on the board, snapshot
+                // Display.ltdc() (geometry + guest-RAM pixels), convert to
+                // packed 0xRRGGBB, push on change (~5fps throttle; hash
+                // first so idle frames cost one snapshot, not a convert).
+                try {
+                    let sink: any = null;
+                    for (const inst of self.instances.values()) {
+                        try {
+                            if (String((inst as any)?.type || '').toLowerCase() === 'openhw-ltdc-display') { sink = inst; break; }
+                        } catch { /* ignore */ }
+                    }
+                    const disp = (self.mcu as any)?.display;
+                    if (sink && disp && typeof disp.ltdc === 'function') {
+                        const now = Date.now();
+                        if (now - Number((self as any).f4LtdcLast || 0) > 200) {
+                            (self as any).f4LtdcLast = now;
+                            let fr: any = null;
+                            try { fr = disp.ltdc(); } catch { fr = null; }
+                            if (fr && Number(fr.w) > 0 && Number(fr.h) > 0 && fr.fb) {
+                                const W = Math.floor(Number(fr.w));
+                                const H = Math.floor(Number(fr.h));
+                                if (W > 0 && H > 0 && W * H <= 64 * 1024) {
+                                    const raw = fr.fb as Uint8Array;
+                                    let hsh = (W * 31 + H) | 0;
+                                    const step = 64;
+                                    for (let i = 0; i < raw.length; i += step) hsh = ((hsh * 33) ^ raw[i]) | 0;
+                                    if (hsh !== Number((self as any).f4LtdcHash)) {
+                                        (self as any).f4LtdcHash = hsh;
+                                        const n = W * H;
+                                        const px = new Array(n);
+                                        if (String(fr.pf || '').toUpperCase().startsWith('RGB565')) {
+                                            for (let i = 0; i < n; i++) {
+                                                const v = (raw[i * 2] | (raw[i * 2 + 1] << 8)) & 0xffff;
+                                                const r5 = (v >> 11) & 0x1f, g6 = (v >> 5) & 0x3f, b5 = v & 0x1f;
+                                                px[i] = ((((r5 << 3) | (r5 >> 2)) << 16) | (((g6 << 2) | (g6 >> 4)) << 8) | ((b5 << 3) | (b5 >> 2))) >>> 0;
+                                            }
+                                        } else {
+                                            for (let i = 0; i < n; i++) {
+                                                px[i] = ((raw[i * 4 + 2] << 16) | (raw[i * 4 + 1] << 8) | raw[i * 4]) >>> 0;
+                                            }
+                                        }
+                                        try { (sink as any).onRgbFrame?.(W, H, px); } catch { /* frame never breaks drain */ }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch { /* LTDC push never breaks the drain */ }
+                // USB OTG_FS host (CDC cell): when an openhw-usb-device
+                // sink is on the board, play host against the guest device
+                // stack — bus reset, enumeration, CDC line coding, bulk
+                // echo (the engine-side test_usb.mjs sequence, driven
+                // incrementally: one inject or status poll per drain; the
+                // guest runs between drains). Reports link state + echo
+                // bytes to the sink and emits USB_ markers into the serial
+                // stream. Idle cost when idle: one instanceof scan.
+                try {
+                    let usink: any = null;
+                    for (const inst of self.instances.values()) {
+                        try {
+                            if (String((inst as any)?.type || '').toLowerCase() === 'openhw-usb-device') { usink = inst; break; }
+                        } catch { /* ignore */ }
+                    }
+                    const mcu: any = self.mcu;
+                    if (usink && mcu && typeof mcu.usbInjectSetup === 'function') {
+                        const st: any = ((self as any).f4Usb = (self as any).f4Usb || { phase: 'init', waits: 0, rx: 0, echo: '', link: '' });
+                        try {
+                            let chunk = '';
+                            const qlen = Math.min(txQueue.length, 1024);
+                            for (let i = 0; i < qlen; i++) chunk += String.fromCharCode(txQueue[i] & 0xff);
+                            if (chunk) st.uart = (String(st.uart || '') + chunk).slice(-8000);
+                        } catch { /* markers are best-effort */ }
+                        const uart: string = String(st.uart || '');
+                        const say = (line: string) => {
+                            try {
+                                const tag = line + '\n';
+                                for (let i = 0; i < tag.length; i++) {
+                                    try { (self as any).emitTxByte(tag.charCodeAt(i), 'usbhost'); } catch { break; }
+                                }
+                            } catch { /* ignore */ }
+                        };
+                        const report = (link: string) => {
+                            try {
+                                if (st.link !== link || st.repRx !== st.rx || st.repEcho !== st.echo) {
+                                    st.link = link; st.repRx = st.rx; st.repEcho = st.echo;
+                                    (usink as any).onUsbState?.(link, st.rx, st.echo);
+                                }
+                            } catch { /* ignore */ }
+                        };
+                        const fail = (msg: string) => { st.phase = 'dead'; try { say('USB_HOST:FAIL ' + msg); } catch { /* ignore */ } };
+                        const takeIn = (ep: number): number[] | string | null => {
+                            try {
+                                const status = Number(mcu.usbInStatus(ep)) || 0;
+                                if (status === 2) return 'STALL';
+                                if (status === 1) return Array.from(mcu.usbTakeIn(ep) || []) as number[];
+                            } catch { /* ignore */ }
+                            return null;
+                        };
+                        const outZlp = (ep: number) => { try { mcu.usbInjectOut(ep, []); } catch { /* ignore */ } };
+                        const eq = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+                        const HELLO = [72, 101, 108, 108, 111, 85, 83, 66];
+                        const WORLD = [87, 111, 114, 108, 100, 33, 33, 33];
+                        const bump = () => { st.waits = Number(st.waits || 0) + 1; return Number(st.waits) > 3000; };
+                        report(uart.includes('USB enum done') ? 'enumerated' : (st.phase === 'init' || st.phase === 'waitRst' ? 'init' : 'reset'));
+                        switch (st.phase) {
+                            case 'init':
+                                if (uart.includes('USB init done')) {
+                                    try { mcu.usbReset(); } catch { /* ignore */ }
+                                    say('USB_HOST:reset');
+                                    st.phase = 'waitRst'; st.waits = 0;
+                                } else if (bump()) fail('no init marker');
+                                break;
+                            case 'waitRst':
+                                if (uart.includes('USBRST')) {
+                                    try { mcu.usbEnumerated(); } catch { /* ignore */ }
+                                    st.phase = 'setupDev'; st.waits = 0;
+                                } else if (bump()) fail('no USBRST');
+                                break;
+                            case 'setupDev':
+                                try { mcu.usbInjectSetup([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeDev'; st.waits = 0;
+                                break;
+                            case 'takeDev': {
+                                const r = takeIn(0);
+                                if (r === 'STALL') fail('STALL on device desc');
+                                else if (Array.isArray(r)) {
+                                    if (r[1] !== 1 || r.length < 18) fail('bad device desc');
+                                    else { outZlp(0); st.phase = 'setupCfg'; st.waits = 0; }
+                                } else if (bump()) fail('device desc timeout');
+                                break;
+                            }
+                            case 'setupCfg':
+                                try { mcu.usbInjectSetup([0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0xFF, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeCfg'; st.waits = 0;
+                                break;
+                            case 'takeCfg': {
+                                const r = takeIn(0);
+                                if (r === 'STALL') fail('STALL on config desc');
+                                else if (Array.isArray(r)) {
+                                    const total = (r[2] | (r[3] << 8)) >>> 0;
+                                    if (r[1] !== 2 || total !== 67 || r.length !== 67 || r[4] !== 2) fail('bad config desc');
+                                    else { outZlp(0); st.phase = 'setupLang'; st.waits = 0; }
+                                } else if (bump()) fail('config desc timeout');
+                                break;
+                            }
+                            case 'setupLang':
+                                try { mcu.usbInjectSetup([0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0xFF, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeLang'; st.waits = 0;
+                                break;
+                            case 'takeLang': {
+                                const r = takeIn(0);
+                                if (r === 'STALL') fail('STALL on lang string');
+                                else if (Array.isArray(r)) {
+                                    if (!eq(r.slice(0, 4), [4, 3, 9, 4])) fail('bad lang string');
+                                    else { outZlp(0); st.phase = 'setupStall'; st.waits = 0; }
+                                } else if (bump()) fail('lang string timeout');
+                                break;
+                            }
+                            case 'setupStall':
+                                try { mcu.usbInjectSetup([0x80, 0x06, 0x09, 0x03, 0x00, 0x00, 0xFF, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'waitStall'; st.waits = 0;
+                                break;
+                            case 'waitStall': {
+                                let s0 = 0;
+                                try { s0 = Number(mcu.usbInStatus(0)) || 0; } catch { s0 = 0; }
+                                if (s0 === 2) { st.phase = 'waitStallClear'; st.waits = 0; }
+                                else if (bump()) fail('no STALL on missing string');
+                                break;
+                            }
+                            case 'waitStallClear': {
+                                let si = 0, so = 0;
+                                try { si = Number(mcu.usbInStatus(0)) || 0; so = Number(mcu.usbOutStatus(0)) || 0; } catch { /* ignore */ }
+                                if (uart.includes('USB stall clear') && si !== 2 && so !== 2) { st.phase = 'setupAddr'; st.waits = 0; }
+                                else if (bump()) fail('STALL stuck');
+                                break;
+                            }
+                            case 'setupAddr':
+                                try { mcu.usbInjectSetup([0x00, 0x05, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeAddr'; st.waits = 0;
+                                break;
+                            case 'takeAddr': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_ADDRESS should ZLP');
+                                    else { st.phase = 'setupCfg1'; st.waits = 0; }
+                                } else if (bump()) fail('SET_ADDRESS timeout');
+                                break;
+                            }
+                            case 'setupCfg1':
+                                try { mcu.usbInjectSetup([0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeCfg1'; st.waits = 0;
+                                break;
+                            case 'takeCfg1': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_CONFIGURATION should ZLP');
+                                    else { st.phase = 'setupLine'; st.waits = 0; }
+                                } else if (bump()) fail('SET_CONFIGURATION timeout');
+                                break;
+                            }
+                            case 'setupLine':
+                                try { mcu.usbInjectSetup([0x21, 0x22, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00]); } catch { fail('setup inject'); break; }
+                                st.phase = 'takeLine'; st.waits = 0;
+                                break;
+                            case 'takeLine': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_LINE_STATE should ZLP');
+                                    else {
+                                        try {
+                                            mcu.usbInjectSetup([0x21, 0x20, 0, 0, 7, 0, 0, 0]);
+                                            mcu.usbInjectOut(0, [0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08]);
+                                        } catch { fail('line coding inject'); break; }
+                                        st.phase = 'takeLineData'; st.waits = 0;
+                                    }
+                                } else if (bump()) fail('SET_LINE_STATE timeout');
+                                break;
+                            }
+                            case 'takeLineData': {
+                                const r = takeIn(0);
+                                if (Array.isArray(r)) {
+                                    if (r.length !== 0) fail('SET_LINE_CODING status should ZLP');
+                                    else { st.phase = 'echo1'; st.waits = 0; }
+                                } else if (bump()) fail('SET_LINE_CODING timeout');
+                                break;
+                            }
+                            case 'echo1':
+                                try { mcu.usbInjectOut(1, HELLO); } catch { fail('bulk inject'); break; }
+                                st.phase = 'takeEcho1'; st.waits = 0;
+                                break;
+                            case 'takeEcho1': {
+                                const r = takeIn(1);
+                                if (r === 'STALL') fail('STALL on EP1');
+                                else if (Array.isArray(r)) {
+                                    if (!eq(r, HELLO)) fail('echo1 mismatch');
+                                    else { st.rx = Number(st.rx || 0) + 8; st.echo = 'HelloUSB'; st.phase = 'echo2'; st.waits = 0; }
+                                } else if (bump()) fail('echo1 timeout');
+                                break;
+                            }
+                            case 'echo2':
+                                try { mcu.usbInjectOut(1, WORLD); } catch { fail('bulk inject'); break; }
+                                st.phase = 'takeEcho2'; st.waits = 0;
+                                break;
+                            case 'takeEcho2': {
+                                const r = takeIn(1);
+                                if (r === 'STALL') fail('STALL on EP1');
+                                else if (Array.isArray(r)) {
+                                    if (!eq(r, WORLD)) fail('echo2 mismatch');
+                                    else {
+                                        st.rx = Number(st.rx || 0) + 8; st.echo = 'HelloUSB World!!!';
+                                        say('USB_ECHO:PASS HelloUSB World!!!');
+                                        st.phase = 'waitDone'; st.waits = 0;
+                                    }
+                                } else if (bump()) fail('echo2 timeout');
+                                break;
+                            }
+                            case 'waitDone':
+                                if (uart.includes('USB done')) { say('USB_HOST:PASS'); st.phase = 'done'; }
+                                else if (bump()) fail('no USB done');
+                                break;
+                            default:
+                                break; // done / dead: silent
+                        }
+                        report(uart.includes('USB enum done') ? 'enumerated' : (st.phase === 'init' || st.phase === 'waitRst' ? 'init' : 'reset'));
+                    }
+                } catch { /* USB host never breaks the drain */ }
+                // Display-cell drains (DCMI/QSPI/FSMC/SAI): host-side proof
+                // for the cell bound at load. Each fires once per boot.
+                try {
+                    const cell = String((self as any).f4Cell || '');
+                    let sink: any = null;
+                    if (cell === 'dcmi' || cell === 'qspi' || cell === 'fsmc') {
+                        for (const inst of self.instances.values()) {
+                            try {
+                                if (String((inst as any)?.type || '').toLowerCase() === 'openhw-ltdc-display') { sink = inst; break; }
+                            } catch { /* ignore */ }
+                        }
+                    }
+                    const say = (line: string) => {
+                        try {
+                            const tag = line + '\n';
+                            for (let i = 0; i < tag.length; i++) {
+                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f4cell'); } catch { break; }
+                            }
+                        } catch { /* ignore */ }
+                    };
+                    // DCMI: the fed sensor pattern (known at bind) as
+                    // grayscale RGB. The guest proves the capture path
+                    // (sensor -> FIFO -> DR) via its serial sum; the sink
+                    // proves the same bytes reach human eyes.
+                    if (sink && cell === 'dcmi' && !(self as any).f4Dcmi) {
+                        (self as any).f4Dcmi = true;
+                        const pat = f4DcmiPattern();
+                        const px = new Array(16);
+                        for (let i = 0; i < 16; i++) {
+                            const g = pat[i] & 0xff;
+                            px[i] = ((g << 16) | (g << 8) | g) >>> 0;
+                        }
+                        try { (sink as any).onRgbFrame?.(4, 4, px); } catch { /* ignore */ }
+                        say('DCMI_SRC:PASS 4x4');
+                    }
+                    // QSPI: verify the full bound image through the AHB mmap
+                    // window, then show it. The guest proves the indirect +
+                    // mmap paths via its serial compare; the runner proves
+                    // every word independently of guest serial.
+                    if (sink && cell === 'qspi' && !(self as any).f4Qspi) {
+                        let live = false;
+                        try { live = !!(self.mcu as any)?.qspiMmapLive?.(); } catch { live = false; }
+                        if (live) {
+                            const img = f4QspiImage();
+                            let ok = true;
+                            const px = new Array(32 * 16);
+                            for (let w = 0; w < 256; w++) {
+                                let got = 0;
+                                try { got = Number((self.mcu as any).qspiMmapRead(w * 4)) >>> 0; } catch { ok = false; break; }
+                                const exp = (img[w * 4] | (img[w * 4 + 1] << 8) | (img[w * 4 + 2] << 16) | (img[w * 4 + 3] << 24)) >>> 0;
+                                if (got !== exp) { ok = false; break; }
+                                px[w * 2] = f4Rgb565ToPacked(img[w * 4], img[w * 4 + 1]);
+                                px[w * 2 + 1] = f4Rgb565ToPacked(img[w * 4 + 2], img[w * 4 + 3]);
+                            }
+                            if (ok) {
+                                (self as any).f4Qspi = true;
+                                try { (sink as any).onRgbFrame?.(32, 16, px); } catch { /* ignore */ }
+                                say('QSPI_MMAP:PASS 256');
+                            } else {
+                                say('QSPI_MMAP:FAIL');
+                                (self as any).f4Qspi = true;
+                            }
+                        }
+                    }
+                    // FSMC: the 8080 handler collected post-RAMWR pixels;
+                    // show the 8x8 burst once 64 words land.
+                    if (sink && cell === 'fsmc') {
+                        const fst: any = (self as any).f4Fsmc;
+                        if (fst && fst.pixels && fst.pixels.length >= 64 && !fst.pushed) {
+                            fst.pushed = true;
+                            const px = new Array(64);
+                            for (let i = 0; i < 64; i++) {
+                                const v = Number(fst.pixels[i]) & 0xffff;
+                                px[i] = f4Rgb565ToPacked(v & 0xff, (v >> 8) & 0xff);
+                            }
+                            try { (sink as any).onRgbFrame?.(8, 8, px); } catch { /* ignore */ }
+                            say('FSMC_PX:64');
+                        }
+                    }
+                    // SAI audio-bus loopback (narrow claim: guest SAI_A_DR
+                    // writes land in the shared capture FIFO — no SAI
+                    // frame/slot/clock behavior exists in the model). The
+                    // model FIFO drains into the speaker ring per step, so
+                    // accumulate ring samples across drains (gating on the
+                    // model FIFO level races the per-step drain and never
+                    // fires). The FIFO cannot be faked by guest serial, so
+                    // matching samples are independent proof.
+                    if (!(self as any).f4SaiDone) {
+                        const acc: number[] = ((self as any).f4SaiAcc = (self as any).f4SaiAcc || []);
+                        if (acc.length < 16) {
+                            try {
+                                const samples: ArrayLike<number> = (self.mcu as any)?.takeSpeakerSamples?.() || [];
+                                for (let i = 0; i < samples.length && acc.length < 16; i++) {
+                                    acc.push(Math.round(Number((samples as any)[i]) * 32768));
+                                }
+                            } catch { /* ignore */ }
+                        }
+                        if (acc.length >= 16) {
+                            (self as any).f4SaiDone = true;
+                            let sum = 0;
+                            for (let i = 0; i < 16; i++) sum += acc[i];
+                            say('SAI_CAP:16:' + sum);
+                        }
+                    }
+                } catch { /* display drains never break the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },

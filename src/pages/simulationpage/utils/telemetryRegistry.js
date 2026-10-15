@@ -25,6 +25,8 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-lcd1602-i2c': ['lines', 'illuminated', 'backlight'],
   'openhw-lcd2004-i2c': ['lines', 'illuminated', 'backlight'],
   'openhw-ili9341': ['powerOn', 't'],
+  'openhw-ltdc-display': ['fbW', 'fbH', 'litPixels'],
+  'openhw-usb-device': ['enumState', 'rxCount', 'lastEcho'],
   'openhw-nokia-5110': ['fbStr'],
   'openhw-7segment': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'dp'],
   'openhw-tm1637-7segment': ['display', 'colon', 'brightness', 'on'],

@@ -65,6 +65,8 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { LtdcDisplayLogic } from '@openhw/emulator/src/components/openhw-ltdc-display/logic';
+import { UsbDeviceLogic } from '@openhw/emulator/src/components/openhw-usb-device/logic';
 import { ILI9341TouchLogic } from '@openhw/emulator/src/components/openhw-ili9341-touch/logic';
 import { EPaperLogic } from '@openhw/emulator/src/components/openhw-ePaperDisplay/logic';
 import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
@@ -169,6 +171,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
+    'openhw-ltdc-display': LtdcDisplayLogic,
+    'openhw-usb-device': UsbDeviceLogic,
     'openhw-ili9341-touch': ILI9341TouchLogic,
     'openhw-ePaperDisplay': EPaperLogic,
     'wokwi-sd-card': SDCardLogic,
@@ -357,6 +361,8 @@ export const COMPONENT_PINS: Record<string, Array<{ id: string }>> = {
     'openhw-hx711_5': [{ id: 'GND' }, { id: 'DT' }, { id: 'SCK' }, { id: 'VCC' }],
     'openhw-hx711_50': [{ id: 'GND' }, { id: 'DT' }, { id: 'SCK' }, { id: 'VCC' }],
     'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ltdc-display': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-usb-device': [{ id: 'VCC' }, { id: 'GND' }],
     'openhw-ili9341-touch': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }, { id: 'SCL' }, { id: 'SDA' }],
     'openhw-image': [],
     'openhw-inmp441': [{ id: 'VDD' }, { id: 'GND' }, { id: 'L/R' }, { id: 'WS' }, { id: 'SCK' }, { id: 'SD' }],

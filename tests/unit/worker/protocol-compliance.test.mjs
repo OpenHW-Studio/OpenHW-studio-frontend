@@ -19,8 +19,9 @@ describe('protocol compliance', () => {
     assert.equal(isProgrammableBoardType('openhw-stm32-bluepill'), true);
     assert.equal(isProgrammableBoardType('openhw-stm32f4'), true);
     assert.equal(isProgrammableBoardType('custom-sensor'), false);
-    // Camera shells share a family token but are components, not boards.
-    assert.equal(isProgrammableBoardType('openhw-esp32-cam'), false);
+    // Camera board family: promoted to a real board (Esp32Runner boots the
+    // cam preset — see protocol-routing.js), so it routes as programmable.
+    assert.equal(isProgrammableBoardType('openhw-esp32-cam'), true);
 
     const aliases = endpointAliases('board1:D1');
     assert.equal(aliases.includes('board1:1'), true);
