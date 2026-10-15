@@ -15,7 +15,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     page.on('console', (msg) => {
       try {
         const t = `[${msg.type()}] ${msg.text()}`;
-        if (/AVRRunner DBG|ADC DBG|DHT22|Received INTERACT|KP-DIAG|ROT-PRESS|KP-DRIVE|IRR-SEND|inst id=(sd1|neo1|neo2|tm1|mx1|nk1|seg1|lc1|lc2|lc3|spk1|ep1|tft2|ds1|dht1|max1|pcm1|sph1|sr1|rl1|rgb1|sv1|sr595|mq1|ph1|bt1|jy1|btn1|pir1|irr1|irm1|kp1|rot1) |SD-DIAG|NEO-LATCH|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
+        if (/AVRRunner DBG|ADC DBG|DHT22|Received INTERACT|inst id=(sd1|neo1|neo2|tm1|mx1|nk1|seg1|lc1|lc2|lc3|spk1|ep1|tft2|ds1|dht1|max1|pcm1|sph1|sr1|rl1|rgb1|sv1|sr595|mq1|ph1|bt1|jy1|btn1|pir1|irr1|irm1|kp1|rot1) |SD-DIAG|NEO-LATCH|exchange alive|instantiate sd1|read blk|write blk/.test(t)) console.log('CAPTURED-WORKER:', t.slice(0, 600));
       } catch { /* ignore */ }
     });
   });
@@ -999,7 +999,7 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
         { from: 'uno1:12', to: 'kp1:C3' },
         { from: 'uno1:13', to: 'kp1:C4' },
       ],
-      code: 'int rows[4]={4,5,6,7};\nint cols[4]={8,9,12,13};\nvoid setup(){Serial.begin(9600);Serial.println("KP_READY");for(int i=0;i<4;i++){pinMode(rows[i],OUTPUT);digitalWrite(rows[i],HIGH);pinMode(cols[i],INPUT_PULLUP);}}\nvoid loop(){for(int r=0;r<4;r++){digitalWrite(rows[r],LOW);for(int c=0;c<4;c++){if(digitalRead(cols[c])==LOW){Serial.print(millis());Serial.print(":KEY:");Serial.print(r);Serial.println(c);delay(300);}}digitalWrite(rows[r],HIGH);}delay(200);}\n',
+      code: 'int rows[4]={4,5,6,7};\nint cols[4]={8,9,12,13};\nvoid setup(){Serial.begin(9600);Serial.println("KP_READY");for(int i=0;i<4;i++){pinMode(rows[i],OUTPUT);digitalWrite(rows[i],HIGH);pinMode(cols[i],INPUT_PULLUP);}}\nvoid loop(){for(int r=0;r<4;r++){digitalWrite(rows[r],LOW);delay(5);for(int c=0;c<4;c++){if(digitalRead(cols[c])==LOW){Serial.print(millis());Serial.print(":KEY:");Serial.print(r);Serial.println(c);delay(300);}}digitalWrite(rows[r],HIGH);}delay(200);}\n',
     });
     const verdictPromise = page.evaluate(() => window.OpenHWE2E.run({
       forMs: 22000, selectTelemetry: ['kp1'], serialNeedle: 'KP_READY', telemetryMode: 'detail',
@@ -1118,14 +1118,21 @@ test.describe('Peripherals (speaker, cam, pixels, displays, SD — live)', () =>
     const rot = Number(((verdict.liveOop || {}).rot1 || {}).rot ?? 0);
     console.log('ROT rot:', rot, 'serial:', JSON.stringify((verdict.serial || '').slice(0, 200)));
     expect(rot).not.toBe(0);
-    // Model bookkeeping: pressCount is cumulative, read from end-of-run
-    // detail telemetry (direct SET post guarantees rich frames by verdict).
+    // Model bookkeeping (informational): pressCount lives in the worker model;
+    // the formatted custom channel is lossy by design (see plan §11.4), so
+    // the binding press assertions are serial SW:0 (firmware-observed) and
+    // SW pinToggles >= 2 (model-observed press + release) below.
     const endPresses = Number((((verdict.telemetry || []).find((t) => t.id === 'rot1'))?.details?.custom?.totalPresses) ?? 0);
     const midPresses = Number(((midSnap.telemetry || []).find((t) => t.id === 'rot1')?.details?.custom?.totalPresses) ?? 0);
     console.log('ROT end totalPresses:', endPresses, 'mid-hold:', midPresses);
-    // TEMP-DIAG rot-telemetry shape (revert after isolation).
-    console.log('ROT telem:', JSON.stringify(((verdict.telemetry || []).find((t) => t.id === 'rot1'))?.details || {}).slice(0, 600));
-    expect(endPresses).toBeGreaterThanOrEqual(1);
+    // Press proof (deterministic universal channels): firmware observed the
+    // SW line move (serial SW:0/SW:1) and the model pin toggled twice
+    // (press + release). totalPresses custom is informational only — the
+    // formatted custom channel is lossy by design (see plan §11.4).
+    const rotTelem = (verdict.telemetry || []).find((t) => t.id === 'rot1');
+    const swToggles = Number(rotTelem?.details?.metrics?.pinToggles?.SW ?? rotTelem?.details?.pinToggles?.SW ?? 0);
+    console.log('ROT SW pinToggles:', swToggles);
+    expect(swToggles).toBeGreaterThanOrEqual(2);
     expect((verdict.serial || '').includes('SW:0')).toBe(true);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);

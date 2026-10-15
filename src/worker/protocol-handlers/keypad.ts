@@ -10,20 +10,26 @@ export class KeypadLogic extends BaseComponent {
     // net-level bridge is not enough — digitalRead samples the AVR PIN
     // register, which only moves via board-pin drive (same _drivingBus
     // contract as DHT22/OneWire).
+    // Change-gated: driveInput synchronously re-runs repropagate, which
+    // re-delivers row levels back into onPinStateChange. Driving on every
+    // notification would recurse (drive→repropagate→notify→drive) until
+    // stack overflow kills the run loop. Drive only on level change.
     private refreshColumnDrive() {
         try {
             const pair = (this as any).state?.connectedPair;
             const netOf = (this as any)._boardNetOf;
             const drive = (this as any)._driveBoardPin;
             const direct = (this as any)._setAvrPinDirect;
-            // TEMP-DIAG kp (revert after isolation).
-            try { console.warn(`[KP-DIAG] pair=${JSON.stringify(pair)} netOf=${typeof netOf} drive=${typeof drive} direct=${typeof direct} rV=${pair ? this.getPinVoltage(pair[0]) : 'n/a'}`); } catch { /* ignore */ }
             if (!pair) return;
             if (typeof netOf !== 'function') return;
             const rowBoard = netOf(pair[0]);
             const colBoard = netOf(pair[1]);
             if (!rowBoard || !colBoard) return;
             const rowLow = this.getPinVoltage(pair[0]) < 1.8;
+            const wantHigh = !rowLow;
+            const last = (this as any)._lastColDrive;
+            if (last && last.pin === colBoard && last.high === wantHigh) return;
+            (this as any)._lastColDrive = { pin: colBoard, high: wantHigh };
             (this as any)._drivingBus = true;
             (this as any)._lastDrivenVoltage = rowLow ? 0.0 : 5.0;
             if (typeof drive === 'function') drive(colBoard, !rowLow);
