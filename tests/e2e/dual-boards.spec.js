@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 // Dual-board regression: two Unos share one run; each runner owns the
 // peripherals wired to it (partition) and telemetry merges per id
-// (no last-writer-wins). Millis-sync asserts arrive with Phase A lockstep.
+// (no last-writer-wins). Phase A lockstep keeps their sim clocks together
+// (millis-sync test below).
 test.describe('Dual boards (two Unos, partitioned + merged)', () => {
   test.setTimeout(120000);
   test.beforeEach(async ({ page }) => {
@@ -66,6 +67,46 @@ test.describe('Dual boards (two Unos, partitioned + merged)', () => {
     const ocustom = oled2.details?.custom || oled2.details?.metrics?.custom || {};
     console.log('OLED2 vramFill:', ocustom.vramFillPercentage, 'power:', ocustom.powerStatus);
     expect(Number(ocustom.vramFillPercentage ?? NaN)).toBeGreaterThan(0);
+    await page.evaluate(() => window.OpenHWE2E.stop());
+    await page.waitForTimeout(2000);
+  });
+
+  test('two unos stay in millis sync under lockstep', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('openhw-tour-completed', 'true');
+    });
+    await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(8000);
+    const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
+      components: [
+        { id: 'uno1', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 100 },
+        { id: 'uno2', type: 'openhw-arduino-uno', attrs: {}, x: 100, y: 300 },
+      ],
+      wires: [],
+      code: 'void setup(){Serial.begin(9600);Serial.println("S1_READY");}\nvoid loop(){Serial.print("T1:");Serial.println(millis());delay(250);}\n',
+    }));
+    expect(setup.ok).toBe(true);
+    const setup2 = await page.evaluate(() => window.OpenHWE2E.setupCircuitBoards({
+      extra: {
+        uno2: 'void setup(){Serial.begin(9600);Serial.println("S2_READY");}\nvoid loop(){Serial.print("T2:");Serial.println(millis());delay(250);}\n',
+      },
+    }));
+    expect(setup2.ok).toBe(true);
+    const verdict = await page.evaluate(() => window.OpenHWE2E.run({
+      forMs: 16000, serialNeedle: 'S1_READY', telemetryMode: 'detail',
+    }));
+    expect(verdict.ok).toBe(true);
+    expect(verdict.pass).toBe(true);
+    const serial = verdict.serial || '';
+    // Last reported millis per board must agree: lockstep advances both
+    // boards by identical quanta, so any residual offset is boot stagger
+    // only (must not grow into seconds of drift).
+    const t1 = [...serial.matchAll(/T1:(\d+)/g)].map((m) => Number(m[1]));
+    const t2 = [...serial.matchAll(/T2:(\d+)/g)].map((m) => Number(m[1]));
+    console.log('SYNC n1:', t1.length, 'n2:', t2.length, 'last1:', t1[t1.length - 1], 'last2:', t2[t2.length - 1]);
+    expect(t1.length).toBeGreaterThan(5);
+    expect(t2.length).toBeGreaterThan(5);
+    expect(Math.abs(t1[t1.length - 1] - t2[t2.length - 1])).toBeLessThan(2500);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });

@@ -83,6 +83,16 @@ self.onmessage = async (e: MessageEvent) => {
                 // options.onByteTransmit per byte from emitTxByte().
                 { ...options, onByteTransmit: (tx: any) => post({ type: 'uart-tx', boardId, value: tx?.value, char: tx?.char, source: tx?.source || 'uart0' }) },
             );
+            // Phase A lockstep: when the parent drives quanta, hand the loop
+            // over immediately (no free-running ticks before the first STEP —
+            // own-loop guards make a stray tick a safe no-op regardless).
+            try {
+                if ((data.options as any)?.lockstep) {
+                    try { (runner as any)?.pause?.(); } catch { /* AVR has no pause */ }
+                    (runner as any).externalStepping = true;
+                    if (!(runner as any).running) (runner as any).running = true;
+                }
+            } catch { /* ignore */ }
             post({ type: 'ready', boardId, boardIdx });
         } catch (err: any) {
             post({ type: 'error', boardId, message: String(err?.message || err) });
@@ -93,6 +103,14 @@ self.onmessage = async (e: MessageEvent) => {
     if (data.type === 'STOP') {
         try { runner?.stop?.(); } catch { /* ignore */ }
         runner = null;
+        return;
+    }
+
+    // Phase A lockstep tick: advance one scheduler quantum. Fire-and-forget
+    // (no ACK) — delivery jitter is sub-millisecond, bounded by design;
+    // true barrier ACKs are Phase C tuning.
+    if (data.type === 'BOARD_STEP') {
+        try { (runner as any)?.stepQuantum?.(Number(data.quantumMs) || 8); } catch { /* ignore */ }
         return;
     }
 

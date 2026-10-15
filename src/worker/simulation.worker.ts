@@ -129,6 +129,11 @@ function maybeFlushBoardMemBatch(): void {
     pendingBoardMemWant = 0;
 }
 let mode: 'single' | 'multi' = 'single';
+// Phase A lockstep scheduler (multi-board only): one wall timer drives
+// fixed sim-time quanta across all board runners, so N boards share one
+// sim-time base (no wall-clock drift). Single-board path untouched.
+let lockstepTimer: any = null;
+const LOCKSTEP_QUANTUM_MS = 8;
 let pinToNet: Map<string, number> = new Map();
 let boardSerialOutput: Map<string, string> = new Map();
 
@@ -372,6 +377,10 @@ function emitSyncHeartbeat(boardId: string, stateObj: any) {
 }
 
 function stopAllRunners() {
+    if (lockstepTimer) {
+        try { clearTimeout(lockstepTimer); } catch { /* ignore */ }
+        lockstepTimer = null;
+    }
     if (runner) {
         runner.stop();
         runner = null;
@@ -1380,7 +1389,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     wires,
                     // NOTE: cmd/evt buffers stay with the parent (MPSC ring);
                     // board workers get control via postMessage fan-out.
-                    options: { ...runnerOptions, onByteTransmit: undefined, cmdBuffer: undefined, evtBuffer: undefined },
+                    // Phase A lockstep: board workers hand their loops over
+                    // at boot and step on BOARD_STEP from the scheduler.
+                    options: { ...runnerOptions, lockstep: true, onByteTransmit: undefined, cmdBuffer: undefined, evtBuffer: undefined },
                 });
                 boardWorkers.set(boardComp.id, bw);
                 boardWorkerTypes.set(boardComp.id, boardType);
@@ -1410,6 +1421,46 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 (br as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
             }
         });
+
+        // Hand each board loop to the lockstep scheduler: pause own timers
+        // (a drained tick may still fire once and no-ops via the guard),
+        // then step all boards together on one wall timer. Cross-board
+        // events (UART routeUartByte, INTERACT fan-out) stay immediate —
+        // causal order holds when the sender steps first each tick, with at
+        // most one quantum of bounded skew otherwise. Deterministic shared
+        // sim-time is what fixes multi-board drift; single-board runs never
+        // reach this branch.
+        try {
+            if (lockstepTimer) { clearTimeout(lockstepTimer); lockstepTimer = null; }
+            for (const [, br] of boardRunners) {
+                // NOTE: do NOT call pause() here — AVRRunner.pause() engages
+                // the debug-service HALT, which would freeze the CPU under
+                // the scheduler (observed: both boards stuck after handoff).
+                // The externalStepping guard below already neutralizes a
+                // drained wall tick, so nothing needs pausing.
+                try {
+                    (br as any).externalStepping = true;
+                    if (!(br as any).running) (br as any).running = true;
+                } catch { /* ignore */ }
+            }
+            const stepAllBoards = () => {
+                lockstepTimer = null;
+                if (mode !== 'multi') return;
+                try {
+                    for (const [, br] of boardRunners) {
+                        try { (br as any).stepQuantum?.(LOCKSTEP_QUANTUM_MS); } catch { /* one bad board never stalls the rest */ }
+                    }
+                    for (const [, bw] of boardWorkers) {
+                        try { bw.postMessage({ type: 'BOARD_STEP', quantumMs: LOCKSTEP_QUANTUM_MS }); } catch { /* ignore */ }
+                    }
+                } finally {
+                    if (mode === 'multi' && (boardRunners.size > 0 || boardWorkers.size > 0)) {
+                        lockstepTimer = setTimeout(stepAllBoards, LOCKSTEP_QUANTUM_MS);
+                    }
+                }
+            };
+            lockstepTimer = setTimeout(stepAllBoards, LOCKSTEP_QUANTUM_MS);
+        } catch { /* lockstep is best-effort; own loops already paused */ }
 
         // If this is teacher key capture, initialize capture state and baseline snapshot before starting execution
         if (data.isTeacherKeyCapture) {

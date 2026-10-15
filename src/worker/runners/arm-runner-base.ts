@@ -142,6 +142,9 @@ export abstract class ArmRunnerBase implements BoardRunner {
     boardId: string;
     instances: Map<string, BaseComponent> = new Map();
     running = false;
+    // Phase A lockstep: when true, the runner never self-schedules —
+    // a scheduler drives fixed quanta via stepQuantum() instead.
+    externalStepping: boolean = false;
     solverMode: 'logic' = 'logic';
     debugService: DebugService | null = null;
 
@@ -227,8 +230,11 @@ export abstract class ArmRunnerBase implements BoardRunner {
     }
 
     // ── Engine tick ──────────────────────────────────────────────
-    private runLoop = () => {
+    private runLoop = (virtualDeltaMs?: number) => {
         if (!this.running) return;
+        // Lockstep guard: externally-stepped runners ignore wall-driven
+        // ticks (a pending setTimeout may still fire once after handoff).
+        if (this.externalStepping && virtualDeltaMs === undefined) return;
         try {
             // SAB RX ring: UI bytes → engine.
             try {
@@ -246,7 +252,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
                         const budget = this.debugService.takeStepBudget(0);
                         if (budget <= 0) {
                             this.lastTime = performance.now();
-                            this.timer = setTimeout(this.runLoop, 8);
+                            if (!this.externalStepping) this.timer = setTimeout(this.runLoop, 8);
                             return;
                         }
                     }
@@ -254,7 +260,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
             } catch { /* ring drain never breaks the tick */ }
 
             const now = performance.now();
-            const deltaMs = Math.max(0, now - this.lastTime);
+            const deltaMs = virtualDeltaMs !== undefined ? virtualDeltaMs : Math.max(0, now - this.lastTime);
             this.lastTime = now;
             // Budget scales with wall time × speed, capped so a stalled tab
             // can't burst the engine. Baselines per core clock (see runners).
@@ -304,7 +310,20 @@ export abstract class ArmRunnerBase implements BoardRunner {
         } catch (e) {
             console.error(`[${this.boardId}] tick error:`, e);
         }
-        this.timer = setTimeout(this.runLoop, this.tickIntervalMs());
+        if (!this.externalStepping) this.timer = setTimeout(this.runLoop, this.tickIntervalMs());
+    };
+
+    /**
+     * Lockstep tick (Phase A multi-board): advance a fixed sim-time quantum
+     * with no wall reads and no timer reschedule. Budgets derive from the
+     * virtual delta exactly like wall time. Single-board path never calls
+     * this (own runLoop, untouched).
+     */
+    public stepQuantum = (simMs: number): void => {
+        try {
+            if (!this.running) return;
+            this.runLoop(Math.max(0.5, Number(simMs) || 8));
+        } catch { /* scheduler tick never breaks the loop */ }
     };
 
     protected budgetForDelta(deltaMs: number): number {

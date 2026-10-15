@@ -56,6 +56,10 @@ export class AVRRunner {
     repropagateAllVoltages: (() => void) | null = null;
     timers: Array<AVRTimer | ATtinyTimer1> = [];
     running: boolean = false;
+    // Phase A lockstep: when true, the runner never self-schedules —
+    // a scheduler drives fixed quanta via stepQuantum() instead.
+    // Single-board path leaves this false (own runLoop, untouched).
+    externalStepping: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
@@ -1633,8 +1637,11 @@ export class AVRRunner {
         }
     };
 
-    private runLoop = () => {
+    private runLoop = (virtualDeltaMs?: number) => {
         if (!this.running || !this.cpu) return;
+        // Lockstep guard: externally-stepped runners ignore wall-driven
+        // ticks (a pending setTimeout may still fire once after handoff).
+        if (this.externalStepping && virtualDeltaMs === undefined) return;
 
         // Command ring drain (§10.6 step 1): ≤16 commands per tick, then
         // HALT freezes the tick (takeStepBudget returns 0) until RESUME/STEP.
@@ -1659,7 +1666,7 @@ export class AVRRunner {
                     if (budget <= 0) {
                         // Frozen: still emit state so UI shows paused frame, then wait.
                         this.lastTime = performance.now();
-                        setTimeout(this.runLoop, 8);
+                        if (!this.externalStepping) setTimeout(this.runLoop, 8);
                         return;
                     }
                 }
@@ -1668,7 +1675,7 @@ export class AVRRunner {
 
         const loopStart = performance.now();
         const now = performance.now();
-        const deltaTime = now - this.lastTime;
+        const deltaTime = virtualDeltaMs !== undefined ? virtualDeltaMs : now - this.lastTime;
         let physicsMs = 0;
 
         if (deltaTime > 0) {
@@ -1694,7 +1701,7 @@ export class AVRRunner {
                         if (svc.checkPcBreakpoint(pc, Number(this.cpu.cycles) || 0)) {
                             this.forceEmitState();
                             this.lastTime = performance.now();
-                            setTimeout(this.runLoop, 8);
+                            if (!this.externalStepping) setTimeout(this.runLoop, 8);
                             return;
                         }
                     }
@@ -1821,8 +1828,22 @@ export class AVRRunner {
         // v2 tick (§10.6): cycles owed derive from sim-time budget (cyclesToRun /
         // CYCLES_PER_FRAME above), not wall catch-up — the setTimeout here is
         // pacing only, and every command/event carries cpuCycles stamps.
-        setTimeout(this.runLoop, 1);
+        // Lockstep schedulers drive stepQuantum() instead (no reschedule).
+        if (!this.externalStepping) setTimeout(this.runLoop, 1);
     }
+
+    /**
+     * Lockstep tick (Phase A multi-board): advance a fixed sim-time quantum
+     * with no wall reads and no timer reschedule. The scheduler owns pacing;
+     * serial/physics budgets flow from the virtual delta exactly like wall
+     * time. Single-board path never calls this (own runLoop, untouched).
+     */
+    public stepQuantum = (simMs: number): void => {
+        try {
+            if (!this.running || !this.cpu) return;
+            this.runLoop(Math.max(0.5, Number(simMs) || 8));
+        } catch { /* scheduler tick never breaks the loop */ }
+    };
 
     private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
