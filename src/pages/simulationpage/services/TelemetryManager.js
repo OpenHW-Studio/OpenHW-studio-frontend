@@ -185,7 +185,23 @@ export function useTelemetryManager({
   const telemetryRingCursorRef = useRef(0);
   const handleTelemetryStateMessage = useCallback((msg) => {
     if (isBooting) return;
-    if (!componentTelemetryEnabled || !msg || !Array.isArray(msg.components)) return;
+    // E2E contract hardening: the mount-once e2e closure + dev remounts can
+    // leave React state (enabled/selection) stale while the run proceeds —
+    // observed as whole-run empty telemetry beside healthy liveOop/serial.
+    // The run() global is written fresh every run; prefer it when present.
+    // Plain UI operation never sets it, so interactive behavior is unchanged.
+    let e2eSel = null;
+    let e2eEnabled = null;
+    try {
+      const g = (typeof window !== 'undefined' && window.__openhwE2ETelemetry) || null;
+      if (g && typeof g === 'object') {
+        if (Array.isArray(g.selected)) e2eSel = g.selected;
+        if (typeof g.enabled === 'boolean') e2eEnabled = g.enabled;
+      }
+    } catch { /* ignore */ }
+    const enabledNow = e2eEnabled !== null ? e2eEnabled : componentTelemetryEnabled;
+    const selectedNow = e2eSel !== null ? e2eSel : selectedTelemetryComponentIds;
+    if (!enabledNow || !msg || !Array.isArray(msg.components)) return;
 
     // Sampling policy (plan §5.5): identical throttle semantics as before —
     // default 250 ms window scaled by speed, 50 ms floor, Delta never
@@ -197,9 +213,10 @@ export function useTelemetryManager({
     if (!shouldEmitTelemetrySample(lastLogTimeRef.current, now, policy)) return;
     lastLogTimeRef.current = now;
 
-    // Upstream O(1) filtering by selected component IDs
-    const filterSet = Array.isArray(selectedTelemetryComponentIds)
-      ? new Set(selectedTelemetryComponentIds)
+    // Upstream O(1) filtering by selected component IDs (e2e-hardened
+    // selection above so remount-stale React state cannot blank a run).
+    const filterSet = Array.isArray(selectedNow)
+      ? new Set(selectedNow)
       : new Set();
 
     // T3: pre-read — pull ONLY selected slots' newest ring records BEFORE
@@ -264,8 +281,8 @@ export function useTelemetryManager({
     // while its runner was healthy). Merge by component id; a changed
     // selection set resets instead of merging stale ids.
     try {
-      const filterKey = Array.isArray(selectedTelemetryComponentIds)
-        ? [...selectedTelemetryComponentIds].sort().join(',') : '';
+      const filterKey = Array.isArray(selectedNow)
+        ? [...selectedNow].sort().join(',') : '';
       if (telemetryFilterKeyRef.current !== filterKey) {
         telemetryFilterKeyRef.current = filterKey;
         latestTelemetryCacheRef.current = processed;

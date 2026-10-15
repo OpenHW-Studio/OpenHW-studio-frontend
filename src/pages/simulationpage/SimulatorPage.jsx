@@ -4445,7 +4445,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           // setters below (UI toggle + selection filtering unchanged).
           try {
             if (typeof window !== 'undefined') {
-              window.__openhwE2ETelemetry = { enabled: true, mode: mode || 'detail' };
+              window.__openhwE2ETelemetry = { enabled: true, mode: mode || 'detail', selected: Array.isArray(selectTelemetry) ? [...selectTelemetry] : [] };
             }
           } catch { /* ignore */ }
           // NOTE: the state-based enable below ALSO stays (it drives the
@@ -4477,6 +4477,24 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             });
           } catch { /* ignore */ }
           await sleep(2500);
+          // Deterministic telemetry wait: static components (heavy
+          // framebuffers) emit on policy intervals, and multi-board merges
+          // land asynchronously — a single-shot read races both and flakes.
+          // Poll until every selected id is present (or timeout), so the
+          // verdict below reflects steady state, not read timing. Fast path
+          // (already present) costs zero extra waits.
+          try {
+            const want = Array.isArray(selectTelemetry) ? selectTelemetry.filter(Boolean) : [];
+            if (want.length > 0 && typeof window !== 'undefined' && window.OpenHWTelemetry?.getLatestTelemetry) {
+              for (let i = 0; i < 20; i += 1) {
+                let have = [];
+                try { have = window.OpenHWTelemetry.getLatestTelemetry() || []; } catch { have = []; }
+                const ids = new Set((Array.isArray(have) ? have : []).map((t) => t && t.id));
+                if (want.every((id) => ids.has(id))) break;
+                await sleep(500);
+              }
+            }
+          } catch { /* verdict read below is the fallback */ }
           const serialNew = serialHistoryRef.current.slice(serialMark).map((e) => String(e?.text ?? e ?? ""));
           const serialText = serialNew.join("");
           const pins = JSON.parse(JSON.stringify(renderPinsByBoardRef.current || {}));
