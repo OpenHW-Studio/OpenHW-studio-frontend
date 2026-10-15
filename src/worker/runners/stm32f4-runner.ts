@@ -505,6 +505,59 @@ export class Stm32f4Runner extends ArmRunnerBase {
         return 0;
     }
 
+    /** SysTick-paced coarse chunking (pace breakthrough 2026-10-10).
+     *  The model delivers at most ONE SysTick ISR per execute() call
+     *  (nvic maybe_set_systick_intr_pending sets a single pending bit per
+     *  system tick; INSTRUCTION_COUNT only decides *whether* it fires).
+     *  One ~1M-instr call per 8ms tick capped guest time at ~49 ISRs/s
+     *  wall no matter how fast the core ran (measured: 45 guest-ms/s at
+     *  81 MIPS in-execute) — and the LOAD divider could never help (one
+     *  pending bit per call either way: proven inert). Splitting the same
+     *  budget into ~LOAD-sized slices gives each slice its own SysTick:
+     *  identical instructions retired, N× the guest-ms rate, ~10µs of
+     *  facade overhead per extra slice. Slice tracks the live LOAD
+     *  (+64 margin; the strict `delta > period` needs it) so guest
+     *  reconfiguration and the tickMHz rewrite stay correct; clamped to
+     *  keep call counts sane. Returns the summed delta (base adds it once,
+     *  exactly like the old single-call path). */
+    private stepCoarseChunked(total: number): number {
+        const mcu = (this as any).mcu;
+        if (!mcu) return 0;
+        let slice = 200000;
+        try {
+            const emu = (this as any).mcu;
+            if (emu && typeof emu.periphRead === 'function') {
+                const csr = emu.periphRead(0xE000E010, 4) >>> 0;
+                const load = emu.periphRead(0xE000E014, 4) >>> 0;
+                if ((csr & 1) && (load & 0xffffff) > 0) {
+                    // +64 covers the strict `delta > period` with room for
+                    // short slices; a short slice (WFI/fault) only shifts
+                    // phase — the deficit accumulates and fires next slice.
+                    // min() with total/7 keeps the call count at ~7 even
+                    // when the guest runs a slow SysTick (fewer fires then,
+                    // correctly — the guest asked for them).
+                    const want = (load & 0xffffff) + 64;
+                    const even = Math.ceil(total / 7);
+                    slice = Math.min(262144, Math.max(8192, Math.min(want, even)));
+                }
+            }
+        } catch { /* default slice stands */ }
+        let done = 0;
+        let remaining = Math.max(1, Math.floor(total));
+        let guard = 0;
+        // 256 slices × 8192 min-slice = 2M ≥ any capped budget: fast-
+        // SysTick guests (tiny LOAD → tiny slices) never truncate.
+        while (remaining > 0 && guard++ < 256) {
+            const c = Math.min(slice, remaining);
+            let r: any = null;
+            try { r = mcu.execute(c); } catch { break; }
+            done += this.f4Delta(Number(r?.instCount), c);
+            remaining -= c;
+            if (r?.stopped) break;
+        }
+        return done;
+    }
+
     /**
      * Base poll + release detection for bidirectional one-wire nets.
      * The engine's gpio change hooks fire on OUTPUT writes only, so a
@@ -1021,8 +1074,7 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         let hasDht = false;
                         try { hasDht = !!(self as any).dhtPresent?.(); } catch { hasDht = false; }
                         if (!hasDht) {
-                            const r = self.mcu.execute(total);
-                            return self.f4Delta(Number(r?.instCount), total);
+                            return (self as any).stepCoarseChunked(total);
                         }
                         let coarseDone = 0;
                         let remaining = total;
@@ -1729,10 +1781,27 @@ export class Stm32f4Runner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        return Math.floor(deltaMs * 50000 * this.speed);
+        // 75K/ms (not the 50K base): the wasm core sustains ~82 MIPS
+        // in-execute (profiled), so 75K tracks just under it (stable:
+        // budget rate < engine rate converges; the 1.2M cap bounds
+        // stall bursts). With SysTick-paced chunking the per-tick budget
+        // directly sets the guest-ms rate.
+        return Math.floor(deltaMs * 75000 * this.speed);
+    }
+
+    protected override tickIntervalMs(): number {
+        // 4ms (not the 8ms base): the 8ms sleep was ~40% of every tick
+        // wall with zero guest-time value (guest time advances only via
+        // execute calls). The runner lives in a worker thread; 4ms keeps
+        // message/UI breath while returning the wall to the engine.
+        return 4;
     }
 
     protected maxBudgetPerTick(): number {
-        return 1_000_000;
+        // 1.2M (not the 1M of old): the SysTick-paced chunking above turns
+        // every ~LOAD instructions into one guest-ms, so the per-tick cap
+        // directly sets the guest-ms rate (floor(1.2M/168K)=7 ISRs/tick vs
+        // 5 at 1M). Still far under the base 2.5M stall-burst ceiling.
+        return 1_200_000;
     }
 }
