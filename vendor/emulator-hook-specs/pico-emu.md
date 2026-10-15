@@ -134,3 +134,72 @@ lockstep holds:
 
 - `tests/e2e/pico-i2c.spec.js`: OLED `vramFill` 3.5–3.7 + LCD2004 `Hello` — green today on the fork, must stay green on first-party build.
 - `tests/e2e/pico-mp-i2c.spec.js`: `MP_SCAN: [60]` + `vramFill > 0` via MicroPython `machine.I2C` — currently failing, the scan-ACK path is the suspect if runner-side diagnosis clears.
+
+## Lane/pico findings 2026-10-11 (all headless-proven; runner + specs adapt, owner action noted)
+
+### F1 — SHA-256 CSR map contradicts silicon (BLOCKS the RP2350 HASH cell)
+
+- Engine (`include/devtools.h:539-546`): WDATA_RDY=bit0, SUM_VLD=bit1,
+  START=bit31. Silicon (SDK `regs/sha256.h:44-118`): START=bit0,
+  WDATA_RDY=bit1, SUM_VLD=bit2 (+ERR=bit4, BSWAP=bit12).
+- Effect: the canonical `pico_sha256_*` flow ("abc", BIG_ENDIAN, CPU —
+  the SDK's own test shape) configures + writes + STARTs, then
+  `sha256_wait_valid_blocking` (silicon bit2) spins forever (serial
+  shows READY/STARTRC=0/WRITTEN, never DIGEST).
+- Second defect, same peripheral: CSR writes IGNORE the BSWAP bit
+  (`devtools.c` `sha256_write`: "BSWAP/DMA_SIZE accepted" but
+  `sha256_bswap` never updated — stuck 1). Only pre-swapped word order
+  yields the FIPS vector on this build.
+- The digest engine itself is PROVEN REAL: same block via direct CSR
+  yields `BA7816BF8F01CFEA…F20015AD` = FIPS 180-4("abc").
+- Ask: fix the CSR bit positions + honor BSWAP writes. Our e2e cell
+  (`pico2-periph` SHA, canonical API) goes green UNCHANGED.
+
+### F2 — no runner→IN-latch inject export (BLOCKS GPIO-in/EXTI/IR-RX/DHT)
+
+- `_picoemu_set_gpio` → `gpio_set_pin` writes the OUT latch only
+  (`gpio.c`); the guest-visible IN latch (`SIO_GPIO_IN` reads it raw)
+  is never updated (reset default all-HIGH; SIO IN writes ignored by
+  design — correct silicon behavior). Every Pico input pin reads
+  stuck-at-1: HIGH-only "proofs" pass by luck, LOW is impossible,
+  external edges never reach IO_BANK0 (EXTI counts 0), DHT/IR models
+  drive into the void.
+- The engine HAS the right primitives (`gpio_set_input_pin` fires
+  IRQs; `gpio_inject_level` silent) — none exported (103-symbol ABI
+  checked: no input/inject/drive export).
+- Ask: export one input-inject (e.g. `_picoemu_set_gpio_input` →
+  `gpio_set_input_pin`). One export unblocks GPIO-in + EXTI + IR-RX +
+  DHT-drive. Our specs assert both levels and stay RED until then
+  (deliberately not weakened to HIGH-only).
+
+### F3 — disabled-SM SM_INSTR forced exec dropped (minor, worked around)
+
+- `pio_step` skips disabled SMs before servicing `exec_pending`, so
+  `pio_sm_set_consecutive_pindirs` before `pio_sm_set_enabled` is lost
+  (OE stays 0; headless: `out15=1 oe15=0`). Our PIO cell works around
+  it with `gpio_set_dir(pin,GPIO_OUT)` (harmless on silicon: SIO OE is
+  not muxed while function=PIO0) — documented in-spec. No owner action
+  strictly needed, but immediate exec on a disabled SM should apply
+  synchronously per silicon.
+
+### F4 — repeated bare `_picoemu_reset()` wedges the guest (info only)
+
+- `picoemu_reset` is cores-only. One reset after UF2 load boots fine,
+  but repeated mid-execution resets wedge the guest (headless: 198
+  resets → 1 boot; serial frozen). The sanctioned repeated-reboot path
+  is the WDT TRIGGER bit → `picoemu_watchdog_reboot` (peripherals +
+  cores re-init; headless M0: 209 triggers → 209 boots). Our runner now
+  uses TRIGGER (see `pollPicoWDT`) — no owner action, recorded so the
+  bare-reset limitation is not rediscovered.
+
+### F5 — M33 TRIGGER reboot wipes the RP2350 ROM patch (BLOCKS M33 WDT)
+
+- `picoemu_watchdog_reboot` → `reset_runtime_peripherals()` →
+  `rom_init()` restores the RP2040-format ROM image WITHOUT re-applying
+  `rom_patch_rp2350_arm()`. Headless proof on M33: ROM magic reads
+  `RP v2` pre-reboot, `Mu v1` post-reboot; serial shows exactly one
+  boot (BOOT/ARMED/SPIN) then silence — the guest dies on unpatched
+  ROM. M0 is unaffected (no patch needed; 209/209 reboots).
+- Ask: re-apply `rom_patch_rp2350_arm()` (and verify the M33 SRAM
+  overlay + `rp2350_periph` state survive) in `picoemu_watchdog_reboot`.
+  Our M33 WDT cells stay RED until then (M0 cells go green on TRIGGER).

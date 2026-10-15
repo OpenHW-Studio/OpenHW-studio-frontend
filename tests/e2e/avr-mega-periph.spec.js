@@ -17,6 +17,7 @@ async function runCell(page, { comps = [], wires = [], code, needle, forMs = 220
   });
   await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(8000);
+  await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
   const setup = await page.evaluate(([b, bt, c, w, cd]) => window.OpenHWE2E.setupCircuit({
     components: [{ id: b, type: bt, attrs: {}, x: 100, y: 100 }, ...c],
     wires: w,
@@ -200,7 +201,7 @@ test.describe('AVR Mega peripherals', () => {
         { from: `${B}:5V`, to: 'can1:VCC' },
         { from: `${B}:${GND}`, to: 'can1:GND' },
       ],
-      code: '#include <SPI.h>\nconst int CS=10;\nuint8_t payload[16]={0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,0x5A,0xA5};\nvoid spiW(uint16_t a,uint8_t*d,uint8_t n){digitalWrite(CS,LOW);SPI.transfer(0x20|((a>>8)&0x0F));SPI.transfer(a&0xFF);for(uint8_t i=0;i<n;i++)SPI.transfer(d[i]);digitalWrite(CS,HIGH);}\nvoid spiR(uint16_t a,uint8_t*o,uint8_t n){digitalWrite(CS,LOW);SPI.transfer(0x30|((a>>8)&0x0F));SPI.transfer(a&0xFF);for(uint8_t i=0;i<n;i++)o[i]=SPI.transfer(0xFF);digitalWrite(CS,HIGH);}\nvoid spiRst(){digitalWrite(CS,LOW);SPI.transfer(0x00);SPI.transfer(0x00);digitalWrite(CS,HIGH);}\nvoid hx(uint8_t b){if(b<16)Serial.print("0");Serial.print(b,HEX);}\nvoid setup(){Serial.begin(9600);Serial.println("MEGA_CANFD_INIT");pinMode(CS,OUTPUT);digitalWrite(CS,HIGH);SPI.begin();SPI.beginTransaction(SPISettings(1000000,MSBFIRST,SPI_MODE0));delay(20);spiRst();delay(10);uint8_t c[4]={0};spiR(0x000,c,4);Serial.print("MEGA_CICON_RST:");for(uint8_t i=0;i<4;i++)hx(c[i]);Serial.println();uint8_t md=0x02;spiW(0x000,&md,1);uint8_t op=0xFF,t=0;do{spiR(0x000,&op,1);t++;if(((op>>4)&0x07)==2)break;delay(1);}while(t<50);if(((op>>4)&0x07)!=2){Serial.println("MEGA_CANFD_MODE_FAIL");return;}Serial.println("MEGA_CANFD_LOOPBACK_MODE");uint8_t tx[17];tx[0]=16;for(uint8_t i=0;i<16;i++)tx[1+i]=payload[i];spiW(0x400,tx,17);uint8_t rq=0x01;spiW(0x500,&rq,1);uint8_t st=0;uint16_t p=0;do{spiR(0x510,&st,1);p++;delay(1);}while(!(st&0x01)&&p<500);uint8_t rx[17]={0};spiR(0x600,rx,17);bool ok=rx[0]==16;for(uint8_t i=0;i<16&&ok;i++)if(rx[1+i]!=payload[i])ok=false;if(ok){Serial.print("MEGA_CANFD_LOOPBACK_OK LEN=16 DATA=");for(uint8_t i=0;i<16;i++)hx(payload[i]);Serial.println();}else Serial.println("MEGA_CANFD_MISMATCH");}\nvoid loop(){Serial.println("MEGA_CANFD_TICK");delay(2000);}\n',
+      code: '#include <SPI.h>\nconst int CS=10;\nuint8_t payload[16]={0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,0x5A,0xA5};\nvoid spiW(uint16_t a,uint8_t*d,uint8_t n){digitalWrite(CS,LOW);SPI.transfer(0x20|((a>>8)&0x0F));SPI.transfer(a&0xFF);for(uint8_t i=0;i<n;i++)SPI.transfer(d[i]);digitalWrite(CS,HIGH);}\nvoid spiR(uint16_t a,uint8_t*o,uint8_t n){digitalWrite(CS,LOW);SPI.transfer(0x30|((a>>8)&0x0F));SPI.transfer(a&0xFF);for(uint8_t i=0;i<n;i++)o[i]=SPI.transfer(0xFF);digitalWrite(CS,HIGH);}\nvoid spiRst(){digitalWrite(CS,LOW);SPI.transfer(0x00);SPI.transfer(0x00);digitalWrite(CS,HIGH);}\nvoid hx(uint8_t b){if(b<16)Serial.print("0");Serial.print(b,HEX);}\nvoid setup(){Serial.begin(9600);Serial.println("MEGA_CANFD_INIT");pinMode(CS,OUTPUT);digitalWrite(CS,HIGH);SPI.begin();SPI.beginTransaction(SPISettings(1000000,MSBFIRST,SPI_MODE0));delay(20);spiRst();delay(10);uint8_t c[4]={0};spiR(0x000,c,4);Serial.print("MEGA_CICON_RST:");for(uint8_t i=0;i<4;i++)hx(c[i]);Serial.println();uint8_t md=0x02;spiW(0x000,&md,1);uint8_t op=0xFF,t=0;do{spiR(0x000,&op,1);t++;if(((op>>4)&0x07)==2)break;delay(1);}while(t<50);if(((op>>4)&0x07)!=2){Serial.println("MEGA_CANFD_MODE_FAIL");return;}Serial.println("MEGA_CANFD_LOOPBACK_MODE");uint8_t tx[17];tx[0]=16;for(uint8_t i=0;i<16;i++)tx[1+i]=payload[i];spiW(0x400,tx,17);uint8_t rq=0x01;spiW(0x500,&rq,1);uint8_t istat=0;uint16_t p=0;do{spiR(0x01C,&istat,1);p++;delay(1);}while(!(istat&0x01)&&p<500);Serial.print("MEGA_RXIF:");Serial.println(istat&0x01?"1":"0");if(!(istat&0x01)){Serial.println("MEGA_CANFD_RX_TIMEOUT");}else{uint8_t rlen=0;spiR(0x480,&rlen,1);Serial.print("MEGA_RXLEN:");Serial.println(rlen);uint8_t rx[64]={0};if(rlen>0&&rlen<=64)spiR(0x481,rx,rlen);bool ok=rlen==16;for(uint8_t i=0;i<16&&ok;i++)if(rx[i]!=payload[i])ok=false;if(ok){Serial.print("MEGA_CANFD_LOOPBACK_OK LEN=16 DATA=");for(uint8_t i=0;i<16;i++)hx(payload[i]);Serial.println();}else{Serial.print("MEGA_CANFD_LOOPBACK_FAIL LEN=");Serial.print(rlen);Serial.print(" DATA=");for(uint8_t i=0;i<rlen&&i<64;i++)hx(rx[i]);Serial.println();}}}\nvoid loop(){Serial.println("MEGA_CANFD_TICK");delay(2000);}\n',
       needle: 'MEGA_CANFD_LOOPBACK_OK', forMs: 25000, telemetry: ['can1'],
     });
     expect(verdict.serial || '').toContain('MEGA_CANFD_LOOPBACK_OK LEN=16 DATA=DEADBEEFCAFE0123456789ABCDEF5AA5');
@@ -253,7 +254,7 @@ test.describe('AVR Mega peripherals', () => {
         { from: `${B}:${GND}`, to: 'ir1:GND' },
         { from: 'ir1:OUT', to: `${B}:4` },
       ],
-      code: 'const int TX=3,RX=2;\nbool bit(bool l){digitalWrite(TX,l?HIGH:LOW);delayMicroseconds(500);bool e=digitalRead(RX)==HIGH;delayMicroseconds(500);return e;}\nbool byte(uint8_t t,uint8_t&r){if(bit(false)!=false)return false;uint8_t v=0;for(uint8_t i=0;i<8;i++)if(bit((t>>i)&1))v|=(1<<i);if(bit(true)!=true)return false;r=v;return true;}\nvoid setup(){Serial.begin(9600);pinMode(TX,OUTPUT);digitalWrite(TX,HIGH);pinMode(RX,INPUT);Serial.println("MEGA_IR_READY");}\nvoid loop(){uint8_t a=0,c=0;if(byte(0x00,a)&&byte(0x16,c)&&a==0x00&&c==0x16)Serial.println("MEGA_IR_DECODED ADDR=0x00 CMD=0x16");else Serial.println("MEGA_IR_TIMEOUT");delay(2000);}\n',
+      code: 'const int TX=3,RX=2;\nbool irBit(bool l){digitalWrite(TX,l?HIGH:LOW);delayMicroseconds(500);bool e=digitalRead(RX)==HIGH;delayMicroseconds(500);return e;}\nbool irByte(uint8_t t,uint8_t&r){if(irBit(false)!=false)return false;uint8_t v=0;for(uint8_t i=0;i<8;i++)if(irBit((t>>i)&1))v|=(1<<i);if(irBit(true)!=true)return false;r=v;return true;}\nvoid setup(){Serial.begin(9600);pinMode(TX,OUTPUT);digitalWrite(TX,HIGH);pinMode(RX,INPUT);Serial.println("MEGA_IR_READY");}\nvoid loop(){uint8_t a=0,c=0;if(irByte(0x00,a)&&irByte(0x16,c)&&a==0x00&&c==0x16)Serial.println("MEGA_IR_DECODED ADDR=0x00 CMD=0x16");else Serial.println("MEGA_IR_TIMEOUT");delay(2000);}\n',
       needle: 'MEGA_IR_DECODED', telemetry: ['ir1'],
     });
     expect(verdict.serial || '').toContain('MEGA_IR_DECODED ADDR=0x00 CMD=0x16');
@@ -282,6 +283,11 @@ test.describe('AVR Mega peripherals', () => {
   });
 
   test('Mega EXTI counts loopback edges (EXTI/Interrupts cell)', async ({ page }) => {
+    // Silicon truth (Arduino AVR core WInterrupts.c, 2560 branch): Mega
+    // int0 = INT4 = PE4 (pin 2); int2 = INT0 = PD0 (pin 21). avr8js models
+    // 328P INT0/INT1 on PD2/PD3 only, so this cell needs the runner-side
+    // 2560 EICRB/INT4-7 path (avr-runner Mega branch) — same registers,
+    // same vector the firmware installs, real PE4 routing. No alias.
     const verdict = await runCell(page, {
       wires: [{ from: `${B}:3`, to: `${B}:2` }],
       code: 'volatile uint16_t cnt=0;\nvoid isr(){cnt++;}\nvoid setup(){Serial.begin(9600);pinMode(3,OUTPUT);pinMode(2,INPUT);attachInterrupt(0,isr,RISING);Serial.println("MEGA_EXT_READY");}\nvoid loop(){for(int i=0;i<10;i++){digitalWrite(3,HIGH);delay(5);digitalWrite(3,LOW);delay(5);}Serial.print("MEGA_EXT_CNT:");Serial.println(cnt);cnt=0;delay(1000);}\n',
@@ -290,7 +296,9 @@ test.describe('AVR Mega peripherals', () => {
     const vals = [...(verdict.serial || '').matchAll(/MEGA_EXT_CNT:(\d+)/g)].map((m) => Number(m[1]));
     console.log('MEGA_EXT counts:', JSON.stringify(vals.slice(0, 6)));
     expect(vals.length).toBeGreaterThan(0);
-    expect(vals[vals.length - 1]).toBeGreaterThanOrEqual(8);
+    // Exact: 10 driven edges per burst, no more (a self-trigger storm
+    // inflates counts — >= would pass a storm, ==10 fails it).
+    for (const v of vals) expect(v).toBe(10);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
@@ -328,6 +336,7 @@ test.describe('AVR Mega peripherals', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+  await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
     const master = '#include <ModbusMaster.h>\nModbusMaster node;\nvoid setup(){Serial.begin(9600);Serial.println("MB_MASTER_READY");node.begin(1,Serial);}\nvoid loop(){uint8_t rc=node.readHoldingRegisters(0,2);Serial.print("MB_RC=");Serial.println(rc);if(rc==ModbusMaster::ku8MBSuccess){uint16_t v0=node.getResponseBuffer(0);uint16_t v1=node.getResponseBuffer(1);Serial.print("MB_OK_");Serial.print(v0);Serial.print("_");Serial.println(v1);}delay(1500);}\n';
     const slave = 'const uint16_t REG0=43981;\nconst uint16_t REG1=12345;\nuint8_t sbuf[24];uint8_t slen=0;\nuint16_t mbcrc(uint8_t *b,uint8_t n){uint16_t c=0xFFFF;for(uint8_t i=0;i<n;i++){c^=b[i];for(uint8_t j=0;j<8;j++){if(c&1)c=(c>>1)^0xA001;else c>>=1;}}return c;}\nvoid setup(){Serial.begin(9600);Serial.println("MB_SLAVE_READY");}\nvoid loop(){while(Serial.available()>0&&slen<24){sbuf[slen++]=Serial.read();}bool progress=true;while(progress&&slen>=8){progress=false;int at=-1;for(int i=0;i+7<slen;i++){if(sbuf[i]==1&&sbuf[i+1]==0x03){uint16_t c=mbcrc(sbuf+i,6);uint16_t g=sbuf[i+6]|(((uint16_t)sbuf[i+7])<<8);if(c==g){at=i;break;}}}if(at<0){if(slen>16){for(int i=0;i<slen-8;i++)sbuf[i]=sbuf[i+8];slen-=8;progress=true;}break;}uint16_t st=(((uint16_t)sbuf[at+2])<<8)|sbuf[at+3];uint16_t qt=(((uint16_t)sbuf[at+4])<<8)|sbuf[at+5];if(st==0&&qt==2){uint8_t r[9];r[0]=1;r[1]=0x03;r[2]=4;r[3]=REG0>>8;r[4]=REG0&0xFF;r[5]=REG1>>8;r[6]=REG1&0xFF;uint16_t rc2=mbcrc(r,7);r[7]=rc2&0xFF;r[8]=rc2>>8;for(int i=0;i<9;i++)Serial.write(r[i]);Serial.println("SLV_SENT_43981_12345");}int keep=slen-(at+8);for(int i=0;i<keep;i++)sbuf[i]=sbuf[at+8+i];slen=keep;progress=true;}delay(20);}\n';
     const setup = await page.evaluate((code) => window.OpenHWE2E.setupCircuit({

@@ -1293,6 +1293,13 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         sabDebugOffset: (data as any).sabDebugOffset,
                         sabSerialRxOffset: (data as any).sabSerialRxOffset,
                         sabSerialTxOffset: (data as any).sabSerialTxOffset,
+                        // Single coherent serial channel (Phase B): the UI
+                        // drains postMessage serial AND the SAB TX ring into
+                        // the same history — a bound ring duplicates every
+                        // byte (and tears lines when the channels race).
+                        // Worker-hosted runners emit via postMessage; the
+                        // ring stays unbound (same as board.worker).
+                        sabSerialTxDisabled: true,
                         sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
                         boardPinMaps: (data as any).boardPinMaps,
                     }
@@ -1482,6 +1489,10 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 sabDebugOffset: (data as any).sabDebugOffset,
                 sabSerialRxOffset: (data as any).sabSerialRxOffset,
                 sabSerialTxOffset: (data as any).sabSerialTxOffset,
+                // Single coherent serial channel (Phase B, multi-board):
+                // unbind the SAB TX ring so postMessage serial is the only
+                // delivery into the shared history (see single-board site).
+                sabSerialTxDisabled: true,
                 sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
                 // v2 per-board regions: this runner binds only its own.
                 sabBoardSerialBase: (data as any).sabBoardSerialBase,

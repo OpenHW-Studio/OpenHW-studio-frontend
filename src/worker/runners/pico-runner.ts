@@ -158,11 +158,17 @@ export class PicoRunner extends ArmRunnerBase {
     // timeout countdown (clocks.c has no tick/decrement path), so unfed
     // firmware would never reboot. This poll owns the countdown via
     // _picoemu_mem_read32 (stock + fork cores): ENABLE edge or LOAD change
-    // arms/re-feeds, expiry calls _picoemu_reset. Additive-only (never
-    // fires until firmware sets CTRL.ENABLE). Limitation: same-value
-    // periodic feeds (watchdog_update rewrites the identical LOAD) are not
-    // observable without an engine write-trap — the engine-side countdown
-    // is the correct fix; unfed shapes (all WDT cells) are exact.
+    // arms/re-feeds, expiry performs the silicon-true reboot by setting
+    // the WDT TRIGGER bit via _picoemu_mem_write32 (the engine turns it
+    // into the full watchdog reboot: peripherals + cores re-init,
+    // setup() re-runs — headless: 209 triggers → 209 boots). Bare
+    // _picoemu_reset() is NOT a reboot (cores-only; the guest wedges
+    // after the first reset — headless: 198 resets, 1 boot — and the
+    // wedged engine hangs the run). Additive-only (never fires until
+    // firmware sets CTRL.ENABLE). Limitation: same-value periodic feeds
+    // (watchdog_update rewrites the identical LOAD) are not observable
+    // without an engine write-trap — the engine-side countdown is the
+    // correct fix; unfed shapes (all WDT cells) are exact.
     private wdtArmed = false;
     private wdtDeadlineMs = 0;
     private wdtPeriodMs = 0;
@@ -540,12 +546,13 @@ export class PicoRunner extends ArmRunnerBase {
     }
 
     /** Runner-side watchdog countdown (see field note). Polls the
-     *  watchdog CTRL/LOAD via _picoemu_mem_read32; expiry resets the core
-     *  so unfed firmware reboots (WDT_BOOT needles repeat). Register map
-     *  from the pico-sdk (RP2040 CTRL=0x40058000, RP2350=0x400D8000;
-     *  CTRL off 0x00 ENABLE=bit30 TRIGGER=bit31, LOAD off 0x04 in 1us
-     *  ticks, RP2040 XFACTOR 2 per errata RP2040-E1, RP2350 XFACTOR 1).
-     *  No-ops when the export is absent or the firmware never arms the WDT. */
+     *  watchdog CTRL/LOAD via _picoemu_mem_read32; expiry sets the TRIGGER
+     *  bit via _picoemu_mem_write32 so unfed firmware reboots (WDT_BOOT
+     *  needles repeat). Register map from the pico-sdk (RP2040
+     *  CTRL=0x40058000, RP2350=0x400D8000; CTRL off 0x00 ENABLE=bit30
+     *  TRIGGER=bit31, LOAD off 0x04 in 1us ticks, RP2040 XFACTOR 2 per
+     *  errata RP2040-E1, RP2350 XFACTOR 1). No-ops when the export is
+     *  absent or the firmware never arms the WDT. */
     private pollPicoWDT(): void {
         try {
             const mod = this.mod;
@@ -574,13 +581,20 @@ export class PicoRunner extends ArmRunnerBase {
             }
             if (now < this.wdtDeadlineMs) { this.wdtExpiredOnce = false; return; }
             // Expired: debounce one extra poll (bus misread guard), then
-            // reset the core — setup() re-runs and the BOOT needle repeats.
+            // reboot via the WDT TRIGGER bit — the silicon-true path (the
+            // engine turns TRIGGER into the full watchdog reboot, setup()
+            // re-runs and the ARMED needle repeats). Bare _picoemu_reset()
+            // only resets the cores and the guest wedges after the first
+            // reset (proven headless) — kept as last-resort fallback.
             // The watchdog stays conceptually armed (silicon keeps it running
             // across its own reset); setup's wdt_begin re-feeds anyway.
             if (!this.wdtExpiredOnce) { this.wdtExpiredOnce = true; return; }
             this.wdtExpiredOnce = false;
             this.wdtDeadlineMs = now + this.wdtPeriodMs;
-            try { mod._picoemu_reset(); } catch { /* reset never breaks tick */ }
+            try {
+                const c = mod._picoemu_mem_read32(base) >>> 0;
+                mod._picoemu_mem_write32(base, (c | 0x80000000) >>> 0);
+            } catch { try { mod._picoemu_reset(); } catch { /* reset never breaks tick */ } }
         } catch { /* WDT never breaks the tick */ }
     }
 

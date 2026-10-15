@@ -1,7 +1,7 @@
 import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState, AVREEPROM, EEPROMMemoryBackend, AVRWatchdog, watchdogConfig, AVRClock } from 'avr8js';
-import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig } from './mega-timers.ts';
+import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig, megaPortDConfig, megaPortEConfig } from './mega-timers.ts';
 import { BaseComponent } from '@openhw/emulator';
-import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
+import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS, MEGA_DIGITAL_PINS, MEGA_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
 import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, SabProtocolWriter, sabKindForType } from '../sab/layout.ts';
 import { DebugService } from '../debug/service.ts';
@@ -34,6 +34,27 @@ import {
     traversePassive as traversePassiveShared,
 } from '../signal/electrical.ts';
 import type { PassiveInstance } from '../signal/electrical.ts';
+
+// ATmega2560 Arduino pin → port/bit routing (single source of truth for the
+// Mega branch: attachPort wiring in setupHooks plus the pin→port resolver
+// below). Verified against the ATmega2560 Arduino mapping.
+const MEGA_PORT_TABLES: Record<string, string[]> = {
+    portA: ['22', '23', '24', '25', '26', '27', '28', '29'],
+    portB: ['53', '52', '51', '50', '10', '11', '12', '13'],
+    portC: ['37', '36', '35', '34', '33', '32', '31', '30'],
+    portD: ['21', '20', '19', '18', '', '', '', '38'],
+    portE: ['0', '1', '', '5', '2', '3', '', ''],
+    portF: ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'],
+    portG: ['41', '40', '39', '', '', '4', '', ''],
+    portH: ['17', '16', '', '6', '7', '8', '9', ''],
+    portJ: ['15', '14', '', '', '', '', '', ''],
+    portK: ['A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'],
+    portL: ['49', '48', '47', '46', '45', '44', '43', '42'],
+};
+
+// Mega hardware SPI pins (Uno: 11/12/13 MOSI/MISO/SCK).
+const MEGA_SPI_PINS = { mosi: '51', miso: '50', sck: '52' };
+const UNO_SPI_PINS = { mosi: '11', miso: '12', sck: '13' };
 
 export class AVRRunner {
     cpu: CPU | null = null;
@@ -373,11 +394,14 @@ export class AVRRunner {
 
         this.portB = new AVRIOPort(this.cpu, portBConfig);
         this.portC = new AVRIOPort(this.cpu, portCConfig);
-        this.portD = new AVRIOPort(this.cpu, portDConfig);
-        
+        // Mega D/E ports carry the native 2560 external-interrupt wiring
+        // (INT0-3 on PD0-3, INT4-5 on PE4-5); Uno-class boards keep the
+        // stock 328P configs.
+        this.portD = new AVRIOPort(this.cpu, isMega ? megaPortDConfig : portDConfig);
+
         if (this.boardId.toLowerCase().includes('mega')) {
             this.portA = new AVRIOPort(this.cpu, portAConfig);
-            this.portE = new AVRIOPort(this.cpu, portEConfig);
+            this.portE = new AVRIOPort(this.cpu, megaPortEConfig);
             this.portF = new AVRIOPort(this.cpu, portFConfig);
             this.portG = new AVRIOPort(this.cpu, portGConfig);
             this.portH = new AVRIOPort(this.cpu, portHConfig);
@@ -532,16 +556,17 @@ export class AVRRunner {
             const instArray = Array.from(this.instances.values());            let returnByte = 0xFF; // Default MISO if nothing responds
 
             const unoId = this.boardId;
+            const spiPins = this.avrSpiPins();
 
             if (unoId) {
-                const misoNet = this.pinToNet.get(`${unoId}:12`);
+                const misoNet = this.pinToNet.get(`${unoId}:${spiPins.miso}`);
                 if (misoNet !== undefined) {
                     // 1. Direct Loopback (MISO connected to MOSI)
-                    if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
+                    if (misoNet === this.pinToNet.get(`${unoId}:${spiPins.mosi}`)) {
                         returnByte = value;
                     }
                     // 2. MISO connected to SCK (Clock pulses)
-                    else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
+                    else if (misoNet === this.pinToNet.get(`${unoId}:${spiPins.sck}`)) {
                         returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
                     }
                     // 3. MISO connected to any other driven Pin (like 10/SS)
@@ -549,7 +574,7 @@ export class AVRRunner {
                         // Check if the net is currently driven HIGH by another pin
                         let drivenHigh = false;
                         for (const [p, net] of this.pinToNet) {
-                            if (net === misoNet && !p.endsWith(':12')) {
+                            if (net === misoNet && !p.endsWith(`:${spiPins.miso}`)) {
                                 const [compId, pinId] = p.split(':');
                                 if (compId === unoId && this.pinStates[pinId]) {
                                     drivenHigh = true;
@@ -606,18 +631,8 @@ export class AVRRunner {
             // updateOopPin — so the DHT never receives the LOW wake signal.
             if (!(inst as any)._setAvrPinDirect) {
                 (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
-                    const cleanPin = boardPin.replace(/^D/i, '');
-                    const num = parseInt(cleanPin, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            this.portB?.setPin(num - 8, isHigh);
-                        } else if (num >= 0 && num <= 7) {
-                            this.portD?.setPin(num, isHigh);
-                        }
-                    } else if (cleanPin.startsWith('A')) {
-                        const bit = parseInt(cleanPin.slice(1), 10);
-                        if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                    }
+                    const r = this.resolveAvrPortBit(boardPin);
+                    if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                 };
             }
             // Runner-agnostic board-drive service (plan §5.3): same effect
@@ -671,7 +686,49 @@ export class AVRRunner {
     }
 
     boardPins(): string[] {
-        return [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+        return this.avrBoardPinList();
+    }
+
+    private isMegaBoard(): boolean {
+        return this.boardId.toLowerCase().includes('mega');
+    }
+
+    // Full signal-pin list for the active board (Mega exposes 0-53/A0-A15;
+    // Uno/Nano/Tiny-substitution ride the Uno-class list).
+    private avrBoardPinList(): string[] {
+        return this.isMegaBoard()
+            ? [...MEGA_DIGITAL_PINS, ...MEGA_ANALOG_PINS]
+            : [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+    }
+
+    // Arduino pin label → avr8js port + bit for the active board. Central
+    // resolver: every CPU-port touchpoint (input injection, mode queries,
+    // drive/sample HAL, SoftSerial-RX inject) must go through here so Mega
+    // pins on ports E/F/G/H/J/K/L/A resolve instead of falling through.
+    private resolveAvrPortBit(pin: string): { port: AVRIOPort | null; bit: number } | null {
+        const clean = String(pin || '').replace(/^D/i, '');
+        if (this.isMegaBoard()) {
+            for (const key of Object.keys(MEGA_PORT_TABLES)) {
+                const bit = MEGA_PORT_TABLES[key].indexOf(clean);
+                if (bit >= 0) return { port: (this as any)[key] as AVRIOPort | null, bit };
+            }
+            return null;
+        }
+        const num = parseInt(clean, 10);
+        if (!isNaN(num)) {
+            if (num >= 8 && num <= 13) return { port: this.portB, bit: num - 8 };
+            if (num >= 0 && num <= 7) return { port: this.portD, bit: num };
+            return null;
+        }
+        if (clean.startsWith('A')) {
+            const bit = parseInt(clean.slice(1), 10);
+            if (!isNaN(bit)) return { port: this.portC, bit };
+        }
+        return null;
+    }
+
+    private avrSpiPins(): { mosi: string; miso: string; sck: string } {
+        return this.isMegaBoard() ? MEGA_SPI_PINS : UNO_SPI_PINS;
     }
 
     pinAliases(pin: string): string[] {
@@ -691,18 +748,10 @@ export class AVRRunner {
     }
 
     sampleOutput(pin: string): { level: number; driving: boolean } | null {
-        const clean = String(pin || '').replace(/^D/i, '');
-        let port: AVRIOPort | null = null;
-        let bit = -1;
-        const num = parseInt(clean, 10);
-        if (!isNaN(num)) {
-            if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-            else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
-        } else if (clean.startsWith('A')) {
-            const parsed = parseInt(clean.slice(1), 10);
-            if (!isNaN(parsed)) { port = this.portC; bit = parsed; }
-        }
-        if (!port || bit < 0 || !this.cpu) return null;
+        const r = this.resolveAvrPortBit(pin);
+        if (!r || !r.port || r.bit < 0 || !this.cpu) return null;
+        const port = r.port;
+        const bit = r.bit;
         let state: PinState;
         try { state = port.pinState(bit); } catch { return null; }
         const driving = state === PinState.High || state === PinState.Low;
@@ -713,16 +762,9 @@ export class AVRRunner {
     }
 
     driveInput(pin: string, high: boolean): void {
-        const cleanPin = String(pin || '').replace(/^D/i, '');
-        const num = parseInt(cleanPin, 10);
         try {
-            if (!isNaN(num)) {
-                if (num >= 8 && num <= 13) this.portB?.setPin(num - 8, high);
-                else if (num >= 0 && num <= 7) this.portD?.setPin(num, high);
-            } else if (cleanPin.startsWith('A')) {
-                const bit = parseInt(cleanPin.slice(1), 10);
-                if (!isNaN(bit)) this.portC?.setPin(bit, high);
-            }
+            const r = this.resolveAvrPortBit(pin);
+            if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, high);
             if (typeof this.repropagateAllVoltages === 'function') this.repropagateAllVoltages();
         } catch { /* input inject never breaks sim */ }
     }
@@ -820,8 +862,9 @@ export class AVRRunner {
 
     private setSoftSerialRxLevel(isHigh: boolean) {
         this.softSerialRxLineLow = !isHigh;
-        // UNO pin 11 is PB3 (index 3 in PORTB mapping [8..13]).
-        this.portB?.setPin(3, isHigh);
+        // SoftSerial RX pin 11: PB3 on Uno-class boards, PB5 on Mega.
+        const r = this.resolveAvrPortBit('11');
+        if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
     }
 
     private emitSoftSerialByte(value: number) {
@@ -950,7 +993,7 @@ export class AVRRunner {
             // Board digital/analog pins should remain drivable by external components,
             // not locked to power rail voltage even if the breadboard power row is shared.
             const boardPinNodes = new Set<string>();
-            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
+            this.avrBoardPinList().forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
 
             const normalizePin = normalizeEndpointPin; // shared (plan §5.3)
 
@@ -1066,24 +1109,9 @@ export class AVRRunner {
                 // to a switch or pushbutton to GND), allow the power rail voltage to drive the pin state!
                 const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
                 if (isPowerRailSrc && isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
-                    let port: AVRIOPort | null = null;
-                    let bit = 0;
-                    if (compPin.startsWith('A')) {
-                        port = this.portC;
-                        const parsed = parseInt(compPin.slice(1), 10);
-                        if (!isNaN(parsed)) bit = parsed;
-                    } else {
-                        const num = parseInt(compPin, 10);
-                        if (!isNaN(num)) {
-                            if (num >= 8 && num <= 13) {
-                                port = this.portB;
-                                bit = num - 8;
-                            } else if (num >= 0 && num <= 7) {
-                                port = this.portD;
-                                bit = num;
-                            }
-                        }
-                    }
+                    const r = this.resolveAvrPortBit(compPin);
+                    const port = r ? r.port : null;
+                    const bit = r ? r.bit : 0;
                     const state = port ? port.pinState(bit) : null;
                     const isOutput = state === PinState.High || state === PinState.Low;
                     if (isOutput) {
@@ -1151,19 +1179,8 @@ export class AVRRunner {
                         if (!originIsExternal) {
                             this.pinStates[compPin] = isHigh;
                         }
-                        if (compPin.startsWith('A')) {
-                            const bit = parseInt(compPin.slice(1), 10);
-                            if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                        } else {
-                            const num = parseInt(compPin, 10);
-                            if (!isNaN(num)) {
-                                if (num >= 8 && num <= 13) {
-                                    this.portB?.setPin(num - 8, isHigh);
-                                } else if (num >= 0 && num <= 7) {
-                                    this.portD?.setPin(num, isHigh);
-                                }
-                            }
-                        }
+                        const r = this.resolveAvrPortBit(compPin);
+                        if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                     }
 
                     this.traversePassive(inst, compId, compPin, v, (forwardNode, nextV) => {
@@ -1181,24 +1198,9 @@ export class AVRRunner {
         this.repropagateAllVoltages = () => {
             lowImpRails = getLowImpedanceRails();
             const getAvrPinModeState = (pinStr: string) => {
-                let port: AVRIOPort | null = null;
-                let bit = 0;
-                if (pinStr.startsWith('A')) {
-                    port = this.portC;
-                    const parsed = parseInt(pinStr.slice(1), 10);
-                    if (!isNaN(parsed)) bit = parsed;
-                } else {
-                    const num = parseInt(pinStr, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            port = this.portB;
-                            bit = num - 8;
-                        } else if (num >= 0 && num <= 7) {
-                            port = this.portD;
-                            bit = num;
-                        }
-                    }
-                }
+                const r = this.resolveAvrPortBit(pinStr);
+                const port = r ? r.port : null;
+                const bit = r ? r.bit : 0;
                 if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
                 const state = port.pinState(bit);
                 if (state === PinState.High || state === PinState.InputPullUp || state === 2) {
@@ -1216,33 +1218,21 @@ export class AVRRunner {
             // Process INPUT/INPUT_PULLUP pins BEFORE OUTPUT pins so that strong OUTPUT signals
             // can override the weak pull-up voltage when a CPU output pin and a pull-up share
             // the same breadboard row (e.g. MUX:D1=0V from pin 3 must beat 5V from pin 5's pull-up).
-            const allBoardPins = [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+            const allBoardPins = this.avrBoardPinList();
             const inputPins = allBoardPins.filter(p => {
                 const state = getAvrPinModeState(p);
                 if (!state.isDriven) return false;
-                const num = parseInt(p, 10);
-                if (isNaN(num)) return false;
-                let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
-                else return false;
-                if (!port) return false;
-                const pinState = port.pinState(bit);
+                const r = this.resolveAvrPortBit(p);
+                if (!r || !r.port || r.bit < 0) return false;
+                const pinState = r.port.pinState(r.bit);
                 return pinState !== PinState.High && pinState !== PinState.Low;
             });
             const outputPins = allBoardPins.filter(p => {
                 const state = getAvrPinModeState(p);
                 if (!state.isDriven) return false;
-                const num = parseInt(p, 10);
-                if (isNaN(num)) return false;
-                let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
-                else return false;
-                if (!port) return false;
-                const pinState = port.pinState(bit);
+                const r = this.resolveAvrPortBit(p);
+                if (!r || !r.port || r.bit < 0) return false;
+                const pinState = r.port.pinState(r.bit);
                 return pinState === PinState.High || pinState === PinState.Low;
             });
             const analogPins = allBoardPins.filter(p => p.startsWith('A'));
@@ -1281,22 +1271,9 @@ export class AVRRunner {
                     }
                 });
 
-                let port: AVRIOPort | null = null;
-                let bit = 0;
-                const num = parseInt(pin, 10);
-                if (!isNaN(num)) {
-                    if (num >= 8 && num <= 13) {
-                        port = this.portB;
-                        bit = num - 8;
-                    } else if (num >= 0 && num <= 7) {
-                        port = this.portD;
-                        bit = num;
-                    }
-                } else if (pin.startsWith('A')) {
-                    port = this.portC;
-                    const parsed = parseInt(pin.slice(1), 10);
-                    if (!isNaN(parsed)) bit = parsed;
-                }
+                const r = this.resolveAvrPortBit(pin);
+                const port = r ? r.port : null;
+                const bit = r ? r.bit : 0;
 
                 if (isDrivenLow) {
                     this.pinStates[pin] = false;
@@ -1309,7 +1286,11 @@ export class AVRRunner {
                     if (isDriven) {
                         this.pinStates[pin] = isHigh;
 
-                        const isPullUp = port ? (port.pinState(bit) === PinState.InputPullUp || port.pinState(bit) === 2) : false;
+                        // Pull-up ONLY (InputPullUp === 3): a floating Input
+                        // (=== 2) must never drive the net — blasting it
+                        // HIGH here self-triggers edge interrupts every
+                        // repropagate pass (Mega INT4 storm root cause).
+                        const isPullUp = port ? port.pinState(bit) === PinState.InputPullUp : false;
                         if (isPullUp) {
                             updateOopPin(pin, true);
                         }
@@ -1317,9 +1298,8 @@ export class AVRRunner {
                 }
             });
             analogPins.forEach(pin => {
-                const bit = parseInt(pin.slice(1), 10);
-                const port = this.portC;
-                const pinState = port ? port.pinState(bit) : null;
+                const r = this.resolveAvrPortBit(pin);
+                const pinState = r && r.port && r.bit >= 0 ? r.port.pinState(r.bit) : null;
                 const isDigitalOutput = pinState === PinState.High || pinState === PinState.Low;
                 if (isDigitalOutput) {
                     const { isDriven, isHigh } = getAvrPinModeState(pin);
@@ -1511,15 +1491,29 @@ export class AVRRunner {
                 pinNames.forEach((pin, i) => {
                     if (!pin) return;
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
-                    // Allow OUTPUT, InputPullUp, and Input (high-impedance release for open-drain buses like 1-Wire/I2C)
+                    // Allow OUTPUT and InputPullUp. A floating INPUT pin must
+                    // NEVER drive the net: the net owns a floating line
+                    // (external component or pull-up repropagate owns it).
+                    // Treating float-as-HIGH here makes every floating input
+                    // a 5V source that fights the real driver on every port
+                    // write — observed as a TRUE/FALSE setPin alternation on
+                    // the same cycle that self-triggers edge interrupts
+                    // (Mega INT4 storm: ~400 spurious ISRs/s with no edges).
+                    // Open-drain release still works: release-to-pullup
+                    // propagates via InputPullUp below, and the repropagate
+                    // input loop drives component-owned lines.
                     const state = port.pinState(i);
-                    const isOutputOrPullUpOrInput = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp || state === PinState.Input || state === 2;
-                    if (!isOutputOrPullUpOrInput) {
+                    if (state === PinState.Input || (state as number) === 2) {
+                        return;
+                    }
+                    const isOutputOrPullUp = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp;
+                    if (!isOutputOrPullUp) {
                         return;
                     }
 
-                    // For open-drain buses (like 1-Wire / I2C), switching to high-impedance Input releases the wire HIGH.
-                    const isHigh = state === PinState.InputPullUp || state === 2 || state === PinState.High || state === PinState.Input || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
+                    // For open-drain buses (like 1-Wire / I2C), switching to
+                    // INPUT_PULLUP releases the wire HIGH.
+                    const isHigh = state === PinState.InputPullUp || state === PinState.High || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1538,32 +1532,20 @@ export class AVRRunner {
             });
         };
 
-        const isMega = this.boardId.toLowerCase().includes('mega');
+        const isMega = this.isMegaBoard();
 
         if (isMega) {
-            const MEGA_PORTA_PINS = ['22', '23', '24', '25', '26', '27', '28', '29'];
-            const MEGA_PORTB_PINS = ['53', '52', '51', '50', '10', '11', '12', '13'];
-            const MEGA_PORTC_PINS = ['37', '36', '35', '34', '33', '32', '31', '30'];
-            const MEGA_PORTD_PINS = ['21', '20', '19', '18', '', '', '', '38'];
-            const MEGA_PORTE_PINS = ['0', '1', '', '5', '2', '3', '', ''];
-            const MEGA_PORTF_PINS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'];
-            const MEGA_PORTG_PINS = ['41', '40', '39', '', '', '4', '', ''];
-            const MEGA_PORTH_PINS = ['17', '16', '', '6', '7', '8', '9', ''];
-            const MEGA_PORTJ_PINS = ['15', '14', '', '', '', '', '', ''];
-            const MEGA_PORTK_PINS = ['A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
-            const MEGA_PORTL_PINS = ['49', '48', '47', '46', '45', '44', '43', '42'];
-
-            if (this.portA) attachPort(this.portA, MEGA_PORTA_PINS);
-            if (this.portB) attachPort(this.portB, MEGA_PORTB_PINS);
-            if (this.portC) attachPort(this.portC, MEGA_PORTC_PINS);
-            if (this.portD) attachPort(this.portD, MEGA_PORTD_PINS);
-            if (this.portE) attachPort(this.portE, MEGA_PORTE_PINS);
-            if (this.portF) attachPort(this.portF, MEGA_PORTF_PINS);
-            if (this.portG) attachPort(this.portG, MEGA_PORTG_PINS);
-            if (this.portH) attachPort(this.portH, MEGA_PORTH_PINS);
-            if (this.portJ) attachPort(this.portJ, MEGA_PORTJ_PINS);
-            if (this.portK) attachPort(this.portK, MEGA_PORTK_PINS);
-            if (this.portL) attachPort(this.portL, MEGA_PORTL_PINS);
+            if (this.portA) attachPort(this.portA, MEGA_PORT_TABLES.portA);
+            if (this.portB) attachPort(this.portB, MEGA_PORT_TABLES.portB);
+            if (this.portC) attachPort(this.portC, MEGA_PORT_TABLES.portC);
+            if (this.portD) attachPort(this.portD, MEGA_PORT_TABLES.portD);
+            if (this.portE) attachPort(this.portE, MEGA_PORT_TABLES.portE);
+            if (this.portF) attachPort(this.portF, MEGA_PORT_TABLES.portF);
+            if (this.portG) attachPort(this.portG, MEGA_PORT_TABLES.portG);
+            if (this.portH) attachPort(this.portH, MEGA_PORT_TABLES.portH);
+            if (this.portJ) attachPort(this.portJ, MEGA_PORT_TABLES.portJ);
+            if (this.portK) attachPort(this.portK, MEGA_PORT_TABLES.portK);
+            if (this.portL) attachPort(this.portL, MEGA_PORT_TABLES.portL);
         } else {
             if (this.portB) attachPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14)); // PORTB
             if (this.portD) attachPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8)); // PORTD
@@ -1571,7 +1553,7 @@ export class AVRRunner {
         }
 
         // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
-        [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+        this.avrBoardPinList().forEach(pin => {
             this.pinStates[pin] = false;
             this.circuitDirty = true;
             updateOopPin(pin, false);
@@ -1749,17 +1731,8 @@ export class AVRRunner {
                             let cleanPin = boardPin.replace(/^D/i, '');
                             this.pinStates[cleanPin] = isHigh;
                             this.pinStates[`D${cleanPin}`] = isHigh;
-                            const num = parseInt(cleanPin, 10);
-                            if (!isNaN(num)) {
-                                if (num >= 8 && num <= 13) {
-                                    this.portB?.setPin(num - 8, isHigh);
-                                } else if (num >= 0 && num <= 7) {
-                                    this.portD?.setPin(num, isHigh);
-                                }
-                            } else if (cleanPin.startsWith('A')) {
-                                const bit = parseInt(cleanPin.slice(1), 10);
-                                if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                            }
+                            const r = this.resolveAvrPortBit(boardPin);
+                            if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                         };
                     }
                     if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {

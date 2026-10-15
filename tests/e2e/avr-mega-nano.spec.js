@@ -39,6 +39,7 @@ test.describe('AVR Mega/Nano UART TX + GPIO-out latch (live)', () => {
       });
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(8000);
+      await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
 
       const setup = await page.evaluate(([cc, code]) =>
         window.OpenHWE2E.setupCircuit({

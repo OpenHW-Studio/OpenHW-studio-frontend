@@ -30,6 +30,14 @@ export const UNO_SOFTSERIAL_PINS = {
   rx: ['11', 'D11'],
 };
 
+// ── Arduino Mega 2560 (ATmega2560) pin tables ──────────────────────────
+// Digital 0-53 + analog A0-A15. Digital→port/bit routing lives in
+// MEGA_PORT_TABLES (src/worker/runners/avr-runner.ts), verified against
+// the ATmega2560 Arduino mapping (e.g. 10→PB4, 11→PB5, 50→PB3/MISO,
+// 51→PB2/MOSI, 52→PB1/SCK, 2→PE4/INT0, 8→PH5).
+export const MEGA_DIGITAL_PINS = Array.from({ length: 54 }, (_, n) => String(n));
+export const MEGA_ANALOG_PINS = Array.from({ length: 16 }, (_, n) => `A${n}`);
+
 // ── Pico (RP2040) pin tables (pico-emu runner) ──────────────────────────
 // GPIO0-28 + power rails; UART0 = GP0/GP1 (Arduino Serial1 default).
 export const PICO_GPIO_PINS = Array.from({ length: 29 }, (_, idx) => `GP${idx}`);

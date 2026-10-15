@@ -31,6 +31,7 @@ async function runCell(page, { comps = [], wires = [], code, needle, forMs = 220
   });
   await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(8000);
+  await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
   const setup = await page.evaluate(([b, bt, c, w, cd]) => window.OpenHWE2E.setupCircuit({
     components: [{ id: b, type: bt, attrs: {}, x: 100, y: 100 }, ...c],
     wires: w,
@@ -138,6 +139,9 @@ test.describe('ATtiny85 honest-substitution cells', () => {
   });
 
   test('Tiny SPI-stand-in MAX7219 draw (Uno-class SPI model, P-routed pins)', async ({ page }) => {
+    // NOTE: firmware CS rides digital 2 (= P2, the wired CS route) rather
+    // than the Uno-standard 10: digital 10 has no P-route on the tiny
+    // shell, so a pin-10 CS would leave model selection to init-state luck.
     const verdict = await runCell(page, {
       comps: [{ id: 'mx1', type: 'openhw-max7219', attrs: {}, x: 450, y: 120 }],
       wires: [
@@ -147,7 +151,7 @@ test.describe('ATtiny85 honest-substitution cells', () => {
         { from: `${B}:5V`, to: 'mx1:VCC' },
         { from: `${B}:GND`, to: 'mx1:GND' },
       ],
-      code: '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(10,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(10,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("TINY_SPI_READY");pinMode(10,OUTPUT);digitalWrite(10,HIGH);SPI.begin();SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE0));wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("TINY_SPI_DRAWN");}\nvoid loop(){Serial.println("TINY_SPI_TICK");delay(1000);}\n',
+      code: '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(2,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(2,HIGH);}\nvoid setup(){Serial.begin(9600);Serial.println("TINY_SPI_READY");pinMode(2,OUTPUT);digitalWrite(2,HIGH);SPI.begin();SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE0));wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("TINY_SPI_DRAWN");}\nvoid loop(){Serial.println("TINY_SPI_TICK");delay(1000);}\n',
       needle: 'TINY_SPI_DRAWN', telemetry: ['mx1'],
     });
     const mx = (verdict.telemetry || []).find((t) => t.id === 'mx1');
@@ -222,7 +226,7 @@ test.describe('ATtiny85 honest-substitution cells', () => {
         { from: `${B}:GND`, to: 'ir1:GND' },
         { from: 'ir1:OUT', to: `${B}:P4` },
       ],
-      code: 'const int TX=3,RX=2;\nbool bit(bool l){digitalWrite(TX,l?HIGH:LOW);delayMicroseconds(500);bool e=digitalRead(RX)==HIGH;delayMicroseconds(500);return e;}\nbool byte(uint8_t t,uint8_t&r){if(bit(false)!=false)return false;uint8_t v=0;for(uint8_t i=0;i<8;i++)if(bit((t>>i)&1))v|=(1<<i);if(bit(true)!=true)return false;r=v;return true;}\nvoid setup(){Serial.begin(9600);pinMode(TX,OUTPUT);digitalWrite(TX,HIGH);pinMode(RX,INPUT);Serial.println("TINY_IR_READY");}\nvoid loop(){uint8_t a=0,c=0;if(byte(0x00,a)&&byte(0x16,c)&&a==0x00&&c==0x16)Serial.println("TINY_IR_DECODED ADDR=0x00 CMD=0x16");else Serial.println("TINY_IR_TIMEOUT");delay(2000);}\n',
+      code: 'const int TX=3,RX=2;\nbool irBit(bool l){digitalWrite(TX,l?HIGH:LOW);delayMicroseconds(500);bool e=digitalRead(RX)==HIGH;delayMicroseconds(500);return e;}\nbool irByte(uint8_t t,uint8_t&r){if(irBit(false)!=false)return false;uint8_t v=0;for(uint8_t i=0;i<8;i++)if(irBit((t>>i)&1))v|=(1<<i);if(irBit(true)!=true)return false;r=v;return true;}\nvoid setup(){Serial.begin(9600);pinMode(TX,OUTPUT);digitalWrite(TX,HIGH);pinMode(RX,INPUT);Serial.println("TINY_IR_READY");}\nvoid loop(){uint8_t a=0,c=0;if(irByte(0x00,a)&&irByte(0x16,c)&&a==0x00&&c==0x16)Serial.println("TINY_IR_DECODED ADDR=0x00 CMD=0x16");else Serial.println("TINY_IR_TIMEOUT");delay(2000);}\n',
       needle: 'TINY_IR_DECODED', telemetry: ['ir1'],
     });
     expect(verdict.serial || '').toContain('TINY_IR_DECODED ADDR=0x00 CMD=0x16');
@@ -252,7 +256,7 @@ test.describe('ATtiny85 honest-substitution cells', () => {
   test('Tiny Timer0-gated pulse count (timers cell, no ICP claim)', async ({ page }) => {
     const verdict = await runCell(page, {
       wires: [{ from: `${B}:P3`, to: `${B}:P2` }],
-      code: 'void setup(){Serial.begin(9600);pinMode(3,OUTPUT);pinMode(2,INPUT);Serial.println("TINY_TMR_READY");}\nvoid loop(){uint16_t c=0;unsigned long t0=millis();while(millis()-t0<1000){digitalWrite(3,HIGH);delayMicroseconds(900);digitalWrite(3,LOW);delayMicroseconds(900);if(digitalRead(2)==HIGH)c++;}Serial.print("TINY_TMR_CNT:");Serial.println(c);delay(500);}\n',
+      code: 'void setup(){Serial.begin(9600);pinMode(3,OUTPUT);pinMode(2,INPUT);Serial.println("TINY_TMR_READY");}\nvoid loop(){uint16_t c=0;unsigned long t0=millis();while(millis()-t0<1000){digitalWrite(3,HIGH);delayMicroseconds(900);if(digitalRead(2)==HIGH)c++;digitalWrite(3,LOW);delayMicroseconds(900);}Serial.print("TINY_TMR_CNT:");Serial.println(c);delay(500);}\n',
       needle: 'TINY_TMR_CNT:',
     });
     const vals = [...(verdict.serial || '').matchAll(/TINY_TMR_CNT:(\d+)/g)].map((m) => Number(m[1]));
