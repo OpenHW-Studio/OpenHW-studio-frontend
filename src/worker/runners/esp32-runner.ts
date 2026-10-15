@@ -256,9 +256,19 @@ export class Esp32Runner extends ArmRunnerBase {
                     }
                 } catch { /* ignore */ }
                 await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}) }, flash, rom);
-                // Identity MMU comes from init itself — do NOT seedMMU here:
-                // its rotated map corrupts the bootloader's partition/app
-                // reads (observed: stall at bootloader entry 0x400805b4).
+                // MMU mapping: init already seeds the identity map
+                // (mmuTablePro[p] = p, Pro+App) twice — in applyBasicSetup
+                // and again after loadWasm+reset (worker-entry.js). Do NOT
+                // call seedMMU(0) here: CMD_SEED_MMU writes a ROTATED map
+                // (Pro[0..3] = [1,2,3,0], worker-entry.js:8012) which
+                // mis-maps the second-stage bootloader's first cache
+                // reads — partitions @0x8000 land on app bytes @0x18000 —
+                // so the bootloader stalls at its entry 0x400805b4 and the
+                // app never loads (verified: 0x400805b4 is the bootloader
+                // image entry_addr in every local .ino.bootloader.bin, not
+                // the app entry at 0x40081xxx). Identity is what the proven
+                // paths use (test-boot.mjs, worker acceptance cells).
+
                 try {
                     if (wasmBinary && typeof self.sim.loadWasm === 'function') {
                         await self.sim.loadWasm(wasmBinary);
