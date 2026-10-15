@@ -4181,6 +4181,26 @@ var WasmLoader = class {
         } catch {
         }
       },
+      // Camera-frame hook — forwards sensor bytes consumed by I2S RX DMA in
+      // camera mode (chip._onCamFrameData → pollCameraFrame). Same chunk
+      // shape as the TX hook. NEVER throws.
+      js_i2s_cam_data: (idx, ptr, len) => {
+        try {
+          const words = new Uint32Array(this.memBytes().slice(ptr, ptr + len * 4).buffer);
+          this.esp32?._onCamFrameData?.(idx >>> 0, words);
+        } catch {
+        }
+      },
+      // RMT TX capture — forwards completed guest TX item words (+ zero
+      // terminator) to the JS host (chip._onRmtTxData → chip.rmt.pollRmtTx).
+      // Fires only for channels armed via native_rmt_set_tx_hook. NEVER throws.
+      js_rmt_tx_items: (ch, ptr, len) => {
+        try {
+          const words = new Uint32Array(this.memBytes().slice(ptr, ptr + len * 4).buffer);
+          this.esp32?._onRmtTxData?.(ch >>> 0, words);
+        } catch {
+        }
+      },
       // Synchronous GPIO edge responder (esp32-emu.md §11, OneWire P1).
       // Notify on every responder-pin driven change AND release (level 2),
       // with the APB tick for slot timing. Read override answers IN reads
@@ -5296,6 +5316,256 @@ var OneWireDevice = class {
     return { log, presence };
   }
 };
+var RmtTap = class {
+  constructor(chip2) {
+    this.chip = chip2;
+    this.txQueue = [[], [], [], [], [], [], [], []];
+    this.txListeners = [[], [], [], [], [], [], [], []];
+    this._localPending = /* @__PURE__ */ new Map();
+    this._syncedCh = /* @__PURE__ */ new Set();
+  }
+  get _exports() {
+    return this.chip?._wasmLoader?.exports ?? null;
+  }
+  /** Push per-channel hook flags to Rust (no-op before loadWasm). */
+  _syncHooks() {
+    const ex = this._exports;
+    if (!ex) return;
+    try {
+      for (let ch = 0; ch < 8; ch++) {
+        if (this.txListeners[ch].length && !this._syncedCh.has(ch)) {
+          try {
+            ex.native_rmt_set_tx_hook?.(ch, 1);
+          } catch {
+          }
+          this._syncedCh.add(ch);
+        }
+      }
+    } catch {
+    }
+    for (const [ch, words] of [...this._localPending]) {
+      this._localPending.delete(ch);
+      let staged = 0;
+      try {
+        staged = this._injectLive(ch, words);
+      } catch {
+        staged = 0;
+      }
+      if (staged < words.length) {
+        const prev = this._localPending.get(ch) ?? [];
+        this._localPending.set(ch, words.slice(staged).concat(prev).slice(-64));
+      }
+    }
+  }
+  /**
+   * Subscribe to guest→host TX items on a channel. Returns an unsubscribe
+   * fn. Listener MUST NOT re-enter the engine (record-only). cb(ch, items, tickHz).
+   */
+  onRmtTx(ch, cb) {
+    ch >>>= 0;
+    if (ch >= 8 || typeof cb !== "function") return () => {
+    };
+    this.txListeners[ch].push(cb);
+    this._syncHooks();
+    return () => {
+      const i = this.txListeners[ch].indexOf(cb);
+      if (i >= 0) this.txListeners[ch].splice(i, 1);
+    };
+  }
+  /** Drain staged TX items: pollRmtTx() → all channels, pollRmtTx(ch) → one. */
+  pollRmtTx(ch = null) {
+    const out = [];
+    const chs = ch === null ? [0, 1, 2, 3, 4, 5, 6, 7] : [ch >>> 0];
+    for (const c of chs) {
+      if (c >= 8) continue;
+      const q = this.txQueue[c];
+      if (q?.length) {
+        const items = q.splice(0);
+        const tickHz = this.getRmtTickHz(c);
+        out.push({ ch: c, items, tickHz });
+        for (const cb of [...this.txListeners[c]]) {
+          try {
+            cb(c, items, tickHz);
+          } catch (e) {
+            console.warn(`[RMT-TAP] listener threw: ${e?.message || e}`);
+          }
+        }
+      }
+    }
+    return out;
+  }
+  /** FFI sink for js_rmt_tx_items (never throws; bounded staging). */
+  _onRmtTxData(ch, words) {
+    try {
+      const q = this.txQueue[ch >>> 0];
+      if (!q) return;
+      for (const w of words) {
+        q.push(w >>> 0);
+        if (q.length > 4096) q.shift();
+      }
+    } catch {
+    }
+  }
+  /**
+   * Stage host→guest RX items (raw u32 item words, ≤ 64) for a channel.
+   * @returns words staged.
+   */
+  injectRmtRx(ch, words) {
+    ch >>>= 0;
+    const arr = Array.from(words ?? []).map((w) => w >>> 0).slice(0, 64);
+    if (ch >= 8 || arr.length === 0) return 0;
+    if (!this._exports) {
+      const prev = this._localPending.get(ch) ?? [];
+      this._localPending.set(ch, prev.concat(arr).slice(-64));
+      return arr.length;
+    }
+    this._syncHooks();
+    return this._injectLive(ch, arr);
+  }
+  _injectLive(ch, arr) {
+    try {
+      const ex = this._exports;
+      const scratch = ex.native_rmt_rx_scratch_ptr?.() >>> 0;
+      if (!scratch || !ex.native_rmt_rx_inject) return 0;
+      const mem = this.chip._wasmLoader.memoryBuffer;
+      const dv = new DataView(mem);
+      for (let i = 0; i < arr.length; i++) dv.setUint32(scratch + i * 4, arr[i] >>> 0, true);
+      return ex.native_rmt_rx_inject(ch >>> 0, scratch, arr.length) >>> 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Channel tick rate in Hz (0 when WASM absent). */
+  getRmtTickHz(ch) {
+    try {
+      return this._exports?.native_rmt_tick_hz?.(ch >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /** Clear captured (in-flight) state (chip.reset(); wiring + preloads survive). */
+  _resetFlight() {
+    for (const q of this.txQueue) q.length = 0;
+  }
+  /** Encode one RMT item word from two (duration-ticks, level) halves. */
+  static item(d0, l0, d1, l1) {
+    return ((d1 & 32767) << 16 | (l1 ? 1 : 0) << 31 | d0 & 32767 | (l0 ? 1 : 0) << 15) >>> 0;
+  }
+  /** Decode one RMT item word into {d0, l0, d1, l1}. */
+  static splitItem(w) {
+    w >>>= 0;
+    return { d0: w & 32767, l0: w >>> 15 & 1, d1: w >>> 16 & 32767, l1: w >>> 31 & 1 };
+  }
+  /** Convert microseconds to channel ticks at hz (rounded, ≥ 1 when us > 0). */
+  static usToTicks(us, hz) {
+    if (!(us > 0) || !(hz > 0)) return 0;
+    return Math.max(1, Math.round(us * hz / 1e6));
+  }
+};
+var Ov2640 = class {
+  constructor() {
+    this.addr = 48;
+    this.regs = new Uint8Array(256);
+    this.regs[10] = 38;
+    this.regs[11] = 66;
+    this.width = 160;
+    this.height = 120;
+    this.format = "RGB565";
+    this._ptr = 0;
+    this._havePtr = false;
+    this._curReg = -1;
+    this._curBytes = [];
+    this.sccbLog = [];
+    this._tap = null;
+    this._entry = null;
+  }
+  /** Attach to an I2C tap's bus as an SCCB slave (post-create safe). */
+  attachToI2c(i2cTap, addr7 = 48) {
+    this.addr = addr7 & 127;
+    this._tap = i2cTap;
+    this._entry = i2cTap.attachSlave(this.addr, {
+      onWrite: (b) => this._sccbWrite(b & 255),
+      onRead: () => this._sccbRead(),
+      onStop: (wasRead) => this._sccbStop(!!wasRead)
+    });
+    return this._entry;
+  }
+  detachFromI2c() {
+    try {
+      this._tap?.detachSlave?.(this.addr);
+    } catch {
+    }
+    this._tap = null;
+    this._entry = null;
+  }
+  _sccbWrite(b) {
+    if (!this._havePtr) {
+      this._ptr = b & 255;
+      this._havePtr = true;
+      this._curReg = this._ptr;
+      this._curBytes = [];
+    } else {
+      this.regs[this._ptr] = b & 255;
+      this._curBytes.push(b & 255);
+      this._ptr = this._ptr + 1 & 255;
+    }
+    return true;
+  }
+  _sccbRead() {
+    const b = this.regs[this._ptr] & 255;
+    this._ptr = this._ptr + 1 & 255;
+    return b;
+  }
+  _sccbStop() {
+    if (this._havePtr && this._curBytes.length) {
+      this.sccbLog.push({ reg: this._curReg & 255, bytes: this._curBytes.splice(0) });
+      if (this.sccbLog.length > 1024) this.sccbLog.splice(0, this.sccbLog.length - 1024);
+    }
+    this._havePtr = false;
+    this._curReg = -1;
+    this._curBytes = [];
+  }
+  /** Drain committed SCCB register writes for init-sequence verification. */
+  drainSccbLog() {
+    return this.sccbLog.splice(0);
+  }
+  /** Set the capture resolution (sensor window the cell asserts). */
+  setResolution(w, h) {
+    this.width = w >>> 0;
+    this.height = h >>> 0;
+  }
+  /** Set the pixel format ('RGB565' | 'YUV422' | 'GRAYSCALE'). */
+  setFormat(f) {
+    if (f !== "RGB565" && f !== "YUV422" && f !== "GRAYSCALE") {
+      throw new Error(`Ov2640: unsupported format '${f}' (use RGB565, YUV422, GRAYSCALE)`);
+    }
+    this.format = f;
+  }
+  /** Expected frame size in sensor bytes (one byte per DMA element). */
+  frameBytes() {
+    if (this.format === "GRAYSCALE") return this.width * this.height;
+    return this.width * this.height * 2;
+  }
+  /**
+   * Expected frame bytes: the deterministic virtual-sensor ramp
+   * (byte[i] = i & 0xFF) — engine parity (i2c_i2s.rs camera feed), so a
+   * firmware cell can assert fb contents byte-exact.
+   */
+  expectedFrame() {
+    const n = this.frameBytes();
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) out[i] = i & 255;
+    return out;
+  }
+  /** Clear transaction state + SCCB log (chip.reset(); regs/resolution survive). */
+  _resetFlight() {
+    this._ptr = 0;
+    this._havePtr = false;
+    this._curReg = -1;
+    this._curBytes = [];
+    this.sccbLog.length = 0;
+  }
+};
 
 // src/peripherals/esp32/esp32.js
 init_wasm_memory_layout();
@@ -5527,6 +5797,10 @@ var ESP32 = class {
     this.onewire = /* @__PURE__ */ new Map();
     this._i2sTxQueue = [[], []];
     this._i2sTxListeners = [];
+    this.rmt = new RmtTap(this);
+    this._camFrameQueue = [[], []];
+    this._camFrameListeners = [];
+    this._ov2640Models = /* @__PURE__ */ new Map();
     const uartConfig = {
       hasTXState: true,
       toutMultiply: true,
@@ -5918,6 +6192,15 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
         this._i2sTxQueue[0].length = 0;
         this._i2sTxQueue[1].length = 0;
       }
+      try {
+        this.rmt?._resetFlight?.();
+      } catch {
+      }
+      if (this._camFrameQueue) {
+        this._camFrameQueue[0].length = 0;
+        this._camFrameQueue[1].length = 0;
+      }
+      for (const dev of this._ov2640Models?.values?.() ?? []) dev?._resetFlight?.();
     } catch {
     }
     for (let e of this.cores) e.reset();
@@ -5967,6 +6250,10 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
     try {
       for (const tap of [this.i2c0, this.i2c1]) tap?._syncHooks?.();
       for (const tap of [this.spi0, this.spi1, this.spi2, this.spi3]) tap?._syncHooks?.();
+      try {
+        this.rmt?._syncHooks?.();
+      } catch {
+      }
       if (this._gpioChangeListeners?.length) {
         this._wasmLoader?.exports?.native_gpio_set_change_hook?.(1);
       }
@@ -5977,6 +6264,7 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
         }
       }
       if (this._i2sTxListeners?.length) this._armI2sTxHook();
+      if (this._camFrameListeners?.length) this._armCamHook();
     } catch {
     }
   }
@@ -6167,6 +6455,176 @@ Check that esp_engine_wasm.wasm is present at src/engine/esp-xtensa/ and is a va
         if (q.length > 16384) q.shift();
       }
     } catch {
+    }
+  }
+  /**
+   * Feed one I2S RX sample word (pairs combine per rx_chan_mod; lone
+   * singles stage silently — feed twice). Direct-chip twin of the worker
+   * feedI2SRX path (same native export).
+   */
+  feedI2sRxSample(idx, sample) {
+    try {
+      this._wasmLoader?.exports?.native_i2s_push_rx_sample?.(idx >>> 0, sample >>> 0);
+    } catch {
+    }
+  }
+  // ---- RMT single-wire sensor tap (DHT22) ----
+  /** FFI sink for js_rmt_tx_items (never throws; delegates to chip.rmt). */
+  _onRmtTxData(ch, words) {
+    try {
+      this.rmt?._onRmtTxData?.(ch >>> 0, words);
+    } catch {
+    }
+  }
+  // ---- Camera frame tap (OV2640 cells; sits next to the I2S TX tap) ----
+  /** Arm the camera-frame hook on a controller (wiring; survives reset). */
+  _armCamHook(idx = 0) {
+    try {
+      this._wasmLoader?.exports?.native_i2s_set_cam_hook?.(idx >>> 0, 1);
+    } catch {
+    }
+  }
+  /**
+   * Subscribe to guest→host camera sensor bytes (I2S RX DMA in camera
+   * mode). Returns an unsubscribe fn. Staged per controller idx; drain
+   * with pollCameraFrame (host-driven, never re-entrant). The host frames
+   * captures by counting getCameraFrameBytes(idx) elements. Listener must
+   * not re-enter the engine.
+   */
+  onCameraFrame(idx, cb) {
+    if (typeof idx === "function") {
+      cb = idx;
+      idx = 0;
+    }
+    idx >>>= 0;
+    if (typeof cb !== "function" || idx > 1) return () => {
+    };
+    this._camFrameListeners.push({ idx, cb });
+    this._armCamHook(idx);
+    return () => {
+      const i = this._camFrameListeners.findIndex((e) => e.cb === cb && e.idx === idx);
+      if (i >= 0) this._camFrameListeners.splice(i, 1);
+    };
+  }
+  /** Drain staged sensor bytes: pollCameraFrame() → both, pollCameraFrame(idx) → one. */
+  pollCameraFrame(idx = null) {
+    const out = [];
+    const idxs = idx === null ? [0, 1] : [idx >>> 0];
+    for (const i of idxs) {
+      const q = this._camFrameQueue?.[i];
+      if (q?.length) {
+        const words = q.splice(0);
+        out.push({ idx: i, words });
+        for (const { idx: li, cb } of [...this._camFrameListeners]) {
+          if (li !== i) continue;
+          try {
+            cb(i, words);
+          } catch (e) {
+            console.warn(`[CAM-TAP] listener threw: ${e?.message || e}`);
+          }
+        }
+      }
+    }
+    return out;
+  }
+  /** FFI sink for js_i2s_cam_data (never throws; bounded staging). */
+  _onCamFrameData(idx, words) {
+    try {
+      const q = this._camFrameQueue?.[idx >>> 0];
+      if (!q) return;
+      for (const w of words) {
+        q.push(w >>> 0);
+        if (q.length > 65536) q.shift();
+      }
+    } catch {
+    }
+  }
+  /** Virtual-sensor frame size in bytes for a controller (host framing). */
+  setCameraFrameBytes(idx, len) {
+    try {
+      this._wasmLoader?.exports?.native_i2s_cam_frame_bytes?.(idx >>> 0, len >>> 0);
+    } catch {
+    }
+  }
+  /** Read back the configured virtual-sensor frame size (0 when WASM absent). */
+  getCameraFrameBytes(idx) {
+    try {
+      return this._wasmLoader?.exports?.native_i2s_cam_frame_len?.(idx >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /**
+   * Feed host-side sensor bytes for upcoming captures (scripted scenes).
+   * Appends (up to one QQVGA RGB565 frame staged); a full staged frame
+   * replaces the ramp for exactly one capture. Empty input clears the
+   * queue. @returns bytes staged this call (0 when WASM absent).
+   */
+  feedCameraFrame(idx, bytes) {
+    try {
+      const ex = this._wasmLoader?.exports;
+      if (!ex?.native_i2s_cam_feed) return 0;
+      const arr = Uint8Array.from(bytes ?? []);
+      if (arr.length === 0) {
+        ex.native_i2s_cam_feed(idx >>> 0, 0, 0);
+        return 0;
+      }
+      const scratch = ex.native_i2s_cam_feed_scratch_ptr?.() >>> 0;
+      if (!scratch) return 0;
+      const mem = new Uint8Array(this._wasmLoader.memoryBuffer);
+      let staged = 0;
+      for (let off = 0; off < arr.length; off += 4096) {
+        const piece = arr.subarray(off, off + 4096);
+        mem.set(piece, scratch);
+        staged += ex.native_i2s_cam_feed(idx >>> 0, scratch, piece.length) >>> 0;
+      }
+      return staged;
+    } catch {
+      return 0;
+    }
+  }
+  /** Staged (unconsumed) host-fed sensor bytes, for host flow control. */
+  cameraFeedLength(idx) {
+    try {
+      return this._wasmLoader?.exports?.native_i2s_cam_host_len?.(idx >>> 0) >>> 0 || 0;
+    } catch {
+      return 0;
+    }
+  }
+  // ---- OV2640 sensor models (SCCB slaves on the I2C taps) ----
+  /**
+   * Attach an OV2640 sensor model as an SCCB slave on an I2C bus
+   * (default bus 0, addr 0x30). Post-create safe; device memory
+   * (regs/resolution) survives reset, transaction state clears.
+   * Returns the model.
+   */
+  attachOv2640(bus = 0, addr = 48, model = null) {
+    bus >>>= 0;
+    addr &= 127;
+    const key = `${bus}:${addr}`;
+    let dev = this._ov2640Models.get(key) ?? null;
+    if (!dev) {
+      dev = model instanceof Ov2640 ? model : new Ov2640();
+      this._ov2640Models.set(key, dev);
+    } else if (model instanceof Ov2640) {
+      this._ov2640Models.set(key, model);
+      dev = model;
+    }
+    const tap = this.i2c?.[bus];
+    if (tap) dev.attachToI2c(tap, addr);
+    return dev;
+  }
+  /** Detach an OV2640 sensor model from an I2C bus. */
+  detachOv2640(bus = 0, addr = 48) {
+    bus >>>= 0;
+    addr &= 127;
+    const dev = this._ov2640Models.get(`${bus}:${addr}`);
+    if (dev) {
+      try {
+        dev.detachFromI2c();
+      } catch {
+      }
+      this._ov2640Models.delete(`${bus}:${addr}`);
     }
   }
   // ---- LEDC/PWM readback (esp32-emu.md §7) ----
@@ -6468,6 +6926,17 @@ var CMD_OW_SET_TEMP = 42;
 var CMD_OW_POLL = 43;
 var CMD_OW_SCRATCH = 44;
 var CMD_WRITE_MMIO = 45;
+var CMD_RMT_TX_ARM = 46;
+var CMD_RMT_POLL_TX = 47;
+var CMD_RMT_RX_INJECT = 48;
+var CMD_RMT_TICK_HZ = 49;
+var CMD_CAM_ARM = 50;
+var CMD_CAM_POLL = 51;
+var CMD_CAM_BYTES = 52;
+var CMD_CAM_SCCB = 53;
+var CMD_CAM_LEN = 54;
+var CMD_CAM_FEED = 55;
+var CMD_CAM_FEED_LEN = 56;
 var RESP_DONE = 1;
 var RESP_ERROR = 2;
 var UART_RING_SIZE = 16384;
@@ -6859,6 +7328,123 @@ function doWriteMmio() {
     );
   } catch {
   }
+}
+function doRmtTxArm() {
+  try {
+    const ch = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+    chip?.rmt?.onRmtTx?.(ch, () => {
+    });
+  } catch {
+  }
+}
+function doRmtPollTx() {
+  const ch = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let n = 0;
+  if (readResp && chip?.rmt?.pollRmtTx) {
+    try {
+      const groups = chip.rmt.pollRmtTx(ch);
+      const words = [];
+      for (const g of groups) for (const w of g.items) words.push(w >>> 0);
+      const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+      n = Math.min(words.length, Math.floor(readResp.length / 4));
+      for (let i = 0; i < n; i++) dv.setUint32(i * 4, words[i], true);
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doRmtInject() {
+  const ch = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  const nwords = Math.min(Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0, 64);
+  let staged = 0;
+  if (readResp && chip?.rmt?.injectRmtRx) {
+    try {
+      const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+      const words = [];
+      for (let i = 0; i < nwords && i * 4 + 4 <= readResp.length; i++) {
+        words.push(dv.getUint32(i * 4, true) >>> 0);
+      }
+      staged = chip.rmt.injectRmtRx(ch, words) >>> 0;
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, staged);
+}
+function doRmtTickHz() {
+  let hz = 0;
+  try {
+    hz = chip?.rmt?.getRmtTickHz?.(Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0) >>> 0 || 0;
+  } catch {
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, hz);
+}
+function doCamArm() {
+  try {
+    chip?._armCamHook?.(Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0);
+  } catch {
+  }
+}
+function doCamPoll() {
+  const idx = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  let n = 0;
+  if (readResp && chip?.pollCameraFrame) {
+    try {
+      const groups = chip.pollCameraFrame(idx);
+      const words = [];
+      for (const g of groups) for (const w of g.words) words.push(w >>> 0);
+      const dv = new DataView(readResp.buffer, readResp.byteOffset, readResp.length);
+      n = Math.min(words.length, Math.floor(readResp.length / 4));
+      for (let i = 0; i < n; i++) dv.setUint32(i * 4, words[i], true);
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG1, n);
+}
+function doCamBytes() {
+  try {
+    chip?.setCameraFrameBytes?.(
+      Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0,
+      Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0
+    );
+  } catch {
+  }
+}
+function doCamLen() {
+  let len = 0;
+  try {
+    len = chip?.getCameraFrameBytes?.(Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0) >>> 0 || 0;
+  } catch {
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, len);
+}
+function doCamSccb() {
+  try {
+    chip?.attachOv2640?.(
+      Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0,
+      Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0
+    );
+  } catch {
+  }
+}
+function doCamFeed() {
+  const idx = Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0;
+  const len = Math.min(Atomics.load(ctrl, SAB_CMD_ARG1) >>> 0, readResp?.length ?? 0);
+  let staged = 0;
+  if (readResp && chip?.feedCameraFrame) {
+    try {
+      staged = chip.feedCameraFrame(idx, readResp.subarray(0, len)) >>> 0;
+    } catch {
+    }
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, staged);
+}
+function doCamFeedLen() {
+  let n = 0;
+  try {
+    n = chip?.cameraFeedLength?.(Atomics.load(ctrl, SAB_CMD_ARG0) >>> 0) >>> 0 || 0;
+  } catch {
+  }
+  Atomics.store(ctrl, SAB_CMD_ARG0, n);
 }
 function doReadMmio() {
   const hid = Atomics.load(ctrl, SAB_CMD_ARG0);
@@ -7271,6 +7857,94 @@ async function runSimChunk() {
       if (Atomics.load(ctrl, SAB_CMD) === CMD_READ_MMIO) {
         try {
           doReadMmio();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_RMT_TX_ARM) {
+        try {
+          doRmtTxArm();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_RMT_POLL_TX) {
+        try {
+          doRmtPollTx();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_RMT_RX_INJECT) {
+        try {
+          doRmtInject();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_RMT_TICK_HZ) {
+        try {
+          doRmtTickHz();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_ARM) {
+        try {
+          doCamArm();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_POLL) {
+        try {
+          doCamPoll();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_BYTES) {
+        try {
+          doCamBytes();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_SCCB) {
+        try {
+          doCamSccb();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_LEN) {
+        try {
+          doCamLen();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_FEED) {
+        try {
+          doCamFeed();
+        } catch {
+        }
+        Atomics.store(ctrl, SAB_RESP, RESP_DONE);
+        Atomics.store(ctrl, SAB_CMD, CMD_NONE);
+      }
+      if (Atomics.load(ctrl, SAB_CMD) === CMD_CAM_FEED_LEN) {
+        try {
+          doCamFeedLen();
         } catch {
         }
         Atomics.store(ctrl, SAB_RESP, RESP_DONE);
@@ -7710,6 +8384,50 @@ function processCommand(cmd) {
     }
     case CMD_WRITE_MMIO: {
       doWriteMmio();
+      break;
+    }
+    case CMD_RMT_TX_ARM: {
+      doRmtTxArm();
+      break;
+    }
+    case CMD_RMT_POLL_TX: {
+      doRmtPollTx();
+      break;
+    }
+    case CMD_RMT_RX_INJECT: {
+      doRmtInject();
+      break;
+    }
+    case CMD_RMT_TICK_HZ: {
+      doRmtTickHz();
+      break;
+    }
+    case CMD_CAM_ARM: {
+      doCamArm();
+      break;
+    }
+    case CMD_CAM_POLL: {
+      doCamPoll();
+      break;
+    }
+    case CMD_CAM_BYTES: {
+      doCamBytes();
+      break;
+    }
+    case CMD_CAM_SCCB: {
+      doCamSccb();
+      break;
+    }
+    case CMD_CAM_LEN: {
+      doCamLen();
+      break;
+    }
+    case CMD_CAM_FEED: {
+      doCamFeed();
+      break;
+    }
+    case CMD_CAM_FEED_LEN: {
+      doCamFeedLen();
       break;
     }
     // CMD_BT_HCI_RESP: copy the last stashed JSON control line (see the

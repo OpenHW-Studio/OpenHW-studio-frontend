@@ -296,6 +296,29 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { self.owPins.add(gpio); } catch { /* ignore */ }
                 }
             } catch { /* 1-wire never breaks boot */ }
+            // DHT22 over RMT (esp32-emu RMT tap): the engine answers
+            // synchronously per byte for register-style sensors, but DHT22
+            // is a µs bit-bang protocol the slow engine cannot meet in
+            // wall time — so firmware drives it with the RMT peripheral
+            // (hardware-timed start pulse + capture) and the host plays
+            // the sensor: preload the 42-word response on every channel
+            // (pending = delivers on the next RX_EN arm) + re-inject on
+            // every newly captured start pulse (pump below). Words encode
+            // the component model's live T/H at 1MHz ticks (div-80
+            // firmware). rmt_data_t packing mirrors RmtTap.item.
+            try {
+                for (const inst of this.instances.values()) {
+                    const t = String((inst as any)?.type || '').toLowerCase();
+                    if (!t.includes('dht')) continue;
+                    const words = self.dhtRmtWords(inst);
+                    if (!words) continue;
+                    for (let ch = 0; ch < 8; ch++) {
+                        try { void (self.sim as any)?.injectRmtRx?.(ch, words)?.catch?.(() => {}); } catch { /* ignore */ }
+                    }
+                    try { (self as any).rmtDhtArmed = true; } catch { /* ignore */ }
+                    try { (self as any).rmtDhtStarts = 0; } catch { /* ignore */ }
+                }
+            } catch { /* rmt-dht never breaks boot */ }
         } catch { /* taps never break boot */ }
     }
 
@@ -391,6 +414,8 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { void ((self.sim as any).sendTwaiFrame(0x123, [0xDE, 0xAD, 0xBE, 0xEF]) as Promise<any>)?.catch?.(() => {}); } catch { /* ignore */ }
                 }
             } catch { /* never breaks tick */ }
+            // RMT-DHT pump: re-inject sensor response per captured start.
+            try { self.pollRmtDht(); } catch { /* never breaks tick */ }
         } catch { /* poll never breaks tick */ }
     }
 
@@ -463,6 +488,87 @@ export class Esp32Runner extends ArmRunnerBase {
         }
         const n = Number(m[1]);
         return n >= 32 && n <= 39 ? n : -1;
+    }
+
+    /** DHT22 RMT response words (42 u32, 1MHz ticks) from the component
+     * model's live T/H. Header (80µs low + 80µs high) + 40 bits MSB-first
+     * (50µs low + 27/70µs high) + terminator. Matches the engine RMT-DHT
+     * harness shape (their test-worker-rmt-dht.mjs). */
+    private dhtRmtWords(inst: any): number[] | null {
+        try {
+            let temp = 24.0;
+            let hum = 50.0;
+            try {
+                const st = (inst as any)?.state || {};
+                const at = (inst as any)?.attrs || {};
+                const tv = Number(st.temperature ?? at.temperature ?? at.temp ?? 24.0);
+                const hv = Number(st.humidity ?? at.humidity ?? at.hum ?? 50.0);
+                if (Number.isFinite(tv)) temp = tv;
+                if (Number.isFinite(hv)) hum = hv;
+            } catch { /* defaults */ }
+            const item = (d0: number, l0: number, d1: number, l1: number): number =>
+                ((((d1 & 0x7fff) << 16) | ((l1 ? 1 : 0) << 31) | (d0 & 0x7fff) | ((l0 ? 1 : 0) << 15)) >>> 0);
+            let t10 = Math.round(temp * 10);
+            if (t10 < 0) t10 = (0x10000 + t10) & 0xffff;
+            const h10 = Math.round(hum * 10) & 0xffff;
+            const bytes = [(h10 >> 8) & 0xff, h10 & 0xff, (t10 >> 8) & 0xff, t10 & 0xff, 0];
+            bytes[4] = (bytes[0] + bytes[1] + bytes[2] + bytes[3]) & 0xff;
+            const words: number[] = [item(80, 0, 80, 1)];
+            for (const b of bytes) {
+                for (let i = 7; i >= 0; i--) {
+                    words.push(item(50, 0, ((b >> i) & 1) ? 70 : 27, 1));
+                }
+            }
+            words.push(0);
+            return words;
+        } catch { return null; }
+    }
+
+    /** RMT-DHT pump: re-inject the response on every newly captured DHT
+     * start pulse (1100µs low + 30µs high at 1MHz). Preload at boot covers
+     * the first transaction; this covers loop re-reads. */
+    private pollRmtDht(): void {
+        try {
+            const self = this as any;
+            if (!self.rmtDhtArmed) return;
+            if (typeof self.sim?.pollRmtTx !== 'function') return;
+            const c = ((self.rmtDhtTick || 0) + 1) % 20;
+            self.rmtDhtTick = c;
+            if (c !== 0) return;
+            let p: any = null;
+            try { p = self.sim.pollRmtTx(); } catch { /* ignore */ }
+            if (!p || typeof (p as any).then !== 'function') return;
+            (p as Promise<Array<{ ch: number; items: number[]; tickHz: number }>>).then((res) => {
+                try {
+                    let starts = 0;
+                    for (const r of res || []) {
+                        for (const w of r.items || []) {
+                            const ww = w >>> 0;
+                            const d0 = ww & 0x7fff; const l0 = (ww >>> 15) & 1;
+                            const d1 = (ww >>> 16) & 0x7fff; const l1 = (ww >>> 31) & 1;
+                            if (d0 === 1100 && l0 === 0 && d1 === 30 && l1 === 1) starts++;
+                        }
+                    }
+                    if (starts > 0) {
+                        const answered = Number(self.rmtDhtStarts || 0);
+                        // pollRmtTx drains, so recount from zero each window:
+                        // re-inject whenever a fresh start appears.
+                        void answered;
+                        for (const inst of self.instances.values()) {
+                            const t = String((inst as any)?.type || '').toLowerCase();
+                            if (!t.includes('dht')) continue;
+                            const words = self.dhtRmtWords(inst);
+                            if (!words) continue;
+                            for (let ch = 0; ch < 8; ch++) {
+                                try { void self.sim?.injectRmtRx?.(ch, words)?.catch?.(() => {}); } catch { /* ignore */ }
+                            }
+                            break;
+                        }
+                        self.rmtDhtStarts = (Number(self.rmtDhtStarts || 0) + starts) | 0;
+                    }
+                } catch { /* pump never breaks tick */ }
+            }).catch(() => {});
+        } catch { /* never breaks tick */ }
     }
 
     /** Board pin label → GPIO number for the 1-Wire DQ net. */

@@ -159,7 +159,9 @@ export class I2C {
      * Drop all queued RX bytes on this bus. Reactive runners call
      * `clearRx()` then `injectRx(fresh)` at read-START (the pointer is
      * already drained into the model by then), so stale leftovers from
-     * previous transactions never poison the front. An empty queue still
+     * previous transactions never poison the front. Clearing drops queued
+     * bytes only, never the host's address registration: a registered
+     * address keeps ACKing while dry. An address no host ever served still
      * NACKs the address phase.
      */
     clearRx() { this._mcu._emu.i2cClearRx(this.ch); }

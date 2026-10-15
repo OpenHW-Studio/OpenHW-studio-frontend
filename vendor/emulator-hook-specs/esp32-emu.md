@@ -48,9 +48,18 @@ plane — same contract as the other ARM runners).
   entry is UI-registry ownership.
 - No camera/OV2640 tap: I2S-camera DMA plumbing exists engine-side, but
   no SCCB sensor model, no frame source, no SAB camera API.
+  (STALE 2026-10-07: engine now ships `Ov2640` + `armCamera`/`pollCameraFrame`
+  + `RmtTap` — camera + RMT-DHT cells are ours to write.)
 - Ticks are ~1/sec in the browser worker and Arduino boot is slow —
   LEDC config lands near the tail; PWM cells need ≥120 s windows.
 - Unclaimed-SPI MISO reads 0x0 (fine for write-only devices).
+- RMT-DHT contract (delivered engine d5d161b, runner-owned pump):
+  firmware drives DHT22 with the RMT peripheral (Arduino HAL
+  `rmtInit/rmtWrite/rmtRead`); runner preloads the 42-word sensor
+  response on all channels at boot (`injectRmtRx`, pending delivers
+  on next RX_EN arm) and re-injects on every captured start pulse
+  (`pollRmtTx` match 1100µs-low/30µs-high). Bit-bang DHT is out of
+  scope on ESP32 (µs windows vs slow engine) — RMT is THE path.
 
 ## Acceptance
 

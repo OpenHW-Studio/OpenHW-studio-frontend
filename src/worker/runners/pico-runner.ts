@@ -122,6 +122,7 @@ export class PicoRunner extends ArmRunnerBase {
     private pyExecBuf = '';
     private pyScript = '';
     private archOpt = '';
+    private fixedFirmwareUrl = '';
     private isPico2 = false;
     private arch = PICO_ARCH_M0;
     private wantWifi = false;
@@ -162,6 +163,7 @@ export class PicoRunner extends ArmRunnerBase {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.pyScript = String((options as any)?.pyScript || '');
         this.archOpt = String((options as any)?.arch || (options as any)?.boardArch || '').toLowerCase();
+        this.fixedFirmwareUrl = String((options as any)?.fixedFirmware || '').trim();
         const typeStr = String((options as any)?.boardType || '') + ' ' + String(this.boardId || '');
         this.isPico2 = /pico-?2|rp2350|2350/.test(typeStr);
         // WiFi: Pico W / Pico 2 W board types, or explicit wirelessMode attr
@@ -597,8 +599,24 @@ export class PicoRunner extends ArmRunnerBase {
                 // Arch select: explicit attr (arch=m33/rv32/m0) wins, else
                 // Pico 2 board default (M33), else UF2 family-ID auto-detect
                 // (CLI rule), else board default (M0 Pico / M33 Pico 2).
-                self.arch = self.resolveArch(payloadToU8(firmware));
-                self.mod._picoemu_init(self.arch);
+                // Fixed-firmware cells init after the image loads (branch
+                // below re-inits from the image family ID); skip here.
+                // Attr fallback: execute.ts deriveOpts may not carry board
+                // attrs (boardId-gated lookup) — read them directly so
+                // arch/firmware attrs always land.
+                try {
+                    const battrs = (self as any).compAttrById?.get?.(self.boardId) || {};
+                    if (!(self as any).fixedFirmwareUrl && (battrs as any).firmware) {
+                        (self as any).fixedFirmwareUrl = String((battrs as any).firmware);
+                    }
+                    if (!self.archOpt && (battrs as any).arch) {
+                        self.archOpt = String((battrs as any).arch).toLowerCase();
+                    }
+                } catch { /* attrs never break boot */ }
+                if (!self.fixedFirmwareUrl) {
+                    self.arch = self.resolveArch(payloadToU8(firmware));
+                    self.mod._picoemu_init(self.arch);
+                }
                 self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
                 // I2C mirror attach (post-init, pre-firmware): one call for
                 // every owned slave address (see attachI2CMirrors).
@@ -616,7 +634,26 @@ export class PicoRunner extends ArmRunnerBase {
                     if (self.ethBoard === 'w5500') self.mod._picoemu_board_eth(1, 0, self.ethSpi);
                 } catch { /* older builds */ }
                 const u8 = payloadToU8(firmware);
-                if (u8 && u8.length > 0) {
+                if (self.fixedFirmwareUrl) {
+                    // Fixed-firmware cells (RV32 proof images, etc.): the
+                    // backend cannot compile for these cores, so boot a
+                    // curated image instead of the (trivial) sketch payload.
+                    // Arch auto-detects from the UF2 family ID below.
+                    try {
+                        const res = await fetch(self.fixedFirmwareUrl);
+                        if (res.ok) {
+                            const buf = new Uint8Array(await res.arrayBuffer());
+                            self.arch = self.resolveArch(buf);
+                            self.mod._picoemu_init(self.arch);
+                            self.mod._picoemu_set_clock(self.arch === PICO_ARCH_M0 ? 125 : 150);
+                            self.loadImage(buf);
+                        } else {
+                            console.warn('[PicoRunner] fixed firmware unavailable:', res.status);
+                        }
+                    } catch (e) {
+                        console.warn('[PicoRunner] fixed firmware load failed:', e);
+                    }
+                } else if (u8 && u8.length > 0) {
                     self.loadImage(u8);
                 } else if (self.pyScript.trim()) {
                     await self.bootMicroPython();
@@ -823,6 +860,10 @@ export class PicoRunner extends ArmRunnerBase {
             const buf = new Uint8Array(await res.arrayBuffer());
             this.loadImage(buf);
             this.isMicroPython = true;
+            // MicroPython USB-CDC timing is validated at 125MHz (engine
+            // harness proof); the generic 150MHz M33 clock leaves the
+            // M33 image silent.
+            try { this.mod._picoemu_set_clock(125); } catch { /* ignore */ }
         } catch (e) {
             console.warn('[PicoRunner] MicroPython base UF2 unavailable:', e);
         }

@@ -33,6 +33,8 @@ function deriveOpts(
     if (spi) extra.boardSpi = spi;
     const ethLive = attrStr(attrs, 'ethLive', 'board-live', 'boardLive');
     if (ethLive) extra.ethLive = ethLive;
+    const fixedFirmware = attrStr(attrs, 'firmware', 'fixedFirmware', 'fixed-firmware');
+    if (fixedFirmware) extra.fixedFirmware = fixedFirmware;
     if (Object.keys(extra).length === 0) return options as any;
     return { ...(options as any), ...extra } as any;
 }
