@@ -425,7 +425,14 @@ export class AVRRunner {
             writeByte(value: number) {
                 const instArray = Array.from(this.instances.values());
                 let handled = false;
-                for (const inst of instArray) {
+                // I2C-correct delivery: data bytes belong to the ADDRESSED
+                // slave only. Broadcasting every byte into every instance
+                // corrupts multi-slave buses (a neighbor's register pointer
+                // follows another device's traffic — observed as BMP180
+                // lastRegister tracking MPU6050 config writes). Fall back to
+                // all only when no slave was addressed (general-call edge).
+                const targets = this.activeSlave ? [this.activeSlave] : instArray;
+                for (const inst of targets) {
                     if (inst.onI2CByte) {
                         if (inst.onI2CByte(-1, value)) {
                             handled = true;
@@ -2171,10 +2178,19 @@ export class AVRRunner {
      *   • Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
      */
     private isSPISelected(inst: BaseComponent): boolean {
-        const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
+        // Dedicated chip-selects first: CE is a MODE pin on radios (nRF24
+        // RX/TX bias, CC1101-style parts) — checking it first permanently
+        // deselects any device whose CE idles HIGH (observed: NRF24 loop
+        // polls routed to the wrong radio while the listener got nothing).
+        // CE is consulted only when no dedicated CS pin exists at all.
+        const csNames = ['cs', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
         for (const name of csNames) {
             if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
             if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
+        }
+        if (inst.pins['ce'] || inst.pins['CE']) {
+            const v = inst.pins['ce'] ? inst.getPinVoltage('ce') : inst.getPinVoltage('CE');
+            return v < 0.5;
         }
         return true; // no CS pin → always selected
     }

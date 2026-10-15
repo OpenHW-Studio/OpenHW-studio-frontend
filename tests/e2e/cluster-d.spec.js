@@ -57,12 +57,13 @@ test.describe('Cluster D (IMU, baro, RTC, shift-RGB, charger, NTC, HX711, radios
       code: '#include <Wire.h>\n#include <Adafruit_MPU6050.h>\n#include <Adafruit_Sensor.h>\nAdafruit_MPU6050 mpu;\nbyte i2cread(uint8_t addr,uint8_t reg){Wire.beginTransmission(addr);Wire.write(reg);Wire.endTransmission(false);Wire.requestFrom(addr,(uint8_t)1);return Wire.read();}\nvoid setup(){Serial.begin(9600);Serial.println("IMU_READY");Wire.begin();delay(500);\nSerial.print("BMP:");Serial.println(i2cread(0x77,0xD0),HEX);\nWire.beginTransmission(0x53);Wire.write(0x2D);Wire.write(0x08);Wire.endTransmission();\nSerial.print("ADXL:");Serial.println(i2cread(0x53,0x00),HEX);\nif(!mpu.begin()){Serial.println("MPU_FAIL");}else{Serial.println("MPU_OK");}}\nvoid loop(){sensors_event_t a,g,t;mpu.getEvent(&a,&g,&t);Serial.print("AX:");Serial.print(a.acceleration.x);Serial.print(" AZ:");Serial.println(a.acceleration.z);delay(1500);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 16000, selectTelemetry: ['mpu1'], serialNeedle: 'IMU_READY', telemetryMode: 'detail',
+      forMs: 16000, selectTelemetry: ['mpu1', 'adx1'], serialNeedle: 'IMU_READY', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
     const serial = verdict.serial || '';
     console.log('IMU serial:', JSON.stringify(serial.slice(0, 400)));
+    console.log('ADX volts:', JSON.stringify(((verdict.telemetry || []).find((t) => t.id === 'adx1'))?.details?.state?.analogVoltages || {}));
     expect(serial).toContain('BMP:55');
     expect(serial).toContain('ADXL:E5');
     expect(serial).toContain('MPU_OK');
@@ -129,12 +130,13 @@ test.describe('Cluster D (IMU, baro, RTC, shift-RGB, charger, NTC, HX711, radios
       code: 'long readHX(){unsigned long t0=millis();while(digitalRead(2)==HIGH){if(millis()-t0>3000){Serial.println("HX_TIMEOUT");return -1;}}long v=0;for(int i=0;i<24;i++){digitalWrite(3,HIGH);delayMicroseconds(10);v=(v<<1)|digitalRead(2);digitalWrite(3,LOW);delayMicroseconds(10);}digitalWrite(3,HIGH);delayMicroseconds(10);digitalWrite(3,LOW);return v;}\nvoid setup(){Serial.begin(9600);Serial.println("CNK_READY");pinMode(3,OUTPUT);pinMode(2,INPUT);delay(500);Serial.print("NTC:");Serial.println(analogRead(A0));}\nvoid loop(){Serial.print("HX:");Serial.println(readHX());delay(1500);}\n',
     });
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 16000, selectTelemetry: ['chg1'], serialNeedle: 'CNK_READY', telemetryMode: 'detail',
+      forMs: 16000, selectTelemetry: ['chg1', 'ntc1', 'hx1'], serialNeedle: 'CNK_READY', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     expect(verdict.pass).toBe(true);
     const serial = verdict.serial || '';
     console.log('CNK serial:', JSON.stringify(serial.slice(0, 300)));
+    console.log('NTC volts:', JSON.stringify(((verdict.telemetry || []).find((t) => t.id === 'ntc1'))?.details?.state?.analogVoltages || {}));
     const ntc = Number(/NTC:(\d+)/.exec(serial)?.[1] ?? NaN);
     expect(ntc).toBeGreaterThan(480); expect(ntc).toBeLessThan(545);
     const hx = Number(/HX:(-?\d+)/.exec(serial)?.[1] ?? NaN);
