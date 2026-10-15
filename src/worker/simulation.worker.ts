@@ -26,6 +26,16 @@ import {
     areBoardsSoftSerialConnected,
 } from './protocol-routing.js';
 import { SabCommandReader, SabEventWriter, SabDisplayWriter } from './sab/layout.ts';
+import { barrierAckIdx, barrierCollectAcks, barrierPostStep, createBarrier } from './lockstep-barrier.ts';
+import {
+  bindUartTransportRings,
+  createUartTransport,
+  uartKindFromSource,
+  uartSourceFromKind,
+  uartTransportDrain,
+  uartTransportPushRx,
+} from './uart-transport.ts';
+import type { SabSerialRing } from './sab/layout.ts';
 import { DebugService } from './debug/service.ts';
 import { AgentRecorder } from '../agent/recorder.js';
 
@@ -141,9 +151,26 @@ let mode: 'single' | 'multi' = 'single';
 let lockstepTimer: any = null;
 const LOCKSTEP_QUANTUM_MS = 8;
 const SKEW_BOUND_QUANTA = 4;
+// Bounded barrier collect: total ACK wait budget per tick. Stragglers are
+// flagged by the skew check, never waited on past this.
+const LOCKSTEP_ACK_TIMEOUT_MS = 30;
 let lockstepSeq = 0;
 const boardStepAck: Map<string, number> = new Map();
 let lockstepSkewWarned = false;
+// Phase B SAB-Atomics barrier: shared step/ack cells (see
+// lockstep-barrier.ts). Created per multi START before spawning workers;
+// null = postMessage BOARD_STEP fallback. `order` maps boardId → barrierIdx.
+let lockstepBarrier: { sab: SharedArrayBuffer; cells: Int32Array; order: Map<string, number> } | null = null;
+// Per-worker barrier capability (negotiated via 'ready' barrier flag).
+const boardWorkerBarrier: Map<string, boolean> = new Map();
+// UART SAB-ring transport (Phase B): shared TX/RX rings per board worker.
+// Created per multi START; null = per-byte postMessage fallback. `rings`
+// holds bound handles for transport-capable workers (negotiated via the
+// 'ready' uart flag).
+let uartTransport: { sab: SharedArrayBuffer; order: Map<string, number> } | null = null;
+let uartTransportOffsets: Array<{ txOff: number; rxOff: number }> = [];
+const uartTransportRings: Map<string, { tx: SabSerialRing; rx: SabSerialRing }> = new Map();
+const boardWorkerUart: Map<string, boolean> = new Map();
 let pinToNet: Map<string, number> = new Map();
 let boardSerialOutput: Map<string, string> = new Map();
 
@@ -445,7 +472,13 @@ function stopAllRunners() {
     boardWorkers.clear();
     boardWorkerTypes.clear();
     boardWorkerReady.clear();
+    boardWorkerBarrier.clear();
+    boardWorkerUart.clear();
+    uartTransportRings.clear();
+    uartTransport = null;
+    uartTransportOffsets = [];
     boardStepAck.clear();
+    lockstepBarrier = null;
     lockstepSeq = 0;
     lockstepSkewWarned = false;
     pendingBoardSnapshots.clear();
@@ -890,6 +923,19 @@ function isSoftSerialLabel(label: string): boolean {
     return key === 'softserial' || key === 'soft-serial' || key === 'soft_uart' || key === 'soft-uart' || key === 'softuart';
 }
 
+// UART ingest shared by the uart-tx postMessage path and the SAB-ring
+// tick-drain: monitor (line-buffered coherence) + recorder tap + routing.
+// Identical downstream calls either way — transport only.
+function ingestWorkerUartByte(targetBoardId: string, kind: number, value: number): void {
+    const source = uartSourceFromKind(kind);
+    const char = String.fromCharCode(value & 0xff);
+    pushSerialLineByte(targetBoardId, char, source, value & 0xff);
+    try {
+        agentRecorder.pushSerial(targetBoardId, char, source);
+    } catch { /* tap never breaks serial */ }
+    routeUartByte(targetBoardId, value & 0xff, source);
+}
+
 function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart0') {
     const sourceRunner = boardRunners.get(sourceBoardId) ?? null;
     const sourceType = boardTypes.get(sourceBoardId) || boardWorkerTypes.get(sourceBoardId) || '';
@@ -917,8 +963,10 @@ function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart
         }
     }
 
-    // Board-worker targets: same routing decision, delivery via SERIAL_RX
-    // postMessage (their RX ring is the same shared SAB, this is the wakeup).
+    // Board-worker targets: same routing decision; delivery via the SAB
+    // transport RX ring when the target is ring-capable, else the legacy
+    // SERIAL_RX post (their RX ring is the same shared SAB either way —
+    // the ring is just the batched wakeup-free path).
     for (const [targetBoardId, targetWorker] of boardWorkers.entries()) {
         if (targetBoardId === sourceBoardId) continue;
         const targetType = boardWorkerTypes.get(targetBoardId) || '';
@@ -927,6 +975,14 @@ function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart
             : resolveUartRoute(sourceBoardId, sourceType, targetBoardId, targetType, areConnected, sourceLabel);
         const softLinked = areBoardsSoftSerialConnected(sourceBoardId, sourceType, targetBoardId, targetType, areConnected);
         if (uartRoute.connected || softLinked) {
+            const kind = uartRoute.connected
+                ? uartKindFromSource(uartRoute.targetSource || 'uart0')
+                : uartKindFromSource('softserial');
+            const rings = uartTransportRings.get(targetBoardId);
+            if (boardWorkerUart.get(targetBoardId) === true && rings) {
+                try { uartTransportPushRx(rings.rx, kind, value & 0xff); } catch { /* ring push never breaks routing */ }
+                continue;
+            }
             try {
                 targetWorker.postMessage({
                     type: 'SERIAL_RX',
@@ -1294,6 +1350,28 @@ const coreMessageHandler = async (e: MessageEvent) => {
             if (Array.isArray(ids)) ids.forEach((id: any, i: number) => boardIdToIdx.set(String(id), i));
         } catch { /* fall back to loop order */ }
         let multiIdx = 0;
+        // Phase B barrier alloc: one step cell + one ack cell per board,
+        // shared with every board worker spawned below (SAB-Atomics STEP
+        // transport; postMessage BOARD_STEP remains the fallback).
+        let barrierSpawnIdx = 0;
+        try {
+            const b = createBarrier(Math.max(1, programmableBoards.length));
+            lockstepBarrier = b ? { sab: b.sab, cells: b.cells, order: new Map() } : null;
+        } catch { lockstepBarrier = null; }
+        // UART SAB-ring transport alloc: per-board TX/RX rings, shared with
+        // every board worker spawned below (per-byte uart-tx / SERIAL_RX
+        // posts remain the fallback for unbound boards).
+        let uartSpawnIdx = 0;
+        try {
+            const t = createUartTransport(Math.max(1, programmableBoards.length));
+            if (t) {
+                uartTransport = { sab: t.sab, order: new Map() };
+                uartTransportOffsets = t.offsets;
+            } else {
+                uartTransport = null;
+                uartTransportOffsets = [];
+            }
+        } catch { uartTransport = null; uartTransportOffsets = []; }
         for (const boardComp of programmableBoards) {
             const rawFw = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
             // MicroPython sentinel: boardHexMap carries `PYSCRIPT:<code>`.
@@ -1393,8 +1471,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
             // Phase B: every multi-board runner ticks on a dedicated compute
             // Worker — AVR included. AVR stays in-process only in single
             // mode (cheap, synchronous). One board per thread; the lockstep
-            // scheduler (BOARD_STEP) keeps shared sim-time, and SAB carries
-            // bytes while postMessage stays the wakeup.
+            // scheduler drives shared sim-time over the SAB-Atomics barrier
+            // (BOARD_STEP posts stay as the fallback), and SAB carries pins,
+            // serial fast-paths, components and telemetry.
             const useBoardWorker = typeof Worker !== 'undefined';
             if (useBoardWorker) {
                 const bw = new Worker(new URL('./board.worker.ts', import.meta.url), { type: 'module' });
@@ -1412,19 +1491,28 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     const msg = (evt as any)?.data || {};
                     if (msg.type === 'ready') {
                         boardWorkerReady.set(targetId, true);
+                        if ((msg as any)?.barrier) boardWorkerBarrier.set(targetId, true);
+                        // UART ring transport: bind the preallocated slot so
+                        // the tick-drain (not uart-tx posts) carries TX bytes.
+                        if ((msg as any)?.uart && uartTransport) {
+                            try {
+                                const bi = uartTransport.order.get(targetId);
+                                if (bi !== undefined && uartTransportOffsets[bi]) {
+                                    uartTransportRings.set(targetId, bindUartTransportRings(uartTransport.sab, uartTransportOffsets[bi]));
+                                    boardWorkerUart.set(targetId, true);
+                                }
+                            } catch { /* fallback posts stay live */ }
+                        }
                     } else if (msg.type === 'step-done') {
                         // Phase C skew accounting: last ACKed quantum per board.
                         boardStepAck.set(targetId, Math.max(0, Number(msg.seq) || 0));
                     } else if (msg.type === 'state') {
                         postRunnerState(msg.state, targetId);
                     } else if (msg.type === 'uart-tx') {
-                        // Monitor channel is line-buffered (serial coherence);
-                        // routing + recorder stay per-byte immediate.
-                        pushSerialLineByte(targetId, String(msg.char || ''), msg.source || 'uart0', msg.value);
-                        try {
-                            agentRecorder.pushSerial(targetId, String(msg.char || ''), String(msg.source || 'uart0'));
-                        } catch { /* tap never breaks serial */ }
-                        routeUartByte(targetId, msg.value, msg.source || 'uart0');
+                        // Legacy per-byte post (fallback for boards without
+                        // ring transport). Ring-capable boards never post
+                        // this — their bytes drain from the TX ring below.
+                        ingestWorkerUartByte(targetId, uartKindFromSource(msg.source), msg.value & 0xff);
                     } else if (msg.type === 'interact-miss') {
                         console.warn(`[Worker] INTERACT target not found in board worker ${targetId}: ${msg.compId}`);
                     } else if (msg.type === 'debug-snapshot') {
@@ -1449,9 +1537,33 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     // NOTE: cmd/evt buffers stay with the parent (MPSC ring);
                     // board workers get control via postMessage fan-out.
                     // Phase A lockstep: board workers hand their loops over
-                    // at boot and step on BOARD_STEP from the scheduler.
-                    options: { ...runnerOptions, lockstep: true, onByteTransmit: undefined, cmdBuffer: undefined, evtBuffer: undefined },
+                    // at boot. Phase B transport: the SAB-Atomics barrier
+                    // (lockstepBarrier cells) drives quanta; BOARD_STEP posts
+                    // remain for workers without barrier support.
+                    options: {
+                        ...runnerOptions,
+                        lockstep: true,
+                        onByteTransmit: undefined,
+                        cmdBuffer: undefined,
+                        evtBuffer: undefined,
+                        lockstepBarrier: lockstepBarrier
+                            ? { sab: lockstepBarrier.sab, ackIdx: barrierAckIdx(barrierSpawnIdx), quantumMs: LOCKSTEP_QUANTUM_MS }
+                            : undefined,
+                        // UART ring slot for this board (TX: worker→parent
+                        // drain; RX: parent→worker routed delivery).
+                        uartTransport: uartTransport && uartTransportOffsets[uartSpawnIdx]
+                            ? { sab: uartTransport.sab, txOff: uartTransportOffsets[uartSpawnIdx].txOff, rxOff: uartTransportOffsets[uartSpawnIdx].rxOff }
+                            : undefined,
+                    },
                 });
+                if (lockstepBarrier) {
+                    lockstepBarrier.order.set(boardComp.id, barrierSpawnIdx);
+                    barrierSpawnIdx++;
+                }
+                if (uartTransport) {
+                    uartTransport.order.set(boardComp.id, uartSpawnIdx);
+                    uartSpawnIdx++;
+                }
                 boardWorkers.set(boardComp.id, bw);
                 boardWorkerTypes.set(boardComp.id, boardType);
                 boardWorkerReady.set(boardComp.id, false);
@@ -1532,8 +1644,55 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     for (const [, br] of boardRunners) {
                         try { (br as any).stepQuantum?.(LOCKSTEP_QUANTUM_MS); } catch { /* one bad board never stalls the rest */ }
                     }
-                    for (const [, bw] of boardWorkers) {
+                    // Phase B transport: barrier-capable workers step via
+                    // SAB-Atomics cells (bounded collect below); the rest
+                    // step via BOARD_STEP posts + step-done ACKs.
+                    const useBarrier = !!lockstepBarrier;
+                    if (useBarrier && lockstepBarrier) {
+                        barrierPostStep(lockstepBarrier.cells, lockstepSeq);
+                    }
+                    const fallbackIds: string[] = [];
+                    for (const [id, bw] of boardWorkers) {
+                        const onBarrier = useBarrier && boardWorkerBarrier.get(id) === true;
+                        if (onBarrier) continue;
+                        fallbackIds.push(id);
                         try { bw.postMessage({ type: 'BOARD_STEP', quantumMs: LOCKSTEP_QUANTUM_MS, seq: lockstepSeq }); } catch { /* ignore */ }
+                    }
+                    if (useBarrier && lockstepBarrier) {
+                        // Bounded barrier collect: every barrier board
+                        // completes this quantum before the next is posted
+                        // (zero skew by construction); stragglers past the
+                        // timeout are flagged, never waited on forever.
+                        const ackIdxs: string[] = [];
+                        const cells: number[] = [];
+                        for (const [id] of boardWorkers) {
+                            if (boardWorkerBarrier.get(id) !== true) continue;
+                            const bi = lockstepBarrier.order.get(id);
+                            if (bi === undefined) continue;
+                            ackIdxs.push(id);
+                            cells.push(barrierAckIdx(bi));
+                        }
+                        if (cells.length > 0) {
+                            const acks = barrierCollectAcks(lockstepBarrier.cells, cells, lockstepSeq, LOCKSTEP_ACK_TIMEOUT_MS);
+                            for (let i = 0; i < ackIdxs.length; i++) {
+                                boardStepAck.set(ackIdxs[i], acks[i]);
+                            }
+                        }
+                        void fallbackIds;
+                    }
+                    // UART ring tick-drain: TX bytes riding the transport
+                    // rings (batched per tick, not per byte) flow through
+                    // the same ingest as uart-tx posts — monitor +
+                    // recorder + routing identical, wakeup-free.
+                    if (uartTransportRings.size > 0) {
+                        for (const [id, rings] of uartTransportRings) {
+                            if (boardWorkerUart.get(id) !== true) continue;
+                            try {
+                                uartTransportDrain(rings.tx, (kind, value) => {
+                                    ingestWorkerUartByte(id, kind, value & 0xff);
+                                });
+                            } catch { /* one bad board never stalls the rest */ }
+                        }
                     }
                     // Skew check: min ACK across workers vs current seq. Skip
                     // until every worker has ACKed at least once (boot /

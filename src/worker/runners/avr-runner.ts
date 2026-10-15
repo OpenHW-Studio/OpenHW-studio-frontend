@@ -1581,7 +1581,6 @@ export class AVRRunner {
         });
     }
 
-    private _dbgFrameCount = 0;
     private clockEvents: Array<{ targetCycle: number; callback: () => void }> = [];
 
     private pollADCChannels = () => {
@@ -1631,10 +1630,6 @@ export class AVRRunner {
                         }
                     }
                 }
-            }
-
-            if (i === 0 && this._dbgFrameCount % 60 === 0) {
-                console.log(`[ADC DBG] A0 targetNet=${targetNet} voltage=${voltage} pinToNet.size=${this.pinToNet.size}`);
             }
 
             this.adc.channelValues[i] = voltage;
@@ -1814,19 +1809,6 @@ export class AVRRunner {
 
             this.lastPhysicsMs = physicsMs;
             this.lastRunLoopMs = performance.now() - loopStart;
-
-            // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            // this.emitStateIfDue(now); // Disabled. Handled by FLUSH_VISUALS from UI thread.
-        }
-
-        this._dbgFrameCount++;
-        if (this._dbgFrameCount % 300 === 0) {
-            const instArr = Array.from(this.instances.values());
-            console.log(`[AVRRunner DBG] frame=${this._dbgFrameCount} instances=${instArr.length} running=${this.running} cycles=${this.cpu?.cycles}`);
-            instArr.forEach(inst => {
-                console.log(`  inst id=${inst.id} type=${inst.type} stateChanged=${inst.stateChanged} pendingEmit=${(inst as any).pendingVisualStateEmit} telemetryEnabled=${inst.telemetryEnabled} state=`, JSON.stringify(inst.state));
-            });
-            console.log(`  pinStates=`, JSON.stringify(this.pinStates));
         }
 
         // v2 tick (§10.6): cycles owed derive from sim-time budget (cyclesToRun /

@@ -21,7 +21,13 @@
  *   { type:'BOARD_START', boardIdx, boardId, boardType, firmware, pyScript,
  *     components, wires, options:{...runnerOpts, sab, sabOffsets, cmdBuffer,
  *     evtBuffer, sabGeometry, sabBoardSerialBase, sabBoardDebugBase,
- *     sabNumBoards, boardPinMaps, serialBaudRate, speed, ...} }
+ *     sabNumBoards, boardPinMaps, serialBaudRate, speed, ...,
+ *     lockstepBarrier:{ sab, ackIdx, quantumMs }} }
+ * Phase B barrier (preferred): the shared SAB step/ack cells drive quanta —
+ * this worker blocks on the step cell (runBarrierLoop), steps one quantum
+ * per new sequence, ACKs its cell. Reports barrier:true in 'ready'.
+ * Fallback: {type:'BOARD_STEP', quantumMs, seq} posts (no barrier attached
+ * or no Atomics.wait) with a 'step-done' ACK reply.
  * Control: {type:'STOP'} | {type:'SET_SPEED', speed} |
  *   {type:'SERIAL_RX', bytes:number[]} (inter-board UART inject) |
  *   {type:'SERIAL_STR', data:string} (UI serial fan-out) |
@@ -32,7 +38,9 @@
  *     'pcbreak'|'pcbreak-clear'|'snapshot'|'readmem', ...} |
  *   {type:'PAUSE'} | {type:'RESUME'}
  * This worker → parent:
- *   {type:'ready'} | {type:'step-done', boardId, seq} | {type:'uart-tx', boardId, value, char, source} |
+ *   {type:'ready', barrier, uart} | {type:'step-done', boardId, seq} (fallback) |
+ *   {type:'uart-tx', boardId, value, char, source} (fallback — ring boards
+ *   push TX pairs to the transport ring instead) |
  *   {type:'state', state} (runner state snapshots for postRunnerState) |
  *   {type:'interact-done'|'interact-miss'} | {type:'debug-state'} |
  *   {type:'debug-snapshot', boardId, snapshot} |
@@ -42,13 +50,103 @@
 import { createRunnerForBoard } from './execute';
 import type { BoardRunner } from './registries/component-registry.ts';
 import { avrInstruction } from 'avr8js';
+import { BARRIER_STEP_IDX, barrierTryStep } from './lockstep-barrier.ts';
+import {
+  bindUartTransportRings,
+  uartKindFromSource,
+  uartSourceFromKind,
+  uartTransportDrain,
+  uartTransportPushTx,
+} from './uart-transport.ts';
+import type { SabSerialRing } from './sab/layout.ts';
 
 let runner: BoardRunner | null = null;
 let boardId = '';
 let boardIdx = 0;
 
+// UART SAB-ring transport (worker side): TX pushes framed pairs for the
+// parent tick-drain; RX drains framed pairs per quantum. Null = postMessage
+// fallback (uart-tx posts / SERIAL_RX posts).
+let uartTxRing: SabSerialRing | null = null;
+let uartRxRing: SabSerialRing | null = null;
+
+// Phase B SAB-Atomics barrier: shared step/ack cells from the parent.
+// When attached, the wait-loop below (not BOARD_STEP posts) drives quanta.
+let barrierCells: Int32Array | null = null;
+let barrierAckIdx = 1;
+let barrierQuantumMs = 8;
+let barrierStopped = false;
+
 function post(event: any): void {
     try { (self as any).postMessage(event); } catch { /* ignore */ }
+}
+
+// UART RX inject shared by the SERIAL_RX postMessage path and the SAB-ring
+// drain — identical calls, identical order. (Softserial flavor intentionally
+// mirrors the legacy handler: serialRxByteFromSource when present, else
+// serialRxByte. No behavior change here, transport only.)
+function injectUartRxByte(kind: number, value: number, sourceLabel: string): void {
+    try {
+        const r = runner as any;
+        if (!r) return;
+        const v = value & 0xff;
+        if (typeof r?.serialRxByteFromSource === 'function') r.serialRxByteFromSource(v, sourceLabel);
+        else if (typeof r?.serialRxByte === 'function') r.serialRxByte(v);
+    } catch { /* inject never breaks the tick */ }
+}
+
+/** Drain the transport RX ring into the engine (called per quantum). */
+function drainUartRxRing(): void {
+    if (!uartRxRing) return;
+    try {
+        uartTransportDrain(uartRxRing, (kind, value) => {
+            injectUartRxByte(kind, value, uartSourceFromKind(kind));
+        });
+    } catch { /* drain never breaks the tick */ }
+}
+
+// SAB-Atomics wait-loop (Phase B transport). Blocks on the shared step
+// cell; each new sequence steps exactly one quantum and ACKs.
+//
+// CRITICAL: this loop MUST yield to the worker event loop on every
+// iteration (awaited setTimeout). A synchronous loop around Atomics.wait
+// never unwinds the JS stack, so BOARD_START would never return and all
+// inbound control messages (FLUSH/SET_TELEMETRY/INTERACT/SERIAL_RX/STOP)
+// would queue forever — observed as: serial perfect (posted synchronously
+// from steps) but pins + telemetry dead (FLUSH-driven). Wait slices stay
+// short so control lands within ~one quantum.
+const barrierYield = () => new Promise<void>((r) => setTimeout(r, 0));
+async function runBarrierLoop(): Promise<void> {
+    const cells = barrierCells;
+    if (!cells) return;
+    let last = 0;
+    try {
+        last = Atomics.load(cells, BARRIER_STEP_IDX);
+    } catch { last = 0; }
+    for (;;) {
+        if (barrierStopped || !runner) return;
+        try {
+            const next = barrierTryStep(cells, barrierAckIdx, last, (seq) => {
+                void seq;
+                try { (runner as any)?.stepQuantum?.(barrierQuantumMs); } catch { /* bad quantum never breaks the loop */ }
+                // Transport RX drain per quantum (parent-routed inter-board
+                // bytes + UI input ride the ring; SERIAL_RX posts are the
+                // fallback for unbound boards).
+                drainUartRxRing();
+            });
+            if (next !== last) {
+                last = next;
+                await barrierYield();
+                continue;
+            }
+        } catch { /* poll never breaks the loop */ }
+        try {
+            Atomics.wait(cells, BARRIER_STEP_IDX, last, 25);
+        } catch {
+            return; // blocking wait unavailable: parent falls back to posts
+        }
+        await barrierYield();
+    }
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -75,6 +173,36 @@ self.onmessage = async (e: MessageEvent) => {
         // unbound so UI polls don't deliver a second interleaved copy.
         // RX rings stay bound (UI serial input path unchanged).
         const options = { ...restOptions, sabSerialTxDisabled: true, boardId, boardIdx, pyScript: data.pyScript || '' };
+        // Phase B barrier attach: SAB-Atomics step cells (shared with the
+        // parent scheduler). Presence + wait support negotiated via 'ready'.
+        barrierStopped = false;
+        barrierCells = null;
+        try {
+            const lb = (data.options as any)?.lockstepBarrier as any;
+            if (lb && lb.sab instanceof SharedArrayBuffer && Number.isFinite(Number(lb.ackIdx))) {
+                barrierCells = new Int32Array(lb.sab as SharedArrayBuffer);
+                barrierAckIdx = Math.max(1, Number(lb.ackIdx) || 1);
+                barrierQuantumMs = Math.max(1, Number(lb.quantumMs) || 8);
+            }
+        } catch { barrierCells = null; }
+        // UART SAB-ring transport attach (worker side of uart-transport.ts).
+        // When bound, TX bytes ride the ring (parent tick-drain) instead of
+        // per-byte uart-tx posts; RX bytes drain per quantum instead of
+        // SERIAL_RX posts. Absent = legacy postMessage paths.
+        uartTxRing = null;
+        uartRxRing = null;
+        try {
+            const ut = (data.options as any)?.uartTransport as any;
+            if (ut && ut.sab instanceof SharedArrayBuffer
+                && Number.isFinite(Number(ut.txOff)) && Number.isFinite(Number(ut.rxOff))) {
+                const rings = bindUartTransportRings(
+                    ut.sab as SharedArrayBuffer,
+                    { txOff: Number(ut.txOff), rxOff: Number(ut.rxOff) },
+                );
+                uartTxRing = rings.tx;
+                uartRxRing = rings.rx;
+            }
+        } catch { uartTxRing = null; uartRxRing = null; }
         try {
             runner = await createRunnerForBoard(
                 boardType,
@@ -87,8 +215,20 @@ self.onmessage = async (e: MessageEvent) => {
                 (stateObj: any) => post({ type: 'state', state: stateObj }),
                 // UART TX bytes take a DEDICATED path so the parent can run
                 // routeUartByte (monitor + inter-board inject). Runners call
-                // options.onByteTransmit per byte from emitTxByte().
-                { ...options, onByteTransmit: (tx: any) => post({ type: 'uart-tx', boardId, value: tx?.value, char: tx?.char, source: tx?.source || 'uart0' }) },
+                // options.onByteTransmit per byte from emitTxByte(). Ring
+                // transport when bound, uart-tx post fallback otherwise.
+                {
+                    ...options,
+                    onByteTransmit: (tx: any) => {
+                        if (uartTxRing) {
+                            try {
+                                uartTransportPushTx(uartTxRing, uartKindFromSource(tx?.source), Number(tx?.value) || 0);
+                            } catch { /* ring push never breaks emit */ }
+                            return;
+                        }
+                        post({ type: 'uart-tx', boardId, value: tx?.value, char: tx?.char, source: tx?.source || 'uart0' });
+                    },
+                },
             );
             // Phase A lockstep: when the parent drives quanta, hand the loop
             // over immediately (no free-running ticks before the first STEP —
@@ -100,7 +240,19 @@ self.onmessage = async (e: MessageEvent) => {
                     if (!(runner as any).running) (runner as any).running = true;
                 }
             } catch { /* ignore */ }
-            post({ type: 'ready', boardId, boardIdx });
+            post({
+                type: 'ready', boardId, boardIdx,
+                barrier: !!barrierCells && typeof Atomics?.wait === 'function',
+                uart: !!uartTxRing && !!uartRxRing,
+            });
+            // Barrier wait-loop: waits on the shared step cell (worker
+            // threads may Atomics.wait); each new sequence steps exactly one
+            // quantum and ACKs its cell. Runs async with event-loop yields
+            // every iteration so control postMessages keep flowing; control
+            // lands within ~one quantum.
+            if (barrierCells && typeof Atomics?.wait === 'function') {
+                try { void runBarrierLoop(); } catch { /* loop never breaks boot */ }
+            }
         } catch (err: any) {
             post({ type: 'error', boardId, message: String(err?.message || err) });
         }
@@ -108,18 +260,26 @@ self.onmessage = async (e: MessageEvent) => {
     }
 
     if (data.type === 'STOP') {
+        barrierStopped = true;
+        try {
+            if (barrierCells) Atomics.notify(barrierCells, BARRIER_STEP_IDX);
+        } catch { /* wakeup best-effort; terminate() follows */ }
         try { runner?.stop?.(); } catch { /* ignore */ }
         runner = null;
+        barrierCells = null;
+        uartTxRing = null;
+        uartRxRing = null;
         return;
     }
 
-    // Phase A lockstep tick: advance one scheduler quantum. The ACK
-    // (step-done with the quantum seq) lets the parent bound skew; delivery
-    // jitter is sub-millisecond vs the 8ms quantum. True SAB-Atomics barrier
-    // waits are future tuning — the no-burst chain already bounds skew.
+    // Phase A lockstep tick (fallback transport): used only when no SAB
+    // barrier is attached. Barrier boards step in runBarrierLoop instead —
+    // accepting both would double-step quanta.
     if (data.type === 'BOARD_STEP') {
+        if (barrierCells) return;
         const seq = Math.max(0, Number(data.seq) || 0);
         try { (runner as any)?.stepQuantum?.(Number(data.quantumMs) || 8); } catch { /* ignore */ }
+        drainUartRxRing();
         post({ type: 'step-done', boardId, seq });
         return;
     }
@@ -154,14 +314,11 @@ self.onmessage = async (e: MessageEvent) => {
     if (data.type === 'SERIAL_RX') {
         // Inter-board UART inject: bytes arrive via the parent's routing
         // decision (routeUartByte). Prefer source-aware entry when present.
+        // (Ring-transport boards drain instead; this post is the fallback.)
         const bytes = Array.isArray(data.bytes) ? data.bytes : [];
         const source = String(data.source || 'uart0');
         for (const b of bytes) {
-            try {
-                const r = runner as any;
-                if (typeof r?.serialRxByteFromSource === 'function') r.serialRxByteFromSource(b & 0xff, source);
-                else if (typeof r?.serialRxByte === 'function') r.serialRxByte(b & 0xff);
-            } catch { /* ignore */ }
+            injectUartRxByte(uartKindFromSource(source), b & 0xff, source);
         }
         return;
     }
