@@ -288,6 +288,18 @@ describe('whole-registry component sweep (headless harness)', () => {
           } catch { /* optional */ }
         }
 
+        // HX711: 2.5kg load latches raw 1050; clock out 24 data bits + gain.
+        if (/hx711/i.test(type) && typeof inst.onEvent === 'function') {
+          try {
+            inst.onEvent({ type: 'input', load: '2.5' });
+            inst.update(2000000, [], new Map());
+            for (let p = 0; p < 25; p += 1) {
+              inst.onPinStateChange('SCK', false, 2000000 + p * 10);
+              inst.onPinStateChange('SCK', true, 2000000 + p * 10 + 5);
+            }
+          } catch { /* optional */ }
+        }
+
         // 5W speaker: tone path synthesizes a playable chunk (buzzer
         // semantics over the chunk pipeline — no I2S source needed).
         if (/5w-speaker/i.test(type) && typeof inst.onPWMSignal === 'function') {
@@ -363,6 +375,10 @@ describe('whole-registry component sweep (headless harness)', () => {
             } catch { /* ignore */ }
           } else if (/74hc595/i.test(type) || type === 'shift_register') {
             if (Number(st1.storageReg) === 0xff) tier = 'content';
+          } else if (/hx711/i.test(type)) {
+            if (Number(st1.rawValue) === 1050) tier = 'content';
+          } else if (/nlsf595/i.test(type)) {
+            if (Number(st1.r) === 255 || Number(st1.g) === 255 || Number(st1.b) === 255) tier = 'content';
           } else if (/5w-speaker/i.test(type)) {
             const ch = inst.state?.audioChunk;
             if (Array.isArray(ch) && ch.length > 1000) tier = 'content';

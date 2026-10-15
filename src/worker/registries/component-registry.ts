@@ -75,6 +75,16 @@ import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/log
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
+import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic';
+import { BMP180Logic } from '@openhw/emulator/src/components/openhw-bmp180/logic';
+import { DS1307RTCLogic } from '@openhw/emulator/src/components/openhw-ds1307-rtc/logic';
+import { NLSF595Logic } from '@openhw/emulator/src/components/openhw-nlsf595/logic';
+import { ChargerLogic } from '@openhw/emulator/src/components/openhw-charger/logic';
+import { NTCThermistorLogic } from '@openhw/emulator/src/components/openhw-ntc-thermistor/logic';
+import { HX711Logic } from '@openhw/emulator/src/components/openhw-hx711_5/logic';
+import { ADXL345Logic } from '@openhw/emulator/src/components/openhw-adxl345/logic';
+import { CC1101Logic } from '@openhw/emulator/src/components/openhw-cc1101/logic';
+import { NRF24L01Logic } from '@openhw/emulator/src/components/openhw-nrf24l01/logic';
 
 import { UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -143,7 +153,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-max7219': MAX7219Logic,
     'wokwi-ldr-module': LdrModuleLogic,
     'openhw-ldr-module': LdrModuleLogic,
-    'wokwi-7segment': BaseComponent,
+    'wokwi-7segment': Wokwi7SegmentLogic,
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
@@ -225,18 +235,23 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-breadboard': BaseComponent,
     'wokwi-breadboard-half': BaseComponent,
     'openhw-breadboard-half': BaseComponent,
-    'wokwi-bmp180': BaseComponent,
-    'openhw-bmp180': BaseComponent,
-    'wokwi-bmp180-breakout': BaseComponent,
-    'openhw-bmp180-breakout': BaseComponent,
-    'wokwi-ds1307-rtc': BaseComponent,
-    'openhw-ds1307-rtc': BaseComponent,
+    'wokwi-bmp180': BMP180Logic,
+    'openhw-bmp180': BMP180Logic,
+    'wokwi-bmp180-breakout': BMP180Logic,
+    'openhw-bmp180-breakout': BMP180Logic,
+    'wokwi-ds1307-rtc': DS1307RTCLogic,
+    'openhw-ds1307-rtc': DS1307RTCLogic,
+    'openhw-hx711_5': HX711Logic,
+    'openhw-hx711_50': HX711Logic,
+    'openhw-adxl345': ADXL345Logic,
+    'openhw-cc1101': CC1101Logic,
+    'openhw-nrf24l01': NRF24L01Logic,
     'wokwi-hc-sr04': HCSR04Logic,
     'openhw-hc-sr04': HCSR04Logic,
-    'wokwi-mpu6050': BaseComponent,
-    'openhw-mpu6050': BaseComponent,
-    'wokwi-nlsf595': BaseComponent,
-    'openhw-nlsf595': BaseComponent,
+    'wokwi-mpu6050': MPU6050Logic,
+    'openhw-mpu6050': MPU6050Logic,
+    'wokwi-nlsf595': NLSF595Logic,
+    'openhw-nlsf595': NLSF595Logic,
     'wokwi-relay-module': RelayModuleLogic,
     'openhw-relay-module': RelayModuleLogic,
     'wokwi-stepper-motor': StepperMotorLogic,
@@ -248,9 +263,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
-    'openhw-ntc-thermistor': BaseComponent,
+    'openhw-ntc-thermistor': NTCThermistorLogic,
     'openhw-ntc-temperature-sensor': NtcLogic,
-    'openhw-charger': BaseComponent,
+    'openhw-charger': ChargerLogic,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
