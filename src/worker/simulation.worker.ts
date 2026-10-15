@@ -1256,7 +1256,33 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     continue;
                 }
             }
-            const runnerComponents = [boardComp, ...sharedPeripheralComponents];
+            // Multi-board peripheral partition: each runner owns its board
+            // plus the peripherals ELECTRICALLY REACHABLE from it. Sharing
+            // every component with every runner lets same-address devices
+            // (two SSD1306 at 0x3C on different boards) steal each other's
+            // traffic — the first ACK wins and the other screen stays blank.
+            // Real hardware has the same rule: a part talks to the board it
+            // is wired to. Floating components (no wires at all) stay shared
+            // — they interact via UI/INTERACT only and cannot collide.
+            const boardNets = new Set<number>();
+            try {
+                for (const [node, netId] of pinToNet) {
+                    if (String(node).startsWith(`${boardComp.id}:`)) boardNets.add(netId);
+                }
+            } catch { /* partitioning never breaks the run */ }
+            const ownedPeripherals = (sharedPeripheralComponents || []).filter((c: any) => {
+                try {
+                    const cid = String(c?.id || '');
+                    let wired = false;
+                    for (const [node, netId] of pinToNet) {
+                        if (!String(node).startsWith(`${cid}:`)) continue;
+                        wired = true;
+                        if (boardNets.has(netId)) return true;
+                    }
+                    return !wired;
+                } catch { return true; }
+            });
+            const runnerComponents = [boardComp, ...ownedPeripherals];
             const boardType = String(boardComp.type || '');
             const boardIdx = boardIdToIdx.has(boardComp.id) ? boardIdToIdx.get(boardComp.id)! : multiIdx;
             const runnerOptions = {

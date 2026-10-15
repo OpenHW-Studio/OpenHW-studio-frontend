@@ -150,6 +150,7 @@ export function initGlobalTelemetry(managerInstance) {
   if (typeof window === 'undefined') return;
   window.OpenHWTelemetry = {
     getLatestTelemetry: () => managerInstance?.getLatestTelemetry?.() || [],
+    clearLatestTelemetry: () => managerInstance?.clearLatestTelemetry?.(),
     setTelemetryEnabled: (enabled, mode) => managerInstance?.setTelemetryEnabled?.(enabled, mode),
     getSelectedComponents: () => managerInstance?.getSelectedComponents?.() || [],
     setSelectedComponents: (ids) => managerInstance?.setSelectedComponents?.(ids),
@@ -172,6 +173,9 @@ export function useTelemetryManager({
 }) {
   const lastLogTimeRef = useRef(Date.now());
   const latestTelemetryCacheRef = useRef([]);
+  // Selection signature for the multi-board merge below: a changed
+  // selection resets the cache instead of merging stale ids.
+  const telemetryFilterKeyRef = useRef(null);
   const [telemetryWatchedParamsMap, setTelemetryWatchedParamsMap] = useState({});
 
   // T3 pre-read filter (§12.3): ring-backed numeric snapshot per selected
@@ -254,7 +258,30 @@ export function useTelemetryManager({
       }
     });
 
-    latestTelemetryCacheRef.current = processed;
+    // Multi-board merge (not replace): each board runner emits its own
+    // state stream, and last-writer-wins across boards flaps components
+    // in and out of the verdict (observed: oled2 missing at read time
+    // while its runner was healthy). Merge by component id; a changed
+    // selection set resets instead of merging stale ids.
+    try {
+      const filterKey = Array.isArray(selectedTelemetryComponentIds)
+        ? [...selectedTelemetryComponentIds].sort().join(',') : '';
+      if (telemetryFilterKeyRef.current !== filterKey) {
+        telemetryFilterKeyRef.current = filterKey;
+        latestTelemetryCacheRef.current = processed;
+      } else {
+        const merged = {};
+        for (const e of (latestTelemetryCacheRef.current || [])) {
+          if (e && e.id) merged[e.id] = e;
+        }
+        for (const e of processed) {
+          if (e && e.id) merged[e.id] = e;
+        }
+        latestTelemetryCacheRef.current = Object.values(merged);
+      }
+    } catch {
+      latestTelemetryCacheRef.current = processed;
+    }
   }, [componentTelemetryEnabled, simulationSpeed, telemetrySampleInterval, selectedTelemetryComponentIds, telemetryMode, appendConsoleEntry, telemetryWatchedParamsMap, isBooting]);
 
   const setTelemetryEnabledCb = useCallback((enabled, modeOverride) => {
@@ -322,6 +349,10 @@ export function useTelemetryManager({
 
   // Update instance refs
   managerInstance.getLatestTelemetry = () => latestTelemetryCacheRef.current;
+  managerInstance.clearLatestTelemetry = () => {
+    latestTelemetryCacheRef.current = [];
+    telemetryFilterKeyRef.current = null;
+  };
   managerInstance.setTelemetryEnabled = setTelemetryEnabledCb;
   managerInstance.getSelectedComponents = () => selectedTelemetryComponentIds;
   managerInstance.setSelectedComponents = setSelectedTelemetryComponentIds;

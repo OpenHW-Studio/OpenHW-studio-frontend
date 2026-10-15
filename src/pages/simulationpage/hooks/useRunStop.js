@@ -99,6 +99,11 @@ export function useRunStop({
       runComponentUpdateCountsRef.current = {};
       runPinTransitionCountsRef.current = {};
       runLastBoardPinsRef.current = new Map();
+      // Multi-board telemetry merge (TelemetryManager) accumulates per
+      // component id — clear it here so stopped circuits leave no ghosts.
+      try {
+        if (typeof window !== 'undefined') window.OpenHWTelemetry?.clearLatestTelemetry?.();
+      } catch { /* ignore */ }
       renderPinsByBoardRef.current = {};
       renderAnalogByBoardRef.current = {};
       renderComponentsByBoardRef.current = {};
