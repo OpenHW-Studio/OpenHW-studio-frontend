@@ -352,6 +352,123 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         br.idleFlush(nowMs);
                     }
                 } catch { /* flush never breaks the drain */ }
+                // Per-tick ADC inject (3.3.0 ADC class): drive wired analog
+                // voltages into ADC1 channels (PA0-7→ch0-7, PB0→8, PB1→9).
+                // Pot wipers/sensors own the line here; firmware analogRead
+                // samples it. No-op without ADC pins or engine support.
+                try {
+                    const adc = (self.mcu as any)?.adc1;
+                    if (adc && typeof adc.setVoltage === 'function') {
+                        const chFor: Record<string, number> = {
+                            PA0: 0, PA1: 1, PA2: 2, PA3: 3,
+                            PA4: 4, PA5: 5, PA6: 6, PA7: 7,
+                            PB0: 8, PB1: 9,
+                        };
+                        for (const [pin, ch] of Object.entries(chFor)) {
+                            try {
+                                let volts: number | null = null;
+                                for (const [node, netId] of self.pinToNet) {
+                                    const sep = node.indexOf(':');
+                                    if (sep < 0) continue;
+                                    if (node.slice(0, sep) !== self.boardId) continue;
+                                    if (node.slice(sep + 1).toUpperCase() !== pin) continue;
+                                    for (const [node2, net2] of self.pinToNet) {
+                                        if (net2 !== netId) continue;
+                                        const s2 = node2.indexOf(':');
+                                        if (s2 < 0) continue;
+                                        if (node2.slice(0, s2) === self.boardId) continue;
+                                        const inst = self.instances.get(node2.slice(0, s2));
+                                        const v = Number((inst as any)?.getPinVoltage?.(node2.slice(s2 + 1)));
+                                        if (Number.isFinite(v)) { volts = v; break; }
+                                    }
+                                    break;
+                                }
+                                if (volts !== null) {
+                                    try { adc.setVoltage(ch, Math.max(0, Math.min(3300, volts * 1000))); } catch { /* ignore */ }
+                                }
+                            } catch { /* one pin never breaks the drain */ }
+                        }
+                        // Rail power for wiper sources (pots/dividers/servos):
+                        // board power pins source no voltage today, so a pot
+                        // wiper sits at 0V. Power VCC/5V rails (only) when the
+                        // pin reads ~0 and its net touches a matching board
+                        // rail pin — the model then divides honestly.
+                        try {
+                            const railSpecs: Array<{ pins: string[]; pat: RegExp; volts: number }> = [
+                                { pins: ['VCC', '1'], pat: /3V3/i, volts: 3.3 },
+                                { pins: ['V+', 'VCC5'], pat: /^5V$/i, volts: 5.0 },
+                            ];
+                            for (const inst of self.instances.values()) {
+                                try {
+                                    if (typeof (inst as any)?.getPinVoltage !== 'function'
+                                        || typeof (inst as any)?.setPinVoltage !== 'function') continue;
+                                    for (const spec of railSpecs) {
+                                        for (const nm of spec.pins) {
+                                            let v = 0;
+                                            try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
+                                            if (v > 0.2) continue;
+                                            const net = self.pinToNet.get(`${(inst as any)?.id}:${nm}`);
+                                            if (net === undefined) continue;
+                                            let boardRail = false;
+                                            for (const [node, netId] of self.pinToNet) {
+                                                if (netId !== net) continue;
+                                                const sep = node.indexOf(':');
+                                                if (sep < 0) continue;
+                                                if (node.slice(0, sep) !== self.boardId) continue;
+                                                if (spec.pat.test(node.slice(sep + 1))) { boardRail = true; break; }
+                                            }
+                                            if (!boardRail) continue;
+                                            try { (inst as any).setPinVoltage(nm, spec.volts); } catch { /* ignore */ }
+                                        }
+                                    }
+                                } catch { /* one instance never breaks rails */ }
+                            }
+                        } catch { /* rails never break the drain */ }
+                        // PWM observe (3.3.0 TIM class): first enabled TIM in
+                        // servo range (40-60Hz) drives wired servo PWM pins
+                        // via onPWMSignal (measured freq/duty, no faking).
+                        try {
+                            const mcu = self.mcu as any;
+                            if (mcu) {
+                                // Generalized: strongest duty across TIM1-7 drives
+                                // LED models via onPWM({dutyCycle}) — no edge
+                                // timing (GPIO batches + wall dilation make
+                                // width measurement unreliable); the LED's
+                                // cycle window holds brightness while polls
+                                // land. Servos keep the bit-bang path below.
+                                let best = 0;
+                                let bestFreq = 0;
+                                for (let n = 1; n <= 7; n++) {
+                                    const tim = mcu[`tim${n}`];
+                                    if (!tim || typeof tim.enabled !== 'function') continue;
+                                    let en = false;
+                                    try { en = !!tim.enabled(); } catch { continue; }
+                                    if (!en) continue;
+                                    let freq = 0;
+                                    try { freq = Number(tim.frequency()) || 0; } catch { /* ignore */ }
+                                    for (let ch = 0; ch < 4; ch++) {
+                                        try {
+                                            const d = Number(tim.duty(ch));
+                                            if (Number.isFinite(d) && d > best) { best = d; bestFreq = freq; }
+                                        } catch { /* ignore */ }
+                                    }
+                                }
+                                if (best > 0) {
+                                    const duty01 = Math.max(0, Math.min(1, best / 100));
+                                    for (const inst of self.instances.values()) {
+                                        try {
+                                            if (typeof (inst as any)?.onPWM !== 'function') continue;
+                                            if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                                            for (const pn of ['A', 'ANODE', '+']) {
+                                                try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreq }); } catch { /* ignore */ }
+                                            }
+                                        } catch { /* one instance never breaks pwm */ }
+                                    }
+                                }
+                            }
+                        } catch { /* PWM observe never breaks the drain */ }
+                    }
+                } catch { /* ADC inject never breaks the drain */ }
                 if (!txQueue.length) return [];
                 return txQueue.splice(0, Math.min(txQueue.length, 1024));
             },
