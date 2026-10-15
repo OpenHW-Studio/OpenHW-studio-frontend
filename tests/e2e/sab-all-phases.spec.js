@@ -356,6 +356,62 @@ test.describe('SAB all phases', () => {
     expect(result.digestLen).toBe(64); // sha-like hex
   });
 
+  test('P11 WASM pilot: MAX30102 glue shapes + manifest + core', async ({ page }) => {
+    await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(5000);
+    const result = await page.evaluate(async () => {
+      const loader = await import('/src/pages/simulationpage/utils/emulatorLoader.js');
+      const ns = await loader.ensureEmulatorRegistry();
+      const max = ns.max30102;
+      const manifest = max?.manifest;
+      const LogicClass = max?.LogicClass;
+      const inst = LogicClass ? new LogicClass('max1', manifest) : null;
+      // WasmComponent surface: loader attached, fallback update runs w/o core.
+      const hasEnsure = typeof inst?.ensureWasmLoaded === 'function';
+      const proto2 = Object.getPrototypeOf(Object.getPrototypeOf(inst));
+      const hasFallback = typeof inst?.fallbackUpdate === 'function'
+        || typeof proto2?.fallbackUpdate === 'function';
+      let fallbackOk = false;
+      try {
+        if (typeof inst?.fallbackUpdate === 'function') inst.fallbackUpdate(160000, [], []);
+        else if (typeof proto2?.fallbackUpdate === 'function') proto2.fallbackUpdate.call(inst, 160000, [], []);
+        fallbackOk = true;
+      } catch { fallbackOk = false; }
+      // Glue loader: resolves null when core URL is unreachable in test
+      // (import of ./core/*.wasm?url under /simulator has no bundle mapping
+      // yet) — must never throw, JS fallback wins.
+      let glueThrew = false;
+      let glueVal = 'unrun';
+      try {
+        const glueMod = await import('@openhw/emulator/src/components/max30102/glue.ts')
+          .catch(() => null);
+        if (glueMod?.max30102GlueLoader) {
+          glueVal = await glueMod.max30102GlueLoader.load(manifest);
+        }
+      } catch { glueThrew = true; }
+      return {
+        simRuntime: manifest?.sim?.runtime,
+        wasmAbi: manifest?.wasm?.abi,
+        wasmFile: manifest?.wasm?.file,
+        wasmExports: manifest?.wasm?.exports,
+        wasmFallback: manifest?.wasm?.fallback,
+        sabKind: manifest?.sab?.slotKind,
+        hasEnsure, hasFallback, fallbackOk,
+        glueThrew, glueNull: glueVal === null,
+      };
+    });
+    expect(result.simRuntime).toBe('wasm');
+    expect(result.wasmAbi).toBe(1);
+    expect(result.wasmFile).toContain('max30102_core_bg.wasm');
+    expect(result.wasmExports).toContain('update');
+    expect(result.wasmExports).toContain('get_state_ptr');
+    expect(result.wasmFallback).toBe('js');
+    expect(result.sabKind).toBe(4);
+    expect(result.hasEnsure).toBe(true);
+    expect(result.fallbackOk).toBe(true);
+    expect(result.glueThrew).toBe(false);
+  });
+
   test('P10 debug panel: tab renders, HALT/STEP/WATCH/READ/replay flow', async ({ page }) => {
     const errors = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

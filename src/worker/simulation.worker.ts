@@ -25,8 +25,14 @@ import {
     resolveUartRoute,
     areBoardsSoftSerialConnected,
 } from './protocol-routing.js';
-import { SabCommandReader, SabEventWriter } from './sab/layout.ts';
+import { SabCommandReader, SabEventWriter, SabDisplayWriter } from './sab/layout.ts';
 import { DebugService } from './debug/service.ts';
+import { AgentRecorder } from '../agent/recorder.js';
+
+// Agent trace recorder (§11 R2): watch-scoped, cycle-stamped, tapped at
+// runner onStateUpdate (pre-v2 transport). Schema-stable; v2 re-points at
+// the SAB telemetry ring without changing the event shape.
+const agentRecorder = new AgentRecorder();
 
 // Command/event rings (§10.4): shared at START. Worker owns the reader +
 // debug service; runners get per-board instances bound to the same buffers.
@@ -34,12 +40,18 @@ import { DebugService } from './debug/service.ts';
 let sabCmdReader: SabCommandReader | null = null;
 let sabEvtWriter: SabEventWriter | null = null;
 let sabDebugService: DebugService | null = null;
+// Display descriptors (§10.4): worker-level writer bound at START from the
+// full-map geometry. Slot-oriented only — pixels stay on routeDisplayFrames.
+let sabDisplayWriter: SabDisplayWriter | null = null;
+let sabDisplaySlotCursor = 0;
 
 function attachCommandRings(data: any): void {
     try {
         sabCmdReader = null;
         sabEvtWriter = null;
         sabDebugService = null;
+        sabDisplayWriter = null;
+        sabDisplaySlotCursor = 0;
         const cmdBuf = (data as any)?.cmdBuffer as SharedArrayBuffer | undefined;
         const evtBuf = (data as any)?.evtBuffer as SharedArrayBuffer | undefined;
         const sab = (data as any)?.sab as SharedArrayBuffer | undefined;
@@ -49,10 +61,18 @@ function attachCommandRings(data: any): void {
             const offsets = ((data as any)?.sabOffsets || {}) as Record<string, number>;
             sabDebugService = new DebugService(sab, { ...offsets }, sabEvtWriter);
         }
+        // Display descriptors ride the SAME state SAB (slot-oriented).
+        try {
+            const ddOff = Number((data as any)?.sabDisplayDescOffset);
+            if (sab && Number.isFinite(ddOff) && ddOff > 0) {
+                sabDisplayWriter = new SabDisplayWriter(sab, ddOff);
+            }
+        } catch { sabDisplayWriter = null; }
     } catch {
         sabCmdReader = null;
         sabEvtWriter = null;
         sabDebugService = null;
+        sabDisplayWriter = null;
     }
 }
 
@@ -906,6 +926,27 @@ function routeDisplayFrames(components: any[]): any[] {
             renderWorkerPort.postMessage(frame);
         }
 
+        // Display descriptor (§10.4): slot-oriented record into the state SAB
+        // (compSlot from sabDebugService offsets, w/h, handle idx, dirtyRect).
+        // Pixels NEVER go here — VRAM already routed above. Null-safe: the
+        // writer is null on legacy allocs (postMessage descriptors then).
+        try {
+            const slotById = (sabDebugService as any)?.slotById as Record<string, number> | undefined;
+            const slot = slotById ? Number(slotById[String(comp.id || '').trim()]) : NaN;
+            if (sabDisplayWriter && Number.isFinite(slot) && (slot as number) >= 0) {
+                const idx = sabDisplaySlotCursor % 16;
+                sabDisplaySlotCursor += 1;
+                sabDisplayWriter.write(
+                    idx,
+                    slot as number,
+                    Number(frame.width) || 0,
+                    Number(frame.height) || 0,
+                    idx,
+                    0xffffffff,
+                );
+            }
+        } catch { /* descriptor write never breaks routing */ }
+
         // Strip the pixel buffer from the main-thread message — send only
         // lightweight telemetry state (powerOn, spiFrames, compactSnapshot, etc.).
         remaining.push({
@@ -1077,12 +1118,21 @@ function handleRecorderState(stateObj: any, boardId: string) {
         }
     }
     
-    // 2. Process Serial
+    // 2. Process Serial (+ agent trace tap — watch-scoped, zero-cost unwatched).
     if (stateObj.type === 'serial') {
         traceBuffer.push({ SerialOutput: { data: stateObj.data, time_ms: Math.floor(nowMs) } });
+        try {
+            agentRecorder.pushSerial(
+                String((stateObj as any)?.boardId || boardId || 'default'),
+                String((stateObj as any)?.data ?? ''),
+                String((stateObj as any)?.source || 'uart'),
+                Number((stateObj as any)?.cycles) || 0,
+                Number((stateObj as any)?.simTimeMs) || 0,
+            );
+        } catch { /* trace tap never breaks ingest */ }
     }
     
-    // 3. Process Component State (deltas)
+    // 3. Process Component State (deltas + agent trace tap).
     if (stateObj.components && Array.isArray(stateObj.components)) {
         for (const comp of stateObj.components) {
             const cid = comp.id;
@@ -1090,20 +1140,41 @@ function handleRecorderState(stateObj: any, boardId: string) {
             const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
             const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
             const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
-            
+
             for (const key in emitSource) {
                 const val = emitSource[key];
                 const stateKey = `${cid}:${key}`;
                 const serialized = typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
                 const lastSerialized = traceLastComponentStates[stateKey];
-                
+
                 if (lastSerialized === undefined || lastSerialized !== serialized) {
                     traceBuffer.push({ ComponentState: { id: cid, key: key, value: val, time_ms: Math.floor(nowMs) } });
                     traceLastComponentStates[stateKey] = serialized;
+                    try {
+                        agentRecorder.pushComponentState(
+                            String(cid), String(key), val,
+                            Number((stateObj as any)?.cycles) || 0,
+                            Number((stateObj as any)?.simTimeMs) || 0,
+                        );
+                    } catch { /* tap never breaks ingest */ }
                 }
             }
         }
     }
+    // 4. Pin changes → agent trace (watch-scoped).
+    try {
+        const pins = (stateObj as any)?.pins;
+        if (pins && typeof pins === 'object') {
+            for (const pin of Object.keys(pins)) {
+                agentRecorder.pushPinChange(
+                    String((stateObj as any)?.boardId || boardId || 'default'),
+                    String(pin), !!pins[pin],
+                    Number((stateObj as any)?.cycles) || 0,
+                    Number((stateObj as any)?.simTimeMs) || 0,
+                );
+            }
+        }
+    } catch { /* tap never breaks ingest */ }
 }
 
 async function finalizeRecorderTrace() {
@@ -1448,6 +1519,11 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         onByteTransmit: ({ boardId, value, char, source }) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                             postMessage({ type: 'serial', data: char, boardId, value, source });
+                            try {
+                                agentRecorder.pushSerial(
+                                    String(boardId || ''), String(char || ''),
+                                    String(source || 'uart'));
+                            } catch { /* tap never breaks serial */ }
                         },
                         rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
                         rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
@@ -1460,6 +1536,14 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         sabOffsets: data.sabOffsets,
                         cmdBuffer: (data as any).cmdBuffer,
                         evtBuffer: (data as any).evtBuffer,
+                        // Full-map geometry (§10.4): postamble-computed, so
+                        // runners bind pin/debug writers without re-deriving.
+                        sabGeometry: (data as any).sabGeometry,
+                        sabDebugOffset: (data as any).sabDebugOffset,
+                        sabSerialRxOffset: (data as any).sabSerialRxOffset,
+                        sabSerialTxOffset: (data as any).sabSerialTxOffset,
+                        sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
+                        boardPinMaps: (data as any).boardPinMaps,
                     }
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
@@ -1617,6 +1701,11 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     onByteTransmit: ({ boardId, value, char, source }) => {
                         appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                         postMessage({ type: 'serial', data: char, boardId, value, source });
+                        try {
+                            agentRecorder.pushSerial(
+                                String(boardId || ''), String(char || ''),
+                                String(source || 'uart0'));
+                        } catch { /* tap never breaks serial */ }
                         routeUartByte(boardId, value, source || 'uart0');
                     },
                     rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
@@ -1626,6 +1715,13 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     sabOffsets: data.sabOffsets,
                     cmdBuffer: (data as any).cmdBuffer,
                     evtBuffer: (data as any).evtBuffer,
+                    // Full-map geometry (§10.4): same as single-board path.
+                    sabGeometry: (data as any).sabGeometry,
+                    sabDebugOffset: (data as any).sabDebugOffset,
+                    sabSerialRxOffset: (data as any).sabSerialRxOffset,
+                    sabSerialTxOffset: (data as any).sabSerialTxOffset,
+                    sabDisplayDescOffset: (data as any).sabDisplayDescOffset,
+                    boardPinMaps: (data as any).boardPinMaps,
                 }
             );
 
@@ -1820,6 +1916,48 @@ const coreMessageHandler = async (e: MessageEvent) => {
         const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
         for (const r of targets) {
             try { (r as any)?.removePinWatch?.(pin); } catch { /* ignore */ }
+        }
+        return;
+    } else if (data.type === 'DEBUG_PC_BREAK') {
+        // PC breakpoint add (§10.7): chunk-boundary checked in run loops,
+        // never per-instruction. Ring path (if a PC_BREAK op lands later)
+        // stays authoritative; this covers the postMessage fallback now.
+        const pc = Number((data as any)?.pc) >>> 0;
+        if (Number.isFinite(pc)) {
+            try {
+                const svc = sabDebugService as any;
+                if (svc && typeof svc.addPcBreakpoint === 'function') {
+                    svc.addPcBreakpoint(pc);
+                }
+            } catch { /* ignore */ }
+            const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+            for (const r of targets) {
+                try {
+                    const svc = (r as any)?.debugService;
+                    if (svc && typeof svc.addPcBreakpoint === 'function') {
+                        svc.addPcBreakpoint(pc);
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+        return;
+    } else if (data.type === 'DEBUG_PC_BREAK_CLEAR') {
+        // Clear PC breakpoints ONLY — pin watches are preserved
+        // (clearBreakpoints() drops both, so it is not used here).
+        try {
+            const svc = sabDebugService as any;
+            if (svc && typeof svc.clearPcBreakpoints === 'function') {
+                svc.clearPcBreakpoints();
+            }
+        } catch { /* ignore */ }
+        const targets = mode === 'single' && runner ? [runner] : [...boardRunners.values()];
+        for (const r of targets) {
+            try {
+                const svc = (r as any)?.debugService;
+                if (svc && typeof svc.clearPcBreakpoints === 'function') {
+                    svc.clearPcBreakpoints();
+                }
+            } catch { /* ignore */ }
         }
         return;
     } else if (data.type === 'DEBUG_READ_MEM') {
@@ -2278,6 +2416,27 @@ const coreMessageHandler = async (e: MessageEvent) => {
         }
         // Also notify main thread to show sleeping badge
         postMessage({ type: 'sim:sleep', boardId: data.boardId, duration_us: data.duration_us });
+    } else if (String(data.type || '').startsWith('AGENT_')) {
+        // Agent trace plane (§11 R2): watch-scoped recorder control.
+        // Pre-v2 transport (postMessage); v2 re-points at the SAB ring.
+        try {
+            if (data.type === 'AGENT_START_CAPTURE') {
+                agentRecorder.startCapture((data as any)?.watch || {});
+                agentRecorder.pushRunEvent('STARTED', 'agent capture armed');
+                postMessage({ type: 'AGENT_CAPTURE_STATE', active: true });
+            } else if (data.type === 'AGENT_STOP_CAPTURE') {
+                agentRecorder.pushRunEvent('STOPPED', 'agent capture closed');
+                agentRecorder.stopCapture();
+                postMessage({ type: 'AGENT_CAPTURE_STATE', active: false });
+            } else if (data.type === 'AGENT_GET_TRACE') {
+                const t = agentRecorder.getTrace(
+                    Number((data as any)?.sinceSeq) || 0,
+                    Number((data as any)?.limit) || 500,
+                );
+                postMessage({ type: 'AGENT_TRACE', ...t, reqId: (data as any)?.reqId ?? null });
+            }
+        } catch { /* agent plane never breaks sim */ }
+        return;
     }
 };
 

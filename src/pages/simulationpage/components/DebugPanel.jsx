@@ -19,6 +19,7 @@ function DebugPanelBase({
   halted,
   snapshot,
   watchPins,
+  pcBreakpoints,
   recordLog,
   replayDigest,
   memView,
@@ -30,6 +31,8 @@ function DebugPanelBase({
   debugStep,
   debugWatchPin,
   debugUnwatchPin,
+  debugAddPcBreakpoint,
+  debugClearPcBreakpoints,
   debugReadMem,
   requestSnapshot,
   startRecording,
@@ -40,6 +43,7 @@ function DebugPanelBase({
   const [pinInput, setPinInput] = useState("");
   const [pinLevel, setPinLevel] = useState("high");
   const [memAddr, setMemAddr] = useState("0x20000000");
+  const [pcInput, setPcInput] = useState("");
 
   if (!isRunning) return null;
 
@@ -65,6 +69,15 @@ function DebugPanelBase({
     const addr = /^0x/i.test(t) ? parseInt(t, 16) : parseInt(t, 10);
     if (!Number.isFinite(addr)) return;
     debugReadMem(addr >>> 0, 16);
+  };
+
+  const submitPcBreak = () => {
+    const t = pcInput.trim();
+    if (!t) return;
+    const addr = /^0x/i.test(t) ? parseInt(t, 16) : parseInt(t, 10);
+    if (!Number.isFinite(addr)) return;
+    if (typeof debugAddPcBreakpoint === "function") debugAddPcBreakpoint(addr >>> 0);
+    setPcInput("");
   };
 
   const row = {
@@ -152,6 +165,29 @@ function DebugPanelBase({
               </span>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* PC breakpoints (chunk-boundary, never per-instruction) */}
+      <div style={row}>
+        <input
+          data-tour-id="debug-pc-input"
+          value={pcInput}
+          onChange={(e) => setPcInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submitPcBreak(); }}
+          placeholder="PC (e.g. 0x1234)"
+          style={{ width: "120px", ...mono, padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--border)", background: "transparent", color: "var(--text)" }}
+        />
+        <button data-tour-id="debug-pc-add" style={btn(false)} onClick={submitPcBreak}>Break</button>
+        {(pcBreakpoints || []).length > 0 && (
+          <span style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}>
+            {(pcBreakpoints || []).map((pc) => (
+              <span key={pc} data-tour-id={`debug-pc-chip-${pc}`} style={{ ...mono, padding: "2px 6px", borderRadius: "12px", border: "1px solid var(--border)", color: "var(--text2)" }}>
+                {fmtHex(pc, 4)}
+              </span>
+            ))}
+            <button data-tour-id="debug-pc-clear" style={btn(false)} onClick={() => { if (typeof debugClearPcBreakpoints === "function") debugClearPcBreakpoints(); }}>Clear</button>
+          </span>
         )}
       </div>
 

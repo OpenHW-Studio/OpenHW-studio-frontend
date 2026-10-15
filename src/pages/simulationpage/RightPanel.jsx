@@ -4,6 +4,7 @@ import { FileExplorerSidebar } from './components/FileExplorerSidebar';
 import { PlotterManager } from './components/PlotterManager';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from './components/SerialMonitor';
 import { DebugPanel } from './components/DebugPanel';
+import { AgentPanel } from '../../agent/panel.jsx';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
 import { fetchLibrariesInfo } from '../../services/simulatorService';
@@ -1837,12 +1838,16 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 demoEditorMode={demoEditorMode}
               />
             )}
+            {codeTab === 'debug' && (
+              <AgentPanel />
+            )}
             {codeTab === 'debug' && debugControls && (
               <DebugPanel
                 isRunning={isRunning}
                 halted={debugControls.halted}
                 snapshot={debugControls.snapshot}
                 watchPins={debugControls.watchPins}
+                pcBreakpoints={debugControls.pcBreakpoints}
                 recordLog={debugControls.recordLog}
                 replayDigest={debugControls.replayDigest}
                 memView={debugControls.memView}
@@ -1854,6 +1859,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 debugStep={debugControls.debugStep}
                 debugWatchPin={debugControls.debugWatchPin}
                 debugUnwatchPin={debugControls.debugUnwatchPin}
+                debugAddPcBreakpoint={debugControls.debugAddPcBreakpoint}
+                debugClearPcBreakpoints={debugControls.debugClearPcBreakpoints}
                 debugReadMem={debugControls.debugReadMem}
                 requestSnapshot={debugControls.requestSnapshot}
                 startRecording={debugControls.startRecording}
@@ -2134,6 +2141,7 @@ export const RightPanel = React.memo(RightPanelBase, (prev, next) => {
       d.halted, d.isRecording,
       d.watchPins?.length ?? 0,
       d.watchPins?.map((w) => `${w.pin}=${w.expectHigh ? 1 : 0}`).join(",") ?? "",
+      (d.pcBreakpoints || []).join(","),
       d.recordLog?.length ?? 0,
       d.replayDigest ?? "",
       d.memView ? `${d.memView.addr}:${(d.memView.mem || []).join(",")}` : "",

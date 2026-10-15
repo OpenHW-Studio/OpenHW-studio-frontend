@@ -3,7 +3,7 @@ import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config,
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
-import { SabStateWriter, SabCommandReader, SabEventWriter, sabKindForType } from '../sab/layout.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, sabKindForType } from '../sab/layout.ts';
 import { DebugService } from '../debug/service.ts';
 import { 
     BoardRunner, 
@@ -95,6 +95,12 @@ export class AVRRunner {
     private sab: SharedArrayBuffer | null = null;
     private sabOffsets: Record<string, number> = {};
     private sabWriter: SabStateWriter | null = null;
+    private sabPinWriter: SabPinWriter | null = null;
+    private sabDebugWriter: SabDebugWriter | null = null;
+    private sabSerialTx: SabSerialRing | null = null;
+    private sabSerialRx: SabSerialRing | null = null;
+    private sabDisplayWriter: SabDisplayWriter | null = null;
+    private sabPinIndex: Map<string, number> = new Map();
     // Command/event rings + debug service (§10.4/§10.7). All optional:
     // absent buffers → postMessage control path unchanged (fallback).
     private cmdReader: SabCommandReader | null = null;
@@ -161,6 +167,9 @@ export class AVRRunner {
         this.usart.onByteTransmit = (value) => {
             const char = String.fromCharCode(value);
             this.pulseBoardLed('1');
+            // Serial TX ring (§10.4): bytes ride the ring when bound; the
+            // postMessage path below stays authoritative (overflow/strings).
+            try { (this as any).sabSerialTx?.pushByte(value & 0xff); } catch { /* ignore */ }
             if (this.onByteTransmitCb) {
                 this.onByteTransmitCb({ boardId: this.boardId, value, char, source: 'uart0' });
             } else {
@@ -182,6 +191,55 @@ export class AVRRunner {
             try {
                 this.sabWriter = new SabStateWriter(this.sab as SharedArrayBuffer);
             } catch { this.sabWriter = null; }
+            // Full-map writers (§10.4): pin bitfield + debug region.
+            // Geometry comes from the START alloc (options.sabGeometry /
+            // options.sabDebugOffset); absent = legacy alloc, writers null.
+            try {
+                const sabBuf2 = (this as any).sab as SharedArrayBuffer | null;
+                if (sabBuf2) {
+                    const pinWriter = new SabPinWriter(sabBuf2);
+                    const geo = (options as any)?.sabGeometry as any;
+                    if (geo && Number(geo.pinBitWords) > 0) {
+                        pinWriter.bindGeometry(Number(geo.pinBitWords), Number(geo.analogBase));
+                        (this as any).sabPinWriter = pinWriter;
+                    }
+                    const dbgOff = Number((options as any)?.sabDebugOffset);
+                    if (Number.isFinite(dbgOff) && dbgOff > 0) {
+                        (this as any).sabDebugWriter = new SabDebugWriter(sabBuf2, dbgOff);
+                    }
+                    // Serial TX/RX byte rings (§10.4): bound when the START
+                    // alloc laid them out; absent = postMessage serial path.
+                    try {
+                        const rxOff = Number((options as any)?.sabSerialRxOffset);
+                        const txOff = Number((options as any)?.sabSerialTxOffset);
+                        if (Number.isFinite(rxOff) && rxOff > 0) {
+                            (this as any).sabSerialRx = new SabSerialRing(sabBuf2, rxOff);
+                        }
+                        if (Number.isFinite(txOff) && txOff > 0) {
+                            (this as any).sabSerialTx = new SabSerialRing(sabBuf2, txOff);
+                        }
+                    } catch { /* serial rings stay null */ }
+                    // Display descriptors (§10.4, slot-oriented, never pixels).
+                    try {
+                        const ddOff = Number((options as any)?.sabDisplayDescOffset);
+                        if (Number.isFinite(ddOff) && ddOff > 0) {
+                            (this as any).sabDisplayWriter = new SabDisplayWriter(sabBuf2, ddOff);
+                        }
+                    } catch { /* display writer stays null */ }
+                    // Pin index: board pin order fixed at START (boardPinMaps).
+                    try {
+                        const maps = (options as any)?.boardPinMaps;
+                        const myMap = Array.isArray(maps)
+                            ? maps.find((m: any) => String(m?.boardId) === String((this as any).boardId))
+                              || maps[0]
+                            : null;
+                        const pins = myMap && Array.isArray(myMap.pins) ? myMap.pins : [];
+                        const idx = new Map<string, number>();
+                        pins.forEach((p: any, i: number) => { idx.set(String(p), i); });
+                        (this as any).sabPinIndex = idx;
+                    } catch { /* pin index stays empty */ }
+                }
+            } catch { /* writers stay null */ }
         }
         // Command/event ring attach (§10.4): buffers shared from START alloc.
         // DebugService owns HALT/STEP/WATCH state; runners apply movement cmds.
@@ -199,7 +257,15 @@ export class AVRRunner {
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
             if (LogicClass) {
-                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                // Pins: manifest-of-record is the emulator manifest.json; the
+                // COMPONENT_PINS table is a stale fallback only (drift audit:
+                // 25/67 openhw types differ — manifests win, see §6).
+                const logicProbe = LOGIC_REGISTRY[cDef.type];
+                const manifestPins = (logicProbe as any)?.manifest?.pins
+                    || (cDef as any)?.pins
+                    || COMPONENT_PINS[cDef.type]
+                    || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                const pins = manifestPins;
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 // Slot assignment: declared upfront on BaseComponent (shape-stable).
@@ -215,6 +281,14 @@ export class AVRRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                // WASM components (§12.4): lazy async core load, never in tick.
+                // Falls back to JS reference on failure — fire-and-forget.
+                try {
+                    const maybeWasm = (inst as any)?.ensureWasmLoaded;
+                    if (typeof maybeWasm === 'function') {
+                        Promise.resolve(maybeWasm.call(inst)).catch(() => { /* JS fallback */ });
+                    }
+                } catch { /* JS fallback */ }
             }
         });
 
@@ -522,6 +596,7 @@ export class AVRRunner {
         const byte = value & 0xff;
         const char = String.fromCharCode(byte);
         this.pulseBoardLed('1');
+        try { (this as any).sabSerialTx?.pushByte(byte); } catch { /* ignore */ }
         if (this.onByteTransmitCb) {
             this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'softserial' });
         } else {
@@ -1294,7 +1369,7 @@ export class AVRRunner {
                         }
                     });
                 } else if (inst.type.startsWith('logic-') || inst.type.includes('timer') || inst.type.includes('opamp')) {
-                    const allInsts = Array.from(this.instances.values());
+                    const allInsts: any = this.instances; // Map: O(1) findInstance (BaseComponent accepts Map|Array)
                     if (compId.includes('nd_gate')) {
                         const gateWires = this.currentWires.filter((w: any) =>
                             w.from?.startsWith(compId) || w.to?.startsWith(compId)
@@ -1363,7 +1438,7 @@ export class AVRRunner {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
                 } else if (inst.type.includes('ldr')) {
-                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, this.instances as any);
                     ['DO', 'AO'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
@@ -1374,7 +1449,7 @@ export class AVRRunner {
                 } else if (inst.type.includes('potentiometer') || inst.type.includes('pot')) {
                     if (inst.pins['SIG']) updateOopPin('SIG', inst.pins['SIG'].voltage, compId);
                 } else if (inst.type.includes('ntc')) {
-                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, this.instances as any);
                     ['OUT', 'A0', 'D0'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
@@ -1411,7 +1486,7 @@ export class AVRRunner {
             this.instances.forEach((inst, compId) => {
                 if (compId === this.boardId) return;
                 if (inst.type === 'openhw-npn-transistor') {
-                    const allInsts = Array.from(this.instances.values());
+                    const allInsts: any = this.instances; // Map: O(1) findInstance (BaseComponent accepts Map|Array)
                     inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
                     if (inst.pins['C']) {
                         updateOopPin('C', inst.pins['C'].voltage, compId);
@@ -1588,6 +1663,16 @@ export class AVRRunner {
             if (this.cmdReader && this.debugService) {
                 const changed = this.debugService.drainCommands(this.cmdReader, Number(this.cpu.cycles) || 0);
                 if (changed) this.applyRingMovementCommands();
+                // Serial RX ring (§10.4): bytes the UI pushed ride the ring;
+                // drain into the UART buffer (postMessage SERIAL_INPUT stays
+                // as fallback/overflow path).
+                try {
+                    const rx = (this as any).sabSerialRx;
+                    if (rx && typeof rx.drain === "function") {
+                        const bytes = rx.drain(256);
+                        for (const b of bytes) this.serialRxByte(b & 0xff);
+                    }
+                } catch { /* RX drain never breaks the tick */ }
                 if (this.debugService.isHalted()) {
                     const budget = this.debugService.takeStepBudget(0);
                     if (budget <= 0) {
@@ -1618,6 +1703,21 @@ export class AVRRunner {
 
             while (this.cpu.cycles < targetObj && this.running) {
                 const nextChunkTarget = Math.min(targetObj, this.cpu.cycles + componentUpdateThreshold);
+                // PC breakpoint check (§10.7): chunk boundary only — never
+                // per-instruction. HALT freezes via the service; the loop
+                // below observes isHalted() through the normal drain path.
+                try {
+                    const svc = this.debugService as any;
+                    if (svc && typeof svc.checkPcBreakpoint === 'function') {
+                        const pc = Number((this.cpu as any)?.pc) >>> 0;
+                        if (svc.checkPcBreakpoint(pc, Number(this.cpu.cycles) || 0)) {
+                            this.forceEmitState();
+                            this.lastTime = performance.now();
+                            setTimeout(this.runLoop, 8);
+                            return;
+                        }
+                    }
+                } catch { /* breakpoint check never breaks the tick */ }
                 
                 while (this.cpu.cycles < nextChunkTarget && this.running) {
                     avrInstruction(this.cpu);
@@ -1670,7 +1770,7 @@ export class AVRRunner {
                     if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
                         (inst as any)._simCpu._avrRunner = this;
                     }
-                    inst.update(this.cpu!.cycles, this.currentWires, instArray);
+                    inst.update(this.cpu!.cycles, this.currentWires, this.instances as any);
                     if (inst.stateChanged) {
                         anyStateChanged = true;
                         (inst as any).pendingVisualStateEmit = true;
@@ -1734,6 +1834,9 @@ export class AVRRunner {
             console.log(`  pinStates=`, JSON.stringify(this.pinStates));
         }
 
+        // v2 tick (§10.6): cycles owed derive from sim-time budget (cyclesToRun /
+        // CYCLES_PER_FRAME above), not wall catch-up — the setTimeout here is
+        // pacing only, and every command/event carries cpuCycles stamps.
         setTimeout(this.runLoop, 1);
     }
 
@@ -1915,6 +2018,18 @@ export class AVRRunner {
     private propagateBoardPin(pinId: string, isHigh: boolean) {
         const voltage = isHigh ? 5.0 : 0.0;
         const endpoints = this.getProtocolEndpointsForArduinoPin(pinId);
+        // Pin bitfield publish (§10.4): board pin order fixed at START.
+        // Aliases (D13/13) share one index when the map lists either form.
+        try {
+            const idx = (this as any).sabPinIndex as Map<string, number> | undefined;
+            const bit = idx?.get(String(pinId))
+                ?? idx?.get(String(pinId).replace(/^D/i, ""))
+                ?? idx?.get(`D${pinId}`);
+            if (typeof bit === "number") {
+                (this as any).sabPinWriter?.writeDigital(bit, !!isHigh);
+                (this as any).sabPinWriter?.writeAnalog(bit, isHigh ? 5.0 : 0.0);
+            }
+        } catch { /* pin publish never breaks propagation */ }
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst) {
@@ -2033,6 +2148,9 @@ export class AVRRunner {
                     if (Number.isFinite(sp)) (snap as any).sp = sp >>> 0;
                 }
             } catch { /* enrichment never breaks snapshot */ }
+            // Mirror into the SAB debug region (§10.7 DEBUG REGION) so the UI
+            // can poll without a postMessage round-trip. No-op when absent.
+            try { (this as any).sabDebugWriter?.write(snap); } catch { /* ignore */ }
             return snap;
         } catch { return { halted: false, cycles: 0 }; }
     }

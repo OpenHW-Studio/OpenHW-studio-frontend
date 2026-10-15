@@ -125,6 +125,9 @@ import { useHardwareUpload } from "./hooks/useHardwareUpload";
 import { useRunStop } from "./hooks/useRunStop";
 import { useRunControls } from "./hooks/useRunControls";
 import { useDebugControls } from "./hooks/useDebugControls";
+import { createAgentBackend } from "../../agent/backend.ts";
+import { createAgentBridge, isAgentBridgeEnabled } from "../../agent/bridge.ts";
+import { AgentRecorder } from "../../agent/recorder.js";
 import { useRunTimingEffects } from "./hooks/useRunTimingEffects";
 import { useTeacherKeyCapture } from "./hooks/useTeacherKeyCapture";
 import { useCanvasWheelZoom } from "./hooks/useCanvasWheelZoom";
@@ -1603,6 +1606,37 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
           const diag = sabReaderMod.getSabDiag(sab);
           if (diag) stats.lastSeq = diag.frameSeq;
+          // Serial TX ring (§10.4): worker→main bytes when bound. Strings
+          // assemble here off-tick; postMessage serial stays authoritative
+          // (overflow/dedup paths). Throttle: drain at most 256B per frame.
+          // NOTE: pushSerialRxChunkRef is declared below (useSerialIngress
+          // call site) — read it lazily via window to avoid TDZ. The START
+          // postamble mirrors the live ref object at window.__sabSerialPushRef.
+          try {
+            const txRing = (typeof window !== "undefined" ? window.__sabSerialTxRing : null) || null;
+            if (txRing && typeof txRing.drain === "function") {
+              const bytes = txRing.drain(256);
+              if (bytes && bytes.length) {
+                const text = String.fromCharCode.apply(null, bytes);
+                const pushRef = (typeof window !== "undefined" ? window.__sabSerialPushRef : null) || null;
+                if (text && pushRef && typeof pushRef.current === "function") {
+                  pushRef.current(text, "default", "sim");
+                } else if (text) {
+                  appendConsoleEntry("info", `[SAB serial] ${bytes.length}B (ingress not bound)`, "simulator");
+                }
+              }
+            }
+          } catch { /* serial poll never breaks render loop */ }
+          // Debug region poll (§10.7): surface halted/pc/cycles without a
+          // postMessage round-trip. Authoritative snapshot still flows via
+          // DEBUG_SNAPSHOT; this is the cheap per-frame mirror.
+          try {
+            if (typeof sabReaderMod.readDebugRegion === "function"
+              && typeof window !== "undefined" && window.__sabDebugOffset > 0) {
+              const dbg = sabReaderMod.readDebugRegion(sab, window.__sabDebugOffset);
+              if (dbg) window.__sabDebugMirror = dbg;
+            }
+          } catch { /* debug poll never breaks render loop */ }
         }
         // Publish every tick (even idle) — cheap object spread at rAF rate,
         // keeps __sabPollStats observable before/during/after runs.
@@ -1637,7 +1671,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // Serial ingress ref: created here so hooks/effects ABOVE the
   // useSerialIngress() call site can already receive the stable ref object.
   // The hook below fills .current; consumers only dereference at event time.
+  // Mirrored at window.__sabSerialPushRef so the rAF SAB poll (declared
+  // above) can push TX-ring bytes without a TDZ on this const.
   const pushSerialRxChunkRef = useRef(null);
+  if (typeof window !== "undefined") window.__sabSerialPushRef = pushSerialRxChunkRef;
   const handleEsp32Interaction = useCallback(() => false, []);
   const startEsp32Session = useCallback(async () => false, []);
   const stopEsp32Session = useCallback(() => {}, []);
@@ -4230,6 +4267,43 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const debugControls = useDebugControls({ workerRef, cmdWriterRef, isRunning });
   const debugControlsRef = useRef(null);
   debugControlsRef.current = debugControls;
+
+  // ── AI agent system (§11 R2) ──────────────────────────────────────────
+  // Dev-only: bridge dials the localhost relay when ?agent=1 (or the
+  // localStorage flag). Canvas/run/verify tools execute via AgentBackend
+  // on live refs; window.OpenHWAgent exposes the same impl to the panel.
+  const agentRecorderRef = useRef(null);
+  if (!agentRecorderRef.current) agentRecorderRef.current = new AgentRecorder();
+  const agentBackendRef = useRef(null);
+  const agentBridgeRef = useRef(null);
+  useEffect(() => {
+    if (!isAgentBridgeEnabled() || agentBackendRef.current) return;
+    try {
+      agentBackendRef.current = createAgentBackend({
+        componentsRef,
+        wiresRef,
+        setComponents,
+        setWires,
+        setCodeTab,
+        runUnifiedValidation: (...a) => {
+          if (!emulatorRef.current?.runUnifiedValidation) throw new Error('Emulator still loading');
+          return emulatorRef.current.runUnifiedValidation(...a);
+        },
+        ensureEmulatorRegistry,
+        workerRef,
+        isRunningRef,
+        codeRef: { get current() { return code; }, set current(v) { setCode(v); } },
+        recorder: agentRecorderRef.current,
+      });
+      agentBridgeRef.current = createAgentBridge({ backend: agentBackendRef.current });
+      agentBridgeRef.current.start();
+    } catch { /* agent bridge must never break the page */ }
+    return () => {
+      try { agentBridgeRef.current?.stop?.(); } catch { /* ignore */ }
+      agentBackendRef.current = null;
+      agentBridgeRef.current = null;
+    };
+  }, []);
   const openComponentEditor = useCallback(() => {
     try {
       navigate("/component-editor");

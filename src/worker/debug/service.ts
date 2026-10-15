@@ -234,6 +234,14 @@ export class DebugService {
     return this.watches.map((w) => ({ pin: w.pinName, expectHigh: w.expectHigh }));
   }
 
+  getPcBreakpoints(): number[] {
+    return [...this.pcBreakpoints];
+  }
+
+  clearPcBreakpoints(): void {
+    this.pcBreakpoints.clear();
+  }
+
   clearBreakpoints(): void {
     this.pcBreakpoints.clear();
     this.watches = [];

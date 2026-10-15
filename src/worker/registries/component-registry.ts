@@ -463,6 +463,12 @@ export type AVRRunnerOptions = {
     evtBuffer?: SharedArrayBuffer; // worker→main event ring (sab/layout.ts)
 };
 
+/**
+ * BoardDriver (§10.9 step 2): the clean tick contract AVR / RP2040 / proxy
+ * runners implement. One shared loop shape: drain commands → CPU budget →
+ * hooks → update → physics → publish. Debug + SAB writers ride the same
+ * hooks on every driver (no per-runner special cases on the control plane).
+ */
 export type BoardRunner = {
     cpu: any;
     boardId: string;
@@ -471,6 +477,11 @@ export type BoardRunner = {
     reset?: () => void;
     pause?: () => void;
     resume?: () => void;
+    stepCycles?: (n: number) => number;
+    getDebugSnapshot?: () => any;
+    readMem?: (addr: number, len: number) => Uint8Array | null;
+    addPinWatch?: (pin: string, expectHigh?: boolean) => void;
+    removePinWatch?: (pin: string) => void;
     serialRx: (data: string) => void;
     serialRxByte: (value: number) => void;
     serialRxByteFromSource?: (value: number, source?: string) => void;

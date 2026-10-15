@@ -41,7 +41,17 @@ const SAB_H_FRAME_SEQ = 2;
 const SAB_H_NUM_COMPONENTS = 3;
 const SAB_H_TELEMETRY_HEAD = 6;
 const SAB_H_FLAGS = 7;
+const SAB_H_PIN_OFF = 8;
+const SAB_H_PIN_LEN = 9;
 const SAB_H_COMP_OFF = 10;
+// Full map (§10.4): board table (8×16 B at +64), serial rings
+// (8+4096 B ×2), debug region (24 B), display descriptors (16×16 B).
+const SAB_BOARD_MAX = 8;
+const SAB_BOARD_RECORD_B = 16;
+const SAB_SERIAL_RING_B = 4096;
+const SAB_DEBUG_BYTES = 24;
+const SAB_DISPLAY_MAX = 16;
+const SAB_DISPLAY_RECORD_B = 16;
 const SAB_SLOT_VERSION_OFF = 0;
 const SAB_SLOT_DIRTY_OFF = 4;
 const SAB_SLOT_KIND_OFF = 8;
@@ -81,6 +91,8 @@ export function getSabDiag(buffer) {
       telemetryHead: Atomics.load(u32, SAB_H_TELEMETRY_HEAD),
       flags: Atomics.load(u32, SAB_H_FLAGS),
       compOff: u32[SAB_H_COMP_OFF],
+      pinOff: u32[SAB_H_PIN_OFF],
+      pinLen: u32[SAB_H_PIN_LEN],
     };
   } catch {
     return null;
@@ -258,6 +270,129 @@ export function drainSabEvents(evtReader, maxN = 16, appendConsoleEntry) {
     // code 1 (SERIAL_BYTE): counted only — strings stay on postMessage.
   }
   return evts;
+}
+
+/**
+ * Read the pin bitfield + analog array (§10.4 full map).
+ * boardPinMaps (from START, same order as allocateStateSab) give per-board
+ * bases; with no maps the region is 0-length and this returns {}.
+ * Returns { [boardId]: { bits: Uint32Array copy, analog: number[] } } —
+ * copies only (never live views; the worker keeps writing).
+ */
+export function readPinRegion(buffer, boardPinMaps) {
+  if (!isSabUsable(buffer) || !Array.isArray(boardPinMaps) || boardPinMaps.length === 0) {
+    return {};
+  }
+  try {
+    const u32 = new Uint32Array(buffer);
+    const pinBase = u32[SAB_H_PIN_OFF] || 0;
+    const pinLen = u32[SAB_H_PIN_LEN] || 0;
+    if (!pinBase || !pinLen) return {};
+    const out = {};
+    let bitCursor = 0;
+    let analogCursor = 0;
+    for (const b of boardPinMaps.slice(0, SAB_BOARD_MAX)) {
+      const n = Array.isArray(b?.pins) ? b.pins.length : 0;
+      const words = Math.ceil(n / 32);
+      const bits = [];
+      for (let w = 0; w < words; w++) {
+        bits.push(Atomics.load(u32, (pinBase >>> 2) + bitCursor + w) >>> 0);
+      }
+      const f32 = new Float32Array(buffer, pinBase + (function () {
+        // analog base = pinBase + totalBitWords*4; recompute from maps
+        let totalBits = 0;
+        for (const bb of boardPinMaps.slice(0, SAB_BOARD_MAX)) {
+          totalBits += Math.ceil((Array.isArray(bb?.pins) ? bb.pins.length : 0) / 32);
+        }
+        return totalBits * 4;
+      })() + analogCursor * 4, n);
+      out[String(b.boardId)] = { bits, analog: Array.from(f32) };
+      bitCursor += words;
+      analogCursor += n;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Drain a serial byte ring (§10.4) at an absolute buffer offset.
+ * Returns up to maxN byte values. Strings assemble on the caller off-tick.
+ */
+export function drainSerialRing(buffer, ringOffset, maxN = 256) {
+  if (!isSabUsable(buffer) || !Number.isFinite(ringOffset) || ringOffset <= 0) {
+    return [];
+  }
+  try {
+    const u32 = new Uint32Array(buffer, ringOffset, 2);
+    let tail = Atomics.load(u32, 1);
+    const head = Atomics.load(u32, 0);
+    const n = Math.min(maxN, Math.max(0, head - tail));
+    const u8 = new Uint8Array(buffer, ringOffset + 8, SAB_SERIAL_RING_B);
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      out.push(u8[(tail % SAB_SERIAL_RING_B + SAB_SERIAL_RING_B) % SAB_SERIAL_RING_B]);
+      tail++;
+    }
+    if (out.length) Atomics.store(u32, 1, tail);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Read the debug region (§10.7 DEBUG REGION): pc/sp/cycles/breakReason/halted.
+ * Valid only while paused/halted; runners mirror snapshot() here.
+ */
+export function readDebugRegion(buffer, debugOffset) {
+  if (!isSabUsable(buffer) || !Number.isFinite(debugOffset) || debugOffset <= 0) {
+    return null;
+  }
+  try {
+    const u32 = new Uint32Array(buffer, debugOffset, 6);
+    return {
+      pc: u32[0] >>> 0,
+      sp: u32[1] >>> 0,
+      cycles: u32[2] + u32[3] * 4294967296,
+      breakReason: u32[4] >>> 0,
+      halted: u32[5] !== 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read display descriptors (§10.4, slot-oriented — never pixels).
+ * Returns [{ compSlot, width, height, vramHandle, dirtyRect }] for
+ * non-zero records (index 0 with slot 0 counts when width > 0).
+ */
+export function readDisplayDescriptors(buffer, displayDescOffset, max = SAB_DISPLAY_MAX) {
+  if (!isSabUsable(buffer) || !Number.isFinite(displayDescOffset) || displayDescOffset <= 0) {
+    return [];
+  }
+  try {
+    const out = [];
+    const n = Math.max(0, Math.min(max, SAB_DISPLAY_MAX));
+    for (let idx = 0; idx < n; idx++) {
+      const base = displayDescOffset + idx * SAB_DISPLAY_RECORD_B;
+      const u16 = new Uint16Array(buffer, base, 4);
+      const u32r = new Uint32Array(buffer, base + 8, 1);
+      if (u16[1] === 0 && u16[2] === 0) continue; // empty (no dimensions)
+      out.push({
+        compSlot: u16[0],
+        width: u16[1],
+        height: u16[2],
+        vramHandle: u16[3],
+        dirtyRect: u32r[0] >>> 0,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 export function createSabCursor() {

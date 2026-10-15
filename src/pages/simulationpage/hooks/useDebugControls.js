@@ -18,6 +18,9 @@ export function useDebugControls({ workerRef, cmdWriterRef, isRunning }) {
   const [replayDigest, setReplayDigest] = useState(null);
   const [memView, setMemView] = useState(null);
   const [stepCycles, setStepCycles] = useState(16000);
+  // PC breakpoints (§10.7): chunk-boundary checked in run loops (never
+  // per-instruction). Set mirrors service.addPcBreakpoint via DEBUG_PC_BREAK.
+  const [pcBreakpoints, setPcBreakpoints] = useState([]);
   const recordingRef = useRef(false);
   const isRecordingState = useRef(false);
 
@@ -113,6 +116,25 @@ export function useDebugControls({ workerRef, cmdWriterRef, isRunning }) {
     }
   }, [workerRef, isRunning]);
 
+  const debugAddPcBreakpoint = useCallback((pc) => {
+    const addr = Number(pc) >>> 0;
+    if (!Number.isFinite(addr)) return;
+    if (recordingRef.current) {
+      setRecordLog((prev) => [...prev, { op: "PC_BREAK", pc: addr, t: Date.now() }]);
+    }
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({ type: "DEBUG_PC_BREAK", pc: addr });
+    }
+    setPcBreakpoints((prev) => (prev.includes(addr) ? prev : [...prev, addr]));
+  }, [workerRef, isRunning]);
+
+  const debugClearPcBreakpoints = useCallback(() => {
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({ type: "DEBUG_PC_BREAK_CLEAR" });
+    }
+    setPcBreakpoints([]);
+  }, [workerRef, isRunning]);
+
   const debugReadMem = useCallback((addr, len = 16) => {
     const a = Number(addr) >>> 0;
     const n = Math.max(1, Math.min(256, Number(len) || 16));
@@ -154,6 +176,7 @@ export function useDebugControls({ workerRef, cmdWriterRef, isRunning }) {
       else if (entry.op === "RESUME") workerRef.current.postMessage({ type: "DEBUG_RESUME", replay: true });
       else if (entry.op === "STEP") workerRef.current.postMessage({ type: "DEBUG_STEP", cycles: entry.cycles || 16000, replay: true });
       else if (entry.op === "WATCH") workerRef.current.postMessage({ type: "DEBUG_WATCH", pin: entry.pin, expectHigh: entry.expectHigh, replay: true });
+      else if (entry.op === "PC_BREAK") workerRef.current.postMessage({ type: "DEBUG_PC_BREAK", pc: entry.pc, replay: true });
     }
   }, [workerRef, isRunning, recordLog]);
 
@@ -202,6 +225,7 @@ export function useDebugControls({ workerRef, cmdWriterRef, isRunning }) {
     halted,
     snapshot,
     watchPins,
+    pcBreakpoints,
     recordLog,
     replayDigest,
     memView,
@@ -213,6 +237,8 @@ export function useDebugControls({ workerRef, cmdWriterRef, isRunning }) {
     debugStep,
     debugWatchPin,
     debugUnwatchPin,
+    debugAddPcBreakpoint,
+    debugClearPcBreakpoints,
     debugReadMem,
     requestSnapshot,
     startRecording,

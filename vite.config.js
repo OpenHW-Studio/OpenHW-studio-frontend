@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import wasm from 'vite-plugin-wasm'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
@@ -25,6 +26,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      wasm(),
       react({
         exclude: [/src[\\\/]worker[\\\/].*/, /openhw-studio-emulator[\\\/].*/],
       }),
@@ -117,6 +119,7 @@ export default defineConfig(({ mode }) => {
     esbuild: {
       target: 'es2020',
     },
+    assetsInclude: ['**/*.wasm'],
     build: {
       target: 'es2020',
       minify: 'esbuild',

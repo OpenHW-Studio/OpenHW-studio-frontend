@@ -21,7 +21,7 @@ import {
     isSoftSerialSourceLabel,
 } from '../registries/component-registry.ts';
 import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions, ConnectedComponentPin } from '../registries/component-registry.ts';
-import { SabStateWriter, SabCommandReader, SabEventWriter, sabKindForType } from '../sab/layout.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, sabKindForType } from '../sab/layout.ts';
 import { DebugService } from '../debug/service.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
@@ -715,6 +715,12 @@ export class RP2040Runner implements BoardRunner {
     // offsets accepted and converted via /64 stride for compat.
     private sabOffsets: Record<string, number> = {};
     private sabWriter: SabStateWriter | null = null;
+    private sabPinWriter: SabPinWriter | null = null;
+    private sabDebugWriter: SabDebugWriter | null = null;
+    private sabSerialTx: SabSerialRing | null = null;
+    private sabSerialRx: SabSerialRing | null = null;
+    private sabDisplayWriter: SabDisplayWriter | null = null;
+    private sabPinIndex: Map<string, number> = new Map();
     private sab: SharedArrayBuffer | null = null;
     private cmdReader: SabCommandReader | null = null;
     private evtWriter: SabEventWriter | null = null;
@@ -941,6 +947,54 @@ export class RP2040Runner implements BoardRunner {
                 this.sab = sabBuf as SharedArrayBuffer;
                 this.sabWriter = new SabStateWriter(sabBuf as SharedArrayBuffer);
             } catch { this.sabWriter = null; }
+            // Full-map writers (§10.4): pin bitfield + debug region.
+            // Geometry comes from the START alloc (options.sabPinBitWords /
+            // options.sabGeometry); absent geometry = legacy alloc, writers
+            // stay null and the postMessage pins path applies.
+            try {
+                const sabBuf2 = (this as any).sab as SharedArrayBuffer | null;
+                if (sabBuf2) {
+                    const pinWriter = new SabPinWriter(sabBuf2);
+                    const geo = (options as any)?.sabGeometry as any;
+                    if (geo && Number(geo.pinBitWords) > 0) {
+                        pinWriter.bindGeometry(Number(geo.pinBitWords), Number(geo.analogBase));
+                        (this as any).sabPinWriter = pinWriter;
+                    }
+                    const dbgOff = Number((options as any)?.sabDebugOffset);
+                    if (Number.isFinite(dbgOff) && dbgOff > 0) {
+                        (this as any).sabDebugWriter = new SabDebugWriter(sabBuf2, dbgOff);
+                    }
+                    // Serial TX/RX byte rings + display descriptors (§10.4).
+                    try {
+                        const rxOff = Number((options as any)?.sabSerialRxOffset);
+                        const txOff = Number((options as any)?.sabSerialTxOffset);
+                        if (Number.isFinite(rxOff) && rxOff > 0) {
+                            (this as any).sabSerialRx = new SabSerialRing(sabBuf2, rxOff);
+                        }
+                        if (Number.isFinite(txOff) && txOff > 0) {
+                            (this as any).sabSerialTx = new SabSerialRing(sabBuf2, txOff);
+                        }
+                    } catch { /* serial rings stay null */ }
+                    try {
+                        const ddOff = Number((options as any)?.sabDisplayDescOffset);
+                        if (Number.isFinite(ddOff) && ddOff > 0) {
+                            (this as any).sabDisplayWriter = new SabDisplayWriter(sabBuf2, ddOff);
+                        }
+                    } catch { /* display writer stays null */ }
+                    // Pin index: board pin order fixed at START (boardPinMaps).
+                    try {
+                        const maps = (options as any)?.boardPinMaps;
+                        const myMap = Array.isArray(maps)
+                            ? maps.find((m: any) => String(m?.boardId) === String((this as any).boardId))
+                              || maps[0]
+                            : null;
+                        const pins = myMap && Array.isArray(myMap.pins) ? myMap.pins : [];
+                        const idx = new Map<string, number>();
+                        pins.forEach((p: any, i: number) => { idx.set(String(p), i); });
+                        (this as any).sabPinIndex = idx;
+                    } catch { /* pin index stays empty */ }
+                }
+            } catch { /* writers stay null */ }
         }
         try {
             const cmdBuf = (options as any)?.cmdBuffer as SharedArrayBuffer | undefined;
@@ -1046,7 +1100,12 @@ export class RP2040Runner implements BoardRunner {
         (componentsDef || []).forEach((cDef) => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
             if (LogicClass) {
-                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                // Pins: emulator manifest.json wins; COMPONENT_PINS is stale fallback (§6).
+                const logicProbe = LOGIC_REGISTRY[cDef.type];
+                const pins = (logicProbe as any)?.manifest?.pins
+                    || (cDef as any)?.pins
+                    || COMPONENT_PINS[cDef.type]
+                    || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 // SAB river (§12.2): slot index assignment, same contract as AVR.
@@ -1095,6 +1154,13 @@ export class RP2040Runner implements BoardRunner {
                 }
 
                 this.instances.set(cDef.id, inst);
+                // WASM components (§12.4): lazy async core load, never in tick.
+                try {
+                    const maybeWasm = (inst as any)?.ensureWasmLoaded;
+                    if (typeof maybeWasm === 'function') {
+                        Promise.resolve(maybeWasm.call(inst)).catch(() => { /* JS fallback */ });
+                    }
+                } catch { /* JS fallback */ }
                 console.log(`[RP2040Runner] Instantiated component: ${cDef.id} of type ${cDef.type}`);
             } else {
                 console.log(`[RP2040Runner] LogicClass not found for type: ${cDef.type}`);
@@ -2186,6 +2252,8 @@ export class RP2040Runner implements BoardRunner {
         this.lastSerialSource = source;
         this.lastSerialEmitAt = now;
         this.debugSerialTxBytes += 1;
+        // Serial TX ring (§10.4): bytes ride the ring when bound.
+        try { (this as any).sabSerialTx?.pushByte(byte); } catch { /* ignore */ }
         this.pulseBoardUartLed(source === 1 ? 'GP4' : 'GP0');
         const sourceLabel = source === 2 ? 'usb' : source === 1 ? 'uart1' : 'uart0';
 
@@ -3325,7 +3393,7 @@ export class RP2040Runner implements BoardRunner {
                     seedFrom(`${compId}:SIG`, inst.pins['SIG'].voltage);
                 }
             } else if (inst.type.includes('ntc')) {
-                inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                inst.update(this.cpu?.cycles ?? 0, this.currentWires, this.instances as any);
                 ['OUT', 'A0', 'D0'].forEach(pin => {
                     if (inst.pins[pin] != null) {
                         seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
@@ -3382,6 +3450,15 @@ export class RP2040Runner implements BoardRunner {
             const cycles = Number((this.cpu as any)?.core?.cycles) || 0;
             (this.debugService as any)?.checkPinWatch?.(String(gpPin), !!isHigh, cycles);
         } catch { /* ignore */ }
+        // Pin bitfield publish (§10.4): GP order fixed at START.
+        try {
+            const idx = (this as any).sabPinIndex as Map<string, number> | undefined;
+            const bit = idx?.get(String(gpPin));
+            if (typeof bit === "number") {
+                (this as any).sabPinWriter?.writeDigital(bit, !!isHigh);
+                (this as any).sabPinWriter?.writeAnalog(bit, isHigh ? 3.3 : 0.0);
+            }
+        } catch { /* pin publish never breaks propagation */ }
         this.propagateBoardPinInternal(gpPin, isHigh ? 3.3 : 0.0, isHigh);
     }
 
@@ -3568,6 +3645,18 @@ export class RP2040Runner implements BoardRunner {
             if (this.cmdReader && this.debugService) {
                 const changed = this.debugService.drainCommands(this.cmdReader, Number(this.cpu.core.cycles) || 0);
                 if (changed) this.applyRingMovementCommands();
+                // Serial RX ring (§10.4): drain into the UART buffer.
+                try {
+                    const rx = (this as any).sabSerialRx;
+                    if (rx && typeof rx.drain === "function") {
+                        const bytes = rx.drain(256);
+                        for (const b of bytes) {
+                            if (typeof (this as any).serialRxByte === "function") {
+                                (this as any).serialRxByte(b & 0xff);
+                            }
+                        }
+                    }
+                } catch { /* RX drain never breaks the tick */ }
                 if (this.debugService.isHalted()) {
                     const budget = this.debugService.takeStepBudget(0);
                     if (budget <= 0) {
@@ -3666,6 +3755,23 @@ export class RP2040Runner implements BoardRunner {
 
                 // DETERMINISTIC CYCLE-TARGETED LOOP (Wokwi Pattern)
                 while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
+                    // PC breakpoint check (§10.7): chunk boundary only.
+                    // Throttle: every 1024 cycles (same bitmask as the wall
+                    // guard) so the Set lookup never touches the hot path.
+                    if ((cyclesDone & 0x3FF) === 0) {
+                        try {
+                            const svc = this.debugService as any;
+                            if (svc && typeof svc.checkPcBreakpoint === 'function') {
+                                const pc = Number((this.cpu as any)?.core?.PC) >>> 0;
+                                if (svc.checkPcBreakpoint(pc, Number((this.cpu as any)?.core?.cycles) || 0)) {
+                                    try { this.forceEmitState(); } catch { /* ignore */ }
+                                    this.lastTime = performance.now();
+                                    setTimeout(this.runLoop, 8);
+                                    return;
+                                }
+                            }
+                        } catch { /* never break the tick */ }
+                    }
                     // ── Wall-clock time budget guard ──────────────────────────────────
                     // Check every ~1024 cycles (cheap bitmask). If we've burned our
                     // wall-clock budget, break early and let the adaptive speed controller
@@ -3691,7 +3797,7 @@ export class RP2040Runner implements BoardRunner {
                                     )
                                 );
                             }
-                            inst.update(normalizedChunkCycles, this.currentWires, instArrayCached);
+                            inst.update(normalizedChunkCycles, this.currentWires, this.instances as any);
                             if (inst.stateChanged) {
                                 (inst as any).pendingVisualStateEmit = true;
                                 inst.stateChanged = false;
@@ -3836,7 +3942,7 @@ export class RP2040Runner implements BoardRunner {
                             )
                         );
                     }
-                    inst.update(normalizedUpdateCycles, this.currentWires, instArrayCached);
+                    inst.update(normalizedUpdateCycles, this.currentWires, this.instances as any);
                     if (inst.stateChanged) {
                         anyComponentStateChanged = true;
                         // Mark for visual state emit on the next snapshot cycle.
@@ -3893,7 +3999,10 @@ export class RP2040Runner implements BoardRunner {
 
         if (this.running) {
             this.emitDebugSnapshot('tick', now);
-            setTimeout(this.runLoop, 1);
+            // v2 tick (§10.6): cycles owed derive from sim-time budget (cyclesToRun /
+        // CYCLES_PER_FRAME above), not wall catch-up — the setTimeout here is
+        // pacing only, and every command/event carries cpuCycles stamps.
+        setTimeout(this.runLoop, 1);
         }
     };
 
@@ -4319,6 +4428,9 @@ export class RP2040Runner implements BoardRunner {
                     if (Number.isFinite(sp)) (snap as any).sp = sp >>> 0;
                 }
             } catch { /* enrichment never breaks snapshot */ }
+            // Mirror into the SAB debug region (§10.7 DEBUG REGION) so the UI
+            // can poll without a postMessage round-trip. No-op when absent.
+            try { (this as any).sabDebugWriter?.write(snap); } catch { /* ignore */ }
             return snap;
         } catch { return { halted: false, cycles: 0 }; }
     }

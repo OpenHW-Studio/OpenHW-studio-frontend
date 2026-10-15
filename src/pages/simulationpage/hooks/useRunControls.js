@@ -102,15 +102,21 @@ export function useRunControls({
         const baudRate = baudRateOverride || serialBaudRate;
 
         if (workerRef.current && isRunning) {
-          // Ring-first: serial bytes ride the command ring (SAB_CMD_OP_SERIAL)
-          // with a postMessage SERIAL_INPUT fallback when the ring is absent
-          // or full. Either path lands in runner.serialRx with same semantics.
+          // Ring-first (§10.4): serial RX bytes ride the SAB byte ring when
+          // bound (window.__sabSerialRx* helpers, set at START); command-ring
+          // SERIAL is the second choice; postMessage SERIAL_INPUT is the
+          // fallback when rings are absent or full. All paths land in
+          // runner.serialRx with same semantics.
           let viaRing = false;
           try {
             const w = cmdWriterRef?.current
               || (typeof window !== "undefined" ? window.__sabCmdWriter : null);
             if (w && typeof w.enqueueSerial === "function") {
               viaRing = !!w.enqueueSerial(payload, Date.now());
+            }
+            if (!viaRing && typeof window !== "undefined"
+              && typeof window.__sabSerialRxPush === "function") {
+              viaRing = !!window.__sabSerialRxPush(payload);
             }
           } catch { viaRing = false; }
           if (!viaRing) {

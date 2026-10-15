@@ -11,7 +11,7 @@
  * teacher-key duration are preserved verbatim.
  * Verify via run-start + teacher-key + neopixel-matrix checks.
  */
-import { allocateStateSab, SabCommandWriter, SabEventReader } from "../../../worker/sab/layout.ts";
+import { allocateStateSab, SabCommandWriter, SabEventReader, SabSerialRing } from "../../../worker/sab/layout.ts";
 
 export function postWorkerStartMessage(worker, args, ctx) {
   const {
@@ -72,13 +72,29 @@ export function postWorkerStartMessage(worker, args, ctx) {
 
         console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
 
-        // SAB layout v1 (§12.2): fixed 64 B slots via shared sab/layout.ts.
-        // Neopixel pixel data stays OUT (VRAM path); slots carry numerics only.
-        // Falls back to legacy byte math only if the layout module is unavailable
-        // (e.g. unit-test context without worker bundling).
-        // Synchronous alloc (layout.ts is a bundled static import — no await,
-        // so the START postamble keeps its fire-and-forget call contract).
-        const alloc = allocateStateSab(components.map((c) => c.id));
+        // SAB layout v1 (§12.2/§10.4 full map): fixed 64 B slots + board
+        // table + pin bitfield + serial rings + debug region + display
+        // descriptors, via shared sab/layout.ts. Neopixel pixel data stays
+        // OUT (VRAM path); slots carry numerics only.
+        // Board pin order is fixed here at START (per-board pin lists from
+        // COMPONENT_REGISTRY manifests); the worker partitions the pin
+        // region from the same boardPinMaps. Synchronous alloc (layout.ts is
+        // a bundled static import — no await, so the START postamble keeps
+        // its fire-and-forget call contract).
+        const boardComps = components.filter((c) =>
+          /(arduino|rp2040|pico)/i.test(String(c?.type || "")),
+        );
+        const boardList = boardComps.length > 0 ? boardComps : [];
+        const boardPinMaps = boardList.map((b, bi) => {
+          const manifestPins = COMPONENT_REGISTRY[b.type]?.manifest?.pins || [];
+          const pins = manifestPins.map((p) => String(p?.id ?? p));
+          return { boardId: String(b.id), boardIdx: bi, pins };
+        });
+        const alloc = allocateStateSab(
+          components.map((c) => c.id),
+          undefined,
+          boardPinMaps,
+        );
         stateSabRef.current = alloc.buffer;
         const componentSabOffsets = alloc.offsets;
         // Command/event rings (§10.4): shared with the worker at START.
@@ -113,6 +129,19 @@ export function postWorkerStartMessage(worker, args, ctx) {
           sabOffsets: componentSabOffsets,
           cmdBuffer,
           evtBuffer,
+          // Full-map geometry (§10.4): lets runners bind SabPinWriter /
+          // SabDebugWriter without recomputing layout. Readers (sabReader)
+          // derive the same from the header + board table.
+          sabGeometry: {
+            boardTableOffset: alloc.boardTableOffset,
+            pinBitWords: alloc.pinBitWords,
+            analogBase: alloc.analogBase,
+          },
+          sabDebugOffset: alloc.debugOffset,
+          sabSerialRxOffset: alloc.serialRxOffset,
+          sabSerialTxOffset: alloc.serialTxOffset,
+          sabDisplayDescOffset: alloc.displayDescOffset,
+          boardPinMaps,
           networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
           hex: result.hex,
           neopixels: neopixelWiring,
@@ -149,10 +178,17 @@ export function postWorkerStartMessage(worker, args, ctx) {
   // postMessage DEBUG_*/SERIAL_INPUT stay as fallback when rings are absent.
   let cmdWriter = null;
   let evtReader = null;
+  // Serial rings (§10.4): same state SAB, offsets from the START alloc.
+  // TX = worker→main (polled for monitor bytes), RX = main→worker (UI input).
+  let serialTxRing = null;
+  let serialRxRing = null;
   try {
     if (cmdBuffer) cmdWriter = new SabCommandWriter(cmdBuffer);
     if (evtBuffer) evtReader = new SabEventReader(evtBuffer);
-  } catch { cmdWriter = null; evtReader = null; }
+    const sab = stateSabRef.current;
+    if (sab && alloc.serialTxOffset > 0) serialTxRing = new SabSerialRing(sab, alloc.serialTxOffset);
+    if (sab && alloc.serialRxOffset > 0) serialRxRing = new SabSerialRing(sab, alloc.serialRxOffset);
+  } catch { cmdWriter = null; evtReader = null; serialTxRing = null; serialRxRing = null; }
   try {
     if (sabOffsetsRef) sabOffsetsRef.current = componentSabOffsets;
     if (sabCursorRef) sabCursorRef.current = null;
@@ -170,6 +206,29 @@ export function postWorkerStartMessage(worker, args, ctx) {
       window.__sabCmdWriter = cmdWriter;
       window.__sabEvtReader = evtReader;
       window.__sabTelemetryLatest = null;
+      // Full-map handles (§10.4): geometry, serial rings, display/debug
+      // offsets, board pin order — readers derive the same from the header.
+      window.__sabGeometry = {
+        boardTableOffset: alloc.boardTableOffset,
+        pinBitWords: alloc.pinBitWords,
+        analogBase: alloc.analogBase,
+      };
+      window.__sabSerialTxRing = serialTxRing;
+      window.__sabSerialRxRing = serialRxRing;
+      window.__sabSerialRxOffset = alloc.serialRxOffset;
+      window.__sabSerialTxOffset = alloc.serialTxOffset;
+      window.__sabDebugOffset = alloc.debugOffset;
+      window.__sabDisplayDescOffset = alloc.displayDescOffset;
+      window.__sabBoardPinMaps = boardPinMaps;
+      try {
+        window.__sabSerialRxPush = (text) => {
+          if (!serialRxRing) return false;
+          const s = String(text ?? "");
+          if (!s) return false;
+          for (let i = 0; i < s.length; i++) serialRxRing.pushByte(s.charCodeAt(i) & 0xff);
+          return true;
+        };
+      } catch { /* helper never breaks START */ }
     }
   } catch { /* SAB wiring must never break START */ }
   worker.postMessage(startPayload);

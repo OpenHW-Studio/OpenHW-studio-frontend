@@ -25,6 +25,11 @@
  *   PIN REGION: digital bitfield (u32 words, board pin order fixed at START)
  *     followed by analog f32 array (same order).
  *     pinCount + wordsPerBoard live in the START handshake (not in SAB).
+ *     Multi-board: BOARD TABLE (below) partitions the pin region per board;
+ *     single-board runs use board 0 covering the whole region.
+ *   BOARD TABLE: SAB_BOARD_MAX × 16 B records at boardTableOffset:
+ *     +0 u32 boardIdHash | +4 u32 pinBitBase | +8 u32 analogBase | +12 u32 pinCount
+ *     Board pin order is fixed at START (allocateStateSab boardPinMap arg).
  *   COMPONENT SLOTS: stride SAB_SLOT_STRIDE_B (64 B) each, index = sabSlot:
  *     +0  u32 version (== BaseComponent.stateVersion at write time)
  *     +4  u32 dirty (1 = changed this frame; main clears after read)
@@ -37,6 +42,19 @@
  *     +0 u16 compSlot | +2 u16 code | +4 f32 v0 | +8 f32 v1
  *     +12 u32 cyclesLo | +16 u32 cyclesHi | +20 u32 wallMs
  *     +24 u32 reserved ×2
+ *   SERIAL RINGS: two SPSC byte rings (rx/tx, SAB_SERIAL_RING_B each) after
+ *     the telemetry region: [head u32 | tail u32 | bytes]. Bytes only —
+ *     strings assemble on main off-tick. (Allocated on demand via
+ *     SabSerialRing.create(); absent = postMessage serial path.)
+ *   DEBUG REGION: SAB_DEBUG_BYTES at debugOffset (worker-written, UI read-only,
+ *     valid only while paused/halted — mirrors DebugService.snapshot()):
+ *     +0 u32 pc | +4 u32 sp | +8 u32 cyclesLo | +12 u32 cyclesHi
+ *     +16 u32 breakReason | +20 u32 halted
+ *   DISPLAY DESCRIPTORS: SAB_DISPLAY_MAX × 16 B at displayDescOffset
+ *     (slot-oriented; pixels NEVER packed here — VRAM stays in its own SABs
+ *     via routeDisplayFrames):
+ *     +0 u16 compSlot | +2 u16 width | +4 u16 height | +6 u16 vramHandle
+ *     +8 u32 dirtyRect (x|y|w|h packed) | +12 u32 reserved
  *   Display VRAM stays in its own SABs (routeDisplayFrames) — NEVER packed here.
  */
 
@@ -49,6 +67,26 @@ export const SAB_SLOT_F32 = 8; // f0..f7
 export const SAB_SLOT_I32 = 4; // i0..i3
 export const SAB_TELEMETRY_RECORD_B = 32;
 export const SAB_TELEMETRY_CAPACITY = 1024;
+
+// Board table (§10.4 multi-board partition): fixed 16 B records.
+export const SAB_BOARD_MAX = 8;
+export const SAB_BOARD_RECORD_B = 16;
+
+// Serial byte rings, SPSC per direction (§10.4): head u32 | tail u32 | bytes.
+export const SAB_SERIAL_RING_B = 4096;
+
+// Debug region (§10.7 DEBUG REGION): pc/sp/cycles/breakReason/halted.
+export const SAB_DEBUG_BYTES = 24;
+export const SAB_DEBUG_PC_OFF = 0;
+export const SAB_DEBUG_SP_OFF = 4;
+export const SAB_DEBUG_CYCLES_LO_OFF = 8;
+export const SAB_DEBUG_CYCLES_HI_OFF = 12;
+export const SAB_DEBUG_REASON_OFF = 16;
+export const SAB_DEBUG_HALTED_OFF = 20;
+
+// Display descriptors (§10.4, slot-oriented — never pixels).
+export const SAB_DISPLAY_MAX = 16;
+export const SAB_DISPLAY_RECORD_B = 16;
 
 // Header u32 word indexes (Uint32Array view over bytes 0..63).
 export const SAB_H_MAGIC = 0;
@@ -107,6 +145,20 @@ export interface SabAlloc {
     bufferSize: number;
     cmdBuffer: SharedArrayBuffer;
     evtBuffer: SharedArrayBuffer;
+    // Full-map region offsets (bytes from buffer base; 0 = absent):
+    boardTableOffset: number;
+    pinBitWords: number;
+    analogBase: number;
+    serialRxOffset: number;
+    serialTxOffset: number;
+    debugOffset: number;
+    displayDescOffset: number;
+}
+
+export interface SabBoardPinMap {
+    boardId: string;
+    boardIdx: number;
+    pins: string[]; // digital pin order; analog aliases resolved by reader
 }
 
 // --- Command ring (main→worker, MPSC, §10.4/§12.2) ---
@@ -145,13 +197,31 @@ export const SAB_EVT_CODE_SYNC_FAULT = 5;
 export const SAB_EVT_CODE_WATCH_HIT = 6;
 export const SAB_EVT_CODE_RUN_EVENT = 7;
 
-/** Allocate + zero-init the state SAB. Replaces ad-hoc 8 B math in workerStartPostamble. */
-export function allocateStateSab(componentIds: string[], telemetryCapacity = SAB_TELEMETRY_CAPACITY): SabAlloc {
+/**
+ * Allocate + zero-init the state SAB (full §10.4 map).
+ * boardPinMaps partitions the pin region per board (multi-board); omit for
+ * single-board runs (pin region stays 0-length — postMessage pins path).
+ * Serial/debug/display regions are laid out but zero-filled; writers attach
+ * on demand (absent = postMessage fallback — same rule as everything else).
+ */
+export function allocateStateSab(
+    componentIds: string[],
+    telemetryCapacity = SAB_TELEMETRY_CAPACITY,
+    boardPinMaps: SabBoardPinMap[] = [],
+): SabAlloc {
     const numComponents = componentIds.length;
-    const pinRegionLen = 0; // pin bitfield mapped in phase 2 (T5); slots first
+    // Pin region: 1 bit per digital pin (u32 words) + f32 per pin (analog).
+    let pinCount = 0;
+    for (const b of boardPinMaps) pinCount += Math.max(0, b.pins.length);
+    const pinBitWords = Math.ceil(pinCount / 32);
+    const pinRegionLen = pinBitWords * 4 + pinCount * 4;
+    const boardTableLen = SAB_BOARD_MAX * SAB_BOARD_RECORD_B;
     const compRegionLen = numComponents * SAB_SLOT_STRIDE_B;
     const telemetryRegionLen = telemetryCapacity * SAB_TELEMETRY_RECORD_B;
-    const total = SAB_HEADER_BYTES + pinRegionLen + compRegionLen + telemetryRegionLen;
+    const serialLen = (8 + SAB_SERIAL_RING_B) * 2; // rx + tx, each head+tail+bytes
+    const total = SAB_HEADER_BYTES + boardTableLen + pinRegionLen + compRegionLen
+        + telemetryRegionLen + serialLen + SAB_DEBUG_BYTES
+        + SAB_DISPLAY_MAX * SAB_DISPLAY_RECORD_B;
     const bufferSize = Math.max(4096, Math.ceil(total / 4096) * 4096);
     const buffer = new SharedArrayBuffer(bufferSize);
     const u32 = new Uint32Array(buffer);
@@ -163,19 +233,43 @@ export function allocateStateSab(componentIds: string[], telemetryCapacity = SAB
     f64[2] = 0; // simTimeMs
     u32[SAB_H_TELEMETRY_HEAD] = 0;
     u32[SAB_H_FLAGS] = SAB_FLAG_RUNNING;
-    const compOff = SAB_HEADER_BYTES + pinRegionLen;
+    const boardTableOffset = SAB_HEADER_BYTES;
+    const pinBase = boardTableOffset + boardTableLen;
+    const compOff = pinBase + pinRegionLen;
     const teleOff = compOff + compRegionLen;
-    u32[SAB_H_PIN_OFF] = SAB_HEADER_BYTES;
+    const serialRxOffset = teleOff + telemetryRegionLen;
+    const serialTxOffset = serialRxOffset + 8 + SAB_SERIAL_RING_B;
+    const debugOffset = serialTxOffset + 8 + SAB_SERIAL_RING_B;
+    const displayDescOffset = debugOffset + SAB_DEBUG_BYTES;
+    u32[SAB_H_PIN_OFF] = pinBase;
     u32[SAB_H_PIN_LEN] = pinRegionLen;
     u32[SAB_H_COMP_OFF] = compOff;
     u32[SAB_H_COMP_LEN] = compRegionLen;
     u32[SAB_H_TELEMETRY_OFF] = teleOff;
     u32[SAB_H_TELEMETRY_LEN] = telemetryRegionLen;
+    // Board table: hash boardId, record bit/analog bases per board.
+    let bitCursor = 0;
+    let analogCursor = 0;
+    const analogBase = pinBase + pinBitWords * 4;
+    boardPinMaps.slice(0, SAB_BOARD_MAX).forEach((b, bi) => {
+        const base = boardTableOffset + bi * SAB_BOARD_RECORD_B;
+        const bu32 = new Uint32Array(buffer, base, 4);
+        bu32[0] = hashPinName(`board:${b.boardId}`) >>> 0;
+        bu32[1] = bitCursor;
+        bu32[2] = analogCursor;
+        bu32[3] = b.pins.length >>> 0;
+        bitCursor += Math.ceil(b.pins.length / 32);
+        analogCursor += b.pins.length;
+    });
     const offsets: Record<string, number> = {};
     componentIds.forEach((id, i) => { offsets[id] = i; });
     const cmdBuffer = SabCommandWriter.create();
     const evtBuffer = SabEventWriter.create();
-    return { buffer, offsets, numComponents, bufferSize, cmdBuffer, evtBuffer };
+    return {
+        buffer, offsets, numComponents, bufferSize, cmdBuffer, evtBuffer,
+        boardTableOffset, pinBitWords, analogBase,
+        serialRxOffset, serialTxOffset, debugOffset, displayDescOffset,
+    };
 }
 
 export function readSabHeader(buffer: SharedArrayBuffer | ArrayBuffer) {
@@ -518,5 +612,147 @@ export class SabStateWriter {
         else flags &= ~SAB_FLAG_TELEMETRY_ON;
         Atomics.store(this.u32, SAB_H_FLAGS, flags);
         Atomics.add(this.u32, SAB_H_FRAME_SEQ, 1);
+    }
+}
+
+/**
+ * Pin-region writer (worker side). Board pin order fixed at START via
+ * allocateStateSab boardPinMaps. Digital → bitfield word, analog → f32.
+ * D/A aliases resolve once at START (same index); no strings per frame.
+ * No-op when the SAB has no pin region (single-board legacy allocs).
+ */
+export class SabPinWriter {
+    private pinBase: number;
+    private pinBitWords: number;
+    private analogBase: number;
+    constructor(readonly buffer: SharedArrayBuffer) {
+        const u32 = new Uint32Array(buffer);
+        this.pinBase = u32[SAB_H_PIN_OFF] || 0;
+        const len = u32[SAB_H_PIN_LEN] || 0;
+        // bit words unknown from header alone — derive from board table when
+        // present, else 0 (writer no-ops). Reader uses the same derivation.
+        this.pinBitWords = 0;
+        this.analogBase = this.pinBase;
+        void len;
+    }
+
+    /** Bind explicit geometry (from the SabAlloc that created the buffer). */
+    bindGeometry(pinBitWords: number, analogBase: number): void {
+        this.pinBitWords = pinBitWords >>> 0;
+        this.analogBase = analogBase >>> 0;
+    }
+
+    writeDigital(bitIndex: number, high: boolean): void {
+        if (this.pinBitWords <= 0 || bitIndex < 0) return;
+        try {
+            const u32 = new Uint32Array(this.buffer);
+            const word = (this.pinBase >>> 2) + (bitIndex >>> 5);
+            const mask = 1 << (bitIndex & 31);
+            const cur = Atomics.load(u32, word);
+            Atomics.store(u32, word, high ? (cur | mask) : (cur & ~mask));
+        } catch { /* never break sim */ }
+    }
+
+    writeAnalog(pinIndex: number, volts: number): void {
+        if (pinIndex < 0) return;
+        try {
+            const f32 = new Float32Array(this.buffer, this.analogBase + pinIndex * 4, 1);
+            f32[0] = Number(volts) || 0;
+        } catch { /* never break sim */ }
+    }
+}
+
+/**
+ * Serial byte ring, SPSC per direction (§10.4). Bytes only — the main thread
+ * assembles strings off-tick. Layout: head u32 | tail u32 | bytes[N].
+ * Overflow drops oldest (lossy hint; postMessage stays authoritative).
+ */
+export class SabSerialRing {
+    constructor(readonly buffer: SharedArrayBuffer, readonly base: number, readonly capacity = SAB_SERIAL_RING_B) {}
+
+    static create(): SharedArrayBuffer {
+        return new SharedArrayBuffer(8 + SAB_SERIAL_RING_B);
+    }
+
+    pushByte(b: number): boolean {
+        try {
+            const u32 = new Uint32Array(this.buffer, this.base, 2);
+            const u8 = new Uint8Array(this.buffer, this.base + 8, this.capacity);
+            const head = Atomics.load(u32, 0);
+            const tail = Atomics.load(u32, 1);
+            if (head - tail >= this.capacity) {
+                Atomics.store(u32, 1, tail + 1); // drop oldest
+            }
+            u8[head % this.capacity] = b & 0xff;
+            Atomics.store(u32, 0, head + 1);
+            return true;
+        } catch { return false; }
+    }
+
+    drain(maxN = 256): number[] {
+        const out: number[] = [];
+        try {
+            const u32 = new Uint32Array(this.buffer, this.base, 2);
+            const u8 = new Uint8Array(this.buffer, this.base + 8, this.capacity);
+            let tail = Atomics.load(u32, 1);
+            const head = Atomics.load(u32, 0);
+            const n = Math.min(maxN, head - tail);
+            for (let k = 0; k < n; k++) {
+                out.push(u8[tail % this.capacity]);
+                tail++;
+            }
+            if (out.length) Atomics.store(u32, 1, tail);
+        } catch { /* ignore */ }
+        return out;
+    }
+
+    pending(): number {
+        try {
+            const u32 = new Uint32Array(this.buffer, this.base, 2);
+            return Atomics.load(u32, 0) - Atomics.load(u32, 1);
+        } catch { return 0; }
+    }
+}
+
+/**
+ * Debug region writer (worker side, §10.7 DEBUG REGION). Filled from
+ * DebugService.snapshot() while paused/halted; UI polls read-only.
+ */
+export class SabDebugWriter {
+    constructor(readonly buffer: SharedArrayBuffer, readonly base: number) {}
+
+    write(snap: { pc?: number; sp?: number; cycles?: number; breakReason?: number; halted?: boolean }): void {
+        try {
+            const u32 = new Uint32Array(this.buffer, this.base, 6);
+            const cycles = Number(snap.cycles) || 0;
+            u32[SAB_DEBUG_PC_OFF >>> 2] = Number(snap.pc) >>> 0 || 0;
+            u32[SAB_DEBUG_SP_OFF >>> 2] = Number(snap.sp) >>> 0 || 0;
+            u32[SAB_DEBUG_CYCLES_LO_OFF >>> 2] = cycles >>> 0;
+            u32[SAB_DEBUG_CYCLES_HI_OFF >>> 2] = Math.floor(cycles / 4294967296) >>> 0;
+            u32[SAB_DEBUG_REASON_OFF >>> 2] = Number(snap.breakReason) >>> 0 || 0;
+            u32[SAB_DEBUG_HALTED_OFF >>> 2] = snap.halted ? 1 : 0;
+        } catch { /* never break sim */ }
+    }
+}
+
+/**
+ * Display descriptor writer (§10.4 — slot-oriented, never pixels).
+ * Pixels stay in VRAM SABs via routeDisplayFrames; this records which slot
+ * changed, its dimensions, VRAM handle index, and packed dirty rect.
+ */
+export class SabDisplayWriter {
+    constructor(readonly buffer: SharedArrayBuffer, readonly base: number, readonly max = SAB_DISPLAY_MAX) {}
+
+    write(idx: number, compSlot: number, width: number, height: number, vramHandle: number, dirtyRect = 0): void {
+        if (idx < 0 || idx >= this.max) return;
+        try {
+            const base = this.base + idx * SAB_DISPLAY_RECORD_B;
+            const u16 = new Uint16Array(this.buffer, base, 4);
+            u16[0] = compSlot;
+            u16[1] = width;
+            u16[2] = height;
+            u16[3] = vramHandle;
+            new Uint32Array(this.buffer, base + 8, 2)[0] = dirtyRect >>> 0;
+        } catch { /* never break sim */ }
     }
 }
