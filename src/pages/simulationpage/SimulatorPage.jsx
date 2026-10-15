@@ -31,8 +31,10 @@ import { uploadClassroomFiles } from '../../components/teacher/class-detail/uplo
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
-import html2canvas from 'html2canvas'
-import JSZip from 'jszip';
+// Perf (bundle-split): html2canvas + jszip are NOT statically imported here.
+// They load on demand via getHtml2canvas()/getJSZip() in utils/exportUtils.js
+// (PNG export, project save/load, Wokwi ZIP import). The SimulatorPage chunk
+// previously dragged both (~150KB) into the initial simulator download.
 import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
 
 // Modular Imports
@@ -1048,10 +1050,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [plotterTimeDiv, setPlotterTimeDiv] = useState(1000); // ms per division (not used as divisions yet, but as total window size)
   // Perf: plotter visibility gate — plot ingest + canvas rAF loop skip all work
   // while the user is on the monitor tab (or the panel is closed).
+  // NOTE: plain value (not ref) — worker.onmessage is installed per-Run and
+  // closes over the render's values; the ingest path reads the REFS below so
+  // late channel subscriptions still take effect mid-run.
   const isPlotterVisible = codeTab === "serial" && serialViewMode === "plotter" && isPanelOpen;
+  const plotterPausedRef = useRef(false);
+  plotterPausedRef.current = plotterPaused;
+  const isPlotterVisibleRef = useRef(false);
+  isPlotterVisibleRef.current = isPlotterVisible;
 
   // Perf: keep the subscribed serial-key set in sync with channel selection so
   // ingest knows which serialVars to materialize (pin channels need no keys).
+  // Keys are plain labels (ingest matches against plotter labels, not board).
   useEffect(() => {
     const next = new Set();
     for (const rawChan of selectedPlotPins) {
@@ -1059,7 +1069,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       if (!chan?.pinId) continue;
       const isAnalog = typeof chan.pinId === "string" && chan.pinId.startsWith("A");
       const isLogic = !Number.isNaN(parseInt(chan.pinId));
-      if (!isAnalog && !isLogic) next.add(`${chan.boardId}:${chan.pinId}`);
+      if (!isAnalog && !isLogic) next.add(chan.pinId);
     }
     subscribedSerialKeysRef.current = next;
   }, [selectedPlotPins]);
@@ -3869,13 +3879,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           renderPinsByBoardRef,
           renderAnalogByBoardRef,
           livePinStatesRef,
-          plotterPaused,
+          plotterPaused: plotterPausedRef.current,
           latestParsedSerialRef,
           serialPlotLabelsRef,
           plotDataRef,
           plotBoundsRef,
           subscribedSerialKeysRef,
-          isPlotterVisible,
+          isPlotterVisible: isPlotterVisibleRef.current,
           renderNeopixelsByBoardRef,
           applyLiveNeopixelData,
           runComponentUpdateCountsRef,

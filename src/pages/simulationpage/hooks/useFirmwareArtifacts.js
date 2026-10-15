@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { buildProjectPayload } from "../projectUtils";
 import { arrayBufferToBase64 } from "../utils/simulatorUtils";
+import { fileExt } from "../../../utils/projectCompilerUtils";
+import { UF2_PAYLOAD_PREFIX } from "../constants/simulatorConstants";
 
 /**
  * Firmware/download artifact domain, extracted verbatim from

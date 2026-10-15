@@ -11,6 +11,7 @@ import {
   resolveComponentAttrString,
   boardCompToDisplayName,
 } from "./hardwareUtils";
+import { fileExt } from "../../../utils/projectCompilerUtils";
 import { toBoardRelativePath } from "../projectUtils";
 import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
 import { compileCode } from "../../../services/simulatorService.js";

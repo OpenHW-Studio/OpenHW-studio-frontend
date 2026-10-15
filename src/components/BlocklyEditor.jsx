@@ -10,7 +10,8 @@
  *  - 6 categories: Basic · Control · Output · Math · Input · Variables
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import html2canvas from 'html2canvas'
+// Perf (bundle-split): html2canvas only needed for the "export workspace PNG"
+// button — load on demand instead of bloating the Blockly chunk.
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -3165,6 +3166,8 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
     if (!workspaceRef.current || !window.Blockly || !wsContainerRef.current) return
     const ws = workspaceRef.current
     const B = window.Blockly
+    const { getHtml2canvas } = await import('../pages/simulationpage/utils/exportUtils.js')
+    const html2canvas = await getHtml2canvas()
 
     try {
       // 1. Hide elements that shouldn't be in the PNG

@@ -1,11 +1,10 @@
 import { useCallback } from "react";
-import JSZip from "jszip";
 import React from "react";
 import { submitCustomComponent } from "../../../services/simulatorService.js";
 import {
   enqueueComponent,
 } from "../../../services/offlineCache.js";
-import { getBabel } from "../utils/exportUtils";
+import { getBabel, getJSZip } from "../utils/exportUtils";
 import { resolveUiExport } from "../utils/simulatorUtils";
 import { assertSafeDynamicModule } from "../utils/dynamicModuleGuard";
 import { GROUP_MAPPING } from "../constants/simulatorConstants";
@@ -35,6 +34,7 @@ export function useComponentZipUpload({ appendConsoleEntry, setCustomCatalogCoun
         if (!file) return;
         appendConsoleEntry("info", `ZIP upload started: ${file.name}`, "zip");
         try {
+          const JSZip = await getJSZip();
           const zip = await JSZip.loadAsync(file);
           let manifestStr = null,
             uiStr = null,

@@ -1,6 +1,7 @@
-import { normalizeBoardKind, boardCompToDisplayName } from "./hardwareUtils";
+import { normalizeBoardKind, boardCompToDisplayName, boardKindToDisplayName } from "./hardwareUtils";
 import { getCachedHex, setCachedHex } from "../../../services/offlineCache.js";
 import { compileCode } from "../../../services/simulatorService.js";
+import { BOARD_FQBN } from "../constants/simulatorConstants";
 
 /**
  * No-board fallback compile domain, extracted verbatim from SimulatorPage.jsx

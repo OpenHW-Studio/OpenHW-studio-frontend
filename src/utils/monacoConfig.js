@@ -1,16 +1,24 @@
 import { loader } from '@monaco-editor/react';
 
+let configuredPromise = null;
+
 /**
  * Configure Monaco Editor to use local workers and a custom theme
  * that matches the OpenHW Studio aesthetic.
+ *
+ * Perf (bundle-split): idempotent + lazy. main.jsx no longer calls this at
+ * boot (that pulled the ~900KB editor core onto every page). Call
+ * ensureMonacoConfigured() instead — first call configures, later calls
+ * reuse the same promise.
  */
 export const configureMonaco = () => {
+  if (configuredPromise) return configuredPromise;
   loader.config({
     // You can specify a CDN here if you want to avoid bundling workers,
     // but for stability we'll let @monaco-editor/react handle it.
   });
 
-  loader.init().then((monaco) => {
+  configuredPromise = loader.init().then((monaco) => {
     // Define a custom theme that matches our CSS variables
     monaco.editor.defineTheme('openhw-dark', {
       base: 'vs-dark',
@@ -59,5 +67,13 @@ export const configureMonaco = () => {
         'editorIndentGuide.activeBackground': '#0284c7',
       },
     });
+    return monaco;
+  }).catch((err) => {
+    // Allow retry on failure (e.g. offline CDN worker fetch).
+    configuredPromise = null;
+    throw err;
   });
+  return configuredPromise;
 };
+
+export const ensureMonacoConfigured = () => configureMonaco();

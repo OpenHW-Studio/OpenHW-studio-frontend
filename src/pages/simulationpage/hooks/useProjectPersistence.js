@@ -1,5 +1,7 @@
 import { useCallback } from "react";
-import JSZip from "jszip";
+// Perf (bundle-split): jszip loads on demand via getJSZip (backup/restore,
+// Wokwi import are user-gated actions, never needed at initial paint).
+import { getJSZip } from "../utils/exportUtils";
 import {
   saveProject,
   deleteProject,
@@ -227,6 +229,7 @@ export function useProjectPersistence({
 
     // ─── Backup / Restore ──────────────────────────────────────────────────────
     const handleBackupWorkflow = async () => {
+      const JSZip = await getJSZip();
       const zip = new JSZip();
 
       // 1. Generate full project payload (workflow.json)
@@ -300,6 +303,7 @@ export function useProjectPersistence({
     const handleRestoreWorkflow = async (file) => {
       if (!file) return;
       try {
+        const JSZip = await getJSZip();
         const zip = await JSZip.loadAsync(file);
         const wf = zip.file("workflow.json");
         if (!wf) {
