@@ -300,6 +300,19 @@ describe('whole-registry component sweep (headless harness)', () => {
           } catch { /* optional */ }
         }
 
+        // ADXL345: wake (POWER_CTL) then DEVID read over the I2C hooks.
+        if (/adxl345/i.test(type) && typeof inst.onI2CReadByte === 'function') {
+          try {
+            inst.onI2CStart(0x53, false);
+            inst.onI2CByte(0x53, 0x2d); inst.onI2CByte(0x53, 0x08);
+            try { inst.onI2CStop?.(); } catch { /* optional */ }
+            inst.onI2CStart(0x53, false);
+            inst.onI2CByte(0x53, 0x00);
+            inst.onI2CStart(0x53, true);
+            inst._adxlDevid = inst.onI2CReadByte();
+          } catch { /* optional */ }
+        }
+
         // 5W speaker: tone path synthesizes a playable chunk (buzzer
         // semantics over the chunk pipeline — no I2S source needed).
         if (/5w-speaker/i.test(type) && typeof inst.onPWMSignal === 'function') {
@@ -377,6 +390,8 @@ describe('whole-registry component sweep (headless harness)', () => {
             if (Number(st1.storageReg) === 0xff) tier = 'content';
           } else if (/hx711/i.test(type)) {
             if (Number(st1.rawValue) === 1050) tier = 'content';
+          } else if (/adxl345/i.test(type)) {
+            if (Number(inst._adxlDevid) === 0xe5) tier = 'content';
           } else if (/nlsf595/i.test(type)) {
             if (Number(st1.r) === 255 || Number(st1.g) === 255 || Number(st1.b) === 255) tier = 'content';
           } else if (/5w-speaker/i.test(type)) {

@@ -866,6 +866,16 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 : (typeof (this as any).sampleGpioOut === 'function'
                     ? (pinId: string) => { try { return (this as any).sampleGpioOut(pinId); } catch { return null; } }
                     : null);
+        // Non-consuming peek for the INPUT half below: probing a pin to
+        // decide input injection must not consume change dedup owned by
+        // the sampler (observed starving retro GPIO output publishing).
+        // Engines without peek keep the legacy shared-sampler behavior.
+        const peeker: ((pinId: string) => { level: number; driving: boolean } | null) | null =
+            typeof (this.engine as any)?.peekGpioOut === 'function'
+                ? (pinId: string) => { try { return (this.engine as any).peekGpioOut!(pinId); } catch { return null; } }
+                : (typeof (this as any).peekGpioOut === 'function'
+                    ? (pinId: string) => { try { return (this as any).peekGpioOut(pinId); } catch { return null; } }
+                    : sampler);
         if (!sampler && typeof this.engine.setGpioInput !== 'function') return;
         // INPUT half: external components driving nets the board reads.
         // Skipped per-pin when the engine drives that pin (output wins).
@@ -891,8 +901,8 @@ export abstract class ArmRunnerBase implements BoardRunner {
                             const [bId, bPin] = node.split(':');
                             if (bId !== this.boardId || !bPin) continue;
                             try {
-                                if (sampler) {
-                                    const s = sampler(bPin);
+                                if (peeker) {
+                                    const s = peeker(bPin);
                                     if (s && s.driving) break; // engine drives: output wins
                                 }
                             } catch { /* sampler failure never blocks input */ }

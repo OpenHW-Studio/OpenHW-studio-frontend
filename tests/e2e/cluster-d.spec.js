@@ -211,6 +211,10 @@ test.describe('Cluster D (IMU, baro, RTC, shift-RGB, charger, NTC, HX711, radios
     console.log('NRF serial:', JSON.stringify(serial.slice(0, 300)));
     expect(serial).toContain('NRF_TX');
     expect(serial).toContain('NRF_RX:DEADBEEF');
+    // WASM proof: the pair ran on the Rust protocol core, not the fallback.
+    const nrfCore = ((verdict.liveOop || {}).nrfB || {}).core;
+    console.log('NRF core:', nrfCore);
+    expect(nrfCore).toBe('wasm');
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });
@@ -247,6 +251,10 @@ test.describe('Cluster D (IMU, baro, RTC, shift-RGB, charger, NTC, HX711, radios
     console.log('CC serial:', JSON.stringify(serial.slice(0, 300)));
     expect(serial).toContain('CC_TX');
     expect(serial).toContain('CC_RX:CAFE');
+    // WASM proof: the pair ran on the Rust protocol core, not the fallback.
+    const ccCore = ((verdict.liveOop || {}).ccB || {}).core;
+    console.log('CC core:', ccCore);
+    expect(ccCore).toBe('wasm');
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });

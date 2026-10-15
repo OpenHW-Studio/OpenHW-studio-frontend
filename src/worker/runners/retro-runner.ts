@@ -328,6 +328,11 @@ export class RetroRunner extends ArmRunnerBase {
             sampleGpioOut(pinId: string): { level: number; driving: boolean } | null {
                 try { return self.sampleGpioOut(pinId); } catch { return null; }
             },
+            // Non-consuming peek for the input half's output-wins check
+            // (observing must not consume the sampler edge dedup).
+            peekGpioOut(pinId: string): { level: number; driving: boolean } | null {
+                try { return self.peekGpioOut(pinId); } catch { return null; }
+            },
             readAnalog(_ref: string): number {
                 return NaN; // ADC inject is adc_set (volts) — no read path.
             },
@@ -472,6 +477,33 @@ export class RetroRunner extends ArmRunnerBase {
      * Console pins L0 (TX drain) / L1 (RX inject) never drive.
      */
     public sampleGpioOut(pinId: string): { level: number; driving: boolean } | null {
+        // Change-reporting sampler for the OUTPUT half: reports driving
+        // only on level transitions (per-pin edge dedup).
+        const s = this.gpioOutLevel(pinId);
+        if (!s) return null;
+        if (!s.outputMode) return { level: 0, driving: false };
+        const key = `__retro_p${s.port}_${s.bit}`;
+        const last = (this as any)[key];
+        if (last === s.high) return { level: s.high ? 1 : 0, driving: false };
+        (this as any)[key] = s.high;
+        return { level: s.high ? 1 : 0, driving: true };
+    }
+
+    /**
+     * Non-consuming GPIO peek for the INPUT half's output-wins check.
+     * Observing must not consume the edge dedup above: probing the pin to
+     * decide input injection used to mark it "seen", starving the OUTPUT
+     * half forever (observed: retro LED pins sampled HIGH but never
+     * published). Peek reports the live direction-gated level instead.
+     */
+    public peekGpioOut(pinId: string): { level: number; driving: boolean } | null {
+        const s = this.gpioOutLevel(pinId);
+        if (!s) return null;
+        return { level: s.high ? 1 : 0, driving: s.outputMode };
+    }
+
+    /** Shared direction-gated port read (no dedup side effects). */
+    private gpioOutLevel(pinId: string): { port: number; bit: number; high: boolean; outputMode: boolean } | null {
         try {
             const bit = this.gpioBit(pinId);
             if (bit < 0 || !this.emu) return null;
@@ -496,15 +528,10 @@ export class RetroRunner extends ArmRunnerBase {
                     if (typeof latch === 'number') outputMode = !((latch >> bit) & 1);
                 }
             } catch { /* default: driven */ }
-            if (!outputMode) return { level: 0, driving: false };
+            if (!outputMode) return { port, bit, high: false, outputMode: false };
             const val = this.readGpioPort(port);
             if (typeof val !== 'number') return null;
-            const high = !!((val >> bit) & 1);
-            const key = `__retro_p${port}_${bit}`;
-            const last = (this as any)[key];
-            if (last === high) return { level: high ? 1 : 0, driving: false };
-            (this as any)[key] = high;
-            return { level: high ? 1 : 0, driving: true };
+            return { port, bit, high: !!((val >> bit) & 1), outputMode: true };
         } catch { return null; }
     }
     private pollPorts(): void {
