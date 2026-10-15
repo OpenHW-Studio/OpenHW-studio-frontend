@@ -126,9 +126,12 @@ async function runBarrierLoop(): Promise<void> {
     for (;;) {
         if (barrierStopped || !runner) return;
         try {
-            const next = barrierTryStep(cells, barrierAckIdx, last, (seq) => {
+            // Gap-coalescing catch-up: a lagging board covers the whole gap
+            // in one capped call (sim-time-exact, converges without anyone
+            // waiting) instead of one quantum per tick.
+            const next = barrierTryStep(cells, barrierAckIdx, last, barrierQuantumMs, (seq, simMs) => {
                 void seq;
-                try { (runner as any)?.stepQuantum?.(barrierQuantumMs); } catch { /* bad quantum never breaks the loop */ }
+                try { (runner as any)?.stepQuantum?.(Math.max(0.5, Number(simMs) || barrierQuantumMs)); } catch { /* bad quantum never breaks the loop */ }
                 // Transport RX drain per quantum (parent-routed inter-board
                 // bytes + UI input ride the ring; SERIAL_RX posts are the
                 // fallback for unbound boards).
@@ -283,7 +286,8 @@ self.onmessage = async (e: MessageEvent) => {
     if (data.type === 'BOARD_STEP') {
         if (barrierCells) return;
         const seq = Math.max(0, Number(data.seq) || 0);
-        try { (runner as any)?.stepQuantum?.(Number(data.quantumMs) || 8); } catch { /* ignore */ }
+        const q = Math.max(0.5, Number(data.quantumMs) || 8);
+        try { (runner as any)?.stepQuantum?.(q); } catch { /* ignore */ }
         drainUartRxRing();
         post({ type: 'step-done', boardId, seq });
         return;

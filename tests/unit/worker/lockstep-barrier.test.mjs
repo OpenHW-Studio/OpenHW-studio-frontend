@@ -28,15 +28,40 @@ describe('lockstep SAB-Atomics barrier (Phase B)', () => {
     barrierPostStep(b.cells, 1);
     assert.equal(b.cells[0], 1);
     // Advanced (0 → 1): steps once, acks, returns the new sequence.
-    assert.equal(barrierTryStep(b.cells, barrierAckIdx(0), 0, () => stepped.push('x')), 1);
-    assert.deepEqual(stepped, ['x']);
+    assert.equal(barrierTryStep(b.cells, barrierAckIdx(0), 0, 8, (seq, ms) => stepped.push([seq, ms])), 1);
+    assert.deepEqual(stepped, [[1, 8]]);
     assert.equal(b.cells[barrierAckIdx(0)], 1);
     // Same sequence again: no double-step.
     assert.equal(
-      barrierTryStep(b.cells, barrierAckIdx(0), 1, () => stepped.push('x')),
+      barrierTryStep(b.cells, barrierAckIdx(0), 1, 8, (seq, ms) => stepped.push([seq, ms])),
       1,
     );
-    assert.deepEqual(stepped, ['x']);
+    assert.deepEqual(stepped, [[1, 8]]);
+  });
+
+  test('gap coalesces into one call covering the whole gap', () => {
+    const b = createBarrier(1);
+    const stepped = [];
+    barrierPostStep(b.cells, 5);
+    // Last acked 2, posted 5 → one step(5, 3×8ms), ack 5.
+    assert.equal(barrierTryStep(b.cells, barrierAckIdx(0), 2, 8, (seq, ms) => stepped.push([seq, ms])), 5);
+    assert.deepEqual(stepped, [[5, 24]]);
+    assert.equal(b.cells[barrierAckIdx(0)], 5);
+  });
+
+  test('huge gaps cap per-step advance and converge without losing sim-time', () => {
+    const b = createBarrier(1);
+    const stepped = [];
+    barrierPostStep(b.cells, 100);
+    // Gap 100 → capped at 4 quanta: step(4, 32ms), ack 4 (NOT 100 —
+    // acking un-advanced time would silently drop sim-time).
+    assert.equal(barrierTryStep(b.cells, barrierAckIdx(0), 0, 8, (seq, ms) => stepped.push([seq, ms])), 4);
+    assert.deepEqual(stepped, [[4, 32]]);
+    assert.equal(b.cells[barrierAckIdx(0)], 4);
+    // Next poll: gap 96 → step(8, 32ms), ack 8. Converges 4/tick.
+    assert.equal(barrierTryStep(b.cells, barrierAckIdx(0), 4, 8, (seq, ms) => stepped.push([seq, ms])), 8);
+    assert.deepEqual(stepped, [[4, 32], [8, 32]]);
+    assert.equal(b.cells[barrierAckIdx(0)], 8);
   });
 
   test('collect returns observed acks without blocking when already acked', () => {

@@ -1701,7 +1701,13 @@ const coreMessageHandler = async (e: MessageEvent) => {
                             cells.push(barrierAckIdx(bi));
                         }
                         if (cells.length > 0) {
-                            const acks = barrierCollectAcks(lockstepBarrier.cells, cells, lockstepSeq, LOCKSTEP_ACK_TIMEOUT_MS);
+                            // Non-blocking collect (timeout 0 = observe only):
+                            // the tick never stretches waiting for stragglers
+                            // — fire-and-forget pacing, same as the proven
+                            // postMessage era (millis held exactly there).
+                            // ACKs land within a quantum via notify; the skew
+                            // check below is the backstop if one ever lags.
+                            const acks = barrierCollectAcks(lockstepBarrier.cells, cells, lockstepSeq, 0);
                             for (let i = 0; i < ackIdxs.length; i++) {
                                 boardStepAck.set(ackIdxs[i], acks[i]);
                             }

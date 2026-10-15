@@ -88,15 +88,26 @@ export function barrierCollectAcks(
 
 /**
  * Worker: non-blocking single poll. If the step cell advanced past
- * `lastSeq`, runs `step(seq)` then ACKs the new sequence. Returns the new
- * last-seen sequence (unchanged when idle). The blocking wait-loop lives in
- * board.worker; this unit stays pure and fully headless-testable.
+ * `lastSeq`, runs ONE catch-up step covering the whole gap (capped) and
+ * ACKs only what it actually advanced — the remainder converges on later
+ * ticks. Returns the new last-acked sequence (unchanged when idle). The
+ * blocking wait-loop lives in board.worker; this unit stays pure and fully
+ * headless-testable.
+ *
+ * Why coalesce: a board that falls `gap` quanta behind (tab jank, one slow
+ * WASM burst) would otherwise need `gap` ticks to catch up while the skew
+ * watchdog glares. One `gap × quantumMs` call advances (near-)identical
+ * sim-time — AVR chunks work internally by 2ms sim, baud budgets and cycle
+ * counters scale linearly — at a fraction of the per-call overhead. The cap
+ * keeps any single step bounded so catch-up itself can't wedge the thread.
  */
+export const BARRIER_MAX_CATCHUP_QUANTA = 4;
 export function barrierTryStep(
     cells: Int32Array,
     ackIdx: number,
     lastSeq: number,
-    step: (seq: number) => void,
+    quantumMs: number,
+    step: (seq: number, simMs: number) => void,
 ): number {
     let cur = lastSeq;
     try {
@@ -104,15 +115,19 @@ export function barrierTryStep(
     } catch {
         return lastSeq;
     }
-    if (cur === lastSeq) return lastSeq;
+    const gap = cur - lastSeq;
+    if (gap <= 0) return lastSeq;
+    const n = Math.min(gap, BARRIER_MAX_CATCHUP_QUANTA);
+    const q = Math.max(0.5, Number(quantumMs) || 8);
+    const ack = lastSeq + n;
     try {
-        step(cur);
+        step(ack, n * q);
     } catch { /* a bad quantum never breaks the barrier loop */ }
     try {
-        Atomics.store(cells, ackIdx, cur);
+        Atomics.store(cells, ackIdx, ack);
         Atomics.notify(cells, ackIdx, 1);
     } catch { /* ack store never breaks the loop */ }
-    return cur;
+    return ack;
 }
 
 /** Skew across boards: how far the slowest ACK lags the current sequence. */
