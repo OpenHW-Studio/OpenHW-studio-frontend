@@ -231,7 +231,15 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 } catch { /* discovery never breaks boot */ }
                 const ext = (withAssets.ext_devices && typeof withAssets.ext_devices === 'object')
                     ? withAssets.ext_devices : {};
-                if (!ext.spi_sd) ext.spi_sd = [{ peripheral: 'SPI1', blocks: 8, cs: sdCs || 'PA4' }];
+                if (!ext.spi_sd) ext.spi_sd = [{ peripheral: 'SPI1', blocks: 8192, cs: sdCs || 'PA4' }];
+                // FS image seed (prebuilt FAT16, HELLO.TXT): turns the
+                // block device into a mountable volume for FS-level cells.
+                try {
+                    const img = (this as any).sdImageBytes;
+                    if (img && img.length > 0 && (ext.spi_sd as any[])[0]) {
+                        (ext.spi_sd as any[])[0].data = img;
+                    }
+                } catch { /* seed never breaks boot */ }
                 withAssets.ext_devices = ext;
                 // Wanted (not yet confirmed): loadFirmware confirms the
                 // export exists and flips sdModelLive; onByte skips the
@@ -435,6 +443,24 @@ export class Stm32f4Runner extends ArmRunnerBase {
                 };
                 if (svdXml) withAssets.svdXml = svdXml;
                 if (wasmBytes) withAssets.wasmInit = wasmBytes;
+                // SD FAT image: fetch the prebuilt FAT16 image when an SD
+                // card is on the bus (buildBusSpecs attaches spi_sd with
+                // cfg.data). Read-only FS cell asserts the preset file.
+                try {
+                    let wantSd = false;
+                    try {
+                        for (const inst of self.instances.values()) {
+                            const t = String((inst as any)?.type || '').toLowerCase();
+                            if (t === 'openhw-sd-card' || t.includes('sd_card') || t.includes('-sd')) { wantSd = true; break; }
+                        }
+                    } catch { /* ignore */ }
+                    if (wantSd) {
+                        const r = await fetch('/firmware/sd/fat16.img').catch(() => null);
+                        if (r && r.ok) {
+                            (self as any).sdImageBytes = new Uint8Array(await r.arrayBuffer());
+                        }
+                    }
+                } catch { /* sd image never breaks boot */ }
                 // I2C/SPI device specs (runner-owned bridges via
                 // bus-bridge.ts, AVR-adapter pattern). One spec per owned
                 // slave address on the default bus (Wire=I2C1,

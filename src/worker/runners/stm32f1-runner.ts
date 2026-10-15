@@ -119,6 +119,39 @@ export class Stm32f1Runner extends ArmRunnerBase {
     private spiBridge: SPIBridge | null = null;
     private spiLastMs = 0;
 
+    // SoftSerial TX observer — PB7 @ 9600 baud (documented convention, shared
+    // with tests/e2e/stm32-softserial.spec.js whose firmware bit-bangs
+    // SoftwareSerial soft(PB6, PB7): RX=PB6, TX=PB7). Mirrors the AVRRunner
+    // edge decoder (observeSoftSerialTx/processSoftSerialDecode/
+    // emitSoftSerialByte/getSoftSerialBitCycles) with one adaptation: engine
+    // GPIO change events are batch-quantized (≈20K retired instructions per
+    // drain, ~2.7 nominal 9600-baud bits at 72MHz), so change events only ARM
+    // the observer. All decode comes from sub-bit polling: while armed,
+    // stepBudget slices the tick budget into ≤bit/8 instruction steps and
+    // samples PB7 after each slice (time base = retired-instruction counter,
+    // exact in the engine domain). Bit period self-calibrates from
+    // consecutive validated frame starts (Δ/10 for back-to-back bytes), so
+    // instruction-vs-cycle skew (CPI≠1) cancels out. Decoded bytes publish
+    // on the 'softserial' serial source (same contract as AVR).
+    private readonly softSerialTxPort = 'B';
+    private readonly softSerialTxPinNum = 7;
+    private readonly softSerialTxPinId = 'PB7';
+    private readonly softSerialBaud = 9600;
+    private softSerialClock = 0;
+    private softSerialLastAbs = -1;
+    private softSerialArmed = false;
+    private softSerialLastActivity = 0;
+    private softSerialReceiving = false;
+    private softSerialStartAt = 0;
+    private softSerialSampleAt = 0;
+    private softSerialSampleIndex = 0;
+    private softSerialCurrentByte = 0;
+    private softSerialLastPollHigh = true;
+    private softSerialCoarseHigh = true;
+    private softSerialBitInstr = 7500;
+    private softSerialLastStartAt: number | null = null;
+    private softSerialTxHandle: any = null;
+
     /** Wire engine bus callbacks into the shared bridges (runner-owned, AVR-adapter pattern). */
     private wireBusBridges(): void {
         const mcu = this.mcu;
@@ -375,8 +408,15 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     // (512-1024 inst slices) but starve the core (800+
                     // FFI calls/tick); single coarse execute + START
                     // prefill is the correct architecture instead.
-                    const r = self.mcu.execute(Math.max(1, Math.floor(budget)));
-                    return Number(r?.instCount ?? r?.totalSteps ?? budget) || 0;
+                    const n = Math.max(1, Math.floor(budget));
+                    // SoftSerial TX observe: while armed, slice the budget
+                    // into sub-bit steps and poll PB7 after each (the
+                    // change-event path only arms — see softSerial fields).
+                    if (self.softSerialArmed) return self.stepSoftSerialFine(n);
+                    const r = self.mcu.execute(n);
+                    const done = Number(r?.instCount ?? r?.totalSteps ?? budget) || 0;
+                    try { self.softSerialAdvanceClock(done); } catch { /* clock never breaks the tick */ }
+                    return done;
                 } catch { return 0; }
             },
             drainUartOut(): number[] {
@@ -541,10 +581,15 @@ export class Stm32f1Runner extends ArmRunnerBase {
             close(): void {
                 try { gpioUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } }); } catch { /* ignore */ }
                 try { self.mcu?.close?.(); } catch { /* ignore */ }
+                try { self.softSerialDisarm(); } catch { /* ignore */ }
+                try { self.softSerialTxHandle = null; } catch { /* ignore */ }
                 self.mcu = null;
             },
             resetEngine(): void {
                 // Facade reset() recreates the emulator; fire-and-forget.
+                // SoftSerial observer rebases (retired counter zeroes).
+                try { self.softSerialDisarm(); } catch { /* ignore */ }
+                try { self.softSerialLastAbs = -1; } catch { /* ignore */ }
                 try { void self.mcu?.reset?.(); } catch { /* ignore */ }
             },
         };
@@ -563,12 +608,238 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 const h = this.mcu.gpio.pin(port, pin);
                 const u = h.on('change', (high: boolean) => {
                     this.publishGpio(`P${port}${pin}`, !!high);
+                    // SoftSerial TX arm (decode itself is poll-driven while
+                    // armed — see softSerial fields): a driven falling edge
+                    // on PB7 while idle means a start bit began somewhere in
+                    // the last engine batch; arm and resync on the next
+                    // validated frame. Coarse level tracks for edge sense.
+                    try {
+                        if (`P${port}${pin}` === this.softSerialTxPinId) {
+                            const wasHigh = this.softSerialCoarseHigh;
+                            this.softSerialCoarseHigh = !!high;
+                            if (!this.softSerialArmed && wasHigh && !high) {
+                                try { this.softSerialArm(); } catch { /* arm never breaks gpio */ }
+                            }
+                        }
+                    } catch { /* observer never breaks gpio */ }
                     if (port === led.port && pin === led.pin) {
                         try { (this.instances.get(this.boardId) as any)?.setState?.({ builtInLed: !!high }); } catch { /* ignore */ }
                     }
                 });
                 if (typeof u === 'function') unsubs.push(u);
             } catch { /* skip missing pin */ }
+        }
+    }
+
+    // ── SoftSerial TX observer (PB7 @ 9600, 'softserial' source) ──────
+    // AVR-mirror decode (start-bit edge → mid-bit samples → stop validate)
+    // in the retired-instruction time domain. Change events only arm (batch
+    // quantization); softSerialPoll does the timed sampling on sub-bit
+    // slices driven by stepSoftSerialFine.
+
+    /** Retired-instruction clock advance from a facade absolute counter. */
+    private softSerialAdvanceClock(abs: number): void {
+        const a = Math.floor(Number(abs));
+        if (!Number.isFinite(a) || a < 0) return;
+        if (this.softSerialLastAbs < 0 || a < this.softSerialLastAbs) {
+            // First sighting, or emulator recreated under us (reset zeroes
+            // the counter): rebase without advancing.
+            this.softSerialLastAbs = a;
+            return;
+        }
+        const d = a - this.softSerialLastAbs;
+        if (d > 0) {
+            this.softSerialClock += d;
+            this.softSerialLastAbs = a;
+        }
+    }
+
+    private softSerialSysclkHz(): number {
+        try {
+            const hz = Number((this.mcu as any)?._emu?.rccSysclkHz?.());
+            if (Number.isFinite(hz) && hz >= 1_000_000 && hz <= 100_000_000) return hz;
+        } catch { /* fall through to default */ }
+        return 72_000_000;
+    }
+
+    private softSerialNominalBit(): number {
+        return Math.max(64, Math.floor(this.softSerialSysclkHz() / Math.max(300, this.softSerialBaud)));
+    }
+
+    private softSerialArm(): void {
+        if (!this.mcu) return;
+        this.softSerialArmed = true;
+        this.softSerialReceiving = false;
+        this.softSerialSampleIndex = 0;
+        this.softSerialCurrentByte = 0;
+        this.softSerialLastActivity = this.softSerialClock;
+        // Fresh nominal period each arming (clock tree may still be coming
+        // up at first traffic); consecutive-start calibration refines it.
+        try { this.softSerialBitInstr = this.softSerialNominalBit(); } catch { /* keep last */ }
+        try {
+            this.softSerialTxHandle = this.mcu?.gpio?.pin?.(this.softSerialTxPort, this.softSerialTxPinNum) || null;
+        } catch { this.softSerialTxHandle = null; }
+        try {
+            const lv = this.softSerialTxHandle?.read?.();
+            if (lv === 0 || lv === 1) this.softSerialLastPollHigh = lv === 1;
+        } catch { /* level init is best-effort */ }
+    }
+
+    private softSerialDisarm(): void {
+        this.softSerialArmed = false;
+        this.softSerialReceiving = false;
+        this.softSerialSampleIndex = 0;
+        this.softSerialCurrentByte = 0;
+    }
+
+    private softSerialEmitByte(value: number): void {
+        // Same contract as AVRRunner.emitSoftSerialByte: 'softserial' source.
+        try { this.emitTxByte(value & 0xff, 'softserial'); } catch { /* ignore */ }
+    }
+
+    /** Fine-grained stepping while armed: sub-bit slices + PB7 poll. */
+    private stepSoftSerialFine(budget: number): number {
+        const mcu = this.mcu;
+        if (!mcu) { try { this.softSerialDisarm(); } catch { /* ignore */ } return 0; }
+        let remaining = Math.max(1, Math.floor(budget));
+        // Sub-bit slices (~bit/8 retired instructions) with sane clamps:
+        // too fine starves the core (see stepBudget NOTE), too coarse
+        // misses edges. Calibration shrinks the slice as bitInstr settles.
+        const bit = Math.max(64, this.softSerialBitInstr | 0);
+        const slice = Math.max(256, Math.min(4096, Math.floor(bit / 8)));
+        let guard = 0;
+        const maxSlices = 4096;
+        while (remaining > 0 && guard++ < maxSlices) {
+            const s = Math.min(slice, remaining);
+            let r: any = null;
+            try { r = mcu.step(s); } catch { break; }
+            const abs = Number(r?.instCount);
+            if (Number.isFinite(abs) && abs >= 0) {
+                if (this.softSerialLastAbs < 0 || abs < this.softSerialLastAbs) {
+                    this.softSerialLastAbs = Math.floor(abs);
+                } else {
+                    const d = Math.floor(abs) - this.softSerialLastAbs;
+                    if (d > 0) {
+                        this.softSerialClock += d;
+                        this.softSerialLastAbs = Math.floor(abs);
+                    }
+                }
+            } else {
+                // Counter unreadable: advance by requested slice (monotonic).
+                this.softSerialClock += s;
+            }
+            remaining -= s;
+            try { this.softSerialPoll(); } catch { /* poll never breaks stepping */ }
+            if (r?.stopped) break;
+            if (!this.softSerialArmed) {
+                // Disarmed mid-budget (idle timeout): run the rest coarse.
+                if (remaining > 0) {
+                    try {
+                        const r2 = mcu.execute(remaining);
+                        const done = Number(r2?.instCount ?? remaining) || 0;
+                        try { this.softSerialAdvanceClock(done); } catch { /* ignore */ }
+                    } catch { /* ignore */ }
+                    remaining = 0;
+                }
+                break;
+            }
+        }
+        if (remaining > 0 && guard >= maxSlices) {
+            // Degenerate (giant budget vs tiny slice): finish coarse so the
+            // sim cannot stall; decode may gap for this tick only.
+            try {
+                const r3 = mcu.execute(remaining);
+                const done = Number(r3?.instCount ?? remaining) || 0;
+                try { this.softSerialAdvanceClock(done); } catch { /* ignore */ }
+            } catch { /* ignore */ }
+        }
+        // Mirror the coarse path's return shape (absolute retired count).
+        return this.softSerialLastAbs >= 0 ? this.softSerialLastAbs : Math.max(1, Math.floor(budget));
+    }
+
+    private softSerialPollLevel(): boolean | null {
+        try {
+            if (!this.softSerialTxHandle && this.mcu) {
+                try { this.softSerialTxHandle = this.mcu?.gpio?.pin?.(this.softSerialTxPort, this.softSerialTxPinNum) || null; } catch { /* ignore */ }
+            }
+            const lv = this.softSerialTxHandle?.read?.();
+            if (lv === 0) return false;
+            if (lv === 1) return true;
+            return null;
+        } catch { return null; }
+    }
+
+    /** Timed sampling on the instruction clock (AVR processSoftSerialDecode). */
+    private softSerialPoll(): void {
+        if (!this.softSerialArmed) return;
+        const bit = Math.max(64, this.softSerialBitInstr | 0);
+        const now = this.softSerialClock;
+        const lv = this.softSerialPollLevel();
+        if (lv === null) {
+            // Dead pin read: only the idle timeout can release us.
+            if (now - this.softSerialLastActivity > bit * 10 * 25) {
+                try { this.softSerialDisarm(); } catch { /* ignore */ }
+            }
+            return;
+        }
+        const prev = this.softSerialLastPollHigh;
+        if (lv !== prev) {
+            this.softSerialLastPollHigh = lv;
+            this.softSerialLastActivity = now;
+        }
+        // Idle timeout: ~25 byte-times without an edge → back to coarse.
+        if (now - this.softSerialLastActivity > bit * 10 * 25) {
+            try { this.softSerialDisarm(); } catch { /* ignore */ }
+            return;
+        }
+        if (!this.softSerialReceiving) {
+            // Candidate start on falling edge. Validated by the stop bit
+            // below; false starts (mid-frame falls) are rejected there and
+            // resync on the next fall.
+            if (prev && !lv) {
+                // Live calibration: back-to-back bytes start exactly 10
+                // bits apart; refine the period from the measured delta so
+                // instruction-vs-cycle skew cancels out.
+                if (this.softSerialLastStartAt !== null) {
+                    const d = now - this.softSerialLastStartAt;
+                    if (d > bit * 9 && d < bit * 11) {
+                        const est = d / 10;
+                        const nom = this.softSerialNominalBit();
+                        const lo = Math.max(64, Math.floor(nom / 4));
+                        const hi = Math.ceil(nom * 4);
+                        this.softSerialBitInstr = Math.max(lo, Math.min(hi, Math.round(est)));
+                    }
+                }
+                this.softSerialReceiving = true;
+                this.softSerialCurrentByte = 0;
+                this.softSerialSampleIndex = 0;
+                this.softSerialStartAt = now;
+                const b2 = Math.max(64, this.softSerialBitInstr | 0);
+                this.softSerialSampleAt = now + b2 * 1.5;
+            }
+            return;
+        }
+        // Receiving: sample data bits at mid-bit (AVR: start+1.5B .. 8.5B),
+        // then validate the stop bit at start+9.5B. Polls land ≤1 slice past
+        // each sample point, so the current level reads the sampled bit
+        // (same lastLevel semantics as AVR's processSoftSerialDecode).
+        const b3 = Math.max(64, this.softSerialBitInstr | 0);
+        let iter = 0;
+        while (this.softSerialReceiving && now >= this.softSerialSampleAt && iter++ < 12) {
+            if (this.softSerialSampleIndex < 8) {
+                if (lv) this.softSerialCurrentByte |= (1 << this.softSerialSampleIndex);
+                this.softSerialSampleIndex += 1;
+                this.softSerialSampleAt = this.softSerialStartAt + b3 * (1.5 + this.softSerialSampleIndex);
+                continue;
+            }
+            // Stop bit: valid frame when the line is HIGH (AVR parity).
+            if (lv) {
+                try { this.softSerialEmitByte(this.softSerialCurrentByte); } catch { /* ignore */ }
+                this.softSerialLastStartAt = this.softSerialStartAt;
+            }
+            this.softSerialReceiving = false;
+            this.softSerialSampleIndex = 0;
+            this.softSerialCurrentByte = 0;
         }
     }
 

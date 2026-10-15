@@ -40,6 +40,7 @@ export const PICO_PIO_NEOPIXEL_SM = 0;
  * a handful of pixels, show()-once firmware never overruns this). */
 const MAX_RX_WORDS_PER_TICK = 16;
 
+
 function hasPioTaps(mod: any): boolean {
     try {
         return !!mod

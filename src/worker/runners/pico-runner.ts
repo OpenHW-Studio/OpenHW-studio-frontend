@@ -26,6 +26,7 @@
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
 import { createSPIBridge, levelPassiveNets } from '../bus-bridge.ts';
+import { pollPicoPioNeopixel } from './pico-pio-pump.ts';
 
 const PICO_UART_TX = ['GP0', 'GPIO0', '0', 'D0', 'TX', 'TX0'];
 const PICO_UART_RX = ['GP1', 'GPIO1', '1', 'D1', 'RX', 'RX0'];
@@ -704,6 +705,8 @@ export class PicoRunner extends ArmRunnerBase {
                     try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
                     // PWM observe: first enabled slice drives LED models.
                     try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
+                    // PIO WS2812 mirror: PIO0 SM0 RX words → NeoPixel frames.
+                    try { pollPicoPioNeopixel(self.mod, self.instances); } catch { /* drain never breaks tick */ }
                     // Net leveling: model-driven pins (shift-register
                     // outputs etc.) fan out across component-only nets.
                     try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks tick */ }
