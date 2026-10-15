@@ -100,3 +100,19 @@ export function pwmSettledRecord(pinHash: number, dutyCycle: number, frequencyHz
     address: pinHash >>> 0, v0: dutyCycle, v1: frequencyHz, cycles, wallMs: Date.now(),
   });
 }
+
+/** SPI transaction summary: first byte = command, v0 = length, v1 = last byte. */
+export function spiRecord(firstByte: number, byteCount: number, lastByte: number, cycles: number): Uint8Array {
+  return encodeProtocolRecord({
+    bus: PROTO_BUS_SPI, flags: 0,
+    address: firstByte & 0xff, v0: byteCount, v1: lastByte & 0xff, cycles, wallMs: Date.now(),
+  });
+}
+
+/** OneWire slot summary: function/ROM byte in address, v0 = bit count. */
+export function onewireRecord(functionByte: number, bitCount: number, cycles: number): Uint8Array {
+  return encodeProtocolRecord({
+    bus: PROTO_BUS_ONEWIRE, flags: 0,
+    address: functionByte & 0xff, v0: bitCount, v1: 0, cycles, wallMs: Date.now(),
+  });
+}

@@ -824,7 +824,12 @@ export abstract class ArmRunnerBase implements BoardRunner {
     protected pollGpioBidirectional(): void {
         // Sampler resolution: engine hook wins; fall back to a runner-class
         // method of the same name (a missing engine hook used to silently
-        // disable ALL GPIO publishing — never again).
+        // disable ALL GPIO publishing — never again). Resolved FIRST so the
+        // input half can ask it whether the engine drives a pin: engines
+        // whose input injection unconditionally overwrites the pin level
+        // (proven: pico-emu `_set_gpio` clears the SIO OUT latch) must not
+        // be fed the lagging component-side voltage of a net the engine
+        // itself drives — output wins, exactly like real hardware.
         const sampler: ((pinId: string) => { level: number; driving: boolean } | null) | null =
             typeof this.engine.sampleGpioOut === 'function'
                 ? (pinId: string) => { try { return this.engine.sampleGpioOut!(pinId); } catch { return null; } }
@@ -833,6 +838,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
                     : null);
         if (!sampler && typeof this.engine.setGpioInput !== 'function') return;
         // INPUT half: external components driving nets the board reads.
+        // Skipped per-pin when the engine drives that pin (output wins).
         if (typeof this.engine.setGpioInput === 'function') {
             try {
                 const seen = new Set<string>();
@@ -854,6 +860,12 @@ export abstract class ArmRunnerBase implements BoardRunner {
                             if (netId !== net) continue;
                             const [bId, bPin] = node.split(':');
                             if (bId !== this.boardId || !bPin) continue;
+                            try {
+                                if (sampler) {
+                                    const s = sampler(bPin);
+                                    if (s && s.driving) break; // engine drives: output wins
+                                }
+                            } catch { /* sampler failure never blocks input */ }
                             try { this.engine.setGpioInput!(bPin, voltage > 0.5); } catch { /* ignore */ }
                             break;
                         }

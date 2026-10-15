@@ -42,6 +42,7 @@ export const SERIAL_LINE_ENDINGS = {
 export const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
   arduino_nano: 'arduino:avr:nano:cpu=atmega328old',
+  arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   rp2040: 'rp2040:rp2040:rpipico',
   rp2350: 'rp2040:rp2040:rpipico2',
   // Pico W / Pico 2 W (CYW43) — arduino-pico board entries.
@@ -82,6 +83,7 @@ export const BOARD_FQBN = {
 export const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
   arduino_nano: 'Arduino Nano (Old Bootloader)',
+  arduino_mega: 'Arduino Mega 2560',
   rp2040: 'Raspberry Pi Pico',
   rp2350: 'Raspberry Pi Pico 2',
   pico_w: 'Raspberry Pi Pico W',

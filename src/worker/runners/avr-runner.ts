@@ -7,7 +7,7 @@ import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebu
 import { DebugService } from '../debug/service.ts';
 import { SabTransport } from '../hal/transport.ts';
 import type { SimTransport } from '../hal/types.ts';
-import { encodeProtocolRecord, PROTO_BUS_SPI, i2cRecord } from '../hal/protocol-frames.ts';
+import { spiRecord, i2cRecord } from '../hal/protocol-frames.ts';
 import { matchBoardFamily } from '../boards-registry.ts';
 import { 
     BoardRunner, 
@@ -469,21 +469,21 @@ export class AVRRunner {
                 });
                 // Protocol-lane record (plan §11.1): command/first byte,
                 // length, last byte; guarded no-op when region absent.
+                // Shared spiRecord builder — identical bytes to the previous
+                // hand-packed record.
                 try {
-                    runnerProtoWriter?.push(encodeProtocolRecord({
-                        bus: PROTO_BUS_SPI, flags: 0,
-                        address: frame[0] ?? 0, v0: frame.length,
-                        v1: frame.length ? frame[frame.length - 1] : 0,
-                        cycles: this.cpu?.cycles ?? 0, wallMs: Date.now(),
-                    }));
+                    runnerProtoWriter?.push(spiRecord(
+                        frame[0] ?? 0, frame.length,
+                        frame.length ? frame[frame.length - 1] : 0,
+                        this.cpu?.cycles ?? 0,
+                    ));
                 } catch { /* never break sim */ }
                 spiTransactionBytes = [];
             }
             lastSpiTime = nowMs;
             spiTransactionBytes.push(value & 0xff);
 
-            const instArray = Array.from(this.instances.values());
-            let returnByte = 0xFF; // Default MISO if nothing responds
+            const instArray = Array.from(this.instances.values());            let returnByte = 0xFF; // Default MISO if nothing responds
 
             const unoId = this.boardId;
 

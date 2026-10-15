@@ -16,6 +16,8 @@ import {
   decodeProtocolRecord,
   i2cRecord,
   pwmSettledRecord,
+  spiRecord,
+  onewireRecord,
 } from '../../../src/worker/hal/protocol-frames.ts';
 
 describe('protocol-lane record codec (plan §11.1)', () => {
@@ -62,5 +64,20 @@ describe('protocol-lane record codec (plan §11.1)', () => {
     assert.equal(pwm.bus, PROTO_BUS_PWM_SETTLED);
     assert.ok(pwm.flags & PROTO_FLAG_SETTLED);
     assert.ok(Math.abs(pwm.v0 - 0.25) < 1e-6);
+  });
+
+  test('SPI/OneWire builders match the AVR producer field packing', () => {
+    // AVR SPI producer: address = first byte, v0 = length, v1 = last byte.
+    const spi = decodeProtocolRecord(spiRecord(0x9f, 4, 0xaa, 16000));
+    assert.equal(spi.bus, PROTO_BUS_SPI);
+    assert.equal(spi.address, 0x9f);
+    assert.equal(spi.v0, 4);
+    assert.equal(spi.v1, 0xaa);
+    assert.equal(spi.cycles, 16000);
+    // OneWire producer: address = function byte, v0 = bit count.
+    const ow = decodeProtocolRecord(onewireRecord(0xcc, 64, 480));
+    assert.equal(ow.bus, PROTO_BUS_ONEWIRE);
+    assert.equal(ow.address, 0xcc);
+    assert.equal(ow.v0, 64);
   });
 });

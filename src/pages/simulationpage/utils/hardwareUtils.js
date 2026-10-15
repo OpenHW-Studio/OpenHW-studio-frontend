@@ -3,6 +3,7 @@ import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants'
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
   if (s.includes('nano')) return 'arduino_nano';
+  if (s.includes('mega') || s.includes('2560')) return 'arduino_mega';
   // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
   if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
   if (s.includes('pico-eth') || s.includes('picoeth') || s.includes('5500_evb_pico') || s.includes('w5500')) return 'pico_eth';
