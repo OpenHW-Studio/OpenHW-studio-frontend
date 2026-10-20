@@ -329,7 +329,11 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     // SAADC and the host injects the wiper voltage of a wired potentiometer
     // (tests/e2e/microbit-saadc.spec.js — MB_SAADC:1877 for a 50 % pot on
     // the 3.3 V rail).
-    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target'],
+    // 'pwm' is proven: PWM0 duty/frequency are read back from the engine
+    // (owner P164 gear) and drive the LED model wired to the PWM pin
+    // (tests/e2e/microbit-pwm.spec.js — 25 % duty -> brightness 64,
+    // 16000 Hz).
+    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['fixed-bin'],
     limits: NO_LIMITS,
   },

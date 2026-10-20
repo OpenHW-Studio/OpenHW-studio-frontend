@@ -10,7 +10,7 @@ describe('micro:bit v2 board family (nRF52833)', () => {
     assert.equal(fam.family, 'microbit_v2');
     assert.equal(fam.engine, 'nrf52833-periph-wasm');
     assert.equal(fam.runner, 'runners/microbit-runner.ts');
-    for (const cap of ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target']) {
+    for (const cap of ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target', 'pwm']) {
       assert.ok(fam.capabilities.includes(cap), `missing capability ${cap}`);
     }
     // Fixed .bin images only (no backend nRF core, no compiler path).
@@ -38,12 +38,18 @@ describe('micro:bit v2 board family (nRF52833)', () => {
     assert.equal(oled.status, 'supported', oled.reason);
   });
 
-  test('the potentiometer cell still wants a pwm-in pin (vocabulary artifact)', () => {
-    // The pot's SIG pin is classified 'pwm-in' by the shared vocabulary
-    // (SIG is in the pwm-in pin list), so the generated cell needs the
-    // board's 'pwm' capability. The ANALOG path itself is proven live
-    // (tests/e2e/microbit-saadc.spec.js: pot -> AIN0 -> SAADC -> guest).
+  test('the potentiometer cell is supported (analog AIN + pwm-in SIG pin)', () => {
+    // The pot's SIG pin is classified 'pwm-in' by the shared vocabulary,
+    // so the generated cell needs the board's 'pwm' capability — which the
+    // PWM0 cell proves live (tests/e2e/microbit-pwm.spec.js). The ANALOG
+    // side of the same pot is proven by the SAADC cell.
     const needs = getComponentCapabilities('openhw-potentiometer');
     assert.ok(needs.includes('pwm-in'), needs.join(','));
+    const cells = buildConformanceMatrix(
+      ['openhw-microbit-v2'],
+      ['openhw-potentiometer'],
+    );
+    const pot = cells.find((c) => c.componentType === 'openhw-potentiometer');
+    assert.equal(pot.status, 'supported', pot.reason);
   });
 });

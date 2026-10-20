@@ -41,6 +41,7 @@ const MB_PWM_BASE = [0x4001c000, 0x40021000, 0x40022000, 0x4002d000];
 /** PWM register offsets used by the readback pump. */
 const MB_PWM_SEQ0_PTR = 0x520;   // SEQ[0].PTR
 const MB_PWM_SEQ0_CNT = 0x524;   // SEQ[0].CNT (16-bit words)
+const MB_PWM_PSEL_OUT0 = 0x560;  // PSEL.OUT[0] (nRF pin number)
 
 /** UARTE0 (console UART) register map — nRF52833 product spec. */
 const MB_UART0_BASE = 0x40002000;
@@ -499,8 +500,9 @@ export class MicrobitRunner extends ArmRunnerBase {
     /** PWM readback (every frame): the engine keeps the waveform bytes
      * driver-side (no guest-RAM handle), so the runner feeds the SEQ
      * compare words it reads out of guest RAM and asks the engine for the
-     * resulting duty/frequency. The strongest duty drives LED brightness
-     * models via onPWM (same contract as the Pico/ESP32 runners).
+     * resulting duty/frequency. The duty drives the LED brightness models
+     * wired to the PWM output pin (onPWM, same contract as the Pico/ESP32
+     * runners).
      * Engine API (owner P164): pwm_observe_seq_word(n, compareWord),
      * pwm_get_duty(n) → basis points, pwm_get_freq_hz(n) → Hz. */
     private pumpPwm(): void {
@@ -509,6 +511,7 @@ export class MicrobitRunner extends ArmRunnerBase {
         if (!wasm || !cpu) return;
         let bestDutyBp = 0;
         let bestFreqHz = 0;
+        let bestPin = -1;
         for (let inst = 0; inst < MB_PWM_BASE.length; inst++) {
             const base = MB_PWM_BASE[inst];
             try {
@@ -525,7 +528,14 @@ export class MicrobitRunner extends ArmRunnerBase {
             try {
                 const duty = Number(wasm.pwm_get_duty(inst)) || 0;
                 const freq = Number(wasm.pwm_get_freq_hz(inst)) || 0;
-                if (duty > bestDutyBp) { bestDutyBp = duty; bestFreqHz = freq; }
+                if (duty > bestDutyBp) {
+                    bestDutyBp = duty;
+                    bestFreqHz = freq;
+                    try {
+                        const psel = Number(wasm.periph_read(base + MB_PWM_PSEL_OUT0, 4)) >>> 0;
+                        bestPin = psel < 0x1000 ? psel : -1;
+                    } catch { bestPin = -1; }
+                }
             } catch { /* readback never breaks the pump */ }
         }
         if (bestDutyBp !== this.lastPwmDutyBp || bestFreqHz !== this.lastPwmFreqHz) {
@@ -539,16 +549,39 @@ export class MicrobitRunner extends ArmRunnerBase {
         }
         if (bestDutyBp <= 0) return;
         const duty01 = Math.max(0, Math.min(1, bestDutyBp / 10000));
+        // Output pin: PSEL.OUT holds the nRF pin number; map it back to the
+        // edge label so only the model wired to THAT pin gets the duty.
+        const edgeLabel = this.edgeLabelForPin(bestPin);
         for (const inst of this.instances.values()) {
             try {
                 if (typeof (inst as any)?.onPWM !== 'function') continue;
                 // Components that know their own pin map drive themselves.
                 if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                const id = String((inst as any)?.id ?? '');
                 for (const pn of ['A', 'ANODE', '+']) {
+                    if (edgeLabel && !this.sameNet(`${id}:${pn}`, `${this.boardId}:${edgeLabel}`)) continue;
                     try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreqHz }); } catch { /* ignore */ }
                 }
             } catch { /* one instance never breaks the pump */ }
         }
+    }
+
+    /** nRF pin number (PSEL.OUT) → micro:bit edge label (P0..P20). */
+    private edgeLabelForPin(pin: number): string {
+        if (!Number.isFinite(pin) || pin < 0) return '';
+        for (const [label, pp] of Object.entries(MB_EDGE)) {
+            if (pp[0] === 0 && pp[1] === pin) return label;
+        }
+        return '';
+    }
+
+    /** True when two component pins share a net. */
+    private sameNet(a: string, b: string): boolean {
+        try {
+            const na = this.pinToNet.get(a);
+            const nb = this.pinToNet.get(b);
+            return na !== undefined && na === nb;
+        } catch { return false; }
     }
 
     /** System-extras pump (every frame, after the DMA taps): drains
