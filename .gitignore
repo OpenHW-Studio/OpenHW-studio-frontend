@@ -4,3 +4,6 @@ frontend/node_modules
 dist
 .DS_Store
 test-results/
+.vite-cache-esp32cov/
+vite.agent.config.js
+playwright.agent.config.js
