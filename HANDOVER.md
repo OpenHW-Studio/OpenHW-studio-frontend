@@ -322,6 +322,42 @@ Every lane has its own vite `cacheDir` — the default `node_modules/.vite` is
 shared with :5173 and a foreign re-optimize reloads the page and kills the
 cell. Every lane must use its own `NETWORK_ROOM_CODE`.
 
+### The cell slot lock (added 2026-10-20 after two app crashes)
+
+Four lanes running browsers at once saturated the box (load average 16 on 16
+cores) and took the app down twice — every agent session died, though the
+worktrees survived. So every cell run now takes a shared slot:
+
+```bash
+flock -w 1800 /tmp/e2e-slot.lock -c \
+  "npx playwright test --config=playwright.agent.config.js tests/e2e/<spec>.spec.js --workers=1 --reporter=line"
+```
+
+Only ONE lane runs a browser at a time; the others block (that is the point,
+not a hang) and use the wait to edit docs, matrix rows and patch files. The
+lock file is `/tmp/e2e-slot.lock` — recreate it if the box reboots
+(`touch /tmp/e2e-slot.lock`).
+
+**Crash recovery, for the next agent:** the app crash kills the agent
+sessions but NOT the worktrees. The uncommitted work is still on disk —
+read it, continue from it, do not restart from scratch. And the stack comes
+back with:
+
+```bash
+podman start mongodb                     # the container's storage can break on an
+                                        # unclean shutdown: re-pull the image and
+                                        # `podman run -d --name mongodb -p 27017:27017
+                                        #  -v mongodb_data:/data/db mongo:latest`
+cd openhw-studio-backend && (setsid nohup npm start > /tmp/backend.log 2>&1 &)
+cd OpenHW-studio-frontend && (setsid nohup npm run dev -- --port 5173 --host 127.0.0.1 > /tmp/vite-dev.log 2>&1 &)
+cd openhw-unified-gateway && (setsid nohup ./openhw-gw > /tmp/gateway.log 2>&1 &)
+node /tmp/host-http-8092.mjs &           # /tmp is wiped on reboot — recreate it
+```
+
+Health: backend :5000 → 200, vite :5173 → 200, gateway :5030 → 404 (alive),
+host :8092 → "hello-openhw". The backend must be started AFTER Mongo is up
+(it gives up on the first connection attempt).
+
 ---
 
 ## 11. Engine-owner asks, consolidated (for whoever talks to them)
