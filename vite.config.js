@@ -31,6 +31,9 @@ export default defineConfig(({ mode }) => {
   const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
   const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
   const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
+  // STM32F1 engine bytes committed in THIS repo (dev + deploy + runtime
+  // fallback all resolve the same files) — see the alias block below.
+  const f1EngineDir = path.resolve(__dirname, 'src/engines/stm32f1-emu');
 
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
@@ -160,6 +163,32 @@ export default defineConfig(({ mode }) => {
         // vite dev AND the worker build (file has zero node: imports).
         // Folder-first: owner `esp32 emu` checkout (dist == 1.2.0 bytes).
         { find: 'esp32-emu/dist/sab/worker-proxy.js', replacement: path.join(esp32Folder, 'worker-proxy.js') },
+        // STM32F1 — repo-canonical owner engine bytes (src/engines/… is the
+        // single resolution point for dev AND deploy).
+        //
+        // Why NOT the owner folder (`/home/…/stm32 emu blue pill/pkg`):
+        //  1. the folder is a moving target — the owner rebuilds the wasm
+        //     every few minutes while working on the CPU core, so "dev
+        //     reads the folder" can never equal "deploy reads a committed
+        //     snapshot" for more than minutes at a time;
+        //  2. the container build (Dockerfile / CI, .github/workflows/
+        //     deploy.yml) checks out ONLY this repo + openhw-studio-emulator
+        //     — the owner folders do not exist there, and an alias to a
+        //     missing path is a HARD BUILD FAILURE ("Could not load …").
+        // So the bytes are committed here, copied verbatim from the owner's
+        // build (see src/engines/stm32f1-emu/README.md for provenance +
+        // the refresh recipe), and dev/deploy/fallback all read them.
+        //
+        // The wasm-bindgen glue resolves its wasm relative to ITSELF
+        // (new URL('stm32_bluepill_wasm_bg.wasm', import.meta.url)), so the
+        // glue and the wasm must sit side by side — they do, in pkg/.
+        // Aliased per specifier (most specific first): an alias to a
+        // directory does NOT carry the package "exports" map, so the
+        // subpaths the runner imports must be listed explicitly.
+        { find: 'stm32f1-emu/pkg/emulator.js', replacement: path.join(f1EngineDir, 'pkg/emulator.js') },
+        { find: 'stm32f1-emu/pkg/stm32f1.js', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
+        { find: 'stm32f1-emu/emulator', replacement: path.join(f1EngineDir, 'pkg/emulator.js') },
+        { find: 'stm32f1-emu', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
         // STM32F4: folder-first SUSPENDED 2026-10-15 — the owner folder
         // is mid-rebuild (site/emulator.js + bindings glue differ from
         // npm by hundreds of lines; folder wasm is dirty/uncommitted).
