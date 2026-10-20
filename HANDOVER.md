@@ -264,6 +264,66 @@ the tool call). Kill by PID (`pgrep -x <name>`) instead.
 
 ---
 
+## 11. Decision log — engine sourcing (READ THIS BEFORE TOUCHING vite.config.js)
+
+There are three decisions in the tree about *where* engine bytes come from.
+They were made on different days and they do not agree; here is the truth.
+
+| when | decision | where | still true? |
+|---|---|---|---|
+| 2026-10-06 | "Runners consume the engine folders **directly**; no copying engine code into this tree, no vendored snapshots to go stale. Flipping to npm later is a root swap in `importEngine` + the `resolve.alias` entries." | `AGENTS.md` (workspace root) | **partly superseded** — see below |
+| 2026-10-20 (earlier) | STM32F1 engine bytes **committed** in `src/engines/stm32f1-emu/` and aliased from there | `matrix.md` infra notes, `src/engines/stm32f1-emu/README.md` | yes |
+| 2026-10-20 (this lane) | Pico + ESP32 bytes committed the same way (`src/engines/pico-emu/`, `src/engines/esp32-emu/dist/sab/`) | `src/engines/*/README.md`, `vite.config.js` | yes |
+
+**Why the folder rule had to bend:** the container build checks out only
+this repo + `openhw-studio-emulator`. An alias to an owner folder is a hard
+build failure there ("Could not load …"), and it is not hypothetical: the
+owner's `esp32 emu/dist/` was deleted mid-session on 2026-10-20 and
+`npm run build` died with ENOENT. A folder alias also bakes an absolute
+owner path into the built wasm asset, so the deployed Pico would 404 on its
+engine.
+
+**What did NOT change:** the npm endgame. The runners still import the exact
+npm-shaped specifiers (`pico-emu/picoemu.wasm.js`,
+`esp32-emu/dist/sab/worker-proxy.js`, `stm32f1-emu/...`), everything still
+funnels through `importEngine` + the `resolve.alias` block, and publishing
+the engines to npm is still a one-file flip in `vite.config.js`.
+
+**How the "moving target" is handled now:** the owner folders are live and
+rebuilt constantly, so the repo snapshot is a *deliberate, refreshable*
+artifact, not a live link:
+- `OPENHW_ENGINE_FROM=owner npm run dev` → dev against the owner's live
+  folders (engine work; never in CI).
+- `npm run check:engine-bytes` → compares the pinned bytes with the owner
+  folders and flags SAME / DIFFERENT / **MISMATCHED PAIR** / NOT BUILT.
+  The STM32F1 folder is a MISMATCHED PAIR today (new wasm `641abe52` + old
+  glue `43c24f16`) — refreshing from it right now would break the F1 boards.
+- Refresh only from a stable owner build, keep glue+wasm from ONE build,
+  re-run that engine's cells, then commit the new snapshot.
+
+**Open point for the user:** whether "dev reads the live folder" should be
+the default again once the engines are published to npm (then the npm
+package IS the artifact and the question disappears).
+
+---
+
+## 12. Lane roster (2026-10-20, five parallel lanes)
+
+| lane | worktree | branch | dev port | gateway room | owns |
+|---|---|---|---|---|---|
+| engine-bytes | `sim-engine-bytes` | `lane/engine-bytes` | 5186 | — | the build fix + the engine byte pinning (this file's §11) |
+| f1-cov2 | `sim-f1-cov2` | `lane/f1-cov2` | 5174 | `netf1cov2` | the six STM32F1 board rows + the F1 system/crypto row |
+| f4-cov2 | `sim-f4-cov2` | `lane/f4-cov2` | 5175 | `netf4cov2` | the five STM32F4 board rows + the F4 system/crypto row |
+| esp32-cov2 | `sim-esp32-cov2` | `lane/esp32-cov2` | 5176 | `netcamcov2` | the two ESP32 rows + the ESP32 system/crypto row + the flaky CAM LAN cell |
+| pico-cov2 | `sim-pico-cov2` | `lane/pico-cov2` | 5177 | `netpicocov2` | the three Pico rows + the Pico system/crypto row + the engine patch files |
+| matrix-complete | `sim-matrix-complete` | `lane/matrix-complete` | 5178 | — | the global matrix sweep, the connectivity table, the byte-status table, `scripts/check-engine-bytes.mjs` |
+
+Every lane has its own vite `cacheDir` — the default `node_modules/.vite` is
+shared with :5173 and a foreign re-optimize reloads the page and kills the
+cell. Every lane must use its own `NETWORK_ROOM_CODE`.
+
+---
+
 ## 11. Engine-owner asks, consolidated (for whoever talks to them)
 
 - esp32-emu: merge `wifi-fix@a0684ef` (inline `CMD_GET_WIFI_STATS`); fix the
