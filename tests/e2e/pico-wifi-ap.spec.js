@@ -4,6 +4,16 @@ import { test, expect } from '@playwright/test';
 // (WiFi.beginAP), board B joins it as STA, then TCP echo over the AP
 // subnet. Same gateway room (harmless if traffic stays engine-local).
 // Requires the gateway.
+//
+// NOTE on the AP address: the arduino-pico WiFi library HARDCODES the
+// soft-AP netif to 192.168.4.1 (`_apIP = IPAddress(192,168,4,1)` in
+// WiFiClass.h) and `WiFi.softAPConfig()` is a no-op when it is called
+// before `beginAP()` (the mode is still WIFI_OFF, so the values land in
+// the STA config, not the AP one). The AP therefore ALWAYS lives on
+// 192.168.4.1 — the same address the unified gateway uses, which the
+// gateway now yields to a room member that claims it (see
+// pico-wifi-ap-serve.spec.js, which proves the same flow).
+// Requires the gateway.
 const AP_CODE = [
   '#include <WiFi.h>',
   'WiFiServer server(41000);',
@@ -46,7 +56,7 @@ const STA_CODE = [
   '  WiFiClient client;',
   '  int ok = 0;',
   '  for (int i = 0; i < 20 && !ok; i++) {',
-  '    if (client.connect(IPAddress(192, 168, 5, 1), 41000)) ok = 1;',
+  '    if (client.connect(IPAddress(192, 168, 4, 1), 41000)) ok = 1;',
   '    else delay(1000);',
   '  }',
   '  Serial1.print("STA-CONN:"); Serial1.println(ok);',

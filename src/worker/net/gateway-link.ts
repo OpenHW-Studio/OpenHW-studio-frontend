@@ -10,15 +10,34 @@
 // uplink asserted before first step, ≤16 TX pops per pump, RX malloc +
 // push, frames queued in the runner while the socket opens.
 
-// Default gateway endpoint. Overridable at build time with
-// VITE_GATEWAY_URL (e.g. ws://127.0.0.1:5031/api/network-gateway) so a
-// second gateway instance — a patched build under test, or a per-lane
-// gateway — can be used without editing code. Board attrs / runner
-// options still win over this default.
-export const GATEWAY_DEFAULT_URL = (
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GATEWAY_URL)
-    || 'ws://127.0.0.1:5030/api/network-gateway'
-).trim();
+// Default gateway endpoint. Overridable at build time so a dev/CI lane
+// can point the boards at a SECOND gateway instance (a patched build
+// under test, or a per-lane gateway) without touching the shared one:
+//   VITE_GATEWAY_URL      — canonical
+//   VITE_NET_GATEWAY_URL  — accepted alias (same purpose)
+// Unset => the historical default (:5030), unchanged. Board attrs /
+// runner options still win over this default.
+//
+// Read defensively: this module is bundled into the board worker, where
+// `import.meta.env` is injected by Vite (build) or served as a live
+// object (dev). Both shapes are supported; anything unexpected falls
+// back to the historical default.
+//
+// NOTE: the literal `import.meta.env` must appear in the source — Vite's
+// dev transform only injects the env object into modules that mention
+// it (an `import.meta?.env` spelling is NOT detected and silently
+// yields undefined).
+function gatewayUrlFromEnv(): string {
+    try {
+        const env = (import.meta.env || {}) as unknown as Record<string, string | undefined>;
+        return String(env.VITE_GATEWAY_URL || env.VITE_NET_GATEWAY_URL || '').trim();
+    } catch {
+        return '';
+    }
+}
+
+export const GATEWAY_DEFAULT_URL =
+    gatewayUrlFromEnv() || 'ws://127.0.0.1:5030/api/network-gateway';
 
 export interface GatewayLinkStatus {
     up: boolean;

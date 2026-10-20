@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 // Pico-W SoftAP reversed (live): board A is the guest AP (.1) and ALSO the
-// TCP client; board B joins as STA, gets its DHCP lease, and serves TCP.
-// A connects to B's lease IP (observed .6 — engine AP DHCP is sequential
-// from a fixed start; if this drifts the cell reports B's actual IP).
+// TCP client; board B joins as STA, gets its address, and serves TCP.
+// A connects to B's address.
+//
+// B uses a STATIC address on purpose: the gateway's DHCP allocator hands
+// out 192.168.4.x from a GLOBAL counter (shared by every room and every
+// board on the box), so the lease number drifts with unrelated traffic
+// and a hardcoded ".6" only worked by luck. Static keeps the cell
+// deterministic; the LAN path it proves (AP as TCP client to a joined
+// STA's server over the gateway room) is unchanged.
 // Requires the gateway.
 const APCLI_CODE = [
   '#include <WiFi.h>',
@@ -19,7 +25,7 @@ const APCLI_CODE = [
   '  WiFiClient client;',
   '  int ok = 0;',
   '  for (int i = 0; i < 20 && !ok; i++) {',
-  '    if (client.connect(IPAddress(192, 168, 4, 6), 41001)) ok = 1;',
+  '    if (client.connect(IPAddress(192, 168, 4, 21), 41001)) ok = 1;',
   '    else delay(1000);',
   '  }',
   '  Serial1.print("APC-CONN:"); Serial1.println(ok);',
@@ -47,6 +53,7 @@ const STASRV_CODE = [
   '  Serial1.begin(115200);',
   '  delay(1000);',
   '  Serial1.println("STS-START");',
+  '  WiFi.config(IPAddress(192, 168, 4, 21), IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));',
   '  WiFi.begin("OpenHW-AP2");',
   '  delay(8000);',
   '  Serial1.print("STS-STATUS="); Serial1.println(WiFi.status());',
