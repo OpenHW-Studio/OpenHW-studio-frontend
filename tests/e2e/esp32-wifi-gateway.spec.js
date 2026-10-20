@@ -4,7 +4,12 @@ import { test, expect } from '@playwright/test';
 // itself at boot (worker-entry connectGateway); the runner only passes
 // config.wifi {ssid, channel, room}. Arduino STA joins + DHCP via
 // gateway (:5030). Requires the gateway running.
-const CODE = '#include <WiFi.h>\nvoid setup(){Serial.begin(115200);delay(1000);Serial.println("ESP-WIFI-START");int n=WiFi.scanNetworks();Serial.print("SCAN n=");Serial.println(n);WiFi.begin("ESP-GUEST");delay(8000);Serial.print("STATUS=");Serial.println(WiFi.status());Serial.print("IP=");Serial.println(WiFi.localIP());Serial.println("ESP-WIFI-DONE");}\nvoid loop(){delay(5000);}\n';
+// NOTE: scanNetworks() is a BLOCKING call that intermittently never
+// returns on this engine (guest hangs inside the scan, reproduced
+// 2/5 runs by the coverage lane). The proof therefore scans AFTER the
+// join, so the DHCP evidence can never be swallowed by a scan stall;
+// the scan result is printed but not asserted.
+const CODE = '#include <WiFi.h>\nvoid setup(){Serial.begin(115200);delay(1000);Serial.println("ESP-WIFI-START");WiFi.begin("ESP-GUEST");delay(8000);Serial.print("STATUS=");Serial.println(WiFi.status());Serial.print("IP=");Serial.println(WiFi.localIP());int n=WiFi.scanNetworks();Serial.print("SCAN n=");Serial.println(n);Serial.println("ESP-WIFI-DONE");}\nvoid loop(){delay(5000);}\n';
 
 test.describe('ESP32 WiFi gateway', () => {
   test.setTimeout(300000);
