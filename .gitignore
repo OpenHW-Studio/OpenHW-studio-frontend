@@ -9,5 +9,6 @@ dist
 test-results/
 .vite-cache-esp32cov/
 .vite-cache-enginebytes/
+.vite-cache-f1cov2/
 vite.agent.config.js
 playwright.agent.config.js

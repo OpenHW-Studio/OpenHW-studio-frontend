@@ -701,6 +701,62 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         }
                     }
                 } catch { /* devices never break boot */ }
+                // SPI bus anchor — the MISO (slave->master) path.
+                //
+                // WHY: the F1 engine's SPI peripheral only consults the MISO
+                // injection queue when an ext device is attached to the bus.
+                // Its DR-write handler reads the injected byte INSIDE the
+                // `if let Some(ref d) = device` branch and falls back to a
+                // hard 0xFF with no device (engine src/peripherals/spi.rs,
+                // the `0x000C` write arm). The F1 runner attached only I2C
+                // devices, so EVERY SPI read on the F1 clocked in 0xFF —
+                // that is the "MISO-read gap" the matrix carried.
+                // (Engine probe: scripts/f1-spi-miso-engine-probe.mjs —
+                //  no device  -> injected 0x42 is IGNORED (guest reads 0xFF)
+                //  with device-> injected 0x42 lands on the next clock.)
+                //
+                // The anchor is the engine's OWN SPI NOR-flash model: it
+                // answers the JEDEC ID (0x9F) and data reads (0x03) in-clock
+                // (no transport lag), and its presence also re-enables the
+                // injection queue for the JS slave models (those land one
+                // transfer late — see tests/e2e/stm32f1-spi-miso.spec.js).
+                // Opt-in per board via the `spiFlash` attr (JEDEC id); the
+                // default anchor is attached automatically when the circuit
+                // has a JS SPI slave, so ANY SPI device can be read.
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const want = (battrs as any)?.spiFlash;
+                    let jedec = '';
+                    let forced = false;
+                    if (typeof want === 'string' && want.trim()) {
+                        jedec = want.trim();
+                        forced = true;
+                    } else if (want && typeof want === 'object') {
+                        jedec = String((want as any).jedec || '0xC84016');
+                        forced = true;
+                    }
+                    let hasSpiSlave = false;
+                    if (!forced) {
+                        for (const inst of self.instances.values()) {
+                            if (typeof (inst as any)?.onSPIByte === 'function'
+                                || typeof (inst as any)?.onSPIByteExchange === 'function') { hasSpiSlave = true; break; }
+                        }
+                    }
+                    if (forced || hasSpiSlave) {
+                        extDevices = extDevices || {};
+                        if (!extDevices.spi_flash) {
+                            // 4 KB of 0xA5: a 0x03 data read returns a
+                            // deterministic byte (the engine's flash
+                            // streams `content[addr % size]`).
+                            extDevices.spi_flash = [{
+                                peripheral: 'SPI1',
+                                jedec_id: jedec || '0xC84016',
+                                data: new Uint8Array(4096).fill(0xA5),
+                                cs: 'PA4',
+                            }];
+                        }
+                    }
+                } catch { /* spi anchor never breaks boot */ }
                 const mkOpts = () => extDevices ? { chip: self.chip, ext_devices: extDevices } : { chip: self.chip };
                 if (!fw) {
                     self.mcu = await STM32F1.create(mkOpts());
@@ -711,6 +767,22 @@ export class Stm32f1Runner extends ArmRunnerBase {
                 } else {
                     self.mcu = await STM32F1.fromBin(fw.data as Uint8Array, mkOpts());
                 }
+                // Modeled supply voltage (PWR / PVD): the board attr
+                // `supplyMv` sets the engine's modeled supply (the
+                // facade's pwrSetSupplyMv). The guest then reads the
+                // POWER-VOLTAGE-DETECTOR level in PWR->CSR (bit 2 = PVDO)
+                // — a host-side environment change the guest observes.
+                // Default supply is 3300 mV (engine pwr.rs).
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const mv = Math.floor(Number((battrs as any)?.supplyMv) || 0);
+                    if (mv > 0) {
+                        const emu = (self.mcu as any)?._emu;
+                        if (emu && typeof emu.pwrSetSupplyMv === 'function') {
+                            emu.pwrSetSupplyMv(mv);
+                        }
+                    }
+                } catch { /* modeled supply never breaks boot */ }
                 self.mcu.usart1.onData = (b: number) => { txQueue.push(b & 0xff); };
                 // Watchdog-reboot arm (see stepBudget): the facade reports
                 // WdogReset bus events here; the flag survives only until
@@ -1119,11 +1191,18 @@ export class Stm32f1Runner extends ArmRunnerBase {
                         }
                     } catch { /* ignore */ }
                     try {
-                        if (!((self as any).f1RccSaid)) {
-                            (self as any).f1RccSaid = true;
-                            let hz = 0;
-                            try { hz = Number(mcuS?._emu?.rccSysclkHz?.()) || 0; } catch { hz = 0; }
-                            if (hz > 0) say('F1RCC_HZ:' + hz);
+                        // Decoded SYSCLK (engine RCC model, follows CFGR
+                        // SWS/PLL). Reported on CHANGE, not once: a guest
+                        // that reconfigures the clock tree must be
+                        // observable from the host (the decoded frequency
+                        // is the engine's answer to the guest's RCC
+                        // writes — the other side's value, not the
+                        // guest's own claim).
+                        let hz = 0;
+                        try { hz = Number(mcuS?._emu?.rccSysclkHz?.()) || 0; } catch { hz = 0; }
+                        if (hz > 0 && hz !== Number((self as any).f1RccLastHz ?? 0)) {
+                            (self as any).f1RccLastHz = hz;
+                            say('F1RCC_HZ:' + hz);
                         }
                     } catch { /* ignore */ }
                 } catch { /* f1sys markers never break the drain */ }
@@ -2083,7 +2162,7 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     if (typeof (inst as any)?.getPinVoltage !== 'function'
                         || typeof (inst as any)?.setPinVoltage !== 'function') continue;
                     const specs: Array<{ nms: string[]; volts: number; hi5: boolean }> = [
-                        { nms: ['VCC', 'vcc', 'VIN', 'vin', '1'], volts: 3.3, hi5: false },
+                        { nms: ['VCC', 'vcc', 'VIN', 'vin', '1', '3V3', '3.3V'], volts: 3.3, hi5: false },
                         { nms: ['V+', 'VCC5', 'vcc5'], volts: 5.0, hi5: true },
                     ];
                     for (const spec of specs) {
