@@ -30,6 +30,10 @@ test.describe('micro:bit v2 UART RX (UARTE0)', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
 
     const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
       components: [

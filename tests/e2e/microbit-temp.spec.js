@@ -25,6 +25,10 @@ test.describe.skip('micro:bit v2 TEMP (blocked: runner patch + firmware)', () =>
     test(`die temp tracks board attr (${run.tempC} C)`, async ({ page }) => {
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(8000);
+      // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+      // races on a loaded host ("Cannot read properties of undefined
+      // (reading 'setupCircuit')"). Wait for it explicitly.
+      await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
       const setup = await page.evaluate(({ tempC }) => window.OpenHWE2E.setupCircuit({
         components: [
           { id: 'mb1', type: 'openhw-microbit-v2', attrs: { firmware: '/firmware/microbit/temp_nrf.bin', tempC }, x: 100, y: 100 },

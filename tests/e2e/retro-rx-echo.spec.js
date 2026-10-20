@@ -24,6 +24,10 @@ test.describe('Retro 8086 USART RX echo (8086emu 1.6)', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
 
     const asm = `ORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\necho:\nIN AL, 51h\nTEST AL, 02h\nJZ echo\nIN AL, 50h\nOUT 50h, AL\nJMP echo\nmsg: DB 'RXECHO_RDY$'\nEND`;
     const setup = await page.evaluate((code) => window.OpenHWE2E.setupCircuit({

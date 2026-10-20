@@ -66,8 +66,13 @@ describe('micro:bit engine pair integrity (nrf52833-periph-wasm)', () => {
     // deployed app (node_modules is not served there).
     const dir = path.join(frontendRoot, 'public/vendor/board-engines/microbit');
     assert.ok(fs.existsSync(dir), 'deploy mirror missing');
-    const files = fs.readdirSync(dir).sort();
-    assert.deepEqual(files, ['nrf52833_periph_wasm.js', 'nrf52833_periph_wasm_bg.wasm']);
+    // The mirror carries the engine pair AND the byte-provenance README
+    // (the refresh recipe lives next to the bytes it describes) — assert
+    // the ENGINE files, not the directory's whole content.
+    const engineFiles = fs.readdirSync(dir)
+      .filter((f) => !f.endsWith('.md'))
+      .sort();
+    assert.deepEqual(engineFiles, ['nrf52833_periph_wasm.js', 'nrf52833_periph_wasm_bg.wasm']);
   });
 
   test('the glue exposes the exports the runner wires', () => {

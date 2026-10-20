@@ -78,6 +78,30 @@ These are the reason the repo mirror is the source of truth: the owner's
 `CMD_GET_WIFI_STATS` service, and the ESP32-CAM 2-board LAN cell was flaky
 because of it.
 
+## Engine-byte integrity (READ ONLY check)
+
+```sh
+npm run check:engine-bytes
+```
+
+It compares the bytes committed here against the owner folder **as it is
+right now** and prints `engine | pinned file (md5) | owner file (md5 |
+MISSING) | verdict`. Verdicts: `SAME` / `DIFFERENT` (the owner rebuilt —
+information, not a failure) / `MISMATCHED PAIR` (a glue+wasm pair changed
+inconsistently — the dangerous one) / `NOT BUILT` (the owner has no build
+output — this is the ESP32 state today: `dist/` was deleted mid-session) /
+`MISSING` (the **repo** side is broken → non-zero exit).
+
+Rules: **read only** (it never copies anything), refresh **only from a
+stable owner build**, **always take the proxy + worker from ONE build**,
+run the check **before and after** a refresh, and **re-run this engine's
+cells** after refreshing. Full write-up: `docs/engine-bytes.md`.
+
+`--repo-only` checks the repo side alone (that is what CI wants —
+on CI the owner folders do not exist and the check reports
+*owner folder not present (CI)* and still exits 0). `--json` gives
+the machine-readable form.
+
 ## Refresh recipe (when the owner lands a new engine build)
 
 Take the bytes from the owner's `dist/sab/` **only** when they are a stable
