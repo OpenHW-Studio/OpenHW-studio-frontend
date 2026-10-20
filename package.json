@@ -13,7 +13,13 @@
     "test:console-errors": "playwright test tests/e2e/console-error-check.spec.js",
     "test:pages": "npm run test:page-validation && npm run test:console-errors",
     "test:protocol": "vitest run tests/unit/worker/protocol-compliance.test.mjs",
-    "test:diagnostics": "vitest run tests/unit/grading-diagnostics.test.ts"
+    "test:diagnostics": "vitest run tests/unit/grading-diagnostics.test.ts",
+    "gen:autowiring-pins": "node scripts/gen-autowiring-pins.mjs",
+    "check:autowiring-pins": "node scripts/gen-autowiring-pins.mjs --check",
+    "report:autowiring-pins": "node scripts/gen-autowiring-pins.mjs --report",
+    "sync:autowiring-wasm": "node scripts/sync-autowiring-wasm.mjs",
+    "check:autowiring-wasm": "node scripts/sync-autowiring-wasm.mjs --check",
+    "test:autowiring": "vitest run tests/unit/worker/autowiring-engine-pair.test.mjs"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
