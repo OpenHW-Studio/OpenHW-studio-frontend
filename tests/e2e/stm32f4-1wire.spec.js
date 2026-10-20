@@ -1,15 +1,30 @@
 import { test, expect } from '@playwright/test';
 
-// F4 DHT22 single-wire (all five chips) — NO-GO (2026-10-12, lane/f4
-// bisected, specs unchanged): reads return NaN on all chips. Runner-side
-// delivery verified working (ODR-drive WAKE feed + per-20K-chunk polling +
-// 512-instr fine slicing all engage — isTransactionActive goes live), but
-// the guest decodes bit slots with micros(), which is 1ms-quantized on
-// this engine (probed: 200K-iteration busy loop reads 7000us while
-// delayMicroseconds(500) reads 0) — 26/70us slots cannot decode (DWT /
-// SysTick-VAL sub-ms modeling gap, engine-owner territory). Same P4
-// fine-stepping design as the green F1 cell; blocked on guest time
-// resolution, not on delivery.
+// F4 DHT22 single-wire (all five chips) — NO-GO, ENGINE-SIDE (2026-10-20,
+// lane/f4-cov re-confirmed on the F407 disco, gap pinned to one register).
+//
+// THE GAP: `SysTick->VAL` (0xE000E018) is not modelled as a free-running
+// down-counter. The engine latched a toggle and returned LOAD on even
+// reads, CVR (0) on odd reads. The STM32duino core derives the
+// sub-millisecond part of `micros()` from exactly that register
+// (getCurrentMicros(), libraries/SrcWrapper/src/stm32/clock.c), so
+// `micros()` degenerated into a 1ms-quantised clock. Measured on the
+// deployed engine bytes (F407, DISCO core):
+//     SysTick->LOAD            = 167999   (168MHz/1000-1 — correct)
+//     SysTick->VAL x8          = 0,167999,0,167999,0,167999,0,167999
+//     micros() - micros()      = 0
+//     micros() over delayMicroseconds(500) = 0
+// A DHT22 slot is 26us low / 70us high — the guest cannot resolve it, so
+// the library returns NaN on every F4 chip. Runner-side delivery is fine
+// (ODR-drive WAKE feed + per-20K-chunk polling + 512-instr fine slicing
+// all engage — isTransactionActive goes live): the blocker is the guest's
+// time resolution, not the wire.
+//
+// FIX (delivered, not applied — the engine repo is read-only here):
+// patches/f4-systick-val-downcounter.patch + patches/README-f4-systick-val.md
+// model VAL as LOAD - (instructions since the last tick), which makes
+// micros() exact in guest time. Re-run this spec after the owner applies
+// it; the needle below is what the cell expects.
 const TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },

@@ -42,6 +42,12 @@ and the F4 cells are green, so the list below is what actually remains:
   `f4-hash-silicon-fixes.patch`, `f4-hash-completion-interrupt.patch`).
   These are **not** worked around in our runner; they are delivered as
   patches for the owner to apply.
+* **`SysTick->VAL` must be a down-counter** (new ask, 2026-10-20,
+  lane/f4-cov) — see "Sub-millisecond `micros()`" below. Patch:
+  `patches/f4-systick-val-downcounter.patch`
+  (`patches/README-f4-systick-val.md`). Until it lands, every protocol that
+  times sub-millisecond slots with `micros()` is undecodable on F4 (the
+  DHT22 / 1-Wire cell reads NaN on all five chips).
 * **Typed net API** (`ethInject`, `ethSetLink`, create-time `onTx`,
   `withAssets.irq_eth`) — see the network section above.
 * **A clean owner-folder build.** F4 still runs the **npm pair**; the owner's
@@ -207,6 +213,99 @@ same RLR/PR (LSI 40 kHz). The e2e cell
 asserts in guest-time units, so it is host-throughput independent. If the
 IWDG ever becomes wall/LSI-timed, the cell's delays have to grow with it.
 
+## Sub-millisecond `micros()` — `SysTick->VAL` is not a down-counter (2026-10-20, lane/f4-cov)
+
+**Ask:** model `SysTick->VAL` (`0xE000E018`) as the free-running
+down-counter it is on silicon (RM0090 §4.4.1): it counts down from `LOAD`
+to 0 and reloads at the next tick.
+
+**Today the model latches a toggle** and returns `LOAD` on even reads and
+`CVR` (0) on odd reads. The STM32duino core derives the sub-millisecond
+part of `micros()` from exactly that register (`getCurrentMicros()` in
+`libraries/SrcWrapper/src/stm32/clock.c`), so `micros()` degenerates into
+a 1 ms-quantised clock that alternates between `m*1000` and `(m+1)*1000`.
+
+Measured on the deployed engine bytes (F407, DISCO core, `LOAD = 167999`):
+
+```
+SysTick->LOAD                     = 167999          (168 MHz/1000 - 1 — correct)
+SysTick->VAL x8                   = 0,167999,0,167999,0,167999,0,167999
+micros() - micros()               = 0
+micros() over delayMicroseconds(500) = 0
+```
+
+**Impact:** DHT22 (26 µs low / 70 µs high slots), DS18B20 and anything
+else that times sub-millisecond slots with `micros()` cannot decode — the
+F4 DHT22 cell returns `NaN` on **all five** chips. The host side is fine
+(the runner's one-wire driver drives the WAKE/ACK/bit stream and
+`isTransactionActive()` goes live); only the guest's time resolution is
+missing. The same wall blocks a MicroPython STM32 port's
+`time.sleep_us`.
+
+**Fix:** `VAL = LOAD - (instruction_count - last_systick_trigger)`, clamped
+to `[0, LOAD]`, `0` while `CSR.EN` is clear. The engine already measures
+the SysTick period in retired instructions (`nvic.systick_period = LOAD`,
+`nvic.last_systick_trigger` = the previous tick's instruction count), so
+this makes `micros()` exact in **guest** time and leaves `millis()` and the
+pace accounting untouched.
+
+Patch + full write-up + acceptance: `patches/f4-systick-val-downcounter.patch`
+and `patches/README-f4-systick-val.md`. **Not applied** (the engine repo is
+read-only for us).
+
+## F407 (Disco) protocol coverage — closed 2026-10-20 (lane/f4-cov)
+
+The F429 sibling cells were re-pointed at the F407 and the F407-only
+columns were proved. Results (matrix.md row `openhw-stm32f4`):
+
+| column | F407 result | cell |
+|---|---|---|
+| DMA | FULL — DMA2 stream 0 M2M, 16 words byte-exact (sum 65656), TCIF0 | `stm32f4-dma` |
+| GPIO-in | FULL — PB0=1 / PB1=0 | `stm32f4-gpio-rtc` |
+| RTC | FULL — DS1307 set/read over I2C1 (12:00:00) | `stm32f4-gpio-rtc` |
+| CAN-2.0 | FULL — silent loopback, ID 0x123, 8/8 data bytes | `stm32f4-can` |
+| I2S | FULL — I2S2 master-TX → shared PCM FIFO (SAI_CAP:16:16120) | `stm32f4-i2s` |
+| LTDC | FULL — scanout, exact gradient (LTDC_SUM:FC7F1F9E, 64x32, 2047 lit) | `stm32f4-ltdc` |
+| DCMI | FULL — capture, DR sum 0x178 exact, 4x4 on the sink | `stm32f4-dcmi` |
+| QSPI | FULL — indirect + mmap agree, 256 words host-verified | `stm32f4-qspi` |
+| FSMC | FULL — 8080 burst to the sink, RDDID 0x9341, BANK4 inert | `stm32f4-fsmc` |
+| SAI | FULL (data path only) — guest DR → shared PCM FIFO | `stm32f4-sai` |
+| 1-Wire | **NO-GO, engine-side** — see the `SysTick->VAL` section above | `stm32f4-1wire` |
+| MicroPython | **NONE** — see below | — |
+
+Two of the "engine gaps" turned out to be **cell bugs** (fixed in the
+cells, no engine change — please do not re-diagnose them as engine work):
+
+1. **DMA** polled `DMA2_LISR` bit 5. On the F4 DMA2 that bit is
+   *reserved*: stream 0 occupies bits 0..4 (FEIF0/DMEIF0/TEIF0/HTIF0/
+   **TCIF0 = bit 4**). The flag never read back and every board timed out.
+   The model is right (`status |= 1<<4`, stream i shifted by 6*i); measured
+   LISR after a completed M2M copy = `0x18` (HTIF0|TCIF0).
+2. **I2S** wrote `SPI_I2SCFGR` bit 10. On the F4 that register belongs to
+   the SPIx block and bit 10 is **CKPOL**; **I2SMOD is bit 0** (RM0090
+   §27.3.3). With I2SMOD clear the SPI model stayed in plain-SPI mode, so
+   `SPI2_DR` writes never reached the shared PCM capture FIFO and the
+   runner's `SAI_CAP` marker never fired. The engine's own firmware
+   (`firmware/i2s_sai_test/main.c`) already used `SPI2_I2SCFGR = 1`.
+
+**No F407-specific fix was needed** for the five display/audio cells: the
+register maps are identical on F407 and F429 (LTDC1 `0x40016800`, DCMI
+`0x50050000`, QUADSPI `0xA0001000` + mmap `0x90000000`, FSMC
+`0xA0000000`, SAI1 `0x40015800`), the sketches touch no pins, and the only
+board difference is the Arduino core's `Serial` port (Disco F407 = USART2,
+Disco F429 = USART1) — the runner's per-board `uartAddr` already handles
+that.
+
+**MicroPython on F4 stays NONE.** `stm32f4-emu` boots Arduino/STM32duino
+images (`loadBin`/`loadHex`/`loadELF`) and models the F4 SVD peripherals;
+there is no MicroPython runtime, no REPL and no MicroPython flash-image
+convention in the engine, no F4 MicroPython image in `public/firmware/`
+(only ESP32/RP2040/RP2350), and the F4 boards are registered with
+`firmware: ['arduino-sketch']` only (`boards-registry.ts` — Pico/ESP32 are
+the boards with a `micropython-script` path). Closing it needs an upstream
+STM32F4DISC MicroPython image + a runner REPL inject (our side) — and its
+microsecond sleeps hit the same `SysTick->VAL` gap as the DHT22 cell.
+
 ## Acceptance (our e2e — all green today)
 
 1. `tests/e2e/stm32f4-periph-x.spec.js` — "SSD1306 draws via I2C1" (the old
@@ -225,6 +324,16 @@ IWDG ever becomes wall/LSI-timed, the cell's delays have to grow with it.
    **retracted**: the divider really does accelerate the guest clock
    (div=7 → 489..1267 guest-ms/wall-s vs div=1 → 106..158). The cell logs
    the host coverage instead of asserting a wall-dependent count.
+5. `tests/e2e/stm32f4-dma.spec.js` / `stm32f4-i2s.spec.js` — the two cells
+   that were repaired on 2026-10-20 (TCIF0 mask, I2SMOD bit). Both now run
+   on all five chips and must stay green: they are the regression net for
+   the `DMA2_LISR` bit layout and for the SPI model's I2S mode.
+6. `tests/e2e/stm32f4-ltdc.spec.js` / `-dcmi` / `-qspi` / `-fsmc` / `-sai` —
+   each now covers F429 **and** F407 in one cell. They must stay green on
+   both boards (same register maps, per-board `uartAddr`).
+7. `tests/e2e/stm32f4-1wire.spec.js` — DHT22: RED on all five chips until
+   the `SysTick->VAL` patch lands; the cell's expectations do not change,
+   only the engine's `micros()`.
 
    Runner-side note (not an engine issue, recorded so it is not
    re-diagnosed): the `tickMHz` write receipt used to be emitted on a

@@ -1,0 +1,88 @@
+--- a/stm32-periph-wasm/src/peripherals/systick.rs
++++ b/stm32-periph-wasm/src/peripherals/systick.rs
+@@ -6,29 +6,69 @@
+     rvr: u32,
+     cvr: u32,
+     calib: u32,
+-    val_toggle: bool,
+ }
+ 
+ impl SysTick {
+     pub fn new(name: &str) -> Option<Box<dyn Peripheral>> {
+         if name == "SysTick" || name == "STK" {
+-            Some(Box::new(Self { csr: 0, rvr: 0, cvr: 0, calib: 0, val_toggle: false }))
++            Some(Box::new(Self { csr: 0, rvr: 0, cvr: 0, calib: 0 }))
+         } else {
+             None
+         }
+     }
++
++    /// Silicon behaviour of the VAL register (RM0090 §4.4.1 / Cortex-M4
++    /// System Timer): a free-running DOWN-counter that reloads from LOAD
++    /// on the next tick.
++    ///
++    /// The previous model returned LOAD on even reads and CVR (0) on odd
++    /// reads — a latch toggle, not a count. Every guest that derives a
++    /// sub-millisecond time base from VAL was therefore blind: the
++    /// STM32duino core's `getCurrentMicros()`
++    /// (libraries/SrcWrapper/src/stm32/clock.c) reads `SysTick->VAL` for
++    /// the sub-millisecond part of `micros()`, so `micros()` degenerated
++    /// into a 1ms-quantised clock that alternated between m*1000 and
++    /// (m+1)*1000. Measured on the deployed engine bytes (F407, DISCO
++    /// core, LOAD = 167999):
++    ///
++    ///   SysTick->VAL x8      = 0,167999,0,167999,0,167999,0,167999
++    ///   micros() - micros() = 0
++    ///   micros() over delayMicroseconds(500) = 0
++    ///   micros() over a 200K-iteration busy loop = 8000
++    ///
++    /// Any protocol that times sub-millisecond slots with `micros()`
++    /// (DHT22 26us/70us slots, DS18B20 presence/reset windows, 1-Wire
++    /// bit timing) could not decode at all — the F4 DHT22 cell reads NaN
++    /// on every chip for exactly this reason.
++    ///
++    /// The engine's time base is the retired-instruction counter and the
++    /// SysTick period is expressed in the same units (nvic.systick_period
++    /// = LOAD, nvic.last_systick_trigger = instruction count of the
++    /// previous tick), so VAL = LOAD - (instructions since that tick)
++    /// makes the guest's sub-millisecond fraction exact in guest time.
++    fn val(&self, sys: &System) -> u32 {
++        // Counter disabled (CSR.EN == 0): the counter does not run.
++        if self.csr & 1 == 0 || self.rvr == 0 {
++            return 0;
++        }
++        let now = crate::system::instruction_count();
++        let last = {
++            let nvic = sys.p.nvic.borrow();
++            nvic.last_systick_trigger
++        };
++        let period = self.rvr as u64;
++        let elapsed = now.saturating_sub(last).min(period);
++        (period - elapsed) as u32
++    }
+ }
+ 
+ impl Peripheral for SysTick {
+     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+-    fn read(&mut self, _sys: &System, offset: u32) -> u32 {
++    fn read(&mut self, sys: &System, offset: u32) -> u32 {
+         match offset {
+             0x00 => self.csr,
+             0x04 => self.rvr,
+-            0x08 => {
+-                self.val_toggle = !self.val_toggle;
+-                if self.val_toggle { self.cvr } else { self.rvr }
+-            }
++            0x08 => self.val(sys),
+             0x0C => self.calib,
+             _ => 0,
+         }
+@@ -46,6 +86,8 @@
+             }
+             0x04 => self.rvr = value & 0x00FF_FFFF,
+             0x08 => {
++                // Writing VAL clears the counter (it reloads from LOAD at
++                // the next tick) — the model restarts the tick window.
+                 self.cvr = 0;
+                 sys.p.nvic.borrow_mut().last_systick_trigger = crate::system::INSTRUCTION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+             }

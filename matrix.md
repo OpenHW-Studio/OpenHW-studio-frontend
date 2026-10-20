@@ -40,11 +40,11 @@ stm32-gd32-wave2 (12/12: softserial/RTC/DHT/CAN).
 
 | Board | UART | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI/FS | LTDC | DCMI | QSPI | FSMC | SAI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | NONE | NONE | NONE | NONE (CAN hw, no F4 CAN cell) | NO-GO | NONE (I2S2/3) | NONE | FULL (CDC echo) | ABSENT (device-only model) | FULL (gateway DORA 2026-10-15) | FULL (block5 exact) | FULL (raw+FS) | NONE (flag true; scanout proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (flag true; proven F429-only) | NONE (sai:[1]; proven F429-only) | NONE | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
-| openhw-stm32f401 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
-| openhw-stm32f411 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | NONE | FULL | FULL | ABSENT (can:[]) | NO-GO | NONE | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
-| openhw-stm32f407ve | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | FULL (CDC echo) | ABSENT | FULL (gateway DORA 2026-10-15, same runner path as F407) | FULL | FULL (raw; FS NO-GO engine-side) | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | FULL (OLED/MAX7219) |
-| openhw-stm32f429 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | NONE (DMA2D gate unused) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | NONE | NONE | ABSENT | FULL (gateway DORA 2026-10-15, same runner path as F407) | FULL | FULL (raw; FS NO-GO engine-side) | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | FULL (OLED/MAX7219; LTDC proven) |
+| openhw-stm32f4 (F407 disco) | FULL | FULL (OLED) | FULL (MAX7219+SD) | FULL | FULL | FULL (loopback) | FULL (DMA2 M2M 16 words, TCIF0, LISR 0x18) | FULL (PB0=1/PB1=0) | FULL (DS1307 set/read over I2C1) | FULL (exact loopback ID 0x123, 8/8 bytes) | NO-GO | FULL (I2S2 master-TX → shared PCM FIFO, SAI_CAP:16:16120) | NO-GO (engine-side: SysTick->VAL is not a down-counter → micros() 1ms-quantized; patch delivered) | FULL (CDC echo) | ABSENT (device-only model) | FULL (gateway DORA 2026-10-15) | FULL (block5 exact) | FULL (raw+FS) | FULL (scanout, exact pixels — 64x32, 2047 lit) | FULL (capture, DR sum exact) | FULL (indirect+mmap agree; 256 words host-verified) | FULL (8080 burst, RDDID exact) | FULL (data path only — register stub + shared FIFO) | NONE (engine has no MicroPython runtime; no F4 image; no REPL inject path) | FULL (OLED+MAX7219; no ILI9341-on-STM32 cell) |
+| openhw-stm32f401 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | FULL (DMA2 stream 0 M2M, TCIF0) | FULL | FULL | ABSENT (can:[]) | NO-GO | FULL (I2S2 → shared PCM FIFO) | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f411 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | ABSENT | FULL (DMA2 stream 0 M2M, TCIF0) | FULL | FULL | ABSENT (can:[]) | NO-GO | FULL (I2S2 → shared PCM FIFO) | NONE | NONE | ABSENT | ABSENT (no MAC) | FULL | FULL (raw; FS NO-GO engine-side) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f407ve | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | FULL (DMA2 stream 0 M2M, TCIF0) | FULL | FULL | FULL (exact loopback) | NO-GO | FULL (I2S2 → shared PCM FIFO) | NONE | FULL (CDC echo) | ABSENT | FULL (gateway DORA 2026-10-15, same runner path as F407) | FULL | FULL (raw; FS NO-GO engine-side) | NONE (flag; proven F429-only) | NONE | NONE | NONE | NONE (sai:[1]) | NONE | FULL (OLED/MAX7219) |
+| openhw-stm32f429 | FULL | FULL (OLED) | FULL (MAX7219) | FULL | FULL | FULL (loopback) | FULL (DMA2 stream 0 M2M, TCIF0; DMA2D gate still unused) | FULL | FULL | FULL (exact loopback) | NO-GO | FULL (I2S2 → shared PCM FIFO) | NONE | NONE | ABSENT | FULL (gateway DORA 2026-10-15, same runner path as F407) | FULL | FULL (raw; FS NO-GO engine-side) | FULL (scanout, exact pixels) | FULL (capture, DR sum exact) | FULL* (model extension — no F4 silicon; image plumbing proven) | FULL (8080 burst, RDDID exact) | PARTIAL (DR data-path only) | NONE | FULL (OLED/MAX7219; LTDC proven) |
 
 Specs: stm32f4-sdio, stm32f4-ltdc, stm32f4-usb, stm32f4-dcmi, stm32f4-qspi,
 stm32f4-fsmc, stm32f4-sai, stm32f4-dac, stm32f4-adc, stm32f4-pwm, stm32f4-spi,
@@ -56,9 +56,33 @@ stm32f4-can(+x), stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x (VE DAC),
 stm32f4-sys (IWDG arm/reload/fire, EXTI-SWIER, RTC_BKP0R, HASH SHA-256/SHA-1
 digests — 15 cells over F407/407VE/429), stm32f4-clock (tickMHz:24 divider
 armed + guest millis advance in delay(2000) quanta),
+stm32f4-dma (DMA2 stream 0 M2M 16 words, TCIF0 on all five chips),
+stm32f4-i2s (I2S2 master-TX into the shared PCM FIFO on all five chips),
+stm32f4-ltdc/-dcmi/-qspi/-fsmc/-sai (F429 + F407 in one cell each),
 F4 sibling NO-GOs (engine-side, specs left failing): SdFat FS (P_ERR init
 contradiction), ILI9341 (tap death on 120ms+ delays), RNG (DRDY never sets),
-DHT22 (micros() 1ms-quantized), I2S (SPI2 block unrouted).
+DHT22 / 1-Wire (SysTick->VAL modelled as a latch toggle, not a down-counter
+→ the STM32duino `micros()` is 1ms-quantised → 26us/70us slots undecodable;
+patch + write-up in patches/f4-systick-val-downcounter.patch and
+patches/README-f4-systick-val.md).
+F407 cell-bug fixes 2026-10-20 (lane/f4-cov — the two "engine gaps" that
+were actually cell bugs): DMA polled LISR bit 5 (reserved) instead of bit 4
+(TCIF0) so every board timed out; I2S wrote SPI_I2SCFGR bit 10 (CKPOL)
+instead of bit 0 (I2SMOD) so the SPI model never entered I2S mode and the
+PCM FIFO stayed empty. Both are fixed in the cells, no engine change.
+F407 coverage notes (2026-10-20, lane/f4-cov): the five display/audio cells
+(LTDC/DCMI/QSPI/FSMC/SAI) needed NO F407-specific fix — the register maps
+are identical on F407 and F429 (LTDC1 0x40016800, DCMI 0x50050000, QUADSPI
+0xA0001000 + mmap 0x90000000, FSMC 0xA0000000, SAI1 0x40015800) and the
+only board difference is the Arduino core's Serial port (Disco F407 =
+USART2, Disco F429 = USART1), which the runner's per-board uartAddr
+handles. MicroPython on F4 stays NONE: stm32f4-emu boots
+Arduino/STM32duino images only (no MicroPython runtime, no REPL), there is
+no F4 MicroPython image in public/firmware, and the F4 runner has no
+`micropython-script` firmware path (boards-registry lists it for Pico/ESP32
+only) — an upstream STM32F4DISC MicroPython image plus a runner REPL
+inject would be needed, and its microsecond sleeps hit the same
+SysTick->VAL gap as the DHT22 cell.
 
 ## AVR (survey-verified 2026-10-09; no RED)
 

@@ -10,14 +10,17 @@ import { test, expect } from '@playwright/test';
 // independently reports the FIFO sum. Matching sums are the proof.
 // I2S2 exists on every F4 chip (i2s:[2,3] in the CHIPS table) and the
 // sketch touches no pins, so all five boards ride the same code.
-// If SPI2-DR never reaches the FIFO live, re-triage to NO-GO (I2S mode
-// unrouted) — the SAI DR path stays proven either way.
-// NO-GO CONFIRMED (2026-10-12, lane/f4 — specs unchanged): I2S cells fail
-// on all five chips (guest never reaches I2S_SUM; READY-repeat boot loop).
-// The F429 SAI control cell is GREEN (SAI_CAP:16:16120 via the same shared
-// FIFO + runner drain), so the FIFO path works — the SPI2 I2S register
-// block (I2SCFGR/I2SPR/TXE in I2S mode) is unrouted in the model.
-// Engine-owner territory; SAI proof stands.
+//
+// I2SMOD BIT (fixed 2026-10-20, lane/f4-cov): the cell used to write
+// SPI_I2SCFGR bit 10 — on the F4 that register is the SPIx block, and
+// bit 10 is CKPOL. I2SMOD is bit 0 (RM0090 §27.3.3: bit 0 I2SMOD,
+// bit 1 I2SE, bits 3:2 I2SCFG, bits 5:4 DATALEN, bits 9:8 MCKDIV).
+// With I2SMOD clear the SPI model stayed in plain-SPI mode, so DR
+// writes never reached the shared PCM capture FIFO and the runner's
+// SAI_CAP marker never fired — the "I2S unrouted in the model" verdict
+// was a cell defect, not an engine gap. The engine's own firmware
+// (stm32 F4/firmware/i2s_sai_test/main.c:140) already used
+// `SPI2_I2SCFGR = 1` (I2SMOD=bit 0).
 const TYPES = [
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
   { tag: 'F401', type: 'openhw-stm32f401', id: 'f401' },
@@ -26,7 +29,7 @@ const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f429' },
 ];
 
-const CODE = '#define SPI2_BASE 0x40003800UL\n#define SPI2_CR1 (*(volatile uint32_t*)(SPI2_BASE + 0x00))\n#define SPI2_SR (*(volatile uint32_t*)(SPI2_BASE + 0x08))\n#define SPI2_DR (*(volatile uint32_t*)(SPI2_BASE + 0x0C))\n#define SPI2_I2SCFGR (*(volatile uint32_t*)(SPI2_BASE + 0x1C))\n#define SPI2_I2SPR (*(volatile uint32_t*)(SPI2_BASE + 0x20))\n#define RCC_APB1ENR (*(volatile uint32_t*)0x40023840UL)\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("I2S_READY");\n  RCC_APB1ENR |= (1UL<<14);\n  SPI2_I2SCFGR = (1UL<<11)|(2UL<<8);\n  SPI2_I2SPR = 2UL;\n  SPI2_I2SCFGR |= (1UL<<10);\n}\nvoid loop() {\n  unsigned long sum = 0;\n  for (int i = 0; i < 16; i++) {\n    unsigned long to = 200000UL;\n    while (!(SPI2_SR & 0x2UL) && to--) {}\n    SPI2_DR = (unsigned long)(1000 + i);\n    sum += 1000 + i;\n  }\n  Serial.print("I2S_SUM:"); Serial.println(sum);\n  if (sum == 16120UL) Serial.println("I2S_TX_OK");\n  delay(3000);\n}\n';
+const CODE = '#define SPI2_BASE 0x40003800UL\n#define SPI2_CR1 (*(volatile uint32_t*)(SPI2_BASE + 0x00))\n#define SPI2_SR (*(volatile uint32_t*)(SPI2_BASE + 0x08))\n#define SPI2_DR (*(volatile uint32_t*)(SPI2_BASE + 0x0C))\n#define SPI2_I2SCFGR (*(volatile uint32_t*)(SPI2_BASE + 0x1C))\n#define SPI2_I2SPR (*(volatile uint32_t*)(SPI2_BASE + 0x20))\n#define RCC_APB1ENR (*(volatile uint32_t*)0x40023840UL)\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("I2S_READY");\n  RCC_APB1ENR |= (1UL<<14);\n  SPI2_CR1 = (1UL<<6)|(1UL<<2)|(7UL<<3);\n  SPI2_I2SPR = 2UL;\n  SPI2_I2SCFGR = (1UL<<0)|(1UL<<1)|(2UL<<2)|(2UL<<8);\n}\nvoid loop() {\n  unsigned long sum = 0;\n  for (int i = 0; i < 16; i++) {\n    unsigned long to = 200000UL;\n    while (!(SPI2_SR & 0x2UL) && to--) {}\n    SPI2_DR = (unsigned long)(1000 + i);\n    sum += 1000 + i;\n  }\n  Serial.print("I2S_SUM:"); Serial.println(sum);\n  if (sum == 16120UL) Serial.println("I2S_TX_OK");\n  delay(3000);\n}\n';
 
 test.describe('F4 I2S (audio-bus TX to the shared FIFO)', () => {
   test.setTimeout(240000);
