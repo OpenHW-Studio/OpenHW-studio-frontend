@@ -338,6 +338,29 @@ not a hang) and use the wait to edit docs, matrix rows and patch files. The
 lock file is `/tmp/e2e-slot.lock` — recreate it if the box reboots
 (`touch /tmp/e2e-slot.lock`).
 
+**The second lock (added after the third crash).** `npm run build` and
+`npx vitest run` are the memory hogs (a build peaks around 2 GiB), and two of
+them at once is what tips the app over. They take their own slot:
+
+```bash
+flock -w 1800 /tmp/gate-slot.lock -c "npm run build"
+flock -w 1800 /tmp/gate-slot.lock -c "npx vitest run"
+```
+
+### The network on this box is IPv4-only (2026-10-20)
+
+`wlp108s0` has only a link-local IPv6 address (`fe80::/64`) and there is NO
+global IPv6 route, but DNS hands out AAAA records for the API host. Node's
+default resolver order is "verbatim", so it tries the IPv6 address first and
+the call fails — that is what killed all four agents at once with
+`getaddrinfo ENOTFOUND opencode.ai`. Fix it once, with root:
+
+```bash
+sudo sh -c 'echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf'   # prefer IPv4
+# or: sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+# or: start the app with NODE_OPTIONS=--dns-result-order=ipv4first
+```
+
 **Crash recovery, for the next agent:** the app crash kills the agent
 sessions but NOT the worktrees. The uncommitted work is still on disk —
 read it, continue from it, do not restart from scratch. And the stack comes
