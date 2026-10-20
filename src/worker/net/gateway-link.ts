@@ -10,7 +10,15 @@
 // uplink asserted before first step, ≤16 TX pops per pump, RX malloc +
 // push, frames queued in the runner while the socket opens.
 
-export const GATEWAY_DEFAULT_URL = 'ws://127.0.0.1:5030/api/network-gateway';
+// Default gateway endpoint. Overridable at build time with
+// VITE_GATEWAY_URL (e.g. ws://127.0.0.1:5031/api/network-gateway) so a
+// second gateway instance — a patched build under test, or a per-lane
+// gateway — can be used without editing code. Board attrs / runner
+// options still win over this default.
+export const GATEWAY_DEFAULT_URL = (
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GATEWAY_URL)
+    || 'ws://127.0.0.1:5030/api/network-gateway'
+).trim();
 
 export interface GatewayLinkStatus {
     up: boolean;

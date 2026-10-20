@@ -43,6 +43,12 @@ const CLIENT_CODE = [
   '  WiFi.begin("Pico-emuNet", "testpassword");',
   '  delay(8000);',
   '  Serial1.print("CLI-STATUS="); Serial1.println(WiFi.status());',
+  '  // The client runs a STATIC IP (WiFi.config above), so it never gets a',
+  '  // DHCP lease and therefore no resolver. Point lwIP at the gateway',
+  '  // resolver (192.168.4.1:53) explicitly — without this, hostByName',
+  '  // returns 0 (recorded gap, 2026-10-15).',
+  '  WiFi.setDNS(IPAddress(192, 168, 4, 1));',
+  '  Serial1.println("CLI-DNS-SET");',
   '  IPAddress dns;',
   '  int dnsOk = WiFi.hostByName("example.com", dns);',
   '  Serial1.print("CLI-DNS:"); Serial1.print(dnsOk); Serial1.print(":"); Serial1.println(dns);',
@@ -109,6 +115,14 @@ test.describe('Pico-W LAN (2-board TCP via gateway)', () => {
     expect(verdict.pass).toBe(true);
     expect(verdict.serial || '').toContain('SRV-ECHOED');
     expect(verdict.serial || '').toContain('CLI-RX:ECHO:HELLO-LAN');
+    // v4 DNS through the gateway resolver: non-zero rc AND a real address
+    // (not 0.0.0.0 / the 255.255.255.255 "unset" marker).
+    const dns = (verdict.serial || '').match(/CLI-DNS:(\d+):([0-9.]+)/);
+    expect(dns, 'CLI-DNS line missing from serial').toBeTruthy();
+    expect(Number(dns[1]), `CLI-DNS rc=${dns[1]} (hostByName failed)`).not.toBe(0);
+    expect(dns[2]).not.toBe('0.0.0.0');
+    expect(dns[2]).not.toBe('255.255.255.255');
+    console.log('LAN DNS: example.com ->', dns[2]);
     await page.evaluate(() => window.OpenHWE2E.stop());
     await page.waitForTimeout(2000);
   });

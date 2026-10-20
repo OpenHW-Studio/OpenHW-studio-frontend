@@ -141,7 +141,8 @@ Connectivity extras not in the main tables:
 | Feature | Status |
 |---|---|
 | Pico-W CYW43 WiFi traffic | FULL 2026-10-15 — Arduino join + gateway DHCP (STATUS=3 IP=192.168.4.2) via unified gateway :5030; runner enables + WS pump in pico-runner.ts, engine from owner folder (vite alias) |
-| Pico-W LAN (2-board TCP) | FULL 2026-10-15 — STA+STA same room, TCP echo both directions observed (SRV-RX/SRV-ECHOED/CLI-RX). v4 DNS hostByName fails (no gateway v4 DNS egress) — recorded gap, unasserted. |
+| Pico-W LAN (2-board TCP) | FULL 2026-10-20 — STA+STA same room, TCP echo both directions observed (SRV-RX/SRV-ECHOED/CLI-RX). v4 DNS now green + asserted (CLI-DNS:1:104.20.23.154): the static-IP client had NO resolver (no DHCP lease) — it now calls `WiFi.setDNS(192.168.4.1)` (gateway resolver). |
+| Pico-W v4 DNS (gateway resolver) | FULL 2026-10-20 — `WiFi.hostByName("example.com")` → 104.20.23.154 / 172.66.147.243 (cell `tests/e2e/pico-wifi-dns.spec.js`). Resolver = the gateway's own DNS on 192.168.4.1:53 (gVisor VN DNS, answers through the host resolver) — reachable from the guest's L2 domain, no host egress needed. DHCP-carried DNS (lease advertises 192.168.4.1 first, 8.8.8.8 fallback) needs the gateway patch on branch `lane/net-dns` (not yet on main); explicit `WiFi.setDNS(192.168.4.1)` works on any gateway. Packet trace: guest→192.168.4.1:53 → `A 104.20.23.154 A 172.66.147.243`. |
 | Pico-W HTTP client | FULL 2026-10-15 — Arduino HTTPClient GET via gateway NAT (10.150.211.85→host :8092): 200 + body exact. |
 | F4 HTTP client | FULL 2026-10-15 — owner eth_http.bin via gateway NAT (TCP + GET + 200 + body, byte-exact response); polling firmware (no ethIrq). |
 | Pico IPv6 (SLAAC) | PARTIAL 2026-10-15 — RV32 ping6 guest gets gateway RA (RA-OK live, SLAAC addressing works); ICMPv6 echo unproven (guest targets a hardcoded vnet peer, gateway answers NS only for its own addresses). |
