@@ -3,6 +3,32 @@
 Our runner: `OpenHW-studio-frontend/src/worker/runners/stm32f1-runner.ts`.
 Status: **no changes required** — this package is the reference implementation. This doc pins the contract so it is not regressed.
 
+## Engine sourcing (2026-10-20) — F1 is mid-transition, know which bytes ran
+
+Engines run from the **owner's local folders** in dev via `resolve.alias` in
+`OpenHW-studio-frontend/vite.config.js` (Pico → `rp2350/Pico-emu/web`,
+ESP32 → `esp32 emu/dist/sab`; F4 stays on the npm pair because the owner
+folder is mid-rebuild). npm-shaped import specifiers are preserved so the
+future npm flip is a root swap in two places only (`importEngine` in
+`src/worker/runners/arm-runner-base.ts` + the `resolve.alias` block).
+
+**F1 is the odd one out today**: dev resolves the **npm** package while the
+deploy mirror serves the owner's 19:31 engine bytes (`d1e69c28`). The
+inconsistency is being fixed in its own lane (F1 folder-first alias). Until
+it lands, **an F1 cell that passes in dev is not automatically proven on the
+deployed mirror** — when recording an F1 result, say which bytes it ran
+against.
+
+**Engine repos are READ-ONLY for us** (the owner/another agent is actively
+making the engines faster): deliver engine changes as patch files or branch
+proposals for the owner to merge, never apply them in place.
+
+## Networking: N/A for this engine
+
+The F103 has no radio and no Ethernet MAC, so the F1 does **not** ride the
+unified-gateway path (that path is raw Ethernet over a WebSocket). Nothing
+is deferred here; the F1 keeps its current contract.
+
 ## What to keep stable (used live, green)
 
 1. **I2C1 observation hooks** (per-bus, post-create, address-independent):

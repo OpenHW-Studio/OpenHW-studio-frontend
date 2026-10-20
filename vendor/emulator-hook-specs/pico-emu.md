@@ -17,6 +17,97 @@ Status (2026-10): jsmirror is upstreamed in-tree (`src/sdd_jsmirror.c`, `src/sdd
 `_picoemu_sdd_add`, `_picoemu_jsmirror_pending`, `_picoemu_jsmirror_pop`,
 plus existing `_picoemu_write_uart` (REPL injection) and UART-out poll — all already used by our runner, keep signatures frozen.
 
+## Network — the unified-gateway contract (PROVEN 2026-10-20)
+
+There is **no in-emulator WiFi/IP stack any more** — the frontend's fake
+DHCP/DNS and the network worker were deleted. The engine is a **station on a
+raw-Ethernet bus** and the gateway (`openhw-unified-gateway`, Go) owns the
+network: `ws://127.0.0.1:5030/api/network-gateway`, room via `?sessionId=`,
+virtual net `192.168.4.0/24`, gateway at `192.168.4.1`, DHCP + gVisor
+DNS/NAT. See the docs repo's `architecture/network-bringup.md` for the full
+design.
+
+### Net entry points we drive (all live, all proven)
+
+| Entry point | Role |
+|---|---|
+| `_picoemu_wifi_enable(1)` | enable the CYW43 (nodhcp — DHCP flows to the gateway). Pico W / Pico 2 W |
+| `_picoemu_board_eth(1, live=1, spiBus)` | enable the W5500 on SPI0/SPI1 (`boardSpi` attr) |
+| `_picoemu_w5500_gw_enable(1)` | join the shared vnet bus (MACRAW socket 0) |
+| `_picoemu_eth_set_uplink(1)` | assert the uplink **before the first step** (owner parity with `rp2350/Pico-emu web/cli.js`); `0` on teardown |
+| `_picoemu_eth_pop_tx(ptr, max)` | pop one TX Ethernet frame into `ptr` (<=16 pops per tick, 2048-byte buffer) |
+| `_picoemu_eth_push_rx(ptr, len)` | hand one RX Ethernet frame to the engine |
+
+Our runner (`src/worker/runners/pico-runner.ts`, `startNetLink` /
+`pumpNetLink` / `stopNetLink`) owns the WebSocket
+(`src/worker/net/gateway-link.ts`): RX frames are `malloc`'d, copied into
+`HEAPU8` and pushed; TX frames are popped per tick and sent. Every call is
+`typeof`-guarded, so a renamed export silently disables networking — see the
+"no TS types for the net ABI" ask below.
+
+**In progress (not yet proven):** the W6300 carrier uses the same bus and the
+same per-tick pump but a different engine board:
+`_picoemu_board_eth6300` + `_picoemu_w6300_gw_enable(1)` (engine board
+`pico-w6300`, CSn=16/RSTn=22/INTn=15). Proof in flight on lane
+`lane/net-6300`; the arduino-pico core has no W6300 board entry yet, so
+there is no compile target.
+
+### Proof cells (live, green — the gateway is the evidence)
+
+* `tests/e2e/pico-wifi-gateway.spec.js` — Pico W joins the AP and takes a
+  **gateway** DHCP lease (`STATUS=3`, `IP=192.168.4.2`).
+* `tests/e2e/pico2-w-wifi-gateway.spec.js` — same on Pico 2 (M33).
+* `tests/e2e/pico-wifi-lan.spec.js` — two Pico W boards in one room, TCP
+  client<->server echo.
+* `tests/e2e/pico-wifi-ap-serve.spec.js` / `pico-wifi-ap2.spec.js` /
+  `pico-wifi-ap.spec.js` — a guest **SoftAP** hosts a TCP server and a
+  joining STA reaches it (and the reverse direction).
+* `tests/e2e/pico-http-gateway.spec.js` — HTTP GET through the gateway NAT
+  (200 + body byte-exact).
+* `tests/e2e/pico-wifi-dns.spec.js` — `hostByName` through the gateway
+  resolver.
+* `tests/e2e/pico-eth-gateway.spec.js` / `pico2-eth-gateway.spec.js` — W5500
+  full DORA.
+* `tests/e2e/pico-ping6-gateway.spec.js` — IPv6 SLAAC (`RA-OK`).
+
+### Gateway expectations (what the engine may rely on)
+
+* The **DHCP lease carries the resolver**: leases advertise the gateway
+  resolver `192.168.4.1` alongside `8.8.8.8`, so a lease-based lookup stays
+  inside the virtual net.
+* A **static-IP guest has no lease and therefore no resolver** — it must set
+  one explicitly (`WiFi.setDNS(192.168.4.1)`; proven on Pico W in
+  `pico-wifi-lan.spec.js`).
+* **Room-aware `.1` arbitration**: if a room member claims `192.168.4.1` as a
+  soft AP, the gateway stops answering `.1` ARP requests so the AP answers
+  for itself (gateway `main@151927d`). Trade-off: in such a room the
+  gateway's own `.1` services (incl. the resolver it advertises) are
+  unreachable from that room.
+* The **DHCP pool is a global counter** (MAC-keyed, but the counter is shared
+  by every room and board on the box and wraps at `.250`) and drifts — never
+  rely on a fixed lease number.
+
+### Engine gaps we need fixed (owner)
+
+1. **No TS types for the net ABI.** `_wifi_enable`, `_board_eth`,
+   `_w5500_gw_enable`, `_eth_set_uplink`, `_eth_push_rx`, `_eth_pop_tx` are
+   called through `any` casts. A rename disables networking silently instead
+   of failing loudly. Types (or a version constant) would make it loud.
+2. **W5500 at the 200 MHz arch default never completes DHCP**: `begin()` does
+   not return because the guest outruns the wall DHCP timers. Our cells pass
+   the `tickMHz 125` attr to work around it (same on M0 and M33). Engine-side
+   quirk, flagged upstream.
+3. **`_picoemu_board_eth(1, live=0, spi)` stalls DHCP** in our runner, even
+   though the owner demo uses `live=0`; we run `live=1` (green twice). The
+   demo's extra proxy-socket/upload path likely covers the difference.
+4. **`softAPConfig` is not honoured**: the SoftAP netif is hardcoded to
+   `192.168.4.1`. A guest that asks for a different AP subnet silently gets
+   the hardcoded address (this is why `pico-wifi-ap.spec.js` had to be
+   repointed at the AP's real address).
+5. **W5500 INTn / GPIO21 interrupt path** is not proven: the proven W5500
+   cells are polling guests. Expose the interrupt so an INTn-driven guest can
+   be proven against the same bus.
+
 ## MicroPython findings (proven live 2026-10, needs engine work)
 Our runner injects via chunked `exec()` lines and the Arduino I2C path is
 green, but two MP-specific gaps remain in-engine:
