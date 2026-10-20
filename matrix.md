@@ -75,14 +75,15 @@ avr-tiny-honest, avr-wdt.
 
 Specs: pico-uart-sweep, pico-i2c, pico-spi, pico-595, pico-adc, pico-pwm,
 pico-mp-i2c, pico-pio, pico-dma, pico2, pico2-spi, pico2-adc, pico2-pwm,
-pico2-mp-i2c, pico2-rv32, multi-board-uart, arch-clocks.
+pico2-mp-i2c, pico2-rv32, multi-board-uart, arch-clocks,
+pico2-w-wifi-gateway, pico2-eth-gateway.
 
 ## ESP32 (DevKit + CAM shell — survey-verified 2026-10-09)
 
 | Board | UART | I2C | SPI | ADC | PWM/LEDC | DAC | DMA | GPIO-in | 1-Wire | DHT-RMT | TWAI | I2S | Camera | MicroPython | WiFi/ETH | SD-SPI | Display-ext | Touch |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | PARTIAL (SSD1306+MAX7219 proven; ILI9341/ePaper/N5110 not) | NONE |
-| openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | NONE | NONE | NONE | NONE |
+| openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP 2026-10-20) | NONE | NONE | NONE |
 
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
 esp32-dht22, esp32-twai (RX), esp32-i2s-tx, esp32-camcell (DevKit camera),
@@ -91,7 +92,8 @@ esp32-twai-tx (RX proven; TX oracle NO-GO engine-side), esp32-rmt-ir,
 esp32-touch, esp32-cam-adc, esp32-gpio-in, esp32-nvs, esp32-interrupts
 (centrally green), esp32-ili9341 (centrally green), esp32-sys, esp32-pcnt,
 esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
-esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc.
+esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc,
+esp32-cam-wifi-gateway.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09)
 
@@ -145,10 +147,13 @@ Connectivity extras not in the main tables:
 | Pico IPv6 (SLAAC) | PARTIAL 2026-10-15 — RV32 ping6 guest gets gateway RA (RA-OK live, SLAAC addressing works); ICMPv6 echo unproven (guest targets a hardcoded vnet peer, gateway answers NS only for its own addresses). |
 | Pico-W SoftAP | FULL 2026-10-15 — guest beginAP + STA join (AP DHCP lease) + TCP both directions (STA-server and AP-client directions proven in separate cells). AP subnet fixed at .4.1 by the engine (softAPConfig not honored); AP-terminated TCP untestable due to gateway .1 fast-reply collision — STA-server direction used instead. |
 | Pico-ETH W5500/W6300 traffic | FULL 2026-10-15 — Arduino Wiznet5500lwIP DORA via unified gateway :5030 (MACRAW sock0, tickMHz 125); runner board enables + WS pump in pico-runner.ts, engine from owner folder (vite alias). W6300 still explicit gap. |
+| Pico 2 W (M33) CYW43 WiFi traffic | FULL 2026-10-20 — openhw-pico-2-w joins the fake AP + gateway DHCP (STATUS=3, IP=192.168.4.2) via unified gateway :5030; runner boots the RP2350/M33 arch (arch 2) and enables CYW43 + WS pump, engine from owner folder (vite alias). Cell: pico2-w-wifi-gateway. |
+| Pico 2 ETH (M33) W5500 traffic | FULL 2026-10-20 — openhw-pico-2-eth full DORA via unified gateway :5030 (ETH-BEGIN-OK, conn=1, lease 192.168.4.3); MACRAW sock0 on the M33 arch, tickMHz 125 (same engine-side quirk as the M0+ ETH cell). Cell: pico2-eth-gateway. |
 | Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell; real silicon does device+host) |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
 | Pico SD/FATFS (sdcard.c, fatfs.c) | NONE |
 | ESP32 WiFi link | FULL 2026-10-15 — Arduino STA join + gateway DHCP (STATUS=3, scan + IP) via unified gateway :5030; runner passes config.wifi + throttled stats telemetry. Root cause of the RED was a host-side SAB wedge (stats CMD unserviced mid-run), fixed inline in the vendor mirror (see session notes); engine itself exonerated. |
+| ESP32-CAM WiFi link | FULL 2026-10-20 — openhw-esp32-cam STA join + gateway DHCP (STATUS=3, IP=192.168.4.4) on the esp32-cam board preset (4MB flash + 4MB PSRAM, picked from the board type by esp32-runner.ts); engine dials :5030 at boot. Firmware target is the core's generic esp32:esp32:esp32 build (the frontend maps the cam shell to kind 'esp32'; no per-shell FQBN override). Cell: esp32-cam-wifi-gateway. |
 | ESP32 BLE | ABSENT (no engine model) |
 | ESP32 PCNT / SDMMC / ULP / FreeRTOS tasks / eFuse | NONE each (models exist) |
 | ESP32 USB-CDC (usbcdc.rs) | ABSENT at board level (classic ESP32, no USB silicon) |
