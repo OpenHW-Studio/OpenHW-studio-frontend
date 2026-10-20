@@ -87,7 +87,7 @@ pico2-w-http-gateway, pico2-eth-lan, pico2-eth-http-gateway.
 | Board | UART | I2C | SPI | ADC | PWM/LEDC | DAC | DMA | GPIO-in | 1-Wire | DHT-RMT | TWAI | I2S | Camera | MicroPython | WiFi/ETH | SD-SPI | Display-ext | Touch |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | PARTIAL (SSD1306+MAX7219 proven; ILI9341/ePaper/N5110 not) | NONE |
-| openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP + 2-board LAN + HTTP/NAT 2026-10-20) | NONE | NONE | NONE |
+| openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP + 2-board LAN + HTTP/NAT 2026-10-20; LAN cell FLAKY: 2nd ESP32 board sometimes never joins — client serial stops after CCLI-BEGUN while the server side completes) | NONE | NONE | NONE |
 
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
 esp32-dht22, esp32-twai (RX), esp32-i2s-tx, esp32-camcell (DevKit camera),
