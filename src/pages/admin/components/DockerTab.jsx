@@ -12,7 +12,7 @@ const LOG_COLORS = {
 const getDisplayName = (name) => {
     const names = {
         backend: 'Backend Main', frontend: 'Frontend Client', mongodb: 'Database (MongoDB)',
-        'esp32-worker': 'ESP32 Worker', 'stm32-worker': 'STM32 Worker', 'health-agent': 'Health Agent',
+        'health-agent': 'Health Agent',
     };
     return names[name] || name;
 };
@@ -175,8 +175,6 @@ const DockerTab = ({ infraStatus, onRestart }) => {
                             <option value="frontend">Frontend</option>
                             <option value="backend">Backend</option>
                             <option value="mongodb">MongoDB</option>
-                            <option value="esp32-worker">ESP32 Worker</option>
-                            <option value="stm32-worker">STM32 Worker</option>
                             <option value="health-agent">Health Agent</option>
                         </select>
 

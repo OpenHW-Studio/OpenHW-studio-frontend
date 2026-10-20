@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
 import { isComponentHidden, getComponentWarning } from './utils/componentVisibilityConfig';
+import { PalettePreviewGuard } from './components/PalettePreviewGuard';
 
 const PalettePanel = memo(({
   isPaletteHovered,
@@ -38,6 +39,9 @@ const PalettePanel = memo(({
   const [activeGroupFilter, setActiveGroupFilter] = useState('All');
   const [paletteViewMode, setPaletteViewMode] = useState('grid');
   const [showFavorites, setShowFavorites] = useState(true);
+  // 'Board Variants' group starts collapsed and can never auto-expand:
+  // the 11 footprint-clone tiles stay one tap away without crowding Boards.
+  const [variantsOpen, setVariantsOpen] = useState(false);
   const [favoriteComponents, setFavoriteComponents] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('openhw_fav_components') || '[]')); }
     catch (e) { return new Set(); }
@@ -126,15 +130,43 @@ const PalettePanel = memo(({
       });
       if (filteredItems.length === 0) return null;
       const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
+      const isVariantsGroup = group.group === 'Board Variants';
+      const variantItems = isVariantsGroup ? filteredItems : null;
+      const variantVisible = isVariantsGroup ? variantsOpen : true;
       return (
-        <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
-          <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <div
+          key={group.group || `group-${index}`}
+          style={{
+            marginBottom: isVariantsGroup && !variantVisible ? 18 : (paletteViewMode === 'grid' ? 10 : 4),
+            marginTop: isVariantsGroup && !variantVisible ? 14 : 0,
+            paddingTop: isVariantsGroup && !variantVisible ? 10 : 0,
+            paddingBottom: isVariantsGroup && !variantVisible ? 8 : 0,
+            borderTop: isVariantsGroup && !variantVisible ? '1px solid var(--border)' : 'none',
+            borderBottom: isVariantsGroup && !variantVisible ? '1px solid var(--border)' : 'none',
+          }}
+        >
+          <div
+            className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isVariantsGroup ? 'pointer' : 'default' }}
+            onClick={isVariantsGroup ? () => setVariantsOpen(v => !v) : undefined}
+            title={isVariantsGroup ? (variantsOpen ? 'Collapse board variants' : 'Expand board variants') : undefined}
+          >
             <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
             </span>
             {group.group}
+            {isVariantsGroup && (
+              <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>
+                <span style={{ fontSize: 9, color: 'var(--text3)' }}>{variantItems.length} variants</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ transform: variantsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                  <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            )}
           </div>
 
+          {(!isVariantsGroup || variantVisible) && (
+          <>
           {paletteViewMode === 'grid' ? (
             /* GRID VIEW */
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: '4px 0' }}>
@@ -180,10 +212,21 @@ const PalettePanel = memo(({
                         </svg>
                       </div>
                     )}
-                    {/* Component SVG — absolutely centred in upper area, no inner box */}
+                    {/* Component SVG — absolutely centred in upper area, no inner box.
+                        Guarded: one bad dynamic UI can't unmount the whole page. */}
                     {hasUI ? (
                       <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
-                        {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false, isPalette: true })}
+                        <PalettePreviewGuard
+                          key={item.type}
+                          type={item.type}
+                          fallback={
+                            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+                            </div>
+                          }
+                        >
+                          {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false, isPalette: true })}
+                        </PalettePreviewGuard>
                       </div>
                     ) : (
                       <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: 'translate(-50%, -50%)' }}>
@@ -240,10 +283,12 @@ const PalettePanel = memo(({
               )
             })
           )}
+          </>
+          )}
         </div>
       );
     });
-  }, [CATALOG, activeGroupFilter, paletteSearch, paletteViewMode, GROUP_COLORS, GROUP_ICON_SVG, COMPONENT_REGISTRY, isPaletteItemLocked, onPaletteDragStart, showLockToast, WOKWI_TO_COMP_ID, addComponentAtCenter, COMPONENT_DESCRIPTIONS]);
+  }, [CATALOG, activeGroupFilter, paletteSearch, paletteViewMode, GROUP_COLORS, GROUP_ICON_SVG, COMPONENT_REGISTRY, isPaletteItemLocked, onPaletteDragStart, showLockToast, WOKWI_TO_COMP_ID, addComponentAtCenter, COMPONENT_DESCRIPTIONS, variantsOpen]);
 
   return (
     <>

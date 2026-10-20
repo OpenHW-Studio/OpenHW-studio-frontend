@@ -1,0 +1,13 @@
+{
+  "crate": "openhw-studio-autowiring",
+  "crate_path": "../openhw-studio-autowiring",
+  "package": "openhw-studio-autowiring-engine",
+  "wasm_md5": "ec67b80b256ef853a9c5dd728e03ff89",
+  "glue_md5": "7a8287f2eb89de92aba822244dcda005",
+  "wasm_sha256": "e4b0cf16252af762ba9c10d2bbea95acc2ccfe218615b70a8b3510ede39ffd7c",
+  "glue_sha256": "8eb8a9c02c16075318e9b99101ba276653be659f6a2735da3dd3969d729a8d86",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "wasm_bindgen_cli": "wasm-bindgen 0.2.128",
+  "wasm_opt": "wasm-opt version 117 (version_117)",
+  "generator": "scripts/sync-autowiring-wasm.mjs"
+}

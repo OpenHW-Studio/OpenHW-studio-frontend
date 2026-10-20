@@ -35,9 +35,6 @@ const BOARD_RUNNER_MAP: Record<string, string> = {
   uno:    path.join(WORKER_DIR, 'runners', 'avr-runner.ts'),
   mega:   path.join(WORKER_DIR, 'runners', 'avr-runner.ts'),
   nano:   path.join(WORKER_DIR, 'runners', 'avr-runner.ts'),
-  pico:   path.join(WORKER_DIR, 'runners', 'rp2040-runner.ts'),
-  rp2040: path.join(WORKER_DIR, 'runners', 'rp2040-runner.ts'),
-  esp32:  path.join(WORKER_DIR, 'runners', 'esp32-runner.ts'),
 };
 
 // ─── Core engine files ──────────────────────────────────────
@@ -219,7 +216,7 @@ function extractKeywords(failingIds: string[], componentType: string): string[] 
   for (const id of failingIds) {
     const parts = id.split(/[:._ ]/);
     for (const p of parts) {
-      if (p.length > 3 && !['pinstate','pin','via','uno','esp32','pico'].includes(p.toLowerCase())) {
+      if (p.length > 3 && !['pinstate','pin','via','uno'].includes(p.toLowerCase())) {
         kws.add(p.toLowerCase());
       }
     }

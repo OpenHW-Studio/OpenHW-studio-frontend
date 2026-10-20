@@ -50,7 +50,7 @@ export function getWireInteraction(mx, my, points, threshold = 8) {
   return null;
 }
 
-function distToSegment(px, py, p1, p2) {
+export function distToSegment(px, py, p1, p2) {
   const l2 = Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2);
   if (l2 === 0) return Math.hypot(px - p1.x, py - p1.y);
   let t = ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2;

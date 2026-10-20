@@ -1,0 +1,58 @@
+--- a/stm32-periph-wasm/src/peripherals/hash.rs
++++ b/stm32-periph-wasm/src/peripherals/hash.rs
+@@ -158,7 +158,10 @@
+                         bytes.copy_from_slice(&tag[i * 4..(i + 1) * 4]);
+                         self.hash_hr[i] = u32::from_be_bytes(bytes);
+                     }
+-                    for i in 0..4 {
++                    // The main bank exposes HR0..HR4 (RM0090: HASH_HR0..4 at
++                    // 0x5006_040C..0x5006_041C; HASH_IMR/SR sit at 0x420/0x424).
++                    // Mirror five words, not four, so HR4 carries digest word 4.
++                    for i in 0..5 {
+                         self.hr[i] = self.hash_hr[i];
+                     }
+                     self.sr |= 0x0A;
+@@ -173,8 +176,10 @@
+                     bytes.copy_from_slice(&result[i * 4..(i + 1) * 4]);
+                     self.hash_hr[i] = u32::from_be_bytes(bytes);
+                 }
+-                // SHA-256 also reflected in HR0..3 (first 128 bits)
+-                for i in 0..4 {
++                // SHA-256 is also reflected in HR0..HR4 (the main bank); the
++                // full 8 words are readable through the alias bank at +0x310
++                // (HASH_HR0..7 -> 0x5006_0710..0x5006_072C).
++                for i in 0..5 {
+                     self.hr[i] = self.hash_hr[i];
+                 }
+             }
+@@ -223,8 +228,15 @@
+                 // are consumed from DIN before the message — silicon loads
+                 // the long key through the FIFO; documented, not silent).
+                 self.cr = value;
+-                if value & 1 != 0 {
+-                    self.cr &= !1; // INIT self-clears
++                // RM0090 HASH_CR.INIT is bit 2 (write 1 -> restart the digest
++                // calculation; the bit self-clears on read). This model used
++                // bit 0, so silicon firmware that does
++                // `HASH_CR = HASH_CR | HASH_INIT` (0x4) never restarted the
++                // calculation and the digest covered the concatenation of the
++                // old and the new message. Accept bit 2 (RM0090) AND bit 0
++                // (kept for models/firmware built against the old layout).
++                if value & ((1 << 2) | 1) != 0 {
++                    self.cr &= !((1 << 2) | 1); // INIT self-clears
+                     self.msg_buf.clear();
+                     self.nbw = 0;
+                     self.hr = [0; 8];
+@@ -252,7 +264,11 @@
+                 }
+             }
+             0x20 => self.imr = value & 0x03,
+-            0x24 => { self.sr = (self.sr & 0xF8) | (value & 0x03); }
++            // RM0090: HASH_SR.DINIS (bit 0) and HASH_SR.DCIS (bit 1) are
++            // rc_w1 -- writing 1 CLEARS the flag. The model SET them, so
++            // firmware that acknowledged a flag (`HASH_SR = HASH_SR | DCIS`)
++            // re-asserted it and could never leave the completion path.
++            0x24 => { self.sr &= !(value & 0x03); }
+             0xF8..=0x1CC => self.csr[((offset - 0xF8) / 4) as usize] = value,
+             _ => {}
+         }
