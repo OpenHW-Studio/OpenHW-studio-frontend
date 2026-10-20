@@ -325,7 +325,11 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     railVoltage: 3.3,
     engine: 'nrf52833-periph-wasm',
     runner: 'runners/microbit-runner.ts',
-    capabilities: ['digital-gpio', 'uart', 'i2c-target', 'spi-target'],
+    // 'analog-adc' is proven: AIN0 (edge pin P0 = P0.02) is sampled by the
+    // SAADC and the host injects the wiper voltage of a wired potentiometer
+    // (tests/e2e/microbit-saadc.spec.js — MB_SAADC:1877 for a 50 % pot on
+    // the 3.3 V rail).
+    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target'],
     firmware: ['fixed-bin'],
     limits: NO_LIMITS,
   },

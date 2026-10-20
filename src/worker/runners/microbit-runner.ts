@@ -49,6 +49,15 @@ const MB_UART0_RXD_PTR = 0x40002534;      // RXD.PTR
 const MB_UART0_RXD_MAXCNT = 0x40002538;   // RXD.MAXCNT
 const MB_UART0_RXD_AMOUNT = 0x4000253c;   // RXD.AMOUNT
 
+/** SAADC input the sample firmware programs: AIN0 = P0.02 = edge pin P0. */
+const MB_AIN_EDGE = 'P0';
+/** SAADC full scale: internal 0.6 V reference with gain 1/6 -> 3.6 V,
+ * 12-bit resolution -> 0..4095 counts (nRF52833 product spec). */
+function mvToSaadcCounts(mv: number): number {
+    const v = Math.max(0, Math.min(3600, Number(mv) || 0));
+    return Math.max(0, Math.min(4095, Math.round((v * 4096) / 3600)));
+}
+
 function b64ToU8(s: string): Uint8Array {
     const bin = atob(s.replace(/\s/g, ''));
     const out = new Uint8Array(bin.length);
@@ -65,6 +74,11 @@ export class MicrobitRunner extends ArmRunnerBase {
     private lastGpioOut: Record<string, boolean> = {};
     private lastMatrixLit = -1;
     private i2cBridge: any = null;
+    /** Component attrs by component id. Board attrs drive the host-side
+     * injection points (tempC, adcMv, nfcField) — without this map every
+     * board-attr path in this runner was dead code (same shape as the
+     * Pico/ESP32 runners). */
+    private compAttrById: Map<string, any> = new Map();
     /** Bytes the host handed us for UARTE0 RX, waiting for a free slot. */
     private rxQueue: number[] = [];
     /** Last PWM readback (duty in basis points, freq in Hz). */
@@ -81,6 +95,13 @@ export class MicrobitRunner extends ArmRunnerBase {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.fixedFirmwareUrl = String((options as any)?.fixedFirmware || '').trim();
         try { this.snapshotCompAttrs(componentsDef); } catch { /* ignore */ }
+        // Component attrs (board attrs drive tempC / adcMv / nfcField).
+        try {
+            const defs = Array.isArray(componentsDef) ? componentsDef : [];
+            for (const c of defs) {
+                if (c && c.id !== undefined) this.compAttrById.set(String(c.id), (c as any).attrs || {});
+            }
+        } catch { /* attrs are optional */ }
         try { this.engine = this.makeEngine(); } catch { /* ignore */ }
         void this.boot('openhw-microbit-v2');
     }
@@ -229,6 +250,7 @@ export class MicrobitRunner extends ArmRunnerBase {
                 let stepped = 0;
                 try { stepped = Number(self.cpu.step(n)) || 0; } catch { stepped = 0; }
                 try { self.mod.tick_peripherals(); } catch { /* ignore */ }
+                try { self.driveRails(); } catch { /* never breaks tick */ }
                 try { self.pumpDma(); } catch { /* never breaks tick */ }
                 try { self.pumpUartRx(); } catch { /* never breaks tick */ }
                 try { self.pumpPwm(); } catch { /* never breaks tick */ }
@@ -330,15 +352,23 @@ export class MicrobitRunner extends ArmRunnerBase {
                 }
             }
         } catch { /* ignore */ }
-        // SAADC: mid-scale fill (no ADC cell yet; keeps dma firmware alive).
+        // SAADC: the host owns the analog world. Convert the voltage on
+        // the sampled AIN pin into SAADC counts and write the sample into
+        // RESULT RAM BEFORE completing the transfer (owner recipe:
+        // take_result -> mem_write -> complete_result; the guest then
+        // reads its own RAM).
         try {
             const t = wasm.saadc_take_result();
             if (t && t.length >= 2) {
-                try {
-                    const fill = new Uint8Array(t[1] * 2).fill(0x80);
-                    cpu.mem_write(t[0], fill);
-                    wasm.saadc_complete_result(t[1]);
-                } catch { /* ignore */ }
+                const n = Number(t[1]) || 0;
+                const counts = this.saadcCounts();
+                const samples = new Uint8Array(Math.max(0, n) * 2);
+                for (let i = 0; i < n; i++) {
+                    samples[i * 2] = counts & 0xff;
+                    samples[i * 2 + 1] = (counts >> 8) & 0xff;
+                }
+                cpu.mem_write(t[0], samples);
+                wasm.saadc_complete_result(n);
             }
         } catch { /* ignore */ }
         // NVMC erase pump (NVS cell): guest page-erase is async in the
@@ -352,6 +382,80 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try { (wasm as any).nvmc_complete_erase?.(); } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
+    }
+
+    /** SAADC sample the host injects (counts): the voltage a wired
+     * component drives onto the sampled AIN pin when there is one, else
+     * the board attr `adcMv` (default 1800 mV = mid-scale). The engine
+     * has no analog handle, so the conversion is host-side by design
+     * (owner recipe: "volts -> counts is host-side"). */
+    private saadcCounts(): number {
+        let mv: number | null = null;
+        try {
+            const volts = this.analogVoltsAt(MB_AIN_EDGE);
+            // analogVoltsAt reports VOLTS; the SAADC scale is millivolts.
+            if (volts !== null && Number.isFinite(volts)) mv = volts * 1000;
+        } catch { mv = null; }
+        if (mv === null) {
+            let attrMv = 1800;
+            try {
+                const battrs = (this as any).compAttrById?.get?.(this.boardId) || {};
+                const a = Number((battrs as any)?.adcMv);
+                if (Number.isFinite(a)) attrMv = a;
+            } catch { /* keep the default */ }
+            mv = attrMv;
+        }
+        return mvToSaadcCounts(Number(mv));
+    }
+
+    /** Voltage (volts) a wired component drives onto one of this board's
+     * pins. Null when nothing drives that net (no analog source wired). */
+    private analogVoltsAt(pinLabel: string): number | null {
+        try {
+            const net = this.pinToNet.get(`${this.boardId}:${pinLabel}`);
+            if (net === undefined) return null;
+            for (const [node, netId] of this.pinToNet) {
+                if (netId !== net) continue;
+                const [cId, cPin] = node.split(':');
+                if (!cId || !cPin || cId === this.boardId) continue;
+                const inst = this.instances.get(cId);
+                if (!inst || typeof (inst as any).getPinVoltage !== 'function') continue;
+                const v = Number((inst as any).getPinVoltage(cPin));
+                if (Number.isFinite(v)) return v;
+            }
+        } catch { /* no analog source on this net */ }
+        return null;
+    }
+
+    /** Rail power: the board sources 3V3 on its 3V3 pin (and 0 V on GND).
+     * A component wired to those rails (potentiometer ends, sensor VCC)
+     * needs the rail LEVEL, otherwise its output voltage is 0 and every
+     * analog reading collapses to zero (same shape as the ESP32 runner's
+     * rail drive). */
+    private driveRails(): void {
+        try {
+            for (const inst of this.instances.values()) {
+                if (inst === this.instances.get(this.boardId)) continue;
+                if (typeof (inst as any)?.getPinVoltage !== 'function') continue;
+                for (const nm of ['VCC', '1', '3V3', '+', 'V+']) {
+                    let v = 0;
+                    try { v = Number((inst as any).getPinVoltage(nm)) || 0; } catch { continue; }
+                    if (v > 0.2) continue;
+                    const id = String((inst as any)?.id ?? '');
+                    const net = this.pinToNet.get(`${id}:${nm}`);
+                    if (net === undefined) continue;
+                    for (const [node, netId] of this.pinToNet) {
+                        if (netId !== net) continue;
+                        const sep = node.indexOf(':');
+                        if (sep < 0) continue;
+                        if (node.slice(0, sep) !== this.boardId) continue;
+                        if (!/3V3/i.test(node.slice(sep + 1))) continue;
+                        try { (inst as any).setPinVoltage(nm, 3.3); } catch { /* ignore */ }
+                        break;
+                    }
+                }
+            }
+        } catch { /* rails never break the tick */ }
     }
 
     /** UARTE0 RX drip (every frame, after the DMA taps).
