@@ -46,6 +46,9 @@ stm32f4-dcmi, stm32f4-qspi, stm32f4-fsmc, stm32f4-sai, stm32f4-can(+x),
 stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x, stm32f4-display-x,
 stm32f4-gpio-rtc, stm32f4-crc-rng-x, stm32f4-1wire, stm32f4-usb-ve,
 stm32f4-can(+x), stm32f4-429-periph, stm32f4-periph-x, stm32f4-store-x (VE DAC),
+stm32f4-sys (IWDG arm/reload/fire, EXTI-SWIER, RTC_BKP0R, HASH SHA-256/SHA-1
+digests — 15 cells over F407/407VE/429), stm32f4-clock (tickMHz:24 divider
+armed + guest millis advance in delay(2000) quanta),
 F4 sibling NO-GOs (engine-side, specs left failing): SdFat FS (P_ERR init
 contradiction), ILI9341 (tap death on 120ms+ delays), RNG (DRDY never sets),
 DHT22 (micros() 1ms-quantized), I2S (SPI2 block unrouted).
@@ -130,7 +133,7 @@ Pico `Pico-emu/*.c`, runners in `src/worker/runners/`.)
 | Family | CRC | TRNG/RNG | HASH/CRYP | Watchdog | EXTI/Interrupts | PWR/Sleep | Backup/NVS | Clocks | Debug |
 |---|---|---|---|---|---|---|---|---|---|
 | STM32F1 | NONE (crc.rs) | ABSENT (no RNG silicon) | ABSENT | NONE (iwdg+wwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE (bkp.rs) | NONE (rcc.rs) | NONE (swd.rs; bootloader.rs) |
-| STM32F4 | NONE (crc.rs) | NONE (rng.rs) | NONE (hash+cryp.rs) | NONE (iwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE | NONE | NONE (dbgmcu; ITM/DWT) |
+| STM32F4 | NONE (crc.rs) | NONE (rng.rs) | PARTIAL — HASH FULL 2026-10-20 (SHA-256 + SHA-1 digests vs published vectors, 3 boards); CRYP still NONE (cryp.rs) | FULL 2026-10-20 — IWDG arm/reload/fire (3 boards; WWDG still NONE) | PARTIAL 2026-10-20 — EXTI_SWIER → ISR (3 boards); other IRQs/NVIC priorities unproven | NONE (pwr.rs) | PARTIAL 2026-10-20 — RTC_BKP0R backup-domain readback (3 boards); NVS/flash unproven | NONE | NONE (dbgmcu; ITM/DWT) |
 | AVR | ABSENT | ABSENT | ABSENT | PARTIAL (Uno+Nano reboot+ISR; Mega vector absent, Tiny deferred) | PARTIAL (Mega+Nano/328P exact-count; Tiny INT0 unproven) | NONE | EEPROM covered in main table | PARTIAL (mega+nano+tiny gate cells) | ABSENT |
 | Pico | ABSENT | NONE (ROSC jitter, no cell) | NONE on RP2350 (real SHA-256 silicon); ABSENT on RP2040 | NONE | NONE (nvic.c) | NONE | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M33; clocks.c) | NONE (gdb.c) |
 | ESP32 | NONE | NONE (rng in rmt_rng_math.rs) | NONE (aes+rsa+sha_ecc_key.rs) | NONE (timers.rs MWDT) | NONE | NONE (ULP present, unproven) | NONE (partition_table+NVS) | NONE (clock(s).rs) | NONE (gdb_session) |
@@ -169,7 +172,9 @@ Connectivity extras not in the main tables:
 
 - F4 pace breakthrough: LOAD-sized chunking (same instructions, more SysTick
   fires per tick) took Disco 45→288 guest-ms/s (6.4x), guardrails green.
-  TickMHz divider proven INERT (identical pace all presets) — menu removed.
+  TickMHz divider — see the 2026-10-20 correction below (it is NOT inert;
+  the old verdict came from the step-counted pace pill, which is
+  divider-independent by construction).
 - Engine adoptions: F1 bytes (130 MIPS showcase), F4 bytes (42 MIPS warmed) —
   both export-verified, guardrail-proven. ESP32 bytes refreshed (no speedup).
 - ESP32 boot chain fixed (crypto stub, WASM handoff, TWAI wedge, seedMMU
@@ -184,10 +189,29 @@ Connectivity extras not in the main tables:
 - PROOF STANDARD (new): every board proves guest-time advance — pace specs
   assert monotonic millis + divider markers vs wall elapsed, alongside the
   serial needle. Speed is a main test now, not an observation.
-- F4 tickMHz divider: PROVEN INERT 2026-10-10 (preset sweep div 1/2/4/7/21:
-  identical 26 virt-ms/s; wasm period doesn't follow LOAD). Menu removed;
-  attr path dormant default-off. F1/Pico/ESP32 dividers share the design and
-  are UNVERIFIED for effect — no acceleration claims until pace tables prove
+- F4 tickMHz divider: the 2026-10-10 "PROVEN INERT" verdict was WRONG and
+  is retracted 2026-10-20. It was taken from the step-counted pace pill
+  (virt-ms/s), which is divider-independent BY CONSTRUCTION and therefore
+  could not observe the effect. Measured A/B on the deployed engine bytes
+  (wasm md5 9455e31c, glue md5 19a9630), same sketch (Disco + MAX7219),
+  same box, back to back, guest-ms per WALL second:
+    tickMHz:24 (div=7) -> 1267   |   default (div=1) -> 158      (8.0x)
+  and in an earlier session with a lighter sketch: 469 vs 106 (4.4x) —
+  the ratio moves with the host load, because a 7x-faster SysTick also
+  means 7x more ISR entries and on a busy host the ISR storm eats part
+  of the gain. So the divider really does speed the GUEST clock up
+  ~4-8x (the guest SysTick LOAD is rewritten 168000 -> 24000). The e2e
+  cell `stm32f4-clock` proves the divider is ARMED (the F4CLK:div=7 write
+  receipt) and that the guest clock advances in exact delay(2000) quanta
+  (measured: 50 of 50 sample pairs exactly +2000 guest-ms); it
+  deliberately makes NO acceleration claim (one run cannot measure a
+  ratio) and it asserts the guest advance in guest-time quanta, not in
+  wall-dependent milliseconds — the old "max(millis) >= 8000" floor turned
+  the cell into a host-speed test (on a slow host the guest clock only
+  reached ~2300 guest-ms in 120 s and the cell failed although the clock
+  was fine: it had advanced by exactly one delay quantum). F4 preset is
+  attr-only (no menu); F1/Pico/ESP32 dividers share the design and are
+  UNVERIFIED for effect — no acceleration claims until pace tables prove
   them (Pico set_clock and ESP32 nanos-scaler are engine-honored by code
   reading, still unproven live).
 

@@ -1374,8 +1374,23 @@ export class Stm32f4Runner extends ArmRunnerBase {
                                     emu.periphWrite(0xE000E014, 4, divided);
                                     emu.periphWrite(0xE000E010, 4, csr >>> 0);
                                     const tag = `F4CLK:div=${div} `;
+                                    // Source 'uart0', NOT a private 'f4clk'
+                                    // source: the marker is a synthetic byte
+                                    // injected INTO this board's serial
+                                    // console, so it must share the console's
+                                    // ingress stream. The page's serial
+                                    // ingress arbitrates ONE source per board
+                                    // per 240ms (useSerialIngress: a chunk
+                                    // whose source differs from the last
+                                    // accepted one is DROPPED inside that
+                                    // window). With a private source the
+                                    // marker flipped the arbitration state
+                                    // and the board's OWN first output was
+                                    // silently dropped — the F4 clock cell
+                                    // lost its 'F4CLK_DRAWN' line on a loaded
+                                    // box and failed intermittently.
                                     for (let i = 0; i < tag.length; i++) {
-                                        try { (self as any).emitTxByte(tag.charCodeAt(i), 'f4clk'); } catch { break; }
+                                        try { (self as any).emitTxByte(tag.charCodeAt(i), 'uart0'); } catch { break; }
                                     }
                                 } catch { /* ignore */ }
                             }

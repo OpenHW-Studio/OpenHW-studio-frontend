@@ -52,6 +52,62 @@ Already present in-engine, runner-unwired (our side, listed so nothing is missed
    telemetry). Firmware-side contract: sample R1 on the LAST command
    byte (Ncr=0 — the model answers immediately, not one byte later).
 
+## HASH peripheral — silicon deviations found while proving the F4 HASH cell (2026-10-20, lane/net-pace)
+
+The HASH peripheral IS modeled and computes **standard** digests: the e2e
+cell `tests/e2e/stm32f4-sys.spec.js` ("HASH computes standard SHA-256 and
+SHA-1 digests", F407/407VE/429) asserts SHA-256("") against the published
+FIPS 180-4 vector, plus SHA-256("abcd") and SHA-1("abcd") against
+`sha256sum` / `sha1sum`. Measured on the deployed bytes (glue md5
+`19a9630`, wasm md5 `9455e31c`; the owner folder's wasm is a third, dirty
+build — do not mix them).
+
+What the cell needs from the engine (the deviations to fix):
+
+1. **`HASH_CR.INIT` is modelled at bit 0; RM0090 puts it at bit 2.**
+   Silicon firmware does `HASH_CR = HASH_CR | HASH_INIT` (0x4). The model
+   only reacts to bit 0, so the message buffer is NOT cleared and the
+   digest covers the concatenation of the old and the new message.
+2. **`HASH_SR` writes SET `DINIS`/`DCIS`; on silicon they are rc_w1**
+   (write 1 clears). Firmware that acknowledges a flag re-asserts it and
+   can never leave the completion path.
+3. **The SHA-256 digest is mirrored into `HR0..HR3` only**, so the main
+   bank's `HR4` (`0x5006041C`) reads 0 instead of digest word 4 (silicon
+   has HASH_HR0..HR4 there; the full 8 words live in the alias bank at
+   `0x50060710..0x5006072C` = SVD base+0x310).
+4. (drive-by) **The HASH completion interrupt is never raised**:
+   `check_interrupt()` tests `sr & 0x08` (BUSY) and `cr & 0x20` (a
+   `HASH_CR` bit that does not exist) instead of `HASH_IMR.DCIE` (bit 1)
+   and `HASH_SR.DCIS`.
+
+Patch (against `stm32-periph-wasm/src/peripherals/hash.rs`), repro steps
+and the exact measured values: `patches/f4-hash-silicon-fixes.patch`,
+`patches/f4-hash-completion-interrupt.patch`, `patches/README-f4-hash.md`
+in this repo.
+
+Also worth knowing (no change requested):
+
+* Register map the cell uses: CR `0x50060400` (ALGO0 bit 7, ALGO1 bit 18),
+  DIN `0x50060404` (the word is taken big-endian), STR `0x50060408`
+  (DCAL bit 8, NBLW bits 0..4), SR `0x50060424` (DCIS bit 1),
+  HR0..4 `0x5006040C..0x5006041C` (HR5/HR6 alias IMR/SR on silicon),
+  HASH_HR0..7 `0x50060710..0x5006072C` (the full digest).
+* ALGO: `00` SHA-1, `01` MD5, `10` SHA-256, `11` unimplemented.
+* The model hashes the pushed bytes as a MESSAGE with standard padding
+  (sha1/sha2 crates), so SHA-256("") is reached by pushing no data at all.
+
+## IWDG timing model (2026-10-20, lane/net-pace) — no change requested, but the cell depends on it
+
+`src/peripherals/iwdg.rs` counts **retired instructions**, not wall time:
+`timeout = RLR * 128 * prescaler_div(PR)` with `RLR` truncated to 12 bits.
+The maximal window (RLR=0xFFF, PR=0) is therefore 2,096,640 instructions
+≈ **13 GUEST ms**, roughly 1000x shorter than real silicon's ~13 s at the
+same RLR/PR (LSI 40 kHz). The e2e cell
+(`tests/e2e/stm32f4-sys.spec.js`, "IWDG stays alive while it is petted" +
+"IWDG fires after petting stops") is written against that model and
+asserts in guest-time units, so it is host-throughput independent. If the
+IWDG ever becomes wall/LSI-timed, the cell's delays have to grow with it.
+
 ## Acceptance (our e2e, in order)
 
 1. Discriminator probe (to be written): OLED firmware through first-write window ⇒ `emu.oled.frame > 0` (`stm32f4.js:393-399`, incremented at `emulator.js:530`) AND firmware `millis()` delta ≈ 0 AND `stopped == true`/`fault_pc != 0xFFFFFFFF`. This conjunction = "bus transacted, core faulted".
