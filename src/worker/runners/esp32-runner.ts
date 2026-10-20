@@ -124,6 +124,30 @@ export class Esp32Runner extends ArmRunnerBase {
         void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
     }
 
+    /** Per-board MAC address (engine init config.macAddress).
+     *
+     * The engine seeds the WiFi MAC registers AND the eFuse MAC area from
+     * config.macAddress ("AA:BB:CC:DD:EE:FF"). Without it the ESP32 STA
+     * MAC is all zeros (00:00:00:00:00:00), which breaks gateway-side
+     * addressing:
+     *   - the gateway's fast ARP reply for the default gateway
+     *     (192.168.4.1) is unicast to that all-zero MAC, and the guest
+     *     never resolves it -> the NAT'd HTTP connect never leaves the
+     *     board (observed on the ESP32-CAM HTTP cell: DHCP completed,
+     *     IP=192.168.4.5, but HTTP-CODE:-1);
+     *   - the gateway keys DHCP leases by client MAC, so two boards in
+     *     one room would be handed the SAME lease.
+     * The attr rides the board's attrs (like ssid/room), so a cell can
+     * give every board its own identity. */
+    private netMacConfig(): Record<string, unknown> {
+        try {
+            const battrs = this.compAttrById?.get?.(this.boardId) || {};
+            const mac = String((battrs as any)?.macAddress || '').trim();
+            if (!mac) return {};
+            return { macAddress: mac };
+        } catch { return {}; }
+    }
+
     /** Gateway WiFi config for init (engine dials itself at boot).
      * ssid/bssid/channel/room/gatewayUrl ride board attrs (canvas menus)
      * or run options (sessionId → shared room for same-run LAN play).
@@ -343,7 +367,7 @@ export class Esp32Runner extends ArmRunnerBase {
                         } catch { /* ignore */ }
                     }
                 } catch { /* ignore */ }
-                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}), ...self.netWifiConfig() }, flash, rom);
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}), ...self.netWifiConfig(), ...self.netMacConfig() }, flash, rom);
                 // MMU mapping: init already seeds the identity map
                 // (mmuTablePro[p] = p, Pro+App) twice — in applyBasicSetup
                 // and again after loadWasm+reset (worker-entry.js). Do NOT
