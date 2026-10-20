@@ -72,6 +72,29 @@ export class Esp32Runner extends ArmRunnerBase {
     private netLastStatAt = 0;
     private netLastPublished = '';
 
+    /**
+     * Engine core liveness.
+     *
+     * The ESP32 engine talks to the host over a SAB whose CMD field holds
+     * ONE slot: every host->engine command overwrites the previous one, and
+     * `run()` is fire-and-forget (no RESP handshake). In SINGLE-board mode
+     * the runner's own tick is slow enough that the engine consumes the
+     * pending RUN before the next poll posts another CMD. In MULTI-board
+     * mode the lockstep scheduler drives a tick every ~8ms, and each tick
+     * posts several CMDs (GPIO-change poll, 8x LEDC, TWAI/RMT/camera
+     * observers) - measured 36.6k CMD exchanges in one 90s run - so a
+     * pending RUN was overwritten before the engine's next exchange and
+     * the guest never started (observed: engine never exchanged CMD_RUN,
+     * zero UART, "core idle 20s" watchdog).
+     *
+     * Fix: every CMD-posting poll is gated on the core being alive (a
+     * retired instruction or the first UART byte proves RUN was consumed),
+     * and while the core is idle the runner re-posts RUN instead of
+     * posting anything else. The polls are useless before the guest runs.
+     */
+    private coreAlive = false;
+    private lastRunPostAt = 0;
+
     constructor(
         hexData: string,
         componentsDef: any[],
@@ -383,7 +406,29 @@ export class Esp32Runner extends ArmRunnerBase {
                 const pump = () => {
                     if (!self.sim) return;
                     try { self.sim.pollUart(); } catch { /* ignore */ }
-                    try { self.pollBusTaps(); } catch { /* ignore */ }
+                    // Liveness probe (pure reads, no CMD): retired
+                    // instructions or the first UART byte both prove the
+                    // engine consumed RUN.
+                    try {
+                        let inst = 0;
+                        try { inst = Number((self.sim as any)?.instTotal) || 0; } catch { inst = 0; }
+                        if (inst > 0 || txQueue.length > 0) self.coreAlive = true;
+                    } catch { /* ignore */ }
+                    if (self.coreAlive) {
+                        try { self.pollBusTaps(); } catch { /* ignore */ }
+                    } else {
+                        // Core idle: every CMD-posting poll would steal the
+                        // single CMD slot from a pending RUN (see coreAlive
+                        // doc). Post NOTHING - re-post RUN instead, it is
+                        // fire-and-forget and a lost RUN is otherwise fatal.
+                        try {
+                            const now = Date.now();
+                            if (now - Number(self.lastRunPostAt || 0) > 250) {
+                                self.lastRunPostAt = now;
+                                self.sim.run();
+                            }
+                        } catch { /* ignore */ }
+                    }
                     try { self.pumpPythonInject(); } catch { /* inject never breaks the pump */ }
                     // Liveness gate for stats CMDs (see pollNetStats):
                     // first UART flow proves RUN was consumed.
@@ -424,7 +469,13 @@ export class Esp32Runner extends ArmRunnerBase {
                 // NOTE: no per-tick publishGpio here — the base
                 // pollGpioBidirectional() owns output publishing via
                 // sampleGpioOut below, so edges fire once.
-                try { self.pollBusTaps(); } catch { /* never breaks tick */ }
+                // The bus taps post engine CMDs (GPIO/LEDC/TWAI/RMT/camera);
+                // while the core is idle they would steal the single CMD
+                // slot from a pending RUN (see coreAlive doc), so the tick
+                // stays CMD-free until the guest is provably running.
+                if (self.coreAlive) {
+                    try { self.pollBusTaps(); } catch { /* never breaks tick */ }
+                }
                 return Math.max(1, Math.floor(_budget));
             },
             drainUartOut(): number[] {
@@ -490,6 +541,10 @@ export class Esp32Runner extends ArmRunnerBase {
             // sim.setPinInput(pinNumber, level) (index.d.ts) — async.
             setGpioInput(pinId: string, high: boolean): void {
                 try {
+                    // CMD-posting: gated on the core being alive so it
+                    // cannot steal the single CMD slot from a pending RUN
+                    // (see coreAlive doc).
+                    if (!self.coreAlive) return;
                     const n = parseInt(String(pinId || '').replace(/^(GPIO|GP|D)/i, ''), 10);
                     if (!Number.isFinite(n)) return;
                     // 1-Wire nets are owned by the engine's synchronous FFI
