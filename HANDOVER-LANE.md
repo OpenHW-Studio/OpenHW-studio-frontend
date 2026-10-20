@@ -98,6 +98,24 @@ the first result as the warm-up.
    ingest / post / main receive) to find which side stops draining.
 5. **A merge-conflict marker was committed into `matrix.md` on `md`**
    (`>>>>>>> a7d38f0b …`, line 190, from the W6300 merge). Removed here.
+6. **The gateway's DHCP-carried DNS is LIVE — the matrix says it is not.**
+   `matrix.md` (Pico-W v4 DNS row) still claims the lease-advertised
+   resolver "needs the gateway patch on branch `lane/net-dns` (not yet on
+   main)". That is stale: `openhw-unified-gateway` `main` carries
+   `3f8814b DHCP: advertise the gateway resolver (192.168.4.1) as the lease
+   DNS server` (verified with `git branch --contains`), and the running
+   binary (built 15:44, source @ `151927d`) has it.
+   Proof run here on 2026-10-20 with the committed engine bytes —
+   `tests/e2e/pico-wifi-dns.spec.js` with `DHCP_DNS=1`, i.e. the guest
+   does **not** call `WiFi.setDNS`:
+   `DNS-LINK=3`, `DNS-IP=192.168.4.2`, **`DNS-SERVER=192.168.4.1`** (the
+   resolver it took from the lease), `DNS-RC=1`,
+   `DNS-RESOLVED=104.20.23.154`, `DNS-DONE` → **2/2 green** (the explicit
+   `setDNS` variant resolved 172.66.147.243).
+   → The row can become FULL for the lease path, and the spec's
+   `test.skip(!process.env.DHCP_DNS, …)` opt-in can become unconditional
+   (the matrix + the spec comment are edited by the matrix lane — this lane
+   only recorded the evidence).
 
 ## 6. Left / must-not-do
 
