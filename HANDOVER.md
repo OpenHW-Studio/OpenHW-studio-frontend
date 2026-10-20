@@ -17,9 +17,10 @@ networking. The old in-emulator WiFi/IP stack (picow-net, wifi-ap component,
 the frontend Network Worker) is **deleted**. Networking is proven live for
 Pico W, Pico-ETH, Pico 2 W, Pico 2 ETH, ESP32, ESP32-CAM and F407/407VE/429.
 What is *not* proven is broad: many peripheral columns are still NONE, and the
-ESP32-CAM 2-board LAN cell is flaky. Engines are consumed from the owner's
-local folders in dev (vite aliases) while npm-shaped specifiers stay in the
-source, so the future npm flip is a one-file change.
+ESP32-CAM 2-board LAN cell is flaky. Engine bytes are committed in this repo
+(`src/engines/<engine>/`) and aliased from there, so dev, the CI/Docker build
+and the runtime `/vendor` fallback read the same files — the npm-shaped
+specifiers stay in the source, so the future npm flip is a one-file change.
 
 ---
 
@@ -67,13 +68,23 @@ Dev resolves engines from the **owner's local folders** via `resolve.alias` in
 
 | Engine | Dev source (folder) | Notes |
 |---|---|---|
-| pico-emu | `~/Documents/rp2350/Pico-emu/web/` | glue+wasm are a matched pair from one build |
-| esp32-emu | `~/Documents/"esp32 emu"/dist/sab/` | folder `dist/` == npm 1.2.0 bytes |
+| pico-emu | **repo-committed** `src/engines/pico-emu/` (glue c3b784f0 + wasm 0c74dffe, a matched pair, byte-equal to the owner's `rp2350/Pico-emu/web` build of 2026-10-08) | `OPENHW_ENGINE_FROM=owner` points the alias back at the owner's folder |
+| esp32-emu | **repo-committed** `src/engines/esp32-emu/dist/sab/` (worker-proxy 3c5c1866 + worker-entry 4afe24dd — the OpenHW-patched bytes: node:crypto stub, inline `CMD_GET_WIFI_STATS`/`CMD_GET_TWAI_TX` service while RUN=1) | same opt-out as pico |
 | stm32f4-emu | **npm** (`stm32f4-emu@1.6.x`) | the owner folder is mid-rebuild — keep npm until they land |
-| stm32f1-emu | npm + `public/vendor/board-engines/stm32f1-emu/pkg/` mirror | dev/deploy byte alignment being fixed in `lane/net-f1` |
+| stm32f1-emu | **repo-committed** `src/engines/stm32f1-emu/` (+ `public/vendor/board-engines/stm32f1-emu/pkg/` mirror) | dev = deploy = /vendor fallback; the pinned owner bytes are the ones the cells are green on |
 | microbit | `src/wasm/autowiring`-style copy in `public/vendor/board-engines/microbit/` | engine pair mirrored; the runner bundles `src/worker/engines/microbit/` |
 
 **Rules (violating these breaks boards):**
+0. **The engine bytes live in THIS repo** (`src/engines/<engine>/`), not in the
+   owner's folders — the CI/Docker build checks out only this repo, so an
+   alias to an owner folder is a HARD BUILD FAILURE. That is not
+   hypothetical: the owner's `esp32 emu/dist/` was deleted mid-session on
+   2026-10-20 and `npm run build` died with
+   `[vite:worker-import-meta-url] Could not load …/esp32 emu/dist/sab/
+   worker-proxy.js … ENOENT`. Fixed in `lane/engine-bytes` (all three
+   engines now repo-committed; build green, no owner path in `dist/`).
+   `OPENHW_ENGINE_FROM=owner npm run dev` points pico+esp32 back at the
+   owner's live folders for engine work — never in CI.
 1. **glue and .wasm must come from the SAME build.** A mixed pair misbinds
    exports (e.g. `malloc→undefined`, then an OOB trap). Never mix a folder
    glue with an npm wasm or vice versa.
@@ -146,9 +157,17 @@ HTTP via NAT `stm32f4-http-gateway` · IWDG + HASH (FIPS vectors) + pace in
 
 ## 7. What is NOT proven (the honest gap list)
 
-- **ESP32-CAM 2-board LAN** — flaky: server side completes, client stops
-  after `CCLI-BEGUN` (the 2nd ESP32 never comes alive). Prior fixes: CMD-flood
-  gate + RUN re-post (`9a0a7968`), per-board MAC attr (`01e24802`).
+- **ESP32-CAM 2-board LAN** — flaky: measured 2 of 3 runs green on
+  2026-10-20 with the committed SAB bytes (the failure signatures are BOTH
+  "the 2nd board never comes alive": the client stops after `CCLI-BEGUN`, or
+  the server never joins at all). Root cause measured in `lane/esp32-cov`:
+  the SAB proxy busy-spins per CMD and the engine only services a fixed
+  allow-list inline while `RUN=1`, so a CMD the runner polls (the wedge is
+  fixed for `CMD_GET_WIFI_STATS`/`CMD_GET_TWAI_TX` in the committed bytes)
+  wedges that board's host-side UART drain. Tooling kept:
+  `tests/e2e/esp32-cam-lan-diag.spec.js`, `patches/esp32-cov-diag-probe.patch`.
+  Prior fixes: CMD-flood gate + RUN re-post (`9a0a7968`), per-board MAC attr
+  (`01e24802`).
 - **W6300 boards** (pico-w6300 / pico-w6300-2) — runner path + DORA proof in
   flight (`lane/net-6300`); no W6300 board shells exist yet.
 - **W5500 INTn/GPIO21 interrupt path** — the ETH cells are polled; the
@@ -168,8 +187,9 @@ HTTP via NAT `stm32f4-http-gateway` · IWDG + HASH (FIPS vectors) + pace in
   esp32 `scanNetworks()` hang; pico `softAPConfig` ignored / `live=0` DHCP
   stall / W5500 explicit-MAC breaking peer ARP / busy-spin starving the lwIP
   pump; esp32 `CMD_GET_WIFI_STATS` (already on engine `wifi-fix@a0684ef`).
-- F1: dev resolves npm while deploy serves the owner's 19:31 bytes
-  (`d1e69c28`) — alignment in flight (`lane/net-f1`).
+- F1: dev = deploy = /vendor fallback — **RESOLVED 2026-10-20** (`ca8ced3d`,
+  bytes pinned in `src/engines/stm32f1-emu`); the DHT22 RED was the stale npm
+  engine build, green on the pinned bytes.
 
 ---
 
@@ -233,6 +253,8 @@ npm run build
 npm run check:autowiring-pins && npm run check:autowiring-wasm
 # one e2e cell (from your lane)
 npx playwright test --config=playwright.agent.config.js tests/e2e/<file>.spec.js --workers=1
+# dev against the engine owner's LIVE folders (engine work only; never in CI)
+OPENHW_ENGINE_FROM=owner npm run dev
 # gateway rebuild
 cd openhw-unified-gateway && go build -o openhw-gw . && go test ./...
 ```

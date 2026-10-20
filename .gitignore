@@ -2,8 +2,12 @@ node_modules
 frontend/node_modules
 .env
 dist
+# …but the ESP32 engine's SAB entry points live under a `dist/` folder
+# (mirroring the package layout) and MUST be committed.
+!src/engines/esp32-emu/dist/
 .DS_Store
 test-results/
 .vite-cache-esp32cov/
+.vite-cache-enginebytes/
 vite.agent.config.js
 playwright.agent.config.js

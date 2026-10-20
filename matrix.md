@@ -103,16 +103,35 @@ avr-tiny-honest, avr-wdt.
 
 | Board | UART | I2C | SPI | ADC | PWM | PIO | DMA | MicroPython | DAC | USB-DEV | 1-Wire | I2S | CAN-2.0 | CAN-FD | RTC | GPIO-in | EEPROM | SD | IR | Camera | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-pico (+W/+ETH) | FULL (6-variant sweep) | FULL (OLED+LCD) | FULL (MAX7219+595) | FULL | FULL | FULL (WS2812 3px) | FULL (64B exact) | FULL (I2C) | ABSENT | NONE (CDC→UART rewrite, no cell) | NONE (GPIO/PIO-capable, no cell) | NONE (PIO-capable, no cell) | ABSENT (no CAN silicon) | ABSENT | ABSENT (no RTC silicon) | NONE (no input cell) | NONE (flash-emul capable) | NONE (sdcard.c model) | NONE | NONE (PIO-capable, no DCMI) | FULL (OLED/LCD/MAX7219) |
-| openhw-pico-2 (+W/+ETH, M33) | FULL | FULL | FULL | FULL | FULL | NONE | NONE | FULL (I2C) | ABSENT | NONE | NONE | NONE | ABSENT | ABSENT | ABSENT | NONE | NONE | NONE | NONE | NONE | FULL |
+| openhw-pico (+W/+ETH) | FULL (6-variant sweep) | FULL (OLED+LCD) | FULL (MAX7219+595) | FULL | FULL | FULL (WS2812 3px) | FULL (64B exact) | FULL (I2C) | ABSENT | FULL 2026-10-20 (USB CDC loopback: host byte "P" → CDC OUT → guest echo "USBCDC_ECHO:P"; `openhw-usb-device` sink enumState=active rxCount=3 — cell pico-usb) | NONE (engine-side: no runner→IN-latch inject export, so the guest-visible IN latch stays HIGH — owner ask, HANDOVER-LANE-pico.md §5.2) | NONE (engine-side: the PIO-based path needs a BCLK/LRC/DIN observe tap the engine does not expose) | ABSENT (no CAN silicon) | ABSENT | ABSENT (no RTC silicon) | NONE (engine-side: same IN-latch gap — the input path writes the OUT latch only) | FULL 2026-10-20 (PICO_EE_RB:ABCD + PICO_NVS_RB:1234 — flash-emul readback) | NONE (engine-side: the ARM path never drives the SPI CS line, so the SD model's cs_active stays 0 and every response is 0xFF — owner ask, HANDOVER-LANE-pico.md §5.3) | NONE (engine-side: same IN-latch gap) | ABSENT (RP2040/RP2350 have no DCMI) | FULL (OLED/LCD/MAX7219) |
+| openhw-pico-2 (+W/+ETH, M33) | FULL | FULL | FULL | FULL | FULL | FULL 2026-10-20 (PICO2_PIO_SHOWN; neopixel telemetry activePixels:3 totalPixels:3, liveOop pixels [16711680, 65280, 255] = R,G,B — cell pico2-pio-dma) | FULL 2026-10-20 (PICO2_DMA_CMP:PASS CK:80 — 64 B mem-to-mem, byte-exact — cell pico2-pio-dma) | FULL (I2C) | ABSENT | FULL 2026-10-20 (USB CDC loopback: USBCDC_ECHO:P; sink enumState=active rxCount=1 — cell pico-usb) | NONE (engine-side: IN-latch inject gap) | NONE (engine-side: PIO-based path needs an observe tap) | ABSENT | ABSENT | ABSENT | NONE (engine-side: IN-latch inject gap — EXTI counts 0) | FULL 2026-10-20 (PICO2_EE_RB:ABCD + PICO2_NVS_RB:1234) | NONE (engine-side: no SPI CS edge on the ARM path) | NONE (engine-side: IN-latch inject gap) | ABSENT (no DCMI) | FULL |
 | openhw-pico-2 (RV32) | PARTIAL (fixed image only; Arduino RV32 blocked upstream) | NONE | NONE | NONE | NONE | ABSENT | NONE | ABSENT | ABSENT | NONE | ABSENT (no GPIO model) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE |
 
 Specs: pico-uart-sweep, pico-i2c, pico-spi, pico-595, pico-adc, pico-pwm,
 pico-mp-i2c, pico-pio, pico-dma, pico2, pico2-spi, pico2-adc, pico2-pwm,
 pico2-mp-i2c, pico2-rv32, multi-board-uart, arch-clocks,
+pico-periph (EEPROM readback: PICO_EE_RB / PICO_NVS_RB),
+pico2-periph (EEPROM readback: PICO2_EE_RB / PICO2_NVS_RB),
+pico2-pio-dma (M33 PIO/WS2812 + M33 DMA), pico-usb (M0+ + M33 USB CDC),
 pico2-w-wifi-gateway, pico2-eth-gateway, pico2-w-lan, pico2-w-ap2,
 pico2-w-http-gateway, pico2-eth-lan, pico2-eth-http-gateway,
 pico-eth-w6300-gateway, pico-eth-intn-gateway.
+
+Pico coverage lane 2026-10-20 (lane/pico-cov): the PIO/DMA/EEPROM/USB-DEV
+columns above are green with real cells. The remaining NONE cells are
+**engine-side**, not frontend-side, and are listed as owner asks in
+HANDOVER-LANE-pico.md §5: (a) no runner→IN-latch inject export — blocks
+GPIO-in, 1-Wire/DHT22, IR and EXTI on BOTH boards (the engine has
+`gpio_set_input_pin` / `gpio_inject_level`, but no export to reach them);
+(b) the ARM path never drives the SPI CS line — the SD model's `cs_active`
+stays 0 and `sdcard_spi_xfer()` returns 0xFF forever; (c) M33 SHA-256 = the
+engine's CSR bit map is wrong (START/WDATA_RDY/SUM_VLD swapped vs silicon,
+so `sha256_wait_valid_blocking()` never returns); (d) M33 WDT = the ROM
+patch is not re-applied after a watchdog reboot (the guest dies on the
+unpatched RP2040-format ROM); (e) I2S = the engine has no I2S peripheral and
+the PIO-TX path has no observe tap. Camera is ABSENT (no DCMI silicon on
+RP2040/RP2350). Cells must stay RED until the engine lands — do not weaken
+them to HIGH-only.
 
 ## ESP32 (DevKit + CAM shell — survey-verified 2026-10-09)
 
@@ -168,7 +187,7 @@ Pico `Pico-emu/*.c`, runners in `src/worker/runners/`.)
 | STM32F1 | NONE (crc.rs) | ABSENT (no RNG silicon) | ABSENT | NONE (iwdg+wwdg.rs) | NONE (exti.rs) | NONE (pwr.rs) | NONE (bkp.rs) | NONE (rcc.rs) | NONE (swd.rs; bootloader.rs) |
 | STM32F4 | NONE (crc.rs) | NONE (rng.rs) | PARTIAL — HASH FULL 2026-10-20 (SHA-256 + SHA-1 digests vs published vectors, 3 boards); CRYP still NONE (cryp.rs) | FULL 2026-10-20 — IWDG arm/reload/fire (3 boards; WWDG still NONE) | PARTIAL 2026-10-20 — EXTI_SWIER → ISR (3 boards); other IRQs/NVIC priorities unproven | NONE (pwr.rs) | PARTIAL 2026-10-20 — RTC_BKP0R backup-domain readback (3 boards); NVS/flash unproven | NONE | NONE (dbgmcu; ITM/DWT) |
 | AVR | ABSENT | ABSENT | ABSENT | PARTIAL (Uno+Nano reboot+ISR; Mega vector absent, Tiny deferred) | PARTIAL (Mega+Nano/328P exact-count; Tiny INT0 unproven) | NONE | EEPROM covered in main table | PARTIAL (mega+nano+tiny gate cells) | ABSENT |
-| Pico | ABSENT | NONE (ROSC jitter, no cell) | NONE on RP2350 (real SHA-256 silicon); ABSENT on RP2040 | NONE | NONE (nvic.c) | NONE | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M33; clocks.c) | NONE (gdb.c) |
+| Pico | ABSENT | NONE (ROSC jitter, no cell) | NONE on RP2350 (real SHA-256 silicon — engine-side: the CSR bit map is wrong, START/WDATA_RDY/SUM_VLD swapped vs silicon, so `sha256_wait_valid_blocking()` never returns; ABSENT on RP2040) | PARTIAL 2026-10-20 (M0+ WDT green — unblocked by the Pico `Serial.`→`Serial1.` rewrite fix; M33 WDT engine-side: `reset_runtime_peripherals()` restores the RP2040-format ROM without re-applying `rom_patch_rp2350_arm()`, so the guest dies on the unpatched ROM) | NONE (nvic.c — engine-side: EXTI counts 0 on M0+ & M33 because the IN-latch is never injectable) | NONE (WFI sleep RED on M0+ & M33 — engine-side) | NONE (sdd_eeprom.c) | PARTIAL (arch-clocks: M0+ + M33 green 2026-10-20; clocks.c) | NONE (gdb.c) |
 | ESP32 | NONE | NONE (rng in rmt_rng_math.rs) | NONE (aes+rsa+sha_ecc_key.rs) | NONE (timers.rs MWDT) | NONE | NONE (ULP present, unproven) | NONE (partition_table+NVS) | NONE (clock(s).rs) | NONE (gdb_session) |
 | micro:bit v2 | ABSENT | NONE (nRF RNG+TEMP) | ABSENT | NONE | NONE (PPI+GPIOTE) | NONE | NONE (NVMC-backed NVS) | NONE | ABSENT |
 | Retro | ABSENT | ABSENT | ABSENT | ABSENT | NONE (chip PIC/CTC/VIA) | ABSENT | ABSENT | NONE | ABSENT |
@@ -187,7 +206,6 @@ Connectivity extras not in the main tables:
 | Pico-ETH W5500 traffic | FULL 2026-10-15 — Arduino Wiznet5500lwIP DORA via unified gateway :5030 (MACRAW sock0, tickMHz 125); runner board enables + WS pump in pico-runner.ts, engine from owner folder (vite alias). Polled configuration (no IRQ pin). |
 | Pico-ETH W6300 traffic | FULL 2026-10-20 — board attr `ethChip:'w6300'` on the existing W5500-EVB shells (openhw-pico-eth / openhw-pico-2-eth, W5500 stays the default): the runner attaches the engine's W6300 board instead (`_picoemu_board_eth6300` + `_picoemu_w6300_gw_enable`) on the SAME gateway room + 192.168.4.0/24 DHCP pool as CYW43 and the W5500; FQBN wiznet_6300_evb_pico. Arduino `lwIP_w6300` guest (PIO+DMA QSPI transport, engine PIO-QSI bridge) full DORA: version=0x61, MAC RAW mode, ETH-BEGIN-OK, lease 192.168.4.3, plus HTTP 200 + body hello-openhw through the gateway NAT (M0+ and M33). The guest uses the INTn=15 constructor, so this also proves the W6300 interrupt path. Cell: pico-eth-w6300-gateway. |
 | Pico-ETH W5500 INTn interrupt (GPIO21) | FULL 2026-10-20 — `Wiznet5500lwIP eth(17, SPI, 21)` on openhw-pico-eth: in IRQ-pin mode the arduino-pico driver registers NO polled RX handler (only `attachInterruptParam(pin, _irq, LOW)`), so the OFFER/ACK can only reach the guest through the INTn interrupt. Observed: ETH-BEGIN-OK + lease 192.168.4.3, guest IO_IRQ_BANK0 deliveries = 3, PROC0_INTE armed = GPIO21 LEVEL_LOW only (1048576). Polled control (`eth(17, SPI)`): same lease, 0 deliveries, nothing armed. Cell: pico-eth-intn-gateway. |
->>>>>>> a7d38f0b (Pico W6300 Ethernet carrier (ethChip attr) + W5500 INTn interrupt path proven)
 | Pico 2 W (M33) CYW43 WiFi traffic | FULL 2026-10-20 — openhw-pico-2-w joins the fake AP + gateway DHCP (STATUS=3, IP=192.168.4.2) via unified gateway :5030; runner boots the RP2350/M33 arch (arch 2) and enables CYW43 + WS pump, engine from owner folder (vite alias). Cell: pico2-w-wifi-gateway. |
 | Pico 2 W (M33) LAN (2-board TCP) | FULL 2026-10-20 — two openhw-pico-2-w as STAs in one gateway room, static 192.168.4.20/.21, TCP echo both directions observed (SRV-RX:HELLO-LAN, SRV-ECHOED, CLI-RX:ECHO:HELLO-LAN, CLI-LAN-DONE). No clock attr needed — the M33 arch default (150MHz) paces the guest. Cell: pico2-w-lan. |
 | Pico 2 W (M33) SoftAP | FULL 2026-10-20 — guest beginAP (APC-IP:192.168.4.1) + STA join on a static address (STS-STATUS=3, STS-IP=192.168.4.20) + TCP echo across the AP<->STA link (APC-CONN:1, STS-ECHOED, APC-RX:AP-ECHO2:HELLO-STA). The guest AP address is engine-fixed at .4.1 (softAPConfig not honored, same as M0+) and the direction is AP-client -> STA-server: the gateway fast-answers ARP for .1 and would steal the AP address from a joining STA (room.go apOwner). Cell: pico2-w-ap2. |
@@ -196,12 +214,12 @@ Connectivity extras not in the main tables:
 | Pico 2 ETH (M33) LAN (2-board W5500 TCP) | FULL 2026-10-20 — two openhw-pico-2-eth in one gateway room, static 192.168.4.20/.21, TCP echo over the W5500 MACRAW path (ETH-BEGIN-OK both, ESRV-IP=192.168.4.20, ECLI-IP=192.168.4.21, ECLI-CONN:1, ESRV-ECHOED, ECLI-RX:ECHO:HELLO-LAN). tickMHz 125 on both boards. Two engine-side facts the cell must respect: the guest waits need delay() (the arduino-pico lwIP pump only runs while the sketch yields — under a busy spin the client emits no frame at all), and both boards keep the engine's default W5500 MAC (4E:55:30:31:02:01, from the engine's fixed Pico board id) — with an explicit per-board eth.begin(mac) the peer's ARP reply is never delivered (the peer never emits it) and connect() times out; engine-side, reported to the owner. Cell: pico2-eth-lan. |
 | Pico 2 ETH (M33) HTTP client | FULL 2026-10-20 — Arduino HTTPClient GET via gateway NAT on the W5500 stack: ETH-BEGIN-OK, ETH-IP=192.168.4.4, ETH-GW=192.168.4.1, HTTP-CODE:200, HTTP-BODY:hello-openhw. Cell: pico2-eth-http-gateway. |
 | Pico 2 ETH (M33) W6300 traffic | FULL 2026-10-20 — same `ethChip:'w6300'` attr on openhw-pico-2-eth (FQBN wiznet_6300_evb_pico2, RP2350/M33 arch): version=0x61, MAC RAW mode, ETH-BEGIN-OK, lease 192.168.4.4, HTTP 200 + body hello-openhw through the gateway NAT. Cell: pico-eth-w6300-gateway. |
-| Pico USB device | NONE (usb.c; CDC→UART rewrite, no cell; real silicon does device+host) |
+| Pico USB device (CDC) | FULL 2026-10-20 (RP2040 + RP2350: host byte → CDC OUT → guest echo "USBCDC_ECHO:P"; the engine's host-sim enumerates arduino-pico's TinyUSB CDC to `active`; sink `openhw-usb-device` enumState=active rxCount — cells pico-usb). USB-HOST stays ABSENT: every engine USB model is device-only. |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
 | Pico SD/FATFS (sdcard.c, fatfs.c) | NONE |
 | ESP32 WiFi link | FULL 2026-10-15 — Arduino STA join + gateway DHCP (STATUS=3, scan + IP) via unified gateway :5030; runner passes config.wifi + throttled stats telemetry. Root cause of the RED was a host-side SAB wedge (stats CMD unserviced mid-run), fixed inline in the vendor mirror (see session notes); engine itself exonerated. |
 | ESP32-CAM WiFi link | FULL 2026-10-20 — openhw-esp32-cam STA join + gateway DHCP (STATUS=3, IP=192.168.4.4) on the esp32-cam board preset (4MB flash + 4MB PSRAM, picked from the board type by esp32-runner.ts); engine dials :5030 at boot. Firmware target is the core's generic esp32:esp32:esp32 build (the frontend maps the cam shell to kind 'esp32'; no per-shell FQBN override). Cell: esp32-cam-wifi-gateway. |
-| ESP32-CAM LAN (2-board TCP) | FULL 2026-10-20 — two openhw-esp32-cam as STAs in one gateway room, static 192.168.4.20/.21, TCP echo both directions observed (CSRV-STATUS=3, CSRV-IP=192.168.4.20, CCLI-STATUS=3, CCLI-IP=192.168.4.21, CCLI-CONN:1, CSRV-RX:HELLO-LAN, CSRV-ECHOED, CCLI-RX:ECHO:HELLO-LAN). Needs the per-board MAC attr (macAddress 24:6F:28:00:00:21/:22, new in esp32-runner.ts): without it the STA MAC is all zeros (00:00:00:00:00:00), the gateway's ARP reply never resolves on the guest and two boards in one room would share one DHCP lease. Cell: esp32-cam-lan. |
+| ESP32-CAM LAN (2-board TCP) | FULL 2026-10-20 — two openhw-esp32-cam as STAs in one gateway room, static 192.168.4.20/.21, TCP echo both directions observed (CSRV-STATUS=3, CSRV-IP=192.168.4.20, CSRV-RX:HELLO-LAN, CSRV-ECHOED, CCLI-STATUS=3, CCLI-IP=192.168.4.21, CCLI-CONN:1, CCLI-RX:ECHO:HELLO-LAN). Needs the per-board MAC attr (macAddress 24:6F:28:00:00:21/:22, new in esp32-runner.ts): without it the STA MAC is all zeros (00:00:00:00:00:00), the gateway's ARP reply never resolves on the guest and two boards in one room would share one DHCP lease. Cell: esp32-cam-lan. **FLAKY** — re-measured 2026-10-20 with the repo-committed ESP32 SAB bytes: 2 of 3 runs green (CSRV-RX:HELLO-LAN + CCLI-LAN-DONE). Two failure signatures: (a) the client stops after CCLI-BEGUN (the 2nd board's host-side UART drain wedges — diagnosed in lane/esp32-cov: the SAB proxy busy-spins per CMD and the engine only services a fixed allow-list inline while RUN=1, so a CMD the runner polls wedges the board worker), (b) the SERVER never joins (CSRV-STATUS=3 missing) — see run 3 of the 2026-10-20 3× measurement. Diagnosis tooling: tests/e2e/esp32-cam-lan-diag.spec.js + patches/esp32-cov-diag-probe.patch. |
 | ESP32-CAM HTTP client | FULL 2026-10-20 — Arduino HTTPClient GET via gateway NAT (10.150.211.85 -> host :8092): STATUS=3, IP=192.168.4.6, HTTP-CODE:200, HTTP-BODY:hello-openhw (same per-board MAC attr; the scan runs after the proof markers, off the proof path). Cell: esp32-cam-http-gateway. |
 | ESP32 multi-board boot | FULL 2026-10-20 — two ESP32 boards in ONE run now boot and run (before this, a 2-board ESP32 run produced NO serial at all). The engine's SAB CMD field holds ONE slot and run() is fire-and-forget, so in multi-board mode the lockstep tick's CMD flood (GPIO-change + 8x LEDC + TWAI/RMT/camera polls — 36.6k CMD exchanges measured in one 90s run) always overwrote the pending RUN and the guest never started. esp32-runner.ts now gates every CMD-posting poll on the core being provably alive and re-posts RUN every 250ms while it is idle (frontend-side fix, no engine change). |
 | ESP32 BLE | ABSENT (no engine model) |
@@ -248,11 +266,32 @@ Connectivity extras not in the main tables:
   only this repo + openhw-studio-emulator, so an absolute owner path is a
   hard vite failure, and the owner rebuilds that folder every few minutes,
   so dev could never match a committed deploy snapshot.
-- DEPLOY BUILD HAZARD (found 2026-10-20, pre-existing): vite.config.js still
-  aliases pico-emu + esp32-emu to absolute owner-folder paths. Those folders
-  do not exist in the CI/Docker build → "[vite:load-fallback] Could not load
-  …" = build failure. F1 was therefore pinned to repo-committed bytes
-  instead of the owner folder; pico/esp32 need the same treatment.
+- DEPLOY BUILD HAZARD — **RESOLVED 2026-10-20 (lane/engine-bytes)**. The
+  hazard was real and it broke the build: `vite.config.js` aliased
+  pico-emu + esp32-emu to absolute owner-folder paths, and the owner's
+  `esp32 emu/dist/` was deleted mid-session, so `npm run build` failed with
+  `[vite:worker-import-meta-url] Could not load …/esp32 emu/dist/sab/
+  worker-proxy.js … ENOENT`. In CI/Docker the same aliases point at folders
+  that do not exist at all → hard build failure, and the built Pico wasm
+  asset carried an absolute owner path.
+  Fix (the F1 pattern, applied to every engine): the bytes are now committed
+  in this repo and the aliases point at them, so dev, `npm run build` and
+  the runtime `/vendor/board-engines/…` fallback all read the SAME files:
+  - `src/engines/pico-emu/` — glue `picoemu.wasm.js` (md5 c3b784f0) + wasm
+    `picoemu.wasm.wasm` (md5 0c74dffe), a MATCHED pair, byte-equal to the
+    owner's `rp2350/Pico-emu/web` build of 2026-10-08.
+  - `src/engines/esp32-emu/dist/sab/` — `worker-proxy.js` (md5 3c5c1866) +
+    `worker-entry.js` (md5 4afe24dd), byte-equal to the runtime-fallback
+    mirror, i.e. the OpenHW-patched bytes (node:crypto MD5 stub, inline
+    `CMD_GET_WIFI_STATS` + `CMD_GET_TWAI_TX` service while RUN=1).
+  The owner folder stays reachable for engine development with
+  `OPENHW_ENGINE_FROM=owner npm run dev` (never in CI). Proven after the
+  change: `npm run build` green with no owner path in `dist/`, pico-usb
+  (M0+ + M33) green, esp32-wifi-gateway green. Provenance + refresh recipe
+  in `src/engines/*/README.md` (same shape as stm32f1-emu).
+  The npm endgame stays a one-file flip: when the engines are published,
+  the alias entries in `vite.config.js` are removed and the bare specifiers
+  in the runners resolve to the packages.
 
 
 - Pace pill now reports step-counted virtual time (was wall clock — always
@@ -294,10 +333,31 @@ Connectivity extras not in the main tables:
 
 ## Next to prove (NONE cells worth a cell)
 
-1. F4 CAN-2.0 (bxCAN like F1) — same loopback recipe as stm32-can.
-2. SAI full-duplex wording stays narrow unless the model gains clocking.
-3. Mega/Nano/MapleMini sweeps (same cores, low risk).
-4. F1 USB-DEV cell (real C8 silicon; engine taps verified, plan in .tmp-vitest/usb-f1-plan.md).
+1. **ESP32-CAM 2-board LAN stability** — the cell is green but flaky (2 of 3
+   runs on 2026-10-20). Root cause is measured (lane/esp32-cov): the SAB
+   proxy busy-spins per CMD while the engine only services a fixed
+   allow-list inline during RUN=1, so a CMD the runner polls wedges the
+   board worker. Two fronts: (a) frontend — stop calling CMDs the engine
+   cannot service mid-run; (b) engine — widen the inline allow-list
+   (patch already applied for `CMD_GET_WIFI_STATS` in the committed bytes).
+   Tooling: `tests/e2e/esp32-cam-lan-diag.spec.js`,
+   `patches/esp32-cov-diag-probe.patch`.
+2. **Pico IN-latch inject** (engine ask) — one export
+   (`_picoemu_set_gpio_input` → `gpio_set_input_pin`) unblocks FOUR
+   columns on BOTH boards: GPIO-in, 1-Wire/DHT22, IR, EXTI. The engine has
+   the function; it is just not exported. Highest-leverage engine ask in the
+   project.
+3. **Pico SD** — the ARM path never drives the SPI CS line, so the SD model
+   stays inactive (engine ask). A cell exists only after the CS watch lands.
+4. **F1 USB-DEV** (real C8 silicon; engine taps verified, plan in
+   `.tmp-vitest/usb-f1-plan.md`).
+5. **SAI full-duplex** wording stays narrow unless the model gains clocking.
+6. **Mega/Nano/MapleMini sweeps** (same cores, low risk).
 
-Deferred to the user (not queued): all WiFi/ETH — F4 EMAC (plan in
-.tmp-vitest/eth-plan.md), ESP32 WiFi link, Pico CYW43/W5500 traffic.
+Engine-side asks that are NOT frontend work (deliver as patches, never
+in-place edits in the read-only engine repos): F4 HASH
+(`patches/README-f4-hash.md`) + F4 `SysTick->VAL` down-counter
+(`patches/README-f4-systick-val.md`), pico IN-latch + SD CS + softAPConfig +
+`live=0` DHCP stall, esp32 `scanNetworks()` hang + `wifi-fix@a0684ef` merge,
+F4 `fault_pc` export. MicroPython on F4 needs an upstream image + a runner
+REPL inject path (no frontend shortcut).
