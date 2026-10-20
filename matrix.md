@@ -8,19 +8,26 @@ missing) / `NONE` (silicon-capable, no proof yet) / `ABSENT` (no such silicon) /
 - Proof = serial needle + telemetry/liveOop evidence in the named spec.
 - Last updated: 2026-10-09 (all sections survey-verified; RED column fills from sweep).
 
-## STM32F1 (survey-verified 2026-10-09; DHT RED all-F103 — intermittent per-read nan under hunt; all other stm32* cells green)
+## STM32F1 (survey-verified 2026-10-09; engine bytes re-pinned 2026-10-20 — the shipped app was resolving the STALE npm `stm32f1-emu` build, which turned the SoftSerial RX loopback + I2C-RTC cells RED and was the real cause of the DHT RED; with the pinned owner engine bytes DHT22 is green on every F1 board and all other stm32* cells stay green)
 
 | Board | UART | SoftSerial | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire/DHT | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (per-read nan ~12-16% on all F103 boards; reads exact 24.00/50.00 when good; census BP 3/26, CB 4/25, MP 4/26) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
-| openhw-stm32-maple-mini | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | RED (same all-F103 intermittent nan; census MP 4/26) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | FULL (sweep OLED+MAX7219) |
-| openhw-stm32f103cb | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | RED (same all-F103 intermittent nan; census CB 4/25) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
-| openhw-stm32-gd32f103c8 | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
-| openhw-stm32-gd32f103cb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
-| openhw-stm32-gd32f103rb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | RED (same all-F103 intermittent nan; reads exact 24.00/50.00) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
+| openhw-stm32-bluepill | FULL | FULL (TX+RX loopback) | FULL (OLED+LCD+MPU+BMP) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | NONE (DMA1, no cell) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | FULL (2026-10-20, pinned owner engine bytes: BP 8/8 runs, exact 24.00/50.00; the RED was the stale npm engine build — per-read nan intermittency itself persists, ~1 in 8 reads) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | FULL (OLED+LCD+MAX7219+595) |
+| openhw-stm32-maple-mini | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL (2026-10-20, pinned owner engine bytes: MP green via stm32f1-maple-cb-2, exact 24.00/50.00; per-read nan intermittency persists) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | FULL (sweep OLED+MAX7219) |
+| openhw-stm32f103cb | FULL | FULL (TX+RX) | FULL | PARTIAL (same write-only gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL | FULL (exact loopback) | NO-GO | NONE | FULL (2026-10-20, pinned owner engine bytes: CB green via stm32f1-maple-cb-2, exact 24.00/50.00; per-read nan intermittency persists) | NONE | ABSENT | ABSENT | ABSENT | NONE | ABSENT | NONE | FULL |
+| openhw-stm32-gd32f103c8 | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | FULL (2026-10-20, pinned owner engine bytes: gd32-wave2 DHT green, exact 24.00/50.00; per-read nan intermittency persists) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
+| openhw-stm32-gd32f103cb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | FULL (2026-10-20, pinned owner engine bytes: gd32-wave2 DHT green, exact 24.00/50.00; per-read nan intermittency persists) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
+| openhw-stm32-gd32f103rb | FULL | FULL (TX+RX loopback) | FULL (OLED+RTC) | PARTIAL (TX/write-only; MISO-read gap) | FULL | FULL | ABSENT | FULL (TCIF1) | FULL | FULL (SET) | FULL (bxCAN loopback) | NO-GO (bxCAN classic-only) | NONE (SPI2/I2S-mux, no cell) | FULL (2026-10-20, pinned owner engine bytes: gd32-wave2 DHT green, exact 24.00/50.00; per-read nan intermittency persists) | NONE (FS-device capable) | ABSENT | ABSENT | ABSENT | NONE (SPI-capable, no F1 SD cell) | NONE | PARTIAL (OLED+MAX7219) |
 
 UART note: all FULL cells prove TX; HW-UART RX loopback unproven (SW-UART RX
 proven on bluepill only).
+Engine-bytes note (2026-10-20): under the stale npm `stm32f1-emu` build the
+SoftSerial RX loopback (stm32-softserial) and the I2C RTC readback
+(stm32-rtc) cells were RED — the npm wasm delivers pin events as
+(port,pin,level) triples, so the runner loses the engine-domain edge stamp
+and hunts coarsely. With the pinned owner engine bytes (src/engines/
+stm32f1-emu — glue+wasm+facade from ONE build) both are green. See
+"Infra notes" for the byte set and the resolution point.
 Specs: stm32-can, stm32-softserial(+tx), stm32-dht22, stm32-rtc, stm32-gpio-in,
 stm32-i2c, stm32-spi, stm32-595, stm32-adc, stm32-pwm, stm32-mpu6050,
 stm32-bmp180, stm32f1-sweep, stm32f1-i2c-sweep,
@@ -191,6 +198,32 @@ Connectivity extras not in the main tables:
   engine-side NO-GOs.
 - F1 DHT nan regression under active hunt (runner exonerated by A/B, engine
   bytes verified, firmware stable) — bluepill cell marked RED until green.
+  RESOLVED 2026-10-20: the RED was the app running the STALE npm engine
+  bytes (see below), not the engine; with the pinned owner bytes the cell
+  is green 8/8 (BP), 8/8 (MP+CB via maple-cb-2) and 12/12 (gd32 wave2).
+  The per-read nan intermittency itself is still there (~1 in 8 reads).
+- F1 ENGINE BYTES re-pinned 2026-10-20 (single resolution point):
+  the F1 runner resolves `stm32f1-emu` → the npm package, so dev AND the
+  built app both ran the OLD npm build (glue 7387b216 / wasm ddfbc2a5 /
+  facade 44845aa9 / emulator d2f7fcf3 — 132 wasm exports, pin events as
+  triples), while public/vendor carried a THIRD byte set (glue 43c24f16 /
+  wasm d1e69c28) that nothing ever loaded. The npm build is an older build
+  of the same engine: no `instruction_count_now` / `i2c_clear_rx` /
+  `tim_chan_pin` exports and no edge tcount → SoftSerial RX + I2C RTC RED.
+  Fix: the owner's matched byte set is committed in src/engines/stm32f1-emu
+  (glue 43c24f16 + wasm d1e69c28 + emulator 091a0746 + facade f2cff22c — one
+  build, 135 exports) and vite.config.js aliases the npm-shaped specifiers
+  onto it, so dev, the built bundle (hashed wasm asset) and the /vendor
+  runtime fallback all load the SAME pair. An alias to the owner FOLDER is
+  not deployable: the container build (deploy.yml → Dockerfile) checks out
+  only this repo + openhw-studio-emulator, so an absolute owner path is a
+  hard vite failure, and the owner rebuilds that folder every few minutes,
+  so dev could never match a committed deploy snapshot.
+- DEPLOY BUILD HAZARD (found 2026-10-20, pre-existing): vite.config.js still
+  aliases pico-emu + esp32-emu to absolute owner-folder paths. Those folders
+  do not exist in the CI/Docker build → "[vite:load-fallback] Could not load
+  …" = build failure. F1 was therefore pinned to repo-committed bytes
+  instead of the owner folder; pico/esp32 need the same treatment.
 
 
 - Pace pill now reports step-counted virtual time (was wall clock — always
