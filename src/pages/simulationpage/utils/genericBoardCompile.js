@@ -42,7 +42,14 @@ export async function compileGenericBoard(args, ctx) {
               ? (libFile.id === activeCodeFileId ? code : (libFile.content || ''))
               : '';
 
-            const cacheKeyBoard = `${kind}:${boardComp.id}`;
+            // USB-CDC mode (board attr `usbCdc`): the guest keeps arduino-pico's
+            // `Serial` (the real USB CDC device) instead of the UART0 monitor
+            // path, so the USB-DEV cell can prove the CDC itself. It changes
+            // the compiled source, so it MUST be part of the cache key.
+            const usbCdcAttr = String((boardComp && boardComp.attrs && boardComp.attrs.usbCdc) ?? '').toLowerCase();
+            const usbCdcMode = usbCdcAttr === '1' || usbCdcAttr === 'true' || usbCdcAttr === 'on' || usbCdcAttr === 'yes';
+
+            const cacheKeyBoard = `${kind}:${boardComp.id}${usbCdcMode ? ':usbcdc' : ''}`;
             const cacheSource = [
               compileSource,
               targetFqbn,
@@ -76,10 +83,20 @@ export async function compileGenericBoard(args, ctx) {
               // pico-emu does not model — UART0 (GP0/GP1) is the monitor
               // path. Rewrite bare `Serial.` → `Serial1.` (word-boundary,
               // Serial1/Serial2 untouched) before compile.
+              //
+              // GLOBAL replace (the `g` flag is load-bearing): without it
+              // `String.replace` rewrites only the FIRST `Serial.` in the
+              // sketch, so every LATER print/println stayed on USB CDC and
+              // was silently dropped by the guest (arduino-pico's
+              // `SerialUSB::write` discards data while the CDC is not
+              // connected). Symptom seen live 2026-10-20 on every Pico
+              // board: the sketch's first output line never reached the
+              // monitor and the Pico-2 EEPROM cell produced NO serial at
+              // all (its payload prints all sat on the CDC).
               let effectiveSource = compileSource;
               let effectiveFiles = compileUnit.files;
-              if (isPicoKind) {
-                const rewriteSerial = (src) => String(src || '').replace(/\bSerial\.(?![0-9])/, 'Serial1.');
+              if (isPicoKind && !usbCdcMode) {
+                const rewriteSerial = (src) => String(src || '').replace(/\bSerial\.(?![0-9])/g, 'Serial1.');
                 // Only rewrite when the sketch actually uses bare Serial.
                 if (/\bSerial\.(?![0-9])/.test(String(compileSource || ''))) {
                   effectiveSource = rewriteSerial(compileSource);

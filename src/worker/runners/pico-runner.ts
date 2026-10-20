@@ -107,6 +107,18 @@ function payloadToU8(firmware: string): Uint8Array | null {
     return null;
 }
 
+/** pico-emu `usb_enum_state_t` → label (engine include/usb.h order). */
+const USB_ENUM_LABELS = [
+    'detached', 'wait_pullup', 'bus_reset', 'get_desc_8', 'set_address',
+    'get_desc_full', 'get_config_short', 'get_config_full', 'get_config_data',
+    'get_string_lang', 'get_string_mfr', 'get_string_prod', 'get_string_sn',
+    'set_config', 'set_interface', 'cdc_set_line_coding', 'cdc_set_ctrl_line',
+    'active',
+];
+function usbEnumLabel(state: number): string {
+    return USB_ENUM_LABELS[state] || `enum_${state}`;
+}
+
 export class PicoRunner extends ArmRunnerBase {
     protected uartTxPins = PICO_UART_TX;
     protected uartRxPins = PICO_UART_RX;
@@ -163,6 +175,12 @@ export class PicoRunner extends ArmRunnerBase {
     // the fork exports the net functions (typeof-guarded per call).
     private netWifi = false;
     private netEth: '' | 'w5500' | 'w6300' = '';
+    // USB-CDC device mode (board attr `usbCdc`): host-injected serial bytes
+    // land in the CDC OUT endpoint, not UART0 (see the constructor).
+    private usbCdcMode = false;
+    // USB-CDC observation state (enumeration label + host→device byte count).
+    private usbLastState = '';
+    private usbRxBytes = 0;
     private netSpi = 0;
     private netSessionId = '';
     private netGatewayUrl = '';
@@ -251,6 +269,17 @@ export class PicoRunner extends ArmRunnerBase {
             for (const c of defs) {
                 if (c && c.id !== undefined) this.compAttrById.set(String(c.id), c.attrs || {});
             }
+            // USB-CDC device mode (board attr `usbCdc`): the sketch keeps
+            // arduino-pico's `Serial` (the real USB CDC device — the compile
+            // side skips its Serial->Serial1 rewrite in this mode) and the
+            // engine's USB model enumerates it. Serial bytes injected from
+            // the host go into the CDC OUT endpoint (engine `_picoemu_write_usb`)
+            // instead of UART0, so the cell proves the CDC path end-to-end.
+            try {
+                const battrs: any = this.compAttrById.get(this.boardId) || {};
+                const raw = String(battrs?.usbCdc ?? '').toLowerCase();
+                this.usbCdcMode = raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes';
+            } catch { /* attr detection never breaks construction */ }
             for (const inst of this.instances.values()) {
                 if (typeof (inst as any)?.onI2CStart === 'function') { this.wantI2CBridge = true; break; }
             }
@@ -793,6 +822,31 @@ export class PicoRunner extends ArmRunnerBase {
         } catch { /* status never breaks the sim */ }
     }
 
+    /** USB-CDC observation: the engine's simulated host enumerates the
+     *  guest's CDC device; `_picoemu_usb_state32()` packs
+     *  (enum_state << 16) | ctrl_state. Report the enumeration state to an
+     *  `openhw-usb-device` sink (live-OOP + telemetry proof that the CDC
+     *  really enumerated, not just that some bytes appeared). */
+    private pollPicoUsb(): void {
+        if (!this.usbCdcMode || !this.mod) return;
+        try {
+            const fn = (this.mod as any)._picoemu_usb_state32;
+            if (typeof fn !== 'function') return;
+            const packed = Number(fn.call(this.mod)) >>> 0;
+            const enumState = (packed >>> 16) & 0xffff;
+            const ctrlState = packed & 0xffff;
+            const key = `${enumState}:${ctrlState}:${this.usbRxBytes}`;
+            if (key === this.usbLastState) return;
+            this.usbLastState = key;
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onUsbState !== 'function') continue;
+                try {
+                    (inst as any).onUsbState(usbEnumLabel(enumState), this.usbRxBytes, '');
+                } catch { /* sink never breaks the tick */ }
+            }
+        } catch { /* USB observation never breaks the tick */ }
+    }
+
     /** Tear down the network link (close). */
     private stopNetLink(): void {
         try {
@@ -988,6 +1042,8 @@ export class PicoRunner extends ArmRunnerBase {
                     try { self.pollPicoWDT(); } catch { /* drain never breaks tick */ }
                     // PIO WS2812 mirror: PIO0 SM0 RX words → NeoPixel frames.
                     try { pollPicoPioNeopixel(self.mod, self.instances); } catch { /* drain never breaks tick */ }
+                    // USB CDC observation (usbCdc mode): enumeration state.
+                    try { self.pollPicoUsb(); } catch { /* drain never breaks tick */ }
                     // Net leveling: model-driven pins (shift-register
                     // outputs etc.) fan out across component-only nets.
                     try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks tick */ }
@@ -1050,7 +1106,17 @@ export class PicoRunner extends ArmRunnerBase {
                 return out;
             },
             injectUartByte(value: number) {
-                try { self.mod?._picoemu_write_uart(value & 0xff); } catch { /* ignore */ }
+                try {
+                    // USB-CDC mode: the byte belongs on the CDC OUT endpoint
+                    // (host → device), which is where the engine's USB model
+                    // delivers it to the guest's CDC bulk-OUT endpoint.
+                    if (self.usbCdcMode && typeof self.mod?._picoemu_write_usb === 'function') {
+                        self.mod._picoemu_write_usb(value & 0xff);
+                        self.usbRxBytes++;
+                        return;
+                    }
+                    self.mod?._picoemu_write_uart(value & 0xff);
+                } catch { /* ignore */ }
             },
             getPc(): number {
                 try {

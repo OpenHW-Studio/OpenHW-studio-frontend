@@ -4564,6 +4564,22 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           return { ok: false, error: String(err?.message || err) };
         }
       },
+      // Host → board serial input (e2e-only): posts the worker's
+      // SERIAL_INPUT message so a cell can type into the guest's console
+      // (USB-DEV cells inject into the CDC OUT endpoint, UART cells into
+      // the UART RX FIFO). Returns what was sent so the cell can assert.
+      serialInput(text, boardId) {
+        try {
+          const payload = String(text ?? "");
+          const target = boardId ? String(boardId) : undefined;
+          const ref = workerRef.current;
+          if (!ref) return { ok: false, error: "no worker" };
+          ref.postMessage({ type: "SERIAL_INPUT", data: payload, targetBoardId: target });
+          return { ok: true, bytes: payload.length, boardId: target || "all" };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
       snapshot() {
         let telemetry = [];
         try {
