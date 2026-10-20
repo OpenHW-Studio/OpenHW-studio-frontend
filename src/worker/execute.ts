@@ -29,6 +29,11 @@ function deriveOpts(
     if (board) extra.board = board;
     const spi = attrStr(attrs, 'boardSpi', 'board-spi', 'spi');
     if (spi) extra.boardSpi = spi;
+    // Ethernet chip select for the Pico Ethernet shells (W5500 default,
+    // 'w6300' for the WIZnet W6300 carrier). The chip lives ENGINE-side
+    // (pico-emu board attach); the runner only picks the attach call.
+    const ethChip = attrStr(attrs, 'ethChip', 'eth-chip', 'ethernetChip');
+    if (ethChip) extra.ethChip = ethChip;
     const fixedFirmware = attrStr(attrs, 'firmware', 'fixedFirmware', 'fixed-firmware');
     if (fixedFirmware) extra.fixedFirmware = fixedFirmware;
     // Guest-clock divider (Pico tickMHz + F1/F4 clock attrs share the

@@ -74,6 +74,18 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
       if (BOARD_FQBN.pico_2_rv32) return BOARD_FQBN.pico_2_rv32;
     }
   } catch { /* fall through to the table */ }
+  // W6300 carrier on the Ethernet shells (attrs ethChip='w6300'): the
+  // firmware must build for the WIZnet W6300-EVB-Pico variant (the
+  // arduino-pico core ships the lwIP_w6300 library for it), NOT for the
+  // W5500-EVB carrier. The chip choice itself is engine-side (the runner
+  // attaches the W6300 board); this only picks the compile target.
+  try {
+    const ethChipAttr = resolveComponentAttrString(boardComp?.attrs, 'ethChip', '');
+    if (String(ethChipAttr || '').trim().toLowerCase() === 'w6300') {
+      if (typeKey === 'pico_2_eth') return BOARD_FQBN.pico_w6300_2;
+      if (typeKey === 'pico_eth') return BOARD_FQBN.pico_w6300;
+    }
+  } catch { /* fall through to the kind table */ }
   return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 

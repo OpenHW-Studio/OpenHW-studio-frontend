@@ -83,7 +83,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/pico-runner.ts',
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'softserial', 'ethernet'],
     firmware: ['arduino-sketch', 'micropython-script'],
-    limits: [{ code: 'ethernet-gateway', detail: 'W5500 MACRAW via unified gateway (:5030); sockets 1-7 offload deferred.' }],
+    limits: [{ code: 'ethernet-gateway', detail: 'W5500 MACRAW via unified gateway (:5030); sockets 1-7 offload deferred. W6300 carrier: board attr ethChip=w6300 (same room/pool/pump).' }],
   },
   {
     family: 'pico_eth',
@@ -93,7 +93,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/pico-runner.ts',
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'softserial', 'ethernet'],
     firmware: ['arduino-sketch', 'micropython-script'],
-    limits: [{ code: 'ethernet-gateway', detail: 'W5500 MACRAW via unified gateway (:5030); sockets 1-7 offload deferred.' }],
+    limits: [{ code: 'ethernet-gateway', detail: 'W5500 MACRAW via unified gateway (:5030); sockets 1-7 offload deferred. W6300 carrier: board attr ethChip=w6300 (same room/pool/pump).' }],
   },
   {
     family: 'pico_2_w',

@@ -565,6 +565,9 @@ const BOARD_FQBN = {
   pico_2_w: 'rp2040:rp2040:rpipico2w',
   pico_eth: 'rp2040:rp2040:wiznet_5500_evb_pico',
   pico_2_eth: 'rp2040:rp2040:wiznet_5500_evb_pico2',
+  // W6300-EVB-Pico carriers (Ethernet-shell attr ethChip='w6300').
+  pico_w6300: 'rp2040:rp2040:wiznet_6300_evb_pico',
+  pico_w6300_2: 'rp2040:rp2040:wiznet_6300_evb_pico2',
   esp32: 'esp32:esp32:esp32',
   stm32f1: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
   stm32f103cb: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB',
@@ -888,6 +891,15 @@ function resolveBoardFqbnForComponent(boardComp, boardKind) {
   // Per-board FQBN: the component TYPE wins over the normalized kind so
   // variants (Maple Mini, Nucleo, GD32, F401/…) compile for their own part.
   const typeKey = normalizeBoardKind(boardComp?.type || '');
+  // W6300 carrier (Ethernet-shell attr ethChip='w6300') → the W6300-EVB
+  // variant (the core ships the lwIP_w6300 library for it).
+  try {
+    const ethChipAttr = resolveComponentAttrString(boardComp?.attrs, 'ethChip', '');
+    if (String(ethChipAttr || '').trim().toLowerCase() === 'w6300') {
+      if (typeKey === 'pico_2_eth') return BOARD_FQBN.pico_w6300_2;
+      if (typeKey === 'pico_eth') return BOARD_FQBN.pico_w6300;
+    }
+  } catch { /* fall through to the kind table */ }
   return BOARD_FQBN[typeKey] || BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 

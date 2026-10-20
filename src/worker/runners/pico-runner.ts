@@ -20,8 +20,10 @@
  * Network: Pico W / Pico 2 W (CYW43) and pico-eth / pico-2-eth (W5500
  * MACRAW) ride the unified gateway (openhw-unified-gateway :5030) —
  * `_wifi_enable(1)` / `_board_eth` + `_w5500_gw_enable(1)`, WS uplink,
- * per-tick TX pump (see startNetLink/pumpNetLink). Sockets 1-7 offload
- * stay on the proxy path (deferred). BLE HCI deferred.
+ * per-tick TX pump (see startNetLink/pumpNetLink). The W6300 carrier
+ * (board attr ethChip:'w6300') uses the same gateway bus via
+ * `_board_eth6300` + `_w6300_gw_enable(1)` (one room, one DHCP pool).
+ * Sockets 1-7 offload stay on the proxy path (deferred). BLE HCI deferred.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { AVRRunnerOptions } from '../registries/component-registry.ts';
@@ -160,7 +162,7 @@ export class PicoRunner extends ArmRunnerBase {
     // stopNetLink (close) tears down. Fork-core runs stay offline unless
     // the fork exports the net functions (typeof-guarded per call).
     private netWifi = false;
-    private netEth: '' | 'w5500' = '';
+    private netEth: '' | 'w5500' | 'w6300' = '';
     private netSpi = 0;
     private netSessionId = '';
     private netGatewayUrl = '';
@@ -220,14 +222,23 @@ export class PicoRunner extends ArmRunnerBase {
         this.isPico2 = /pico-?2|rp2350|2350/.test(typeStr);
         // Network (unified-gateway path, owner folder rp2350/Pico-emu):
         // Pico W / Pico 2 W → CYW43 WiFi; pico-eth / pico-2-eth → W5500
-        // on SPI (boardSpi attr selects SPI0/SPI1). W6300 boards are an
-        // explicit gap (different chip/pins, not silently mapped).
+        // on SPI (boardSpi attr selects SPI0/SPI1). The W6300 carrier
+        // rides the SAME gateway bus (MACRAW socket 0 joins the shared
+        // vnet) but a different engine board attach, so the chip is
+        // selected by the board attr `ethChip` ('w6300'); the default
+        // stays W5500 so the existing eth shells are unchanged.
         // Enables + WS link happen post-init in startNetLink (boot), the
         // TX pump rides stepBudget, teardown rides close().
         this.netWifi = /pico-?w|picow|-w\b/.test(typeStr)
-            && !/pico-?eth|picoeth|w5500/.test(typeStr);
+            && !/pico-?eth|picoeth|w5500|w6300/.test(typeStr);
         if (/pico-?2-?eth|picoeth2|2-eth/.test(typeStr)) this.netEth = 'w5500';
         else if (/pico-?eth|picoeth|w5500/.test(typeStr)) this.netEth = 'w5500';
+        // Ethernet chip override (attr ethChip / board type token).
+        // 'w6300' → the engine's pico-w6300 board (CSn=16/RSTn=22/INTn=15);
+        // anything else keeps the W5500 default (never silently mapped).
+        const ethChipOpt = String((options as any)?.ethChip ?? '').trim().toLowerCase();
+        if (this.netEth && ethChipOpt === 'w6300') this.netEth = 'w6300';
+        else if (/w6300/.test(typeStr)) this.netEth = 'w6300';
         const spiOpt = Number.parseInt(String((options as any)?.boardSpi ?? '0'), 10);
         this.netSpi = spiOpt === 1 ? 1 : 0;
         this.netSessionId = String((options as any)?.sessionId || '').trim();
@@ -680,6 +691,10 @@ export class PicoRunner extends ArmRunnerBase {
      * (nodhcp — DHCP flows to the gateway) for Pico W; `_board_eth`
      * + `_w5500_gw_enable(1)` (MACRAW sock0 joins the shared vnet bus)
      * for pico-eth; `_eth_set_uplink(1)` immediately, before first step.
+     * W6300 carrier: `_board_eth6300` + `_w6300_gw_enable(1)` — SAME
+     * gateway room, SAME DHCP pool, SAME per-tick TX pump (the MACRAW
+     * socket 0 joins the same shared vnet bus as CYW43). Only the chip
+     * differs; the pinout (CSn=16/RSTn=22/INTn=15) is engine-side.
      * Sockets 1-7 TCP/UDP offload stay on the proxy path (deferred). */
     private startNetLink(): void {
         if (this.netLink || !this.mod) return;
@@ -699,6 +714,20 @@ export class PicoRunner extends ArmRunnerBase {
             try {
                 if (typeof mod._picoemu_w5500_gw_enable === 'function') {
                     mod._picoemu_w5500_gw_enable(1);
+                    kind = 'eth';
+                }
+            } catch { /* older builds */ }
+        }
+        if (!kind && this.netEth === 'w6300') {
+            // W6300-EVB-Pico / Pico2 (engine board `pico-w6300`):
+            // CSn=16 / RSTn=22 / INTn=15, MACRAW socket 0 on the shared
+            // vnet bus (same room + DHCP pool as WiFi and the W5500).
+            try {
+                if (typeof mod._picoemu_board_eth6300 === 'function') mod._picoemu_board_eth6300(1, 1, this.netSpi);
+            } catch { /* older builds */ }
+            try {
+                if (typeof mod._picoemu_w6300_gw_enable === 'function') {
+                    mod._picoemu_w6300_gw_enable(1);
                     kind = 'eth';
                 }
             } catch { /* older builds */ }

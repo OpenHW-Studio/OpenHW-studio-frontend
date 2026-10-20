@@ -54,6 +54,12 @@ export const BOARD_FQBN = {
   // W5500-EVB-Pico carriers (pico-emu pico-eth / pico-eth2 boards).
   pico_eth: 'rp2040:rp2040:wiznet_5500_evb_pico',
   pico_2_eth: 'rp2040:rp2040:wiznet_5500_evb_pico2',
+  // W6300-EVB-Pico carriers (pico-emu pico-w6300 / pico-w6300-2 boards).
+  // Selected by the Ethernet-shell attr ethChip='w6300' (the chip itself
+  // is engine-side; the FQBN only picks the compile target + the core's
+  // bundled lwIP_w6300 library).
+  pico_w6300: 'rp2040:rp2040:wiznet_6300_evb_pico',
+  pico_w6300_2: 'rp2040:rp2040:wiznet_6300_evb_pico2',
   esp32: 'esp32:esp32:esp32',
   stm32f1: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8',
   // STM32F1 variants (GenF1 pnum menu — probed via arduino-cli board details).
