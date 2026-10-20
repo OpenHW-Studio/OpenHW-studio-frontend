@@ -99,7 +99,7 @@ esp32-cam-wifi-gateway.
 
 | Board | UART | I2C | SPI | ADC | DMA | GPIO | Button/Touch | Display | RTC | NVS/EEPROM | MicroPython | I2S | 1-Wire |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-microbit-v2 | PARTIAL (TX only; no RX path) | FULL (OLED) | FULL (loopback) | NONE (SAADC fill exists, no cell) | PARTIAL (EASYDMA pumps exercised, no memcpy cell) | PARTIAL (Button-A proven; generic digitalRead unproven) | PARTIAL (button-A FULL; capacitive touch unproven) | PARTIAL (OLED + matrix proven; SPI displays not) | NONE | NONE (NVMC-capable) | ABSENT (fixed-bin only) | NONE (real I2S silicon) | NONE (GPIO-capable) |
+| openhw-microbit-v2 | FULL (TX + RX 2026-10-20: paced UARTE0 drip, host→guest bytes) | FULL (OLED) | FULL (loopback) | FULL (SAADC AIN0 cell 2026-10-20: pot → guest count exact) | PARTIAL (EASYDMA pumps exercised, no memcpy cell) | PARTIAL (Button-A proven; generic digitalRead unproven; PWM0 readback gear proven 2026-10-20) | PARTIAL (button-A FULL; capacitive touch unproven) | PARTIAL (OLED + matrix proven; SPI displays not) | NONE | NONE (NVMC-capable) | ABSENT (fixed-bin only) | NONE (real I2S silicon) | NONE (GPIO-capable) |
 
 | Board | UART | GPIO | GPIO-in | Bit-bang (I2C/SPI/PWM/SD) | ADC | MicroPython |
 |---|---|---|---|---|---|---|
@@ -111,8 +111,9 @@ esp32-cam-wifi-gateway.
 | openhw-z80 | FULL (console TX) | FULL (LED) | NONE | NONE (capable) | ABSENT | ABSENT |
 | openhw-rv32 | FULL (console TX) | ABSENT (no GPIO model) | ABSENT | ABSENT | ABSENT | ABSENT |
 
-Specs: microbit-cells (5 cases), retro-boards (7 ISAs), retro-gpio(+in),
-retro-rx-echo (8086).
+Specs: microbit-cells (5 cases), microbit-uart-rx, microbit-saadc,
+microbit-pwm (owner P164 readback gear), microbit-i2s/nfc/nvs/temp,
+retro-boards (7 ISAs), retro-gpio(+in), retro-rx-echo (8086).
 
 Real-system chips with NO proof yet (all NONE): 8086 PIT/PIC/DMA (XT needs
 8253+8259+8237 for anything beyond polling loops), Z80 CTC, 6502 VIA timers,
