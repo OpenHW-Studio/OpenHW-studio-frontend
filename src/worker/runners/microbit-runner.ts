@@ -18,7 +18,11 @@
  * models (no SPI fixture needs one).
  * GPIO: edge pins P0..P20 publish via publishGpio; gpio_set_input
  * injects. Matrix rows/cols feed the board telemetry (matrixLit).
- * UART: UARTE0 polled TXD drain → serial; no RX path (documented gap).
+ * UART: UARTE0 polled TXD drain → serial; RX is a paced single-slot
+ * drip (injectUartByte → queue → uart_rx_byte once RXDRDY clears),
+ * mirroring each byte into the RXD EasyDMA ring like the owner bench.
+ * PWM: PWM0..3 readback (pwm_observe_seq_word + pwm_get_duty/freq_hz)
+ * drives LED brightness models via onPWM.
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { createI2CBridge, collectI2CSlaveAddresses } from '../bus-bridge.ts';
@@ -30,6 +34,20 @@ const MB_EDGE: Record<string, [number, number]> = {
     P10: [0, 30], P11: [0, 23], P12: [0, 12], P13: [0, 17],
     P14: [0, 1], P15: [0, 13], P16: [1, 2], P19: [0, 26], P20: [1, 0],
 };
+
+/** PWM instance bases (nRF52833): PWM0 0x4001C000, PWM1 0x40021000,
+ * PWM2 0x40022000, PWM3 0x4002D000 (engine pwm_nrf::pwm_base). */
+const MB_PWM_BASE = [0x4001c000, 0x40021000, 0x40022000, 0x4002d000];
+/** PWM register offsets used by the readback pump. */
+const MB_PWM_SEQ0_PTR = 0x520;   // SEQ[0].PTR
+const MB_PWM_SEQ0_CNT = 0x524;   // SEQ[0].CNT (16-bit words)
+
+/** UARTE0 (console UART) register map — nRF52833 product spec. */
+const MB_UART0_BASE = 0x40002000;
+const MB_UART0_EVENTS_RXD = 0x40002108;   // EVENTS_RXDRDY (own register)
+const MB_UART0_RXD_PTR = 0x40002534;      // RXD.PTR
+const MB_UART0_RXD_MAXCNT = 0x40002538;   // RXD.MAXCNT
+const MB_UART0_RXD_AMOUNT = 0x4000253c;   // RXD.AMOUNT
 
 function b64ToU8(s: string): Uint8Array {
     const bin = atob(s.replace(/\s/g, ''));
@@ -47,6 +65,11 @@ export class MicrobitRunner extends ArmRunnerBase {
     private lastGpioOut: Record<string, boolean> = {};
     private lastMatrixLit = -1;
     private i2cBridge: any = null;
+    /** Bytes the host handed us for UARTE0 RX, waiting for a free slot. */
+    private rxQueue: number[] = [];
+    /** Last PWM readback (duty in basis points, freq in Hz). */
+    private lastPwmDutyBp = 0;
+    private lastPwmFreqHz = 0;
 
     constructor(
         hexData: string,
@@ -85,9 +108,24 @@ export class MicrobitRunner extends ArmRunnerBase {
                 }
                 // WASM bytes explicitly (glue-URL-relative default breaks
                 // under vite worker bundling — same class as pico/8086).
+                // Candidates: the canonical public/wasm copy and the
+                // deploy mirror that sits next to the vendor glue. All
+                // three copies in the repo are the SAME owner build
+                // (unit test tests/unit/worker/microbit-engine-pair.test.mjs
+                // pins the md5) — glue+wasm must never be mixed.
                 try {
-                    const r = await fetch('/wasm/nrf52833_periph_wasm_bg.wasm');
-                    if (r.ok && wasm.initSync) wasm.initSync({ module: await r.arrayBuffer() });
+                    const urls = [
+                        '/wasm/nrf52833_periph_wasm_bg.wasm',
+                        '/vendor/board-engines/microbit/nrf52833_periph_wasm_bg.wasm',
+                    ];
+                    for (const url of urls) {
+                        try {
+                            const r = await fetch(url);
+                            if (!r.ok) continue;
+                            const buf = await r.arrayBuffer();
+                            if (wasm.initSync) { wasm.initSync({ module: buf }); break; }
+                        } catch { /* try the next candidate */ }
+                    }
                 } catch { /* fall through to default init */ }
                 try { wasm.reset_state(); } catch { /* ignore */ }
                 self.mod = wasm;
@@ -192,6 +230,8 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try { stepped = Number(self.cpu.step(n)) || 0; } catch { stepped = 0; }
                 try { self.mod.tick_peripherals(); } catch { /* ignore */ }
                 try { self.pumpDma(); } catch { /* never breaks tick */ }
+                try { self.pumpUartRx(); } catch { /* never breaks tick */ }
+                try { self.pumpPwm(); } catch { /* never breaks tick */ }
                 try { self.pollGpio(); } catch { /* never breaks tick */ }
                 return stepped > 0 ? stepped : n;
             },
@@ -222,8 +262,24 @@ export class MicrobitRunner extends ArmRunnerBase {
                     self.mod?.gpio_set_input?.(pp[0], pp[1], !!high);
                 } catch { /* ignore */ }
             },
+            /**
+             * UART RX: the host (serial console / inter-board UART) hands
+             * us bytes; the engine's UARTE0 RXD holds exactly ONE byte, so
+             * a second arrival before the firmware reads RXD is a real
+             * OVERRUN. Bytes therefore queue here and the pump drips one
+             * per frame, paced on EVENTS_RXDRDY (see pumpUartRx).
+             */
+            injectUartByte(value: number, _source?: string): void {
+                try {
+                    self.rxQueue.push(Number(value) & 0xff);
+                    // Keep the queue bounded: a firmware that never reads
+                    // RXD would otherwise grow it forever.
+                    if (self.rxQueue.length > 256) self.rxQueue.splice(0, self.rxQueue.length - 256);
+                } catch { /* ignore */ }
+            },
             close(): void {
                 try { (self as any).btnGen = (((self as any).btnGen || 0) + 1); } catch { /* ignore */ }
+                try { self.rxQueue.length = 0; } catch { /* ignore */ }
                 try { self.cpu = null; } catch { /* ignore */ }
                 try { self.mcu = null; } catch { /* ignore */ }
             },
@@ -296,6 +352,99 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try { (wasm as any).nvmc_complete_erase?.(); } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
+    }
+
+    /** UARTE0 RX drip (every frame, after the DMA taps).
+     *
+     * The engine's UARTE0 keeps ONE byte in RXD: injecting a second byte
+     * before the firmware reads the first latches a real OVERRUN (bit 0 of
+     * ERRORSRC) and loses the byte. So the drip is paced on the guest's
+     * own consumption — EVENTS_RXDRDY (0x40002108, its own register on this
+     * part) reads 0 only after the firmware cleared it, which is exactly
+     * "the previous byte was consumed".
+     *
+     * The byte is ALSO mirrored into the RXD EasyDMA ring (RXD.PTR +
+     * RXD.AMOUNT) so DMA-mode firmware receives it too — the owner bench
+     * recipe (demo/index.html pump). Never early-complete a staged RX DMA
+     * transfer: that fires ENDRX with no re-arm and the input stalls.
+     */
+    private pumpUartRx(): void {
+        const wasm = this.mod;
+        const cpu = this.cpu;
+        if (!wasm || !cpu) return;
+        if (!this.rxQueue.length) return;
+        try {
+            // EVENTS_RXDRDY is latched per byte; 0 = the slot is free.
+            if (Number(wasm.periph_read(MB_UART0_EVENTS_RXD, 4)) !== 0) return;
+            const byte = this.rxQueue.shift();
+            if (byte === undefined) return;
+            // Mirror into the DMA ring (only when the firmware armed a
+            // RXD buffer — MAXCNT > 0 means DMA mode).
+            try {
+                const ptr = Number(wasm.periph_read(MB_UART0_RXD_PTR, 4)) >>> 0;
+                const amt = Number(wasm.periph_read(MB_UART0_RXD_AMOUNT, 4)) >>> 0;
+                const max = Number(wasm.periph_read(MB_UART0_RXD_MAXCNT, 4)) >>> 0;
+                if (ptr >= 0x20000000 && ptr < 0x20040000 && max > 0 && amt < max && amt < 4096) {
+                    cpu.mem_write(ptr + amt, new Uint8Array([byte & 0xff]));
+                }
+            } catch { /* polled RX needs no DMA mirror */ }
+            wasm.uart_rx_byte(MB_UART0_BASE, byte & 0xff);
+        } catch { /* the drip never breaks the tick */ }
+    }
+
+    /** PWM readback (every frame): the engine keeps the waveform bytes
+     * driver-side (no guest-RAM handle), so the runner feeds the SEQ
+     * compare words it reads out of guest RAM and asks the engine for the
+     * resulting duty/frequency. The strongest duty drives LED brightness
+     * models via onPWM (same contract as the Pico/ESP32 runners).
+     * Engine API (owner P164): pwm_observe_seq_word(n, compareWord),
+     * pwm_get_duty(n) → basis points, pwm_get_freq_hz(n) → Hz. */
+    private pumpPwm(): void {
+        const wasm = this.mod;
+        const cpu = this.cpu;
+        if (!wasm || !cpu) return;
+        let bestDutyBp = 0;
+        let bestFreqHz = 0;
+        for (let inst = 0; inst < MB_PWM_BASE.length; inst++) {
+            const base = MB_PWM_BASE[inst];
+            try {
+                const ptr = Number(wasm.periph_read(base + MB_PWM_SEQ0_PTR, 4)) >>> 0;
+                const cnt = Number(wasm.periph_read(base + MB_PWM_SEQ0_CNT, 4)) >>> 0;
+                if (ptr >= 0x20000000 && ptr < 0x20040000 && cnt > 0) {
+                    const words = cpu.mem_read(ptr, Math.min(cnt, 16) * 2);
+                    for (let i = 0; i + 1 < words.length; i += 2) {
+                        const w = (words[i] | (words[i + 1] << 8)) >>> 0;
+                        wasm.pwm_observe_seq_word(inst, w);
+                    }
+                }
+            } catch { /* one instance never breaks the pump */ }
+            try {
+                const duty = Number(wasm.pwm_get_duty(inst)) || 0;
+                const freq = Number(wasm.pwm_get_freq_hz(inst)) || 0;
+                if (duty > bestDutyBp) { bestDutyBp = duty; bestFreqHz = freq; }
+            } catch { /* readback never breaks the pump */ }
+        }
+        if (bestDutyBp !== this.lastPwmDutyBp || bestFreqHz !== this.lastPwmFreqHz) {
+            this.lastPwmDutyBp = bestDutyBp;
+            this.lastPwmFreqHz = bestFreqHz;
+            try {
+                (this.instances.get(this.boardId) as any)?.setState?.({
+                    pwmDutyBp: bestDutyBp, pwmFreqHz: bestFreqHz,
+                });
+            } catch { /* ignore */ }
+        }
+        if (bestDutyBp <= 0) return;
+        const duty01 = Math.max(0, Math.min(1, bestDutyBp / 10000));
+        for (const inst of this.instances.values()) {
+            try {
+                if (typeof (inst as any)?.onPWM !== 'function') continue;
+                // Components that know their own pin map drive themselves.
+                if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
+                for (const pn of ['A', 'ANODE', '+']) {
+                    try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreqHz }); } catch { /* ignore */ }
+                }
+            } catch { /* one instance never breaks the pump */ }
+        }
     }
 
     /** System-extras pump (every frame, after the DMA taps): drains
