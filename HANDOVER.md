@@ -347,7 +347,28 @@ flock -w 1800 /tmp/gate-slot.lock -c "npm run build"
 flock -w 1800 /tmp/gate-slot.lock -c "npx vitest run"
 ```
 
-### The opencode-service crash loop (diagnosed 2026-10-22)
+### Two distinct death modes (both hit this box on 2026-10-21/22)
+
+**(a) The renderer is OOM-killed** — the app closes with a "device memory
+full" error and the user must reopen it. Chromium's renderer needs ~1 GiB on
+its own; with **two Android emulator instances** (`qemu-system-x86_64`, 4.9
+GiB + 2.0 GiB) the box had **1.3 GiB free of 15.5 GiB** and the renderer was
+the biggest thing it could kill. Check with `free -m` + `pgrep -af
+qemu-system` before blaming the lanes. Killed orphans also accumulate after
+each crash (a Playwright chromium ~675 MB, lane vite servers) — reap them by
+PID.
+
+**(b) The health monitor restarts the service** (see below) — the service
+dies with no error line and every agent session dies with it.
+
+The app's own knobs for (b) are env vars, set before launching the app:
+
+```bash
+export OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS=30000
+export OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES=200
+```
+
+---
 
 The app does NOT crash — the **opencode service dies**, and every agent
 session is a child of it, so all of them die with it. The service is killed
