@@ -16,6 +16,7 @@ import { test, expect } from '@playwright/test';
 const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f42' },
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
+  { tag: 'V407', type: 'openhw-stm32f407ve', id: 'f47e' },
 ];
 
 const CODE = '#define QSPI_BASE 0xA0001000UL\n#define QR(o) (*(volatile uint32_t*)(QSPI_BASE + (o)))\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("QSPI_READY");\n  QR(0x00) = 1;\n}\nvoid loop() {\n  unsigned long ind[4], mm[4];\n  for (int i = 0; i < 4; i++) {\n    QR(0x04) = 0;\n    QR(0x18) = (unsigned long)(i * 4);\n    QR(0x10) = 3;\n    QR(0x14) = (1UL<<28)|(3UL<<24);\n    ind[i] = QR(0x20);\n    unsigned long to = 1000000UL;\n    while ((QR(0x08) & 2UL) == 0 && to--) {}\n    QR(0x0C) = 2UL;\n  }\n  QR(0x14) = (3UL<<28)|(3UL<<24);\n  volatile unsigned short *mp = (volatile unsigned short *)0x90000000UL;\n  for (int i = 0; i < 4; i++) mm[i] = ((unsigned long)mp[i*2+1] << 16) | mp[i*2];\n  int ok = 1; for (int i = 0; i < 4; i++) if (ind[i] != mm[i]) ok = 0;\n  Serial.print("QSPI_W0:"); Serial.println(ind[0], HEX);\n  Serial.print("QSPI_IND:");\n  for (int i = 0; i < 4; i++) { Serial.print(ind[i], HEX); Serial.print(i < 3 ? "," : ""); }\n  Serial.println();\n  Serial.print("QSPI_MM:");\n  for (int i = 0; i < 4; i++) { Serial.print(mm[i], HEX); Serial.print(i < 3 ? "," : ""); }\n  Serial.println();\n  if (ok) Serial.println("QSPI_OK");\n  delay(2000);\n}\n';
@@ -33,7 +34,11 @@ test.describe('F4 QSPI (flash readback to sink)', () => {
   for (const { tag, type, id } of TYPES) {
     test(`indirect + mmap reads agree on the bound image (${type})`, async ({ page }) => {
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(8000);
+      // Harness gate: the plain waitForTimeout(8000) variant loses the race
+      // on a loaded box and dies with "Cannot read properties of undefined
+      // (reading 'setupCircuit')" (seen on the f407ve cell 2026-10-20).
+      await page.waitForFunction(() => !!window.OpenHWE2E, null, { timeout: 90000 });
+      await page.waitForTimeout(2000);
       const setup = await page.evaluate(({ t, i, code }) => window.OpenHWE2E.setupCircuit({
         components: [
           { id: i, type: t, attrs: {}, x: 100, y: 100 },

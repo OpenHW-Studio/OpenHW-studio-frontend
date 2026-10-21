@@ -11,3 +11,12 @@ test-results/
 .vite-cache-enginebytes/
 vite.agent.config.js
 playwright.agent.config.js
+
+# lane-local scratch (lane/f4-cov2)
+.vite-cache-f4cov2/
+.tmp-vitest/
+playwright-report/
+tests/e2e/_probe-*.ino
+tests/e2e/_extract-*.mjs
+tests/e2e/_warm-*.cjs
+tests/e2e/_probe-f4-sweep.sh

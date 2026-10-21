@@ -16,6 +16,7 @@ import { test, expect } from '@playwright/test';
 const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f429' },
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
+  { tag: 'V407', type: 'openhw-stm32f407ve', id: 'f47e' },
 ];
 
 const CODE = '#define SAI_BASE 0x40015800UL\n#define SAI_GCR (*(volatile uint32_t*)(SAI_BASE + 0x00))\n#define SAI_A_SR (*(volatile uint32_t*)(SAI_BASE + 0x18))\n#define SAI_A_DR (*(volatile uint32_t*)(SAI_BASE + 0x20))\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("SAI_READY");\n  SAI_GCR = 7;\n}\nvoid loop() {\n  unsigned long sum = 0;\n  for (int i = 0; i < 16; i++) {\n    SAI_A_DR = (unsigned long)(1000 + i);\n    sum += SAI_A_DR;\n  }\n  Serial.print("SAI_SUM:"); Serial.println(sum);\n  if (sum == 16120UL) Serial.println("SAI_TX_OK");\n  delay(3000);\n}\n';
@@ -33,7 +34,11 @@ test.describe('F4 SAI (audio-bus loopback)', () => {
   for (const { tag, type, id } of TYPES) {
     test(`guest ramp lands in the capture FIFO (${type})`, async ({ page }) => {
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(8000);
+      // Harness gate: the plain waitForTimeout(8000) variant loses the race
+      // on a loaded box and dies with "Cannot read properties of undefined
+      // (reading 'setupCircuit')" (seen on the f407ve cell 2026-10-20).
+      await page.waitForFunction(() => !!window.OpenHWE2E, null, { timeout: 90000 });
+      await page.waitForTimeout(2000);
       const setup = await page.evaluate(({ t, i, code }) => window.OpenHWE2E.setupCircuit({
         components: [
           { id: i, type: t, attrs: {}, x: 100, y: 100 },

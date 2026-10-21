@@ -1885,7 +1885,18 @@ export class Stm32f4Runner extends ArmRunnerBase {
                         try {
                             const tag = line + '\n';
                             for (let i = 0; i < tag.length; i++) {
-                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'f4sys'); } catch { break; }
+                                // Source 'uart0', NOT a private 'f4sys' source:
+                                // the page's serial ingress arbitrates ONE
+                                // source per board per 240ms (useSerialIngress
+                                // drops a chunk whose source differs from the
+                                // last accepted one inside that window). With a
+                                // private source the marker flipped the
+                                // arbitration state and the BOARD'S OWN output
+                                // was silently dropped — the PWR cell lost
+                                // every guest line to the F4PWR_MODE marker
+                                // and the Debug cell lost the ITM bytes.
+                                // Same fix as the F4CLK divider marker above.
+                                try { (self as any).emitTxByte(tag.charCodeAt(i), 'uart0'); } catch { break; }
                             }
                         } catch { /* ignore */ }
                     };
@@ -1896,7 +1907,10 @@ export class Stm32f4Runner extends ArmRunnerBase {
                             try { mcuS.onWdogReset = (w: number) => { try { say('F4WDOG_RST:' + w); } catch { /* ignore */ } }; } catch { /* ignore */ }
                             try { mcuS.onRtcAlarm = (a: number) => { try { say('F4RTC_ALARM:' + a); } catch { /* ignore */ } }; } catch { /* ignore */ }
                             try { mcuS.onExtiEdge = (l: number) => { try { say('F4EXTI_EDGE:' + l); } catch { /* ignore */ } }; } catch { /* ignore */ }
-                            try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'f4itm'); } catch { /* ignore */ } }; } catch { /* ignore */ }
+                            // ITM stimulus bytes: 'uart0' for the same ingress
+                            // reason as the markers above — a private source
+                            // made the page drop the ITM stream.
+                            try { mcuS.onItmByte = (p: number, b: number) => { try { (self as any).emitTxByte(Number(b) & 0xff, 'uart0'); } catch { /* ignore */ } }; } catch { /* ignore */ }
                         }
                     } catch { /* wiring never breaks the drain */ }
                     // Rare-event cadence (F1 f1PwrTick parity): PWR_CR is
