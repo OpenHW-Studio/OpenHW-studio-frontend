@@ -347,7 +347,58 @@ flock -w 1800 /tmp/gate-slot.lock -c "npm run build"
 flock -w 1800 /tmp/gate-slot.lock -c "npx vitest run"
 ```
 
-### The network on this box is IPv4-only (2026-10-20)
+### The opencode-service crash loop (diagnosed 2026-10-22)
+
+The app does NOT crash — the **opencode service dies**, and every agent
+session is a child of it, so all of them die with it. The service is killed
+by OpenChamber's own health monitor (from the app bundle):
+
+| knob | default | meaning |
+|---|---|---|
+| `HEALTH_CHECK_INTERVAL` | 15000 ms | how often it probes the service |
+| `OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS` | 5000 ms | how long `/api/info` may take |
+| `HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES` | 20 | failures before the service is restarted |
+
+So: if `/api/info` cannot answer within **5 s** for **20 consecutive checks
+(~5 min)**, the app restarts the service → `killProcessOnPort` → every agent
+session dies at once. That matches the observed 5–14 min spacing between
+crashes, and the service log ends with **no error line** (it is killed, it
+does not crash).
+
+Why `/api/info` stalls: the service's event loop is saturated. Measured on
+the box: the service opened **3,201 file watchers over 93 paths** (your whole
+home tree — every engine repo, `.git/HEAD` of each) and the snapshot
+machinery recorded every file change into **543 MB across 31 snapshot repos**
+(its git executor was already throwing `fatal: not a git repository` and
+`tratto: is a directory`). With four lanes editing files plus the engine
+owners rebuilding their repos, the watcher/snapshot churn starves the event
+loop.
+
+**Applied fix** in `~/.config/opencode/opencode.jsonc` (both keys are in the
+official schema):
+
+```jsonc
+"snapshots": false,          // stop the git-snapshot machinery
+"watcher": { "ignore": [ …the churning engine folders… ] }
+```
+
+Measured effect: watcher subscriptions **3,201 → 170** for the new service
+run. Trade-off: the app's "revert file changes" button stops working (git
+still gives you undo).
+
+**If it still stalls**, raise the app's tolerance (env vars, set before
+launching the app):
+
+```bash
+export OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS=30000
+export OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES=200
+```
+
+The other contributor is memory pressure: an Android emulator + Gradle take
+6.7 GiB of the 15 GiB box, which makes the stalls (and any OOM kill) more
+likely.
+
+---
 
 `wlp108s0` has only a link-local IPv6 address (`fe80::/64`) and there is NO
 global IPv6 route, but DNS hands out AAAA records for the API host. Node's
