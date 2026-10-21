@@ -95,6 +95,95 @@ export class Esp32Runner extends ArmRunnerBase {
     private coreAlive = false;
     private lastRunPostAt = 0;
 
+    /**
+     * Opt-in engine CMD trace (board attr `cmdTrace: '1'`).
+     *
+     * WHY it exists: the ESP32 SAB proxy busy-spins for every engine CMD
+     * (worker-proxy.js: `while (Atomics.load(RESP) === RESP_IDLE) {}`) and
+     * the engine only services a FIXED allow-list inline while RUN=1
+     * (worker-entry.js `runSimChunk`). A CMD outside that list wedges the
+     * board's host-side UART drain: the guest keeps running (the engine
+     * free-runs in its own worker thread) while the host stops draining
+     * that board's UART — the "ROM banner, then silence, engine running
+     * unwatched" signature. Naming the CMD a board worker is stuck on is
+     * the only way to tell that class of stall apart from a dead guest.
+     *
+     * COST: with the flag unset nothing is installed at all (no wrapper,
+     * no counter, no log) — the production path is unchanged. With the
+     * flag set, every engine method call logs one line and the board's
+     * 1/s heartbeat reports the live counters.
+     */
+    private cmdTrace = false;
+
+    /**
+     * Engine methods that issue a SAB CMD (worker-proxy.js sets
+     * `SAB_SLOT_CMD` inside them). ONLY these are traced: the proxy's
+     * hot, CMD-free reads (pollUart at hundreds of calls/s) would drown
+     * the log without ever being able to wedge.
+     */
+    private static readonly CMD_METHODS = [
+        'armI2sTx', 'armRmtTx', 'attachI2cSlave', 'attachOneWire',
+        'getFfiCounts', 'getGpioOut', 'getLedc', 'getPcapData',
+        'getRmtTickHz', 'getTwaiTx', 'getWifiStats', 'injectRmtRx',
+        'injectSpiMiso', 'pollCameraFrame', 'pollGpioChanges', 'pollI2c',
+        'pollI2sTx', 'pollOneWire', 'pollRmtTx', 'pollSpiTx', 'popI2cRx',
+        'pushI2cTx', 'readMemory', 'readMmio', 'sampleGpioOut',
+        'sendTwaiFrame', 'setAnalogInput', 'setOneWireTemp', 'setPinInput',
+        'setTouchInput', 'setVoltageMv', 'writeMmio', 'writeUint32',
+    ];
+
+    /** Install the opt-in CMD trace on the live engine proxy.
+     *
+     * PER-INSTANCE wrappers (own properties on the proxy object, NOT on
+     * its prototype): the prototype is shared by every board, so a
+     * prototype-level wrap would make the LAST board's trace swallow
+     * every other board's calls and report the wrong board id. */
+    private installCmdTrace(): void {
+        const self = this;
+        const simAny = this.sim as any;
+        if (!simAny) return;
+        const d: any = { cmds: 0, emitted: 0, ticks: 0, pending: '' };
+        (this as any)._diag = d;
+        const want = new Set(Esp32Runner.CMD_METHODS);
+        for (const key of want) {
+            // The proxy's methods live on its PROTOTYPE (class methods);
+            // find the descriptor up the chain, then shadow it with an
+            // OWN property on this instance (per-board isolation).
+            let desc: any = null;
+            for (let obj: any = simAny; obj && obj !== Object.prototype; obj = Object.getPrototypeOf(obj)) {
+                const dsc = Object.getOwnPropertyDescriptor(obj, key);
+                if (dsc && typeof dsc.value === 'function') { desc = dsc; break; }
+            }
+            if (!desc) continue;
+            const orig = desc.value;
+            Object.defineProperty(simAny, key, {
+                configurable: true,
+                enumerable: false,
+                writable: true,
+                value: function (...args: any[]) {
+                    d.cmds++;
+                    d.pending = key;
+                    // Entry trace: the LAST line before a stall names the
+                    // wedged CMD (its exit never prints).
+                    console.log(`[ESP32-CMD] board=${self.boardId} ${key}`);
+                    try {
+                        const r = orig.apply(this, args);
+                        if (r && typeof r.then === 'function') {
+                            return r.then((v: any) => { d.pending = ''; return v; });
+                        }
+                        d.pending = '';
+                        return r;
+                    } catch (e) {
+                        d.pending = '';
+                        console.log(`[ESP32-CMD] board=${self.boardId} ${key} THREW: ${String((e as any)?.message || e).slice(0, 140)}`);
+                        throw e;
+                    }
+                },
+            });
+        }
+        console.log(`[ESP32-CMD] board=${this.boardId} trace ON (${want.size} CMD methods)`);
+    }
+
     constructor(
         hexData: string,
         componentsDef: any[],
@@ -121,6 +210,13 @@ export class Esp32Runner extends ArmRunnerBase {
                 if (c && c.id !== undefined) this.compAttrById.set(String(c.id), (c as any).attrs || {});
             }
         } catch { /* snapshot never breaks construction */ }
+        // Opt-in engine CMD trace (see installCmdTrace): board attr
+        // `cmdTrace: '1'`. Read from the SAME attrs snapshot the runner
+        // already takes, so the flag is visible before boot().
+        try {
+            const battrs = this.compAttrById.get(String(this.boardId)) || {};
+            this.cmdTrace = String((battrs as any)?.cmdTrace || '') === '1';
+        } catch { this.cmdTrace = false; }
         void this.boot(this.board === 'esp32-cam' ? 'openhw-esp32-cam' : 'openhw-esp32');
     }
 
@@ -324,6 +420,13 @@ export class Esp32Runner extends ArmRunnerBase {
                     } catch { /* boot ROM only */ }
                 }
                 self.sim = new SimulatorWorker();
+                // Opt-in engine CMD trace (see installCmdTrace): installed
+                // ONLY when the board attr `cmdTrace` asks for it. With the
+                // flag unset NOTHING is wrapped — the default path is
+                // byte-for-byte the pre-instrumentation one.
+                if (self.cmdTrace) {
+                    try { self.installCmdTrace(); } catch { /* trace never breaks boot */ }
+                }
                 self.sim._onUART = (b: number) => {
                     txQueue.push(b & 0xff);
                     // REPL prompt sniff at arrival: the drain cadence only
@@ -430,6 +533,23 @@ export class Esp32Runner extends ArmRunnerBase {
                 const pump = () => {
                     if (!self.sim) return;
                     try { self.sim.pollUart(); } catch { /* ignore */ }
+                    // Opt-in liveness heartbeat (cmdTrace boards only):
+                    // proves the pump is alive and how many engine CMDs it
+                    // has issued. If the board worker wedges, this line
+                    // STOPS — that is the stall signal.
+                    if (self.cmdTrace) {
+                        try {
+                            const d = (self as any)._diag;
+                            if (d) {
+                                d.ticks++;
+                                const now = Date.now();
+                                if (!d.last || now - d.last > 1000) {
+                                    d.last = now;
+                                    console.log(`[ESP32-DIAG] board=${self.boardId} alive=${self.coreAlive} queued=${txQueue.length} emitted=${d.emitted} ticks=${d.ticks} cmds=${d.cmds} pending=${d.pending}`);
+                                }
+                            }
+                        } catch { /* ignore */ }
+                    }
                     // Liveness probe (pure reads, no CMD): retired
                     // instructions or the first UART byte both prove the
                     // engine consumed RUN.
@@ -521,6 +641,7 @@ export class Esp32Runner extends ArmRunnerBase {
                 // ride the serial needle with a HOST_ prefix so cells assert
                 // engine-observed facts — never firmware self-report.
                 const drained = txQueue.splice(0, Math.min(txQueue.length, 1024));
+                if (self.cmdTrace) { try { const d = (self as any)._diag; if (d) d.emitted = (d.emitted || 0) + drained.length; } catch { /* ignore */ } }
                 if (stash.length > 0) {
                     try {
                         drained.push(...stash.splice(0, Math.max(0, 1024 - drained.length)));
@@ -893,6 +1014,64 @@ export class Esp32Runner extends ArmRunnerBase {
      * across all ESP32 label forms). Declared (was an implicit dynamic
      * prop): backs output-wins below. */
     private gpioOutCache = new Map<string, boolean>();
+
+    /**
+     * MNA switch wiper -> board input pin.
+     *
+     * The slide-switch is a MULTI-NET-ANALYSIS component: it publishes
+     * conductances (getMnaStamps), never a pin voltage, so the base's
+     * input half (arm-runner-base.ts pollGpioBidirectional ->
+     * getPinVoltage) has nothing to push and the guest reads the engine
+     * default (LOW) no matter where the switch sits. The touch path
+     * already resolves the wiper by hand (mnaSwitchWiperVolts); this does
+     * the same for plain digitalRead: every board pin on the wiper net
+     * gets the followed net's rail level.
+     *
+     */
+    private pushMnaSwitchInputs(): void {
+        try {
+            const nets = (this as any).pinToNet as Map<string, number> | undefined;
+            const sim = this.sim as any;
+            if (!nets || typeof sim?.setPinInput !== 'function') return;
+            // Same gate as the other CMD-posting paths: before the guest
+            // runs, a CMD would steal the single SAB CMD slot from the
+            // pending RUN (see coreAlive doc).
+            if (!this.coreAlive) return;
+            for (const [node, netId] of nets) {
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const volts = this.mnaSwitchWiperVolts(netId);
+                if (volts === null) continue;
+                const high = volts > 1.0;
+                for (const [node2, net2] of nets) {
+                    if (net2 !== netId) continue;
+                    const s2 = node2.indexOf(':');
+                    if (s2 < 0) continue;
+                    if (node2.slice(0, s2) !== this.boardId) continue;
+                    const pin = node2.slice(s2 + 1);
+                    const gpio = Esp32Runner.gpioNum(pin);
+                    if (gpio < 0) continue;
+                    try {
+                        const s = this.peekGpioOut(pin);
+                        if (s && s.driving) continue; // the guest drives it: output wins
+                    } catch { /* peek failure never blocks the push */ }
+                    // Re-assert every tick (like the base's rail push): the
+                    // guest's pinMode() can reset the engine's pad input
+                    // value after the first push, and a latched push would
+                    // never come back.
+                    try { void sim.setPinInput(gpio, high ? 1 : 0)?.catch?.(() => {}); } catch { /* ignore */ }
+                }
+            }
+        } catch { /* switch input never breaks the tick */ }
+    }
+
+    /** Base tick hook: the base pushes component voltages and rails; the
+     * MNA switch levels are added here (see pushMnaSwitchInputs). */
+    protected override pollGpioBidirectional(): void {
+        try { super.pollGpioBidirectional(); } catch { /* base input half never breaks the tick */ }
+        try { this.pushMnaSwitchInputs(); } catch { /* switch input never breaks the tick */ }
+    }
 
     /** Board pin label → GPIO number across the ESP32 label zoo (GPIO<n>,
      * GP<n>, D<n>, bare <n>); -1 for rails/aliases that are not GPIO. */
@@ -1440,7 +1619,6 @@ export class Esp32Runner extends ArmRunnerBase {
         try {
             const duty01 = Math.max(0, Math.min(1, duty > 255 ? duty / 8191 : duty / 255));
             if (duty01 <= 0) return;
-            const tag = `GPIO${gpio}`;
             for (const inst of this.instances.values()) {
                 try {
                     if (typeof (inst as any)?.onPWM !== 'function') continue;
@@ -1451,7 +1629,14 @@ export class Esp32Runner extends ArmRunnerBase {
                             const sep = node.indexOf(':');
                             if (sep < 0) continue;
                             if (node.slice(0, sep) !== this.boardId) continue;
-                            if (node.slice(sep + 1).toUpperCase() !== tag) continue;
+                            // Compare by GPIO NUMBER, not by label text: the
+                            // board shells label the same pin differently
+                            // (DevKit 'GPIO16', cam shell '16', 'D16',
+                            // 'GP16'). The exact-text compare below only
+                            // matched the DevKit's 'GPIO<n>' form, so the
+                            // cam shell's LED never lit (ledc duty read back
+                            // 192 in the guest, LED model glow=false).
+                            if (Esp32Runner.gpioNum(node.slice(sep + 1)) !== gpio) continue;
                             for (const [node2, net2] of (this as any).pinToNet) {
                                 if (net2 !== netId) continue;
                                 if (node2.slice(0, node2.indexOf(':')) === this.boardId) continue;

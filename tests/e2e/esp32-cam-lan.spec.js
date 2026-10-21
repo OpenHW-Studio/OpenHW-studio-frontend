@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import { SERVER_CODE, CLIENT_CODE } from './esp32-cam-lan-sketches.js';
 
 // ESP32-CAM 2-board LAN TCP echo via unified gateway (live): two
 // openhw-esp32-cam boards as STAs in ONE gateway room do a TCP
@@ -30,93 +32,35 @@ import { test, expect } from '@playwright/test';
 //             192.168.4.1). Static is required here: the gateway's DHCP
 //             pool is global and advances across rooms/runs, so the peer
 //             address must not be discovered at run time.
-// Room:       NETWORK_ROOM_CODE=netcamlan1 (own gateway room; the shared
+// Room:       NETWORK_ROOM_CODE=netcamcov2 (own gateway room; the shared
 //             :5030 gateway serves other lanes).
 // Gateway:    both boards are bridged into ONE gVisor VN by the room -> the
 //             ARP + TCP frames between the two guest MACs are gateway-side
 //             evidence.
-// Scan:       the sketch scans AFTER the proof markers on purpose -
-//             scanNetworks() is a blocking call and stalled once on this
-//             preset under a loaded box (guest hung inside the scan), so
-//             the scan stays off the proof path.
+// Scan:       DELIBERATELY NOT IN THE SKETCH (2026-10-20, lane/esp32-cov2).
+//             scanNetworks() is a blocking call that HANGS on this preset
+//             under load (the guest never returns from it), which stalled
+//             the run for minutes and added a guest-side stall to the
+//             proof path. It was already off the proof path (it runs after
+//             the markers) and it never produced a usable value anyway
+//             (SCAN n=-2 = the scan itself failed), so it is gone: the
+//             cell now measures the LAN echo only.
+//
+// JOIN WAIT (2026-10-20, lane/esp32-cov2 — the fix for the FLAKY cell):
+//   the old sketch slept a FIXED delay(8000) and then read WiFi.status().
+//   The 8 s is GUEST time, but the association is completed by the
+//   gateway over the host WebSocket, so how much guest time elapses
+//   before the association lands depends on how loaded the box is. On a
+//   loaded box the 8 s window expired before the STA was associated ->
+//   STATUS=0 (not 3) and the cell went red with NO error anywhere
+//   (failure signature (b): "the server never joins"). The sketch now
+//   WAITS for WL_CONNECTED in a bounded guest-time loop and prints the
+//   elapsed GUEST ms on every iteration (CSRV-WAIT / CCLI-WAIT), which
+//   also measures the engine's guest-time rate directly from the wire.
+//   The proof markers are unchanged: they are printed only AFTER the
+//   association, so STATUS=3 is a real observation, never a default.
 //
 // Requires the gateway running.
-const SERVER_CODE = [
-  '#include <WiFi.h>',
-  'WiFiServer server(41000);',
-  'void setup() {',
-  '  Serial.begin(115200);',
-  '  delay(1000);',
-  '  Serial.println("CSRV-START");',
-  '  WiFi.config(IPAddress(192, 168, 4, 20), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));',
-  '  Serial.println("CSRV-CONFIG-OK");',
-  '  WiFi.begin("ESP-GUEST");',
-  '  Serial.println("CSRV-BEGUN");',
-  '  delay(8000);',
-  '  Serial.print("CSRV-STATUS="); Serial.println(WiFi.status());',
-  '  Serial.print("CSRV-IP="); Serial.println(WiFi.localIP());',
-  '  Serial.print("CSRV-MAC="); Serial.println(WiFi.macAddress());',
-  '  server.begin();',
-  '  Serial.println("CSRV-LISTEN");',
-  '}',
-  'void loop() {',
-  '  WiFiClient client = server.available();',
-  '  if (client && client.connected()) {',
-  '    String line = client.readStringUntil(10);',
-  '    line.trim();',
-  '    Serial.print("CSRV-RX:"); Serial.println(line);',
-  '    client.print("ECHO:" + line + "\\n");',
-  '    Serial.println("CSRV-ECHOED");',
-  '    delay(500);',
-  '    client.stop();',
-  '  }',
-  '  delay(200);',
-  '}',
-].join('\n');
-
-const CLIENT_CODE = [
-  '#include <WiFi.h>',
-  'void setup() {',
-  '  Serial.begin(115200);',
-  '  delay(1000);',
-  '  Serial.println("CCLI-START");',
-  '  WiFi.config(IPAddress(192, 168, 4, 21), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));',
-  '  Serial.println("CCLI-CONFIG-OK");',
-  '  WiFi.begin("ESP-GUEST");',
-  '  Serial.println("CCLI-BEGUN");',
-  '  delay(8000);',
-  '  Serial.print("CCLI-STATUS="); Serial.println(WiFi.status());',
-  '  Serial.print("CCLI-IP="); Serial.println(WiFi.localIP());',
-  '  Serial.print("CCLI-MAC="); Serial.println(WiFi.macAddress());',
-  '  WiFiClient client;',
-  '  int ok = 0;',
-  '  Serial.println("CCLI-CONNECTING");',
-  '  for (int i = 0; i < 10 && !ok; i++) {',
-  '    if (client.connect(IPAddress(192, 168, 4, 20), 41000, 3000)) ok = 1;',
-  '    else delay(1000);',
-  '  }',
-  '  Serial.print("CCLI-CONN:"); Serial.println(ok);',
-  '  if (ok) {',
-  '    client.print("HELLO-LAN\\n");',
-  '    unsigned long t0 = millis();',
-  '    String reply = "";',
-  '    while (millis() - t0 < 15000 && reply.length() == 0) {',
-  '      while (client.available()) reply += (char)client.read();',
-  '      delay(100);',
-  '    }',
-  '    reply.trim();',
-  '    Serial.print("CCLI-RX:"); Serial.println(reply);',
-  '    if (reply == "ECHO:HELLO-LAN") Serial.println("CCLI-LAN-DONE");',
-  '    client.stop();',
-  '  }',
-  '  Serial.println("SCAN-BEGIN");',
-  '  int n = WiFi.scanNetworks();',
-  '  Serial.print("SCAN n="); Serial.println(n);',
-  '  Serial.println("SCAN-END");',
-  '}',
-  'void loop() { delay(5000); }',
-].join('\n');
-
 test.describe('ESP32-CAM LAN (2-board TCP via gateway)', () => {
   test.setTimeout(600000);
   test.beforeEach(async ({ page }) => {
@@ -128,10 +72,21 @@ test.describe('ESP32-CAM LAN (2-board TCP via gateway)', () => {
   });
 
   test('STA+STA TCP echo in one gateway room', async ({ page }) => {
+    // Console capture: on a flake the runner/engine diagnostics are the only
+    // way to tell WHICH side stopped draining. Dumped to a file (and the
+    // tail to stdout) so a red run is diagnosable without a rerun.
+    const logs = [];
+    page.on('console', (m) => {
+      try {
+        const t = m.text();
+        if (t && !/Download the React DevTools|WebSocket connection to|Failed to load resource/i.test(t)) logs.push(`[${m.type()}] ${t}`);
+      } catch { /* ignore */ }
+    });
+    page.on('pageerror', (e) => logs.push(`[pageerror] ${String(e?.message || e).slice(0, 200)}`));
     await page.addInitScript(() => {
       window.localStorage.setItem('openhw-tour-completed', 'true');
       // Own gateway room (the shared :5030 gateway serves other lanes).
-      window.localStorage.setItem('NETWORK_ROOM_CODE', 'netcamlan1');
+      window.localStorage.setItem('NETWORK_ROOM_CODE', 'netcamcov2');
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
@@ -155,6 +110,11 @@ test.describe('ESP32-CAM LAN (2-board TCP via gateway)', () => {
     expect(verdict.ok).toBe(true);
     console.log('CAMLAN verdict:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
     console.log('CAMLAN serial:', (verdict.serial || '').slice(0, 1500));
+    try { fs.writeFileSync('/tmp/opencode/esp32-cam-lan-console.log', logs.join('\n')); } catch { /* ignore */ }
+    try { fs.writeFileSync('/tmp/opencode/esp32-cam-lan-serial.log', (verdict.serial || '')); } catch { /* ignore */ }
+    if (!verdict.pass) {
+      console.log('CAMLAN console tail:\n' + logs.slice(-120).join('\n'));
+    }
     expect(verdict.pass).toBe(true);
     // Guest markers: both boards joined the AP on their static addresses
     // and the echo crossed the room.
