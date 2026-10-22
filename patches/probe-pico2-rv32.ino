@@ -50,6 +50,11 @@ void setup() {
   SPI.endTransaction();
   Serial1.print("RVPROBE:SPI:"); Serial1.println(r, HEX);
 
+  // --- ADC0/ADC1 (GP26/GP27): the host injects the pot voltages ---
+  int a = analogRead(26);
+  int b = analogRead(27);
+  Serial1.print("RVPROBE:ADC:"); Serial1.print(a); Serial1.print(":"); Serial1.println(b);
+
   // --- I2C0 (Wire) ---
   Wire.begin();
   Wire.beginTransmission(0x68);

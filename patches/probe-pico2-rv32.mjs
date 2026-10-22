@@ -42,6 +42,15 @@ function drainUart() {
 mod._picoemu_init(ARCH);
 mod._picoemu_set_clock(150);
 
+// ADC inject: the runner pushes the pot wiper voltages into the engine
+// as 12-bit codes (pico-runner.ts drivePicoADC: code = volts/3.3*4095).
+// 50% of 3V3 -> 2048 (GP26/ADC0), 10% -> 410 (GP27/ADC1).
+if (typeof mod._picoemu_adc_set === 'function') {
+  mod._picoemu_adc_set(0, 2048);
+  mod._picoemu_adc_set(1, 410);
+  console.log('adc_set ch0=2048 (50%) ch1=410 (10%)');
+}
+
 // SPI tap on SPI0: records the MOSI bytes and the CS edges the engine's
 // SPI device actually saw (engine src/sdd_spimirror.c).
 {
