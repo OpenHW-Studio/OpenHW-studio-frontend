@@ -18,8 +18,9 @@ import { test, expect } from '@playwright/test';
 // hostByName returned 0). Both are fixed by pointing the guest at the
 // gateway resolver:
 //   - explicit WiFi.setDNS(192.168.4.1)  -> works on ANY gateway
-//   - gateway lease carrying 192.168.4.1  -> needs the gateway patch
-//     (branch lane/net-dns of openhw-unified-gateway), opt-in below.
+//   - gateway lease carrying 192.168.4.1  -> the gateway's main branch
+//     (openhw-unified-gateway @ 3f8814b) advertises the VN resolver
+//     first; BOTH cases run here, unconditionally.
 //
 // The guest also prints the resolver it actually uses (lwIP
 // dns_getserver(0)), so the cell proves WHERE the answer came from.
@@ -121,12 +122,15 @@ test.describe('Pico-W DNS via unified gateway', () => {
   });
 
   // DHCP-carried DNS: the guest does NOT call setDNS — it must use the
-  // DNS server advertised in the gateway's DHCP lease. Needs the gateway
-  // patch that advertises the VN resolver (192.168.4.1), so it is
-  // opt-in:
-  //   DHCP_DNS=1 npx playwright test .../pico-wifi-dns.spec.js
+  // DNS server advertised in the gateway's DHCP lease.
+  //
+  // The gateway that advertises it is openhw-unified-gateway main @
+  // 3f8814b "DHCP: advertise the gateway resolver (192.168.4.1) as the
+  // lease DNS server" (dhcp.go) — the lease lists 192.168.4.1 FIRST and
+  // keeps 8.8.8.8 as the secondary fallback. That commit IS on main
+  // (`git branch --contains 3f8814b` -> main), so this case is NOT
+  // opt-in any more: it runs with the plain suite.
   test('guest resolves example.com via the DHCP-advertised DNS server', async ({ page }) => {
-    test.skip(!process.env.DHCP_DNS, 'needs the gateway patch that advertises 192.168.4.1 as DNS (DHCP_DNS=1)');
     await resolve(page, CODE_NO_SETDNS, 'dhcp');
   });
 });
