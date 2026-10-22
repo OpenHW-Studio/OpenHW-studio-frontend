@@ -14,3 +14,5 @@ Kill leftover browsers by PID (`pgrep -x chrome`).
 - LAN run 1/3 GREEN (5.3m): CSRV-STATUS=3 CSRV-IP=192.168.4.20 CCLI-STATUS=3 CCLI-IP=192.168.4.21
   CSRV-RX:HELLO-LAN CSRV-ECHOED CCLI-RX:ECHO:HELLO-LAN CCLI-CONN:1 CCLI-LAN-DONE
   (CSRV-WAIT:0:st=6 -> CSRV-STATUS=3 on the join-wait loop; RXAT 13155 / ECHOAT 13156 guest ms).
+- LAN run 2/3 GREEN (5.3m): same nine needles. CCLI-CONNAT:12095 -> CSRV-RXAT:13155 -> CSRV-ECHOAT:13156
+  -> CCLI-RXAT:13266; CCLI-RAW hex 69,67,72,79,58,... = "ECHO:HELLO-LAN\n" observed at the client.
