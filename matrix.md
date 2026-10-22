@@ -105,7 +105,7 @@ avr-tiny-honest, avr-wdt.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | openhw-pico (+W/+ETH) | FULL (6-variant sweep) | FULL (OLED+LCD) | FULL (MAX7219+595) | FULL | FULL | FULL (WS2812 3px) | FULL (64B exact) | FULL (I2C) | ABSENT | FULL 2026-10-20 (USB CDC loopback: host byte "P" → CDC OUT → guest echo "USBCDC_ECHO:P"; `openhw-usb-device` sink enumState=active rxCount=3 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works: the runner reaches `gpio_set_input_pin` through the engine's devtools script path, patches/pico-in-latch-inject.md delivers the clean export) | NONE (engine-side: the PIO-based path needs a BCLK/LRC/DIN observe tap the engine does not expose) | ABSENT (no CAN silicon) | ABSENT | ABSENT (no RTC silicon) | FULL 2026-10-20 (cell pico-gpio-in: `PICO_IN_LEVEL:0:1` — the guest reads GP13 LOW (GND-wired) and GP14 HIGH (3V3-wired); the LOW half is the stuck-at-1 discriminator) | FULL 2026-10-20 (PICO_EE_RB:ABCD + PICO_NVS_RB:1234 — flash-emul readback) | NONE (engine-side, MEASURED at runtime 2026-10-20: the ARM path never reports CS to the SPI device, so the SD model's `cs_active` stays 0 and every response is 0xFF — 60 MOSI bytes seen by the engine's SPI mirror, 0 CS events; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (RP2040/RP2350 have no DCMI) | FULL (OLED/LCD/MAX7219) |
 | openhw-pico-2 (+W/+ETH, M33) | FULL | FULL | FULL | FULL | FULL | FULL 2026-10-20 (PICO2_PIO_SHOWN; neopixel telemetry activePixels:3 totalPixels:3, liveOop pixels [16711680, 65280, 255] = R,G,B — cell pico2-pio-dma) | FULL 2026-10-20 (PICO2_DMA_CMP:PASS CK:80 — 64 B mem-to-mem, byte-exact — cell pico2-pio-dma) | FULL (I2C) | ABSENT | FULL 2026-10-20 (USB CDC loopback: USBCDC_ECHO:P; sink enumState=active rxCount=1 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works, patches/pico-in-latch-inject.md) | NONE (engine-side: PIO-based path needs an observe tap) | ABSENT | ABSENT | ABSENT | FULL 2026-10-20 (cell pico-gpio-in: `PICO2_IN_LEVEL:0:1` — GP13 LOW / GP14 HIGH observed by the guest) | FULL 2026-10-20 (PICO2_EE_RB:ABCD + PICO2_NVS_RB:1234) | NONE (engine-side, MEASURED at runtime 2026-10-20: no SPI CS edge on the ARM path → the SD model answers 0xFF forever; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (no DCMI) | FULL |
-| openhw-pico-2 (RV32) | FULL 2026-10-20 (cell pico2-rv32-arduino: a REAL arduino-pico RISC-V sketch (`rp2040:rp2040:rpipico2:arch=riscv`, the backend compiles it) boots on the Hazard3 arch and prints `RV32_UART:OK` — the old "Arduino RV32 blocked upstream" was stale) | NONE | NONE | PARTIAL 2026-10-20 (the guest's analogRead tracks the injected pot voltage — `RV32_ADC:512:102` for a 50%/10% pair, i.e. the 5:1 ratio holds — but the RV32 path returns the 12-bit code >> 2, so the absolute value is 4× low vs the ARM path; engine-side, file:line in HANDOVER-LANE-pico-cov2.md) | NONE (engine-side: `analogWrite()` crashes the RV32 guest — the PC jumps into SRAM (0x20000686) and the guest stops; no PWM readback) | ABSENT | NONE (the arduino-pico RISC-V port has no DMA API — `dma_channel_transfer_size` does not exist for that core, so the DMA column needs the engine's fixed RV32 image) | ABSENT | ABSENT | NONE | ABSENT (no GPIO model) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | NONE |
+| openhw-pico-2 (RV32) | FULL 2026-10-20 (cell pico2-rv32-arduino: a REAL arduino-pico RISC-V sketch (`rp2040:rp2040:rpipico2:arch=riscv`, the backend compiles it) boots on the Hazard3 arch and prints `RV32_UART:OK` — the old "Arduino RV32 blocked upstream" was stale; the toolchain is NOT blocked: arduino-cli core rp2040:rp2040 6.0.0 ships the RISC-V menu + toolchain `rp2040:pqt-gcc-riscv 5.0.0-9576866`, so the sketch compiles locally too) — RE-MEASURED 2026-10-22 headless: the guest's UART0 bytes reach the host (patches/probe-pico2-rv32.mjs) | NONE (no cell yet: the arduino-pico RISC-V port compiles `Wire`, but the headless probe measured `RVPROBE:I2C:4` (Wire.endTransmission() = 4, no ACK) with no device attached — the I2C column needs a real I2C device in the e2e harness; NOT closable headlessly) | NONE (engine-side, MEASURED 2026-10-22 headless: the SPI DATA path works on the RV32 — the engine's own SPI mirror saw the MOSI byte `5a` — but the engine never reports CS to the SPI device (`spi_device_cs()` is called only from the ETH paths, src/rp2350_rv/rv_membus.c:451/459/480/488), so a CS'd device never sees the chip-select; and the guest cannot even toggle CS because the RV32 GPIO-out is dead (see the GPIO-in cell). Two engine asks: patches/pico-rp2350-sio-gpio-map.patch (delivered + VERIFIED) and an RV32 CS watch) | PARTIAL 2026-10-20 (the guest's analogRead tracks the injected pot voltage — `RV32_ADC:512:102` for a 50%/10% pair, i.e. the 5:1 ratio holds — but the RV32 path returns the 12-bit code >> 2, so the absolute value is 4× low vs the ARM path; engine-side, file:line in HANDOVER-LANE-pico-cov2.md) — RE-MEASURED 2026-10-22 headless with the same numbers (patches/probe-pico2-rv32.mjs, adc_set ch0=2048/ch1=410) | NONE (engine-side: `analogWrite()` crashes the RV32 guest — the PC jumps into SRAM (0x20000686) and the guest stops; no PWM readback. The RV32 SIO map fix (patches/pico-rp2350-sio-gpio-map.patch) changes the GPIO register map, not the PWM slice — the crash is still open) | ABSENT | NONE (the arduino-pico RISC-V port has no DMA API — `dma_channel_transfer_size` does not exist for that core, so the DMA column needs the engine's fixed RV32 image) | ABSENT | ABSENT | NONE | ABSENT (no GPIO model) | ABSENT | ABSENT | ABSENT | ABSENT | NONE (engine-side on the repo bytes, MEASURED 2026-10-22 headless: the RV32 GPIO-OUT is dead — `digitalWrite(15,HIGH)` leaves the engine's OUT latch at 0 and the guest reads 0 back, because RP2350 INTERLEAVES the SIO GPIO registers (silicon OUT_SET=0x18/OUT_CLR=0x20/OE=0x30/OE_SET=0x38) while the engine implements the RP2040 map for both chips (include/gpio.h:30-39); the M33 escapes it (the pico-sdk drives the ARM GPIO coprocessor, engine src/thumb32.c:1564) but the RISC-V core has none (pico-sdk gpio_coproc.h:11-14 "#error ... not available on RISC-V"), so every RV32 GPIO write lands on the wrong register. PATCH patches/pico-rp2350-sio-gpio-map.patch DELIVERED + VERIFIED in a patched build: the guest readback 0 → 1 and the engine OUT latch 0x0 → 0x28000, with the M0+/M33 byte-identical before/after) | ABSENT | NONE (engine-side: the SD model answers only while the SPI device's `cs_active` is set, and the RV32 path reports CS only for the ETH boards (src/rp2350_rv/rv_membus.c:451/459); the guest could not toggle CS at all while the RV32 GPIO-out was dead (patch patches/pico-rp2350-sio-gpio-map.patch delivered + verified) — the SD column still needs an RV32 CS watch) | ABSENT | ABSENT | NONE |
 
 Specs: pico-uart-sweep, pico-i2c, pico-spi, pico-595, pico-adc, pico-pwm,
 pico-mp-i2c, pico-pio, pico-dma, pico2, pico2-spi, pico2-adc, pico2-pwm,
@@ -113,25 +113,45 @@ pico2-mp-i2c, pico2-rv32, multi-board-uart, arch-clocks,
 pico-periph (EEPROM readback: PICO_EE_RB / PICO_NVS_RB),
 pico2-periph (EEPROM readback: PICO2_EE_RB / PICO2_NVS_RB),
 pico2-pio-dma (M33 PIO/WS2812 + M33 DMA), pico-usb (M0+ + M33 USB CDC),
+pico-gpio-in (M0+ + M33 GPIO-in: `PICO_IN_LEVEL:0:1` / `PICO2_IN_LEVEL:0:1`),
+pico-exti (M0+ + M33 IO_BANK0 edge ISR: `PICO_EXT_CNT:0..9` / `PICO2_EXT_CNT:0..20`),
+pico2-rv32-arduino (RV32 with a REAL arduino-pico RISC-V sketch: `RV32_UART:OK`, `RV32_ADC:512:102`),
 pico2-w-wifi-gateway, pico2-eth-gateway, pico2-w-lan, pico2-w-ap2,
 pico2-w-http-gateway, pico2-eth-lan, pico2-eth-http-gateway,
 pico-eth-w6300-gateway, pico-eth-intn-gateway.
 
-Pico coverage lane 2026-10-20 (lane/pico-cov): the PIO/DMA/EEPROM/USB-DEV
-columns above are green with real cells. The remaining NONE cells are
-**engine-side**, not frontend-side, and are listed as owner asks in
-HANDOVER-LANE-pico.md §5: (a) no runner→IN-latch inject export — blocks
-GPIO-in, 1-Wire/DHT22, IR and EXTI on BOTH boards (the engine has
-`gpio_set_input_pin` / `gpio_inject_level`, but no export to reach them);
-(b) the ARM path never drives the SPI CS line — the SD model's `cs_active`
-stays 0 and `sdcard_spi_xfer()` returns 0xFF forever; (c) M33 SHA-256 = the
-engine's CSR bit map is wrong (START/WDATA_RDY/SUM_VLD swapped vs silicon,
-so `sha256_wait_valid_blocking()` never returns); (d) M33 WDT = the ROM
-patch is not re-applied after a watchdog reboot (the guest dies on the
-unpatched RP2040-format ROM); (e) I2S = the engine has no I2S peripheral and
-the PIO-TX path has no observe tap. Camera is ABSENT (no DCMI silicon on
-RP2040/RP2350). Cells must stay RED until the engine lands — do not weaken
-them to HIGH-only.
+Pico coverage lane 2026-10-20 (lane/pico-cov) + 2026-10-22 (lane/pico-cov2):
+the PIO/DMA/EEPROM/USB-DEV columns above are green with real cells, and
+2026-10-22 added **GPIO-in (M0+ + M33)**, **EXTI (M0+ + M33)** and the
+**RV32 Arduino** cell. The remaining NONE cells are **engine-side**, not
+frontend-side, and are listed as owner asks in HANDOVER-LANE-pico.md §5 and
+HANDOVER-LANE-pico-cov2.md §5:
+(a) no runner→IN-latch inject export — **the blocker is gone on the
+frontend side** (the runner reaches `gpio_set_input_pin` through the
+engine's devtools script path, `patches/pico-in-latch-inject.patch`
+delivers the clean export): GPIO-in and EXTI are green on BOTH boards;
+(b) the ARM path never drives the SPI CS line — **PROVEN AT RUNTIME
+2026-10-22** (the SD model's `cs_active` stays 0 and `sdcard_spi_xfer()`
+returns 0xFF forever: R0/R8/R41/R58 = all 0xFF while 60 MOSI bytes reach
+the engine's SPI mirror with **0 CS events**; patch
+`patches/pico-sd-cs-watch.patch` delivered);
+(c) M33 SHA-256 = the engine's CSR bit map is wrong (START/WDATA_RDY/SUM_VLD
+swapped vs silicon, so `sha256_wait_valid_blocking()` never returns) —
+**re-measured 2026-10-22 headless**: `PICO2_SHA_STARTRC:0` +
+`PICO2_SHA_WRITTEN` and NO digest; patch
+`patches/pico-m33-sha256-csr-map.patch` delivered;
+(d) M33 WDT = the ROM patch is not re-applied after a watchdog reboot (the
+guest dies on the unpatched RP2040-format ROM); patch
+`patches/pico-m33-wdt-rom-patch.patch` delivered;
+(e) I2S = the engine has no I2S peripheral and the PIO-TX path has no
+observe tap;
+(f) **RP2350 RV32 GPIO-out is dead** (2026-10-22): RP2350 interleaves the
+SIO GPIO registers while the engine implements the RP2040 map for both
+chips, and the RISC-V core has no GPIO coprocessor — patch
+`patches/pico-rp2350-sio-gpio-map.patch` delivered + VERIFIED (the guest
+readback 0 → 1 in a patched build, M0+/M33 unchanged).
+Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
+until the engine lands — do not weaken them to HIGH-only.
 
 ## ESP32 (DevKit + CAM shell — survey-verified 2026-10-09)
 
@@ -216,7 +236,7 @@ Connectivity extras not in the main tables:
 | Pico 2 ETH (M33) W6300 traffic | FULL 2026-10-20 — same `ethChip:'w6300'` attr on openhw-pico-2-eth (FQBN wiznet_6300_evb_pico2, RP2350/M33 arch): version=0x61, MAC RAW mode, ETH-BEGIN-OK, lease 192.168.4.4, HTTP 200 + body hello-openhw through the gateway NAT. Cell: pico-eth-w6300-gateway. |
 | Pico USB device (CDC) | FULL 2026-10-20 (RP2040 + RP2350: host byte → CDC OUT → guest echo "USBCDC_ECHO:P"; the engine's host-sim enumerates arduino-pico's TinyUSB CDC to `active`; sink `openhw-usb-device` enumState=active rxCount — cells pico-usb). USB-HOST stays ABSENT: every engine USB model is device-only. |
 | Pico RTC (rtc.c) | NONE (model exists; RP2040 has no RTC silicon — RP2350 stamps only) |
-| Pico SD/FATFS (sdcard.c, fatfs.c) | NONE (engine-side, MEASURED at runtime 2026-10-20: the ARM path never reports CS assert/deassert to the SPI device — `spi_device_cs()` is called only from the RV32 path — so the SD model's `cs_active` stays 0 and `sdcard_spi_xfer()` returns 0xFF forever; the guest's 60 MOSI bytes DO go out (the engine's own SPI mirror saw them) but 0 CS events, and the raw-SPI bring-up read R0/R7/R1/OCR = 0xFF. Patch `patches/pico-sd-cs-watch.patch` delivered and verified: the same probe answers R0=0x01, R7=0x01 00 00 01 AA, R1=0x00, OCR=0xC0FF8000) |
+| Pico SD/FATFS (sdcard.c, fatfs.c) | NONE (engine-side, MEASURED at runtime 2026-10-20 and RE-MEASURED 2026-10-22 (identical numbers, repo engine bytes, headless probe `patches/probe-pico-sd-cs.mjs`: `sdcard_load rc=0 bytes=4194304`, `SDPROBE:R0:FF`, `SDPROBE:R8:FF:FF:FF:FF`, `SDPROBE:R41:FF`, `SDPROBE:R58:FF:FF:FF:FF`, GP5 OUT-latch transitions LOW→HIGH→LOW→HIGH→LOW→HIGH, SPI0 CR0=1707 CR1=2 SR=3 CPSR=2 RIS=8, `mirror entries=60`, `CS events (0): (NONE)`) — the ARM path never reports CS assert/deassert to the SPI device — `spi_device_cs()` is called only from the RV32 path — so the SD model's `cs_active` stays 0 and `sdcard_spi_xfer()` returns 0xFF forever; the guest's 60 MOSI bytes DO go out (the engine's own SPI mirror saw them) but 0 CS events, and the raw-SPI bring-up read R0/R7/R1/OCR = 0xFF. Patch `patches/pico-sd-cs-watch.patch` delivered and verified: the same probe answers R0=0x01, R7=0x01 00 00 01 AA, R1=0x00, OCR=0xC0FF8000) |
 | ESP32 WiFi link | FULL 2026-10-15 — Arduino STA join + gateway DHCP (STATUS=3, scan + IP) via unified gateway :5030; runner passes config.wifi + throttled stats telemetry. Root cause of the RED was a host-side SAB wedge (stats CMD unserviced mid-run), fixed inline in the vendor mirror (see session notes); engine itself exonerated. |
 | ESP32-CAM WiFi link | FULL 2026-10-20 — openhw-esp32-cam STA join + gateway DHCP (STATUS=3, IP=192.168.4.4) on the esp32-cam board preset (4MB flash + 4MB PSRAM, picked from the board type by esp32-runner.ts); engine dials :5030 at boot. Firmware target is the core's generic esp32:esp32:esp32 build (the frontend maps the cam shell to kind 'esp32'; no per-shell FQBN override). Cell: esp32-cam-wifi-gateway. |
 | ESP32-CAM LAN (2-board TCP) | FULL 2026-10-20 — two openhw-esp32-cam as STAs in one gateway room, static 192.168.4.20/.21, TCP echo both directions observed (CSRV-STATUS=3, CSRV-IP=192.168.4.20, CSRV-RX:HELLO-LAN, CSRV-ECHOED, CCLI-STATUS=3, CCLI-IP=192.168.4.21, CCLI-CONN:1, CCLI-RX:ECHO:HELLO-LAN). Needs the per-board MAC attr (macAddress 24:6F:28:00:00:21/:22, new in esp32-runner.ts): without it the STA MAC is all zeros (00:00:00:00:00:00), the gateway's ARP reply never resolves on the guest and two boards in one room would share one DHCP lease. Cell: esp32-cam-lan. **FLAKY** — re-measured 2026-10-20 with the repo-committed ESP32 SAB bytes: 2 of 3 runs green (CSRV-RX:HELLO-LAN + CCLI-LAN-DONE). Two failure signatures: (a) the client stops after CCLI-BEGUN (the 2nd board's host-side UART drain wedges — diagnosed in lane/esp32-cov: the SAB proxy busy-spins per CMD and the engine only services a fixed allow-list inline while RUN=1, so a CMD the runner polls wedges the board worker), (b) the SERVER never joins (CSRV-STATUS=3 missing) — see run 3 of the 2026-10-20 3× measurement. Diagnosis tooling: tests/e2e/esp32-cam-lan-diag.spec.js + patches/esp32-cov-diag-probe.patch. |
