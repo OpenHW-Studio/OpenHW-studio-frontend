@@ -11,6 +11,7 @@ import {
 } from '../services/adventureService'
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, ArrowRight, ShieldAlert, Sparkles, Check, Lock, Sun, Moon, Gift, FileText, LogOut } from 'lucide-react'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
 
 const ALL_ARDUINO_SLUGS = [
   'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
@@ -30,14 +31,16 @@ export default function ProjectComponentUnlockPage() {
     logout()
     navigate('/')
   }
-  const classId = new URLSearchParams(location.search).get('classId')
-  const mapId = new URLSearchParams(location.search).get('mapId')
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = mapId
-    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
-    : classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { unlockComponentTypes } = useGamification()
 

@@ -10,6 +10,7 @@ import {
 } from '../services/adventureService'
 import { useAuth } from '../context/AuthContext'
 import { BookOpen, Sparkles, ArrowRight, ArrowLeft, Trophy, CheckCircle, ShieldAlert, Award, Sun, Moon, FileText, LogOut } from 'lucide-react'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
 
 // Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
 const ALL_ARDUINO_SLUGS = [
@@ -29,14 +30,16 @@ export default function ProjectTheoryPage() {
     logout()
     navigate('/')
   }
-  const classId = new URLSearchParams(location.search).get('classId')
-  const mapId = new URLSearchParams(location.search).get('mapId')
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = mapId
-    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
-    : classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { awardXP } = useGamification()

@@ -23,6 +23,7 @@ import {
 import CertificateModal from '../components/certification/CertificateModal'
 import { isArduinoJourneyComplete, getArduinoCertificationProgress } from '../services/certification/certificateService'
 import { fetchAdventureMapById, claimAdventureCertificate } from '../services/adventureMapService'
+import { saveLastAdventureUrl, getRoleDashboardPath, getRoleProfilePath } from '../utils/navigationUtils'
 
 // ─── Arduino journey worlds ──────────────────────────────────────────────────
 const ARDUINO_WORLDS = [
@@ -459,17 +460,16 @@ export default function AdventureMapPage() {
     }
   }, [searchParams])
 
+  useEffect(() => {
+    saveLastAdventureUrl(location.pathname + location.search);
+  }, [location.pathname, location.search]);
+
   const getDashboardPath = () => {
-    if (classId) return `/student/classes/${encodeURIComponent(classId)}`;
-    if (user?.role === 'admin') return '/admin/dashboard';
-    if (user?.role === 'teacher') return '/teacher/dashboard';
-    return '/student/dashboard';
+    return getRoleDashboardPath(user, { classId, tab: 'adventure-map' });
   };
 
   const getProfilePath = () => {
-    if (user?.role === 'admin') return '/admin/profile';
-    if (user?.role === 'teacher') return '/teacher/profile';
-    return '/student/profile';
+    return getRoleProfilePath(user);
   };
 
   const [activeWorldIdx, setActiveWorldIdx] = useState(0)
@@ -1013,7 +1013,7 @@ export default function AdventureMapPage() {
               color: '#2563eb',
               letterSpacing: '-0.02em',
               cursor: 'pointer',
-            }} onClick={() => navigate('/student/dashboard')}>OpenHW Studio</span>
+            }} onClick={() => navigate(getDashboardPath())}>OpenHW Studio</span>
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -1067,7 +1067,7 @@ export default function AdventureMapPage() {
             <button className="header-icon-btn" onClick={() => showToast("No new notifications")}>
               <Bell size={18} />
             </button>
-            <button className="header-icon-btn" onClick={() => navigate('/student/profile')}>
+            <button className="header-icon-btn" onClick={() => navigate(getProfilePath())}>
               <Settings size={18} />
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1085,7 +1085,7 @@ export default function AdventureMapPage() {
                 justifyContent: 'center',
                 overflow: 'hidden',
                 cursor: 'pointer',
-              }} onClick={() => navigate('/student/profile')}>
+              }} onClick={() => navigate(getProfilePath())}>
                 {user?.image ? (
                   <img src={user.image} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
@@ -1145,9 +1145,9 @@ export default function AdventureMapPage() {
             {/* Navigation links */}
             <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {[
-                { label: 'Classroom', icon: BookOpen, active: false, path: classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard' },
-                { label: 'Projects', icon: Folder, active: false, path: '/student/dashboard' },
-                { label: 'Modules', icon: Layers, active: false, path: '/student/dashboard' },
+                { label: 'Classroom', icon: BookOpen, active: false, path: getRoleDashboardPath(user, { classId, tab: 'classroom' }) },
+                { label: 'Projects', icon: Folder, active: false, path: getRoleDashboardPath(user, { tab: 'guided-projects' }) },
+                { label: 'Modules', icon: Layers, active: false, path: getRoleDashboardPath(user, { tab: 'modules' }) },
                 { label: 'Adventure', icon: Compass, active: true },
                 { label: 'Training', icon: Zap, active: false }
               ].map((item, idx) => {
@@ -1389,13 +1389,20 @@ export default function AdventureMapPage() {
   const handleStart = (slug, mode) => {
     const sp = new URLSearchParams()
     if (classId) sp.set('classId', classId)
-    if (customMapId) sp.set('mapId', customMapId)
+    if (customMapId) {
+      sp.set('mapId', customMapId)
+    } else if (activeJourney) {
+      sp.set('journey', activeJourney)
+    }
     sp.set('fromMap', '1')
+    const currentUrl = location.pathname + location.search
+    sp.set('returnTo', currentUrl)
     const suffix = `?${sp.toString()}`
-    if (mode === 'reading') navigate(`/${slug}/reading${suffix}`)
-    else if (mode === 'quiz') navigate(`/${slug}/quiz${suffix}`)
-    else if (mode === 'guide') navigate(`/${slug}/guide${suffix}`)
-    else navigate(`/${slug}/assessment${suffix}`)
+    const navState = { state: { returnTo: currentUrl, openProject: slug } }
+    if (mode === 'reading') navigate(`/${slug}/reading${suffix}`, navState)
+    else if (mode === 'quiz') navigate(`/${slug}/quiz${suffix}`, navState)
+    else if (mode === 'guide') navigate(`/${slug}/guide${suffix}`, navState)
+    else navigate(`/${slug}/assessment${suffix}`, navState)
   }
 
   const handleCTAAction = () => {
@@ -1410,9 +1417,15 @@ export default function AdventureMapPage() {
     } else if (selectedStepKey === 'unlock') {
       const sp = new URLSearchParams()
       if (classId) sp.set('classId', classId)
-      if (customMapId) sp.set('mapId', customMapId)
+      if (customMapId) {
+        sp.set('mapId', customMapId)
+      } else if (activeJourney) {
+        sp.set('journey', activeJourney)
+      }
+      const currentUrl = location.pathname + location.search
+      sp.set('returnTo', currentUrl)
       const q = sp.toString() ? `?${sp.toString()}` : ''
-      navigate(`/${activeProject.slug}/components${q}`)
+      navigate(`/${activeProject.slug}/components${q}`, { state: { returnTo: currentUrl, openProject: activeProject.slug } })
     } else if (selectedStepKey === 'guide') {
       handleStart(activeProject.slug, 'guide')
     } else if (selectedStepKey === 'sim') {
@@ -1988,7 +2001,8 @@ export default function AdventureMapPage() {
                       if (arduinoCertStats.isComplete) {
                         setShowCertModal(true);
                       } else {
-                        navigate('/certifications');
+                        const returnUrl = location.pathname + location.search;
+                        navigate(`/certifications?returnTo=${encodeURIComponent(returnUrl)}`, { state: { returnTo: returnUrl } });
                       }
                     }}
                     style={{
@@ -2212,7 +2226,8 @@ export default function AdventureMapPage() {
                     if (arduinoCertStats.isComplete) {
                       setShowCertModal(true);
                     } else {
-                      navigate('/certifications');
+                      const returnUrl = location.pathname + location.search;
+                      navigate(`/certifications?returnTo=${encodeURIComponent(returnUrl)}`, { state: { returnTo: returnUrl } });
                     }
                   }}
                   style={{

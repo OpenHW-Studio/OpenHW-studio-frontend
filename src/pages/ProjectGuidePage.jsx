@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu, X } from "lucide-react";
+import { getAdventureReturnUrl } from "../utils/navigationUtils";
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from "./simulationpage/components/SerialMonitor";
 
 const SLUG_MAP = {
@@ -61,17 +62,19 @@ const ALL_ARDUINO_SLUGS = [
 
 export default function ProjectGuidePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { projectName = "" } = useParams();
   const [searchParams] = useSearchParams();
   const classId = searchParams.get('classId');
   const mapId = searchParams.get('mapId');
+  const journeyParam = searchParams.get('journey');
 
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32';
-  const mapPath = mapId
-    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
-    : classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`;
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32');
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  });
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } });
 
   useEffect(() => {

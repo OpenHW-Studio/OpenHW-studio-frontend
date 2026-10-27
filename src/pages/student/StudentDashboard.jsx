@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useGamification } from "../../context/GamificationContext.jsx";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
@@ -179,7 +179,15 @@ export default function StudentDashboard() {
   const [showGuidedProjects, setShowGuidedProjects] = useState(false);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState("classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || "classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Adventure Maps Marketplace State

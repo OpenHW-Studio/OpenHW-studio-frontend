@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { getAdventureReturnUrl } from '../utils/navigationUtils';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -23,6 +24,8 @@ import CertificateModal from '../components/certification/CertificateModal';
 export default function CertificateVerifyPage() {
   const { certId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -305,9 +308,14 @@ export default function CertificateVerifyPage() {
               <ArrowLeft size={14} />
               Certifications Catalog
             </Link>
-            <Link to="/adventure?journey=arduino" className="verify-nav-btn">
+            <button
+              type="button"
+              onClick={() => navigate(getAdventureReturnUrl({ location, searchParams }))}
+              className="verify-nav-btn"
+              style={{ background: 'transparent', cursor: 'pointer', border: '1px solid var(--v-border)' }}
+            >
               Adventure Map
-            </Link>
+            </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

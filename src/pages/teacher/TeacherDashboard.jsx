@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
   Plus,
   Settings,
@@ -137,7 +137,15 @@ export default function TeacherDashboard() {
   const [newClassForm, setNewClassForm] = useState({ name: '', bio: '', image: '' })
 
   /* ── Tabs ── */
-  const [activeTab, setActiveTab] = useState('classroom')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'classroom')
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam)
+    }
+  }, [searchParams])
 
   /* ── Guided projects inline workspace ── */
   const [guidedDifficulty, setGuidedDifficulty] = useState('BEGINNER')

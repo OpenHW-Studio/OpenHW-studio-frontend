@@ -17,6 +17,8 @@ export default function GuidedSimulatorPage() {
   const { projectName = '' } = useParams()
   const [searchParams] = useSearchParams()
   const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journey = searchParams.get('journey')
   const location = useLocation()
   const { xp = 0, coins = 0 } = useGamification?.() || {}
 
@@ -32,9 +34,21 @@ export default function GuidedSimulatorPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
-  const simUrl = classId
-    ? `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}&classId=${encodeURIComponent(classId)}`
-    : `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+  const simParams = new URLSearchParams()
+  simParams.set('guided', '1')
+  simParams.set('mode', 'assessment')
+  simParams.set('project', projectName)
+  if (classId) simParams.set('classId', classId)
+  if (mapId) simParams.set('mapId', mapId)
+  if (journey) simParams.set('journey', journey)
+  const simUrl = `/simulator?${simParams.toString()}`
+
+  const backParams = new URLSearchParams()
+  if (classId) backParams.set('classId', classId)
+  if (mapId) backParams.set('mapId', mapId)
+  if (journey) backParams.set('journey', journey)
+  const backQs = backParams.toString() ? `?${backParams.toString()}` : ''
+
   const projectTitle = projectName.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
   return (
@@ -51,7 +65,7 @@ export default function GuidedSimulatorPage() {
       }}>
 
         <button
-          onClick={() => navigate(classId ? `/${projectName}/assessment?classId=${encodeURIComponent(classId)}` : `/${projectName}/assessment`, { state: { projectColor } })}
+          onClick={() => navigate(`/${projectName}/assessment${backQs}`, { state: { projectColor, returnTo: location.state?.returnTo } })}
           style={{
             background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
             border: `1px solid ${colors.borderAlt}`,

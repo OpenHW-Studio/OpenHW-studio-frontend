@@ -15,6 +15,7 @@ import {
   Layers
 } from 'lucide-react'
 import { generate3EvaluationTasks } from '../utils/circuitCriteriaUtils'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
 
 // Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
 const ALL_ARDUINO_SLUGS = [
@@ -369,14 +370,16 @@ export default function ProjectAssessmentPage() {
   }
   const { projectName = '' } = useParams()
   const location = useLocation()
-  const classId = new URLSearchParams(location.search).get('classId')
-  const mapId = new URLSearchParams(location.search).get('mapId')
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = mapId
-    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
-    : classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
   const [classProjectContent, setClassProjectContent] = useState(null)
@@ -526,8 +529,11 @@ export default function ProjectAssessmentPage() {
     const q = new URLSearchParams()
     if (classId) q.set('classId', classId)
     if (mapId) q.set('mapId', mapId)
+    if (journeyParam) q.set('journey', journeyParam)
     const suffix = q.toString() ? `?${q.toString()}` : ''
-    navigate(`/${projectName}/guided${suffix}`, { state: { projectColor } })
+    navigate(`/${projectName}/guided${suffix}`, {
+      state: { projectColor, returnTo: mapPath }
+    })
   }
 
   const result = evalResult?.result

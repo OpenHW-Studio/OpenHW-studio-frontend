@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { getAdventureReturnUrl, getRoleDashboardPath } from '../utils/navigationUtils';
 import {
   Award,
   ShieldCheck,
@@ -87,6 +88,8 @@ const PICO_DOMAINS = [
 
 export default function CertificationsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { completedProjects = [], earnedBadges = [] } = useGamification();
 
@@ -773,7 +776,7 @@ export default function CertificationsPage() {
         <div className="cert-container cert-nav-inner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
-              onClick={() => navigate('/adventure?journey=arduino')}
+              onClick={() => navigate(getAdventureReturnUrl({ location, searchParams }))}
               className="cert-btn-back"
               title="Return to Adventure World Map"
             >
@@ -788,7 +791,7 @@ export default function CertificationsPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <button
-              onClick={() => navigate('/student/dashboard')}
+              onClick={() => navigate(getRoleDashboardPath(user))}
               className="cert-btn-pill"
             >
               <BookOpen size={14} />
