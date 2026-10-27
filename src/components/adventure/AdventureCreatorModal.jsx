@@ -173,7 +173,7 @@ const DEFAULT_WORLDS = [
   }
 ];
 
-export default function AdventureCreatorModal({ isOpen, onClose, onCreated, editingMap = null, classrooms = [], isTeacher = false }) {
+export default function AdventureCreatorModal({ isOpen, onClose, onCreated, editingMap = null, classrooms = [], isTeacher = false, defaultClassroomId = '', lockClassroom = false }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -289,8 +289,8 @@ export default function AdventureCreatorModal({ isOpen, onClose, onCreated, edit
           badgeIcon: editingMap.certification.badgeIcon || 'Award'
         });
       }
-      // Restore classroom scope if editing a classroom-scoped map
-      setSelectedClassroomId(editingMap.classroomId ? String(editingMap.classroomId) : '');
+      // Restore classroom scope if editing a classroom-scoped map, or defaultClassroomId
+      setSelectedClassroomId(editingMap.classroomId ? String(editingMap.classroomId) : (defaultClassroomId ? String(defaultClassroomId) : ''));
       setStep(1);
       setError(null);
       setActiveWorldTab(0);
@@ -300,14 +300,14 @@ export default function AdventureCreatorModal({ isOpen, onClose, onCreated, edit
       setCampaign(DEFAULT_CAMPAIGN);
       setWorlds(DEFAULT_WORLDS);
       setCertification(DEFAULT_CERTIFICATION);
-      setSelectedClassroomId(''); // clear classroom selection for new maps
+      setSelectedClassroomId(defaultClassroomId ? String(defaultClassroomId) : ''); // default to classroom if locked/provided
       setStep(1);
       setError(null);
       setActiveWorldTab(0);
       setActiveIslandTab(0);
       setActiveStageTab('theory');
     }
-  }, [isOpen, editingMap]);
+  }, [isOpen, editingMap, defaultClassroomId]);
 
   if (!isOpen) return null;
 
@@ -1001,34 +1001,52 @@ export default function AdventureCreatorModal({ isOpen, onClose, onCreated, edit
                     Leave as <i>"Public (Everyone)"</i> to publish it for the open community.
                   </p>
 
-                  <select
-                    value={selectedClassroomId}
-                    onChange={(e) => setSelectedClassroomId(e.target.value)}
-                    style={{
-                      width: '100%',
+                  {lockClassroom ? (
+                    <div style={{
                       padding: '10px 14px',
                       borderRadius: '10px',
-                      backgroundColor: 'var(--bg, #f8fafc)',
-                      border: '1px solid var(--border, #cbd5e1)',
+                      backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                      border: '1px solid rgba(79, 70, 229, 0.25)',
                       color: 'var(--text, #0f172a)',
                       fontSize: '13px',
                       fontWeight: '600',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="">🌐 Public — Visible to all OpenHW learners</option>
-                    {classrooms.map((cls) => {
-                      const id = cls._id || cls.id;
-                      const title = cls.name || cls.title || 'Untitled Classroom';
-                      const subject = cls.subject ? ` (${cls.subject})` : '';
-                      return (
-                        <option key={id} value={id}>
-                          🎓 Classroom: {title}{subject}
-                        </option>
-                      );
-                    })}
-                  </select>
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span>🎓 Classroom Exclusive Map</span>
+                      <span style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 700 }}>🔒 Locked to this class</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedClassroomId}
+                      onChange={(e) => setSelectedClassroomId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        backgroundColor: 'var(--bg, #f8fafc)',
+                        border: '1px solid var(--border, #cbd5e1)',
+                        color: 'var(--text, #0f172a)',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">🌐 Public — Visible to all OpenHW learners</option>
+                      {classrooms.map((cls) => {
+                        const id = cls._id || cls.id;
+                        const title = cls.name || cls.title || 'Untitled Classroom';
+                        const subject = cls.subject ? ` (${cls.subject})` : '';
+                        return (
+                          <option key={id} value={id}>
+                            🎓 Classroom: {title}{subject}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
 
                   {selectedClassroomId && (
                     <div style={{

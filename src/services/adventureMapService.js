@@ -119,3 +119,35 @@ export async function claimAdventureCertificate(mapId) {
   }
   return data;
 }
+
+/**
+ * Assign a public or official adventure map to a classroom
+ */
+export async function assignAdventureMapToClassroom(classId, mapId) {
+  const res = await fetch(`${API_BASE}/classrooms/${classId}/adventure-maps/assign`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ mapId })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || 'Failed to assign adventure map');
+  }
+  return data;
+}
+
+/**
+ * Unassign an adventure map from a classroom
+ */
+export async function unassignAdventureMapFromClassroom(classId, mapId) {
+  const res = await fetch(`${API_BASE}/classrooms/${classId}/adventure-maps/unassign`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ mapId })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || 'Failed to unassign adventure map');
+  }
+  return data;
+}
