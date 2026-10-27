@@ -123,16 +123,18 @@ export default function StudentClassDetailPage() {
         )
 
         const list = []
-        details.forEach(({ classroomName, classId, assignments: aRows, notices: nRows }) => {
+        details.forEach(({ classroomName, classId: detailClassId, assignments: aRows, notices: nRows }) => {
           nRows.forEach((notice) => {
+            const isAdventure = (notice.title || "").includes("Adventure");
             list.push({
               id: `notice-${notice._id}`,
-              type: "announcement",
+              type: isAdventure ? "adventure" : "announcement",
               classroomName,
+              classId: detailClassId,
               title: notice.title || "Class notice",
               body: notice.message,
               date: new Date(notice.createdAt),
-              link: `/student/classes/${classId}`
+              link: `/student/classes/${detailClassId}`
             })
           })
 
@@ -141,10 +143,11 @@ export default function StudentClassDetailPage() {
               id: `assignment-${assignment._id}`,
               type: "assignment",
               classroomName,
+              classId: detailClassId,
               title: assignment.title || "Assignment",
               body: assignment.description || "New assignment available.",
               date: new Date(assignment.createdAt || assignment.dueDate),
-              link: `/student/classes/${classId}`
+              link: `/student/classes/${detailClassId}`
             })
           })
         })
@@ -617,7 +620,11 @@ export default function StudentClassDetailPage() {
                       <div
                         key={n.id}
                         onClick={() => {
-                          navigate(n.link);
+                          if (String(n.classId) === String(classId) && n.type === "adventure") {
+                            setActiveTab("adventure");
+                          } else {
+                            navigate(n.link);
+                          }
                           setShowNotifications(false);
                         }}
                         style={{
@@ -635,14 +642,20 @@ export default function StudentClassDetailPage() {
                           width: "32px",
                           height: "32px",
                           borderRadius: "50%",
-                          background: n.type === "announcement" ? "#eff6ff" : "#fef2f2",
-                          color: n.type === "announcement" ? "#2563eb" : "#ef4444",
+                          background: n.type === "adventure" ? "rgba(99, 102, 241, 0.12)" : n.type === "announcement" ? "#eff6ff" : "#fef2f2",
+                          color: n.type === "adventure" ? "#6366f1" : n.type === "announcement" ? "#2563eb" : "#ef4444",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0
                         }}>
-                          {n.type === "announcement" ? <Megaphone className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
+                          {n.type === "adventure" ? (
+                            <Compass className="w-4 h-4" />
+                          ) : n.type === "announcement" ? (
+                            <Megaphone className="w-4 h-4" />
+                          ) : (
+                            <ClipboardList className="w-4 h-4" />
+                          )}
                         </div>
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
