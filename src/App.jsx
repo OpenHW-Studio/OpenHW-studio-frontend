@@ -70,6 +70,8 @@ import ContributorsPage from "./pages/ContributorsPage.jsx";
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 const BugTrackerPage = React.lazy(() => import("./pages/BugTrackerPage.jsx"));
 const FeedbackReviewsPage = React.lazy(() => import("./pages/FeedbackReviewsPage.jsx"));
+const CertificateVerifyPage = React.lazy(() => import("./pages/CertificateVerifyPage.jsx"));
+const CertificationsPage = React.lazy(() => import("./pages/CertificationsPage.jsx"));
 import VisitorTracker from "./components/VisitorTracker.jsx";
 import BetaBanner from "./components/BetaBanner.jsx";
 import VersionWatcher from "./components/VersionWatcher.jsx";
@@ -291,6 +293,11 @@ export default function App() {
                   />
                   <Route path="/select-role" element={<RoleSelectPage />} />
 
+                  {/* Public Certificate Verification & Showcase Routes */}
+                  <Route path="/certificate/:certId" element={<CertificateVerifyPage />} />
+                  <Route path="/verify/:certId" element={<CertificateVerifyPage />} />
+                  <Route path="/certifications" element={<CertificationsPage />} />
+
                   <Route path="/login-success" element={<AuthSuccess />} />
 
                   <Route path="/projects" element={<ProjectsGallery />} />
@@ -475,6 +482,14 @@ export default function App() {
                     element={
                       <ProtectedRoute allowedRole="student">
                         <StudentProfilePage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/student/certifications"
+                    element={
+                      <ProtectedRoute allowedRole="student">
+                        <CertificationsPage />
                       </ProtectedRoute>
                     }
                   />

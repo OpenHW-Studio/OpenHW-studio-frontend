@@ -12,6 +12,15 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, ArrowRight, ShieldAlert, Sparkles, Check, Lock, Sun, Moon, Gift, FileText, LogOut } from 'lucide-react'
 
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor',
+  'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+]
+
 export default function ProjectComponentUnlockPage() {
   const { projectName } = useParams()
   const location = useLocation()
@@ -22,7 +31,14 @@ export default function ProjectComponentUnlockPage() {
     navigate('/')
   }
   const classId = new URLSearchParams(location.search).get('classId')
-  const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
+  const mapId = new URLSearchParams(location.search).get('mapId')
+  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
+  const mapPath = mapId
+    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
+    : classId
+    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
+    : `/adventure?journey=${journey}`
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { unlockComponentTypes } = useGamification()
 
   const baseProject = PROJECTS.find(p => p.slug === projectName)
@@ -36,7 +52,7 @@ export default function ProjectComponentUnlockPage() {
     const load = async () => {
       if (!baseProject) setLoadingContent(true)
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         if (!baseProject) {
           setCustomProject(toProjectDisplayMeta(projectContent))
@@ -44,7 +60,7 @@ export default function ProjectComponentUnlockPage() {
         setClassRewardComponents(
           Array.isArray(projectContent?.rewardComponents) && projectContent.rewardComponents.length
             ? projectContent.rewardComponents
-            : null,
+            : (Array.isArray(projectContent?.components) && projectContent.components.length ? projectContent.components : null),
         )
       } catch (err) {
         if (cancelled) return
@@ -57,7 +73,7 @@ export default function ProjectComponentUnlockPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingContent && !baseProject
@@ -166,7 +182,7 @@ export default function ProjectComponentUnlockPage() {
         <ShieldAlert size={64} color="#f43f5e" style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Vault Locked</div>
         <div style={{ color: '#94a3b8', marginBottom: 24 }}>We couldn't load the reward information for: {projectName}</div>
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           padding: '12px 24px', borderRadius: 14, border: 'none', background: color, color: '#fff', fontWeight: 800, cursor: 'pointer'
         }}>
           Return to World Map
@@ -230,7 +246,7 @@ export default function ProjectComponentUnlockPage() {
           ))}
         </div>
 
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           background: 'linear-gradient(135deg, #10b981, #059669)',
           color: '#fff', fontWeight: 900, fontSize: 14,
           padding: '16px 36px', borderRadius: 20, border: 'none',
@@ -310,7 +326,7 @@ export default function ProjectComponentUnlockPage() {
         transition: 'background 0.3s ease, border-bottom 0.3s ease',
       }}>
         <button
-          onClick={() => navigate(mapPath)}
+          onClick={goBackToMap}
           style={{
             background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.05)',
             border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(15, 23, 42, 0.1)',
@@ -567,7 +583,7 @@ export default function ProjectComponentUnlockPage() {
               </button>
             ) : (
               <button
-                onClick={() => navigate(mapPath)}
+                onClick={goBackToMap}
                 style={{
                   width: '100%',
                   padding: '14px 0', borderRadius: 16, border: 'none',

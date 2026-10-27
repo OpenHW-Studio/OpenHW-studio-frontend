@@ -37,6 +37,7 @@ import { ClassDetailSkeleton } from '../../components/common/ClassroomSkeletons.
 import { pickAttachments, pickLinks } from '../../components/teacher/class-detail/helpers.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
+import { fetchAdventureMaps } from '../../services/adventureMapService.js'
 
 const tabs = [
   { key: 'stream', label: 'Stream' },
@@ -77,6 +78,7 @@ export default function StudentClassDetailPage() {
   const [students, setStudents] = useState([])
   const [assignments, setAssignments] = useState([])
   const [notices, setNotices] = useState([])
+  const [classroomMaps, setClassroomMaps] = useState([])
   const [peopleSearch, setPeopleSearch] = useState('')
   const [activeAssignmentId, setActiveAssignmentId] = useState(null)
   const [submissionState, setSubmissionState] = useState({
@@ -255,15 +257,17 @@ export default function StudentClassDetailPage() {
       const classData = await getClassroomById(classId)
       setClassroom(classData)
 
-      const [assignmentRows, noticeRows, studentRows] = await Promise.all([
+      const [assignmentRows, noticeRows, studentRows, mapData] = await Promise.all([
         getClassAssignments(classId),
         getClassroomNotices(classId),
-        getClassroomStudents(classId)
+        getClassroomStudents(classId),
+        fetchAdventureMaps({ classroomId: classId }).catch(() => ({ maps: [] }))
       ])
 
       setAssignments(assignmentRows)
       setNotices(noticeRows)
       setStudents(studentRows)
+      setClassroomMaps(mapData?.maps || [])
     } catch (detailError) {
       setError(detailError.message || 'Failed to load class details')
     } finally {
@@ -1056,23 +1060,101 @@ export default function StudentClassDetailPage() {
                       <h3>Class Adventure</h3>
                       <small>Open the class-specific learning path</small>
                     </div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=arduino`)}
-                        className="teacher-assignment-modal__resource-pill"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-                      >
-                        🔵 Arduino Uno Map
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=esp32`)}
-                        className="teacher-assignment-modal__resource-pill"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, borderColor: '#e74c3c', color: '#e74c3c' }}
-                      >
-                        📡 ESP32 Map
-                      </button>
+
+                    {/* Teacher's Custom Classroom Gamification Worlds */}
+                    {classroomMaps.length > 0 && (
+                      <div style={{ marginTop: 16, marginBottom: 20 }}>
+                        <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text, #0f172a)', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          🎓 Teacher's Exclusive Classroom Adventures
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+                          {classroomMaps.map((map) => (
+                            <div
+                              key={map._id || map.slug}
+                              style={{
+                                padding: '16px',
+                                borderRadius: '14px',
+                                border: '1.5px solid rgba(99, 102, 241, 0.25)',
+                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(59, 130, 246, 0.04))',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{
+                                  fontSize: '10px',
+                                  fontWeight: '800',
+                                  color: map.badgeColor || '#6366f1',
+                                  backgroundColor: `${map.badgeColor || '#6366f1'}15`,
+                                  border: `1px solid ${map.badgeColor || '#6366f1'}33`,
+                                  padding: '2px 8px',
+                                  borderRadius: '6px'
+                                }}>
+                                  {map.board?.toUpperCase() || 'EMBEDDED'}
+                                </span>
+                                <span style={{ fontSize: '11px', color: 'var(--text3, #64748b)', fontWeight: 600 }}>
+                                  🏝️ {map.totalIslands || 1} Islands • 🎯 {map.totalMissions || 1} Missions
+                                </span>
+                              </div>
+                              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text, #0f172a)' }}>
+                                {map.title}
+                              </h4>
+                              {map.description && (
+                                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text2, #475569)', lineHeight: 1.4 }}>
+                                  {map.description}
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&mapId=${map._id || map.slug}`)}
+                                style={{
+                                  marginTop: '6px',
+                                  padding: '10px 16px',
+                                  borderRadius: '10px',
+                                  background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
+                                  color: '#ffffff',
+                                  fontSize: '12px',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '8px',
+                                  boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)'
+                                }}
+                              >
+                                🚀 Play Classroom Adventure
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: classroomMaps.length > 0 ? 16 : 12 }}>
+                      <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text2, #475569)', margin: '0 0 8px 0' }}>
+                        🌐 Standard Hardware Journeys
+                      </h4>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=arduino`)}
+                          className="teacher-assignment-modal__resource-pill"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                        >
+                          🔵 Arduino Uno Map
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=esp32`)}
+                          className="teacher-assignment-modal__resource-pill"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, borderColor: '#e74c3c', color: '#e74c3c' }}
+                        >
+                          📡 ESP32 Map
+                        </button>
+                      </div>
                     </div>
                   </section>
                 )}

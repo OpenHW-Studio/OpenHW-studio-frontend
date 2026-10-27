@@ -31,9 +31,12 @@ export default function ProjectQuizPage() {
     navigate('/')
   }
   const classId = new URLSearchParams(location.search).get('classId')
+  const mapId = new URLSearchParams(location.search).get('mapId')
   // Determine which journey this project belongs to for the back-navigation
   const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = classId
+  const mapPath = mapId
+    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
+    : classId
     ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
     : `/adventure?journey=${journey}`
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
@@ -49,7 +52,7 @@ export default function ProjectQuizPage() {
     const load = async () => {
       if (!baseProject) setLoadingContent(true)
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         if (!baseProject) {
           setCustomProject(toProjectDisplayMeta(projectContent))
@@ -70,7 +73,7 @@ export default function ProjectQuizPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingContent && !baseProject

@@ -20,6 +20,9 @@ import {
   ScanLine, Gauge, Plug, ToggleLeft, Timer, Cog, Sun, Moon,
   Search, Bell, Compass, Folder, FileText
 } from 'lucide-react'
+import CertificateModal from '../components/certification/CertificateModal'
+import { isArduinoJourneyComplete, getArduinoCertificationProgress } from '../services/certification/certificateService'
+import { fetchAdventureMapById, claimAdventureCertificate } from '../services/adventureMapService'
 
 // ─── Arduino journey worlds ──────────────────────────────────────────────────
 const ARDUINO_WORLDS = [
@@ -81,9 +84,12 @@ function getProjectIcon(slug) {
   return Radio
 }
 
-// Island image per project slug → /gamification_images/
-function getIslandImage(slug) {
-  const s = String(slug || '').toLowerCase()
+// Island image per project slug or dynamic custom map project → /gamification_images/
+function getIslandImage(projectOrSlug) {
+  if (typeof projectOrSlug === 'object' && projectOrSlug?.islandImage) {
+    return projectOrSlug.islandImage;
+  }
+  const s = String(typeof projectOrSlug === 'string' ? projectOrSlug : projectOrSlug?.slug || '').toLowerCase();
   // Arduino world 1
   if (s === 'led-blink') return '/gamification_images/island_led.png'
   if (s === 'rgb-led') return '/gamification_images/island_rgb.png'
@@ -136,7 +142,7 @@ const ISLAND_PALETTES = [
 // PNG island node component - uses actual island images
 function IslandNode({ project, index, isActive, isCompleted, isLocked, onClick, palette }) {
   const p = palette || ISLAND_PALETTES[index % ISLAND_PALETTES.length]
-  const islandImg = getIslandImage(project.slug)
+  const islandImg = getIslandImage(project)
 
   return (
     <div
@@ -360,21 +366,116 @@ export default function AdventureMapPage() {
   const [classProgress, setClassProgress] = useState(null)
 
   const journeyParam = searchParams.get('journey')
+  const mapIdParam = searchParams.get('mapId')
+  const targetMapSlugOrId = mapIdParam || (journeyParam && journeyParam !== 'arduino' && journeyParam !== 'esp32' ? journeyParam : null)
+
+  const [customMapData, setCustomMapData] = useState(null)
+  const [loadingCustomMap, setLoadingCustomMap] = useState(() => Boolean(targetMapSlugOrId))
+  const [customMapError, setCustomMapError] = useState(null)
+  const customMapId = customMapData?.slug || customMapData?._id || targetMapSlugOrId
+
   const [activeJourney, setActiveJourney] = useState(
     journeyParam === 'esp32' || journeyParam === 'arduino' ? journeyParam : 'arduino'
   )
-  const WORLDS = activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS
+
+  const getIslandSlug = (world, island, wIdx, islIdx) => {
+    return island?.slug || island?.missions?.[0]?.slug || `world-${world?.id || wIdx + 1}-island-${island?.id || islIdx + 1}`
+  }
+
+  // Fetch custom adventure map if mapId or custom slug is specified in URL
+  useEffect(() => {
+    if (!targetMapSlugOrId) {
+      setLoadingCustomMap(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCustomMap(true);
+    setCustomMapError(null);
+    fetchAdventureMapById(targetMapSlugOrId)
+      .then(res => {
+        if (!cancelled && res.map) {
+          setCustomMapData(res.map);
+          setActiveWorldIdx(0);
+          setSelectedProject(null);
+          setShowRightPanel(false);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load custom adventure map:', err);
+        if (!cancelled) setCustomMapError(err.message || 'Failed to load adventure map');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCustomMap(false);
+      });
+    return () => { cancelled = true; };
+  }, [targetMapSlugOrId]);
+
+  // Save active map URL to sessionStorage and localStorage so other tabs/pages know where to return
+  useEffect(() => {
+    if (targetMapSlugOrId || journeyParam) {
+      const currentUrl = `${location.pathname}${location.search}`;
+      sessionStorage.setItem('openhw_last_adventure_url', currentUrl);
+      localStorage.setItem('openhw_last_adventure_url', currentUrl);
+    }
+  }, [location.pathname, location.search, targetMapSlugOrId, journeyParam]);
+
+  // Dynamically resolve worlds based on journey or custom map
+  const WORLDS = useMemo(() => {
+    if (customMapData) {
+      if (Array.isArray(customMapData.worlds) && customMapData.worlds.length > 0) {
+        return customMapData.worlds.map((w, wIdx) => {
+          const islandSlugs = (w.islands || []).slice(0, 6).map((isl, islIdx) => getIslandSlug(w, isl, wIdx, islIdx));
+          return {
+            id: w.id || wIdx + 1,
+            name: w.name || `World ${wIdx + 1}`,
+            theme: w.theme || 'Beginner',
+            color: w.color || '#22c55e',
+            slugs: islandSlugs
+          };
+        });
+      }
+      if (Array.isArray(customMapData.islands) && customMapData.islands.length > 0) {
+        const dummyWorld = { id: 1, name: customMapData.title || 'World 1: Circuit Basics' };
+        return [{
+          id: 1,
+          name: customMapData.title || 'World 1: Circuit Basics',
+          theme: 'Beginner',
+          color: '#22c55e',
+          slugs: customMapData.islands.slice(0, 6).map((isl, islIdx) => getIslandSlug(dummyWorld, isl, 0, islIdx))
+        }];
+      }
+    }
+    return activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS;
+  }, [customMapData, activeJourney]);
 
   useEffect(() => {
     const jp = searchParams.get('journey')
     if (jp === 'esp32' || jp === 'arduino') {
       setActiveJourney(jp)
+      setCustomMapData(null)
+      setActiveWorldIdx(0)
+      setSelectedProject(null)
+      setShowRightPanel(false)
     }
   }, [searchParams])
+
+  const getDashboardPath = () => {
+    if (classId) return `/student/classes/${encodeURIComponent(classId)}`;
+    if (user?.role === 'admin') return '/admin/dashboard';
+    if (user?.role === 'teacher') return '/teacher/dashboard';
+    return '/student/dashboard';
+  };
+
+  const getProfilePath = () => {
+    if (user?.role === 'admin') return '/admin/profile';
+    if (user?.role === 'teacher') return '/teacher/profile';
+    return '/student/profile';
+  };
 
   const [activeWorldIdx, setActiveWorldIdx] = useState(0)
   const [selectedProject, setSelectedProject] = useState(null)
   const [showRightPanel, setShowRightPanel] = useState(false)
+  const [showCertModal, setShowCertModal] = useState(false)
   const [selectedStepKey, setSelectedStepKey] = useState(null)
   const [sidebarTab, setSidebarTab] = useState('world-map')
   // Slug to auto-open when navigating back from a project page
@@ -421,6 +522,45 @@ export default function AdventureMapPage() {
 
   // ── All hooks must be declared before the early return to satisfy Rules of Hooks ──
   const resolvedProjects = useMemo(() => {
+    if (customMapData) {
+      const customList = [];
+      const worldsList = (Array.isArray(customMapData.worlds) && customMapData.worlds.length > 0)
+        ? customMapData.worlds
+        : [{ id: 1, name: customMapData.title, islands: customMapData.islands || [] }];
+
+      worldsList.forEach((world, wIdx) => {
+        const islandsArr = (world.islands || []).slice(0, 6);
+        islandsArr.forEach((island, islIdx) => {
+          const mainMission = island.missions?.[0] || {};
+          const slug = getIslandSlug(world, island, wIdx, islIdx);
+          const prevSlug = islIdx > 0 ? getIslandSlug(world, islandsArr[islIdx - 1], wIdx, islIdx - 1) : null;
+
+          customList.push({
+            id: island.id || islIdx + 1,
+            slug,
+            title: island.name || mainMission.title || `Island ${islIdx + 1}`,
+            subtitle: island.theme || mainMission.subtitle || '',
+            description: mainMission.description || `Explore ${island.name} and master its circuits!`,
+            number: islIdx + 1,
+            world: world.id || wIdx + 1,
+            color: island.color || world.color || '#3b82f6',
+            islandImage: island.islandImage || mainMission.islandImage || '/gamification_images/island_led.png',
+            xpReward: mainMission.xpReward || 100,
+            difficulty: mainMission.difficulty || 'beginner',
+            theory: mainMission.theory || { title: island.name, contentMarkdown: '', keyTakeaways: [] },
+            components: mainMission.componentsToUnlock || [],
+            starterCode: mainMission.starterCode || mainMission.guideSample?.starterCode || '',
+            guideSample: mainMission.guideSample || {},
+            projectMission: mainMission.projectMission || {},
+            evaluationCriteria: mainMission.evaluationCriteria || {},
+            quizQuestions: mainMission.quizQuestions || [],
+            prerequisite: prevSlug
+          });
+        });
+      });
+      return customList;
+    }
+
     const source = [...PROJECTS]
     const content = classAdventure || buildFallbackClassAdventureContent()
     const projectRows = Array.isArray(content?.projects) ? content.projects : []
@@ -435,7 +575,7 @@ export default function AdventureMapPage() {
         color: project.color || source.find((base) => base.slug === project.slug)?.color || '#3b82f6',
       }))
       .sort((a, b) => (a.world - b.world) || (a.number - b.number))
-  }, [classAdventure])
+  }, [classAdventure, customMapData])
 
   // When returning from a project page, resolve the pending slug to open the island panel
   useEffect(() => {
@@ -444,13 +584,13 @@ export default function AdventureMapPage() {
     if (!target) return
     // Determine which world index contains this project
     const journey = getProjectJourney(target)
-    const worlds = journey === 'esp32' ? ESP32_WORLDS : ARDUINO_WORLDS
+    const worlds = customMapData ? WORLDS : (journey === 'esp32' ? ESP32_WORLDS : ARDUINO_WORLDS)
     const worldIdx = worlds.findIndex(w => w.slugs.includes(target.slug))
     if (worldIdx !== -1) setActiveWorldIdx(worldIdx)
     setSelectedProject(target)
     setShowRightPanel(true)
     setPendingOpenSlug(null) // clear so it doesn't re-trigger
-  }, [pendingOpenSlug, resolvedProjects])
+  }, [pendingOpenSlug, resolvedProjects, customMapData, WORLDS])
 
   const completedProjects = useMemo(() => {
     const classCompleted = classProgress?.completedProjects?.map(p => p.projectSlug || p) || []
@@ -468,12 +608,33 @@ export default function AdventureMapPage() {
     return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
   }, [completedProjects])
 
+  const arduinoCertStats = useMemo(() => {
+    if (customMapData) {
+      const allSlugs = resolvedProjects.map(p => p.slug);
+      const completedCount = allSlugs.filter(s => completedProjects.includes(s)).length;
+      const total = allSlugs.length;
+      return {
+        total,
+        completedCount,
+        remainingCount: total - completedCount,
+        percentage: total > 0 ? Math.round((completedCount / total) * 100) : 0,
+        isComplete: total > 0 && completedCount === total,
+        completedSlugs: completedProjects,
+        remainingSlugs: allSlugs.filter(s => !completedProjects.includes(s))
+      };
+    }
+    return getArduinoCertificationProgress(completedProjects)
+  }, [completedProjects, customMapData, resolvedProjects])
+
   const currentWorld = useMemo(() => WORLDS[activeWorldIdx] || WORLDS[0], [WORLDS, activeWorldIdx])
 
   const currentWorldProjects = useMemo(() => {
+    if (customMapData) {
+      return resolvedProjects.filter(p => currentWorld?.slugs?.includes(p.slug)).sort((a, b) => a.number - b.number)
+    }
     const journeyProjects = resolvedProjects.filter(p => getProjectJourney(p) === activeJourney)
     return journeyProjects.filter(p => currentWorld.slugs.includes(p.slug)).sort((a, b) => a.number - b.number)
-  }, [resolvedProjects, activeJourney, currentWorld])
+  }, [resolvedProjects, activeJourney, currentWorld, customMapData])
 
   const activeProject = useMemo(() => {
     if (selectedProject && currentWorldProjects.some(p => p.slug === selectedProject.slug)) {
@@ -530,7 +691,92 @@ export default function AdventureMapPage() {
     return () => { cancelled = true }
   }, [classId])
 
-  if (!journeyParam) {
+  if (loadingCustomMap && !customMapData) {
+    return (
+      <div style={{
+        height: '100vh',
+        width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#0f172a',
+        color: '#f8fafc',
+        gap: '16px',
+        fontFamily: "'Inter', sans-serif"
+      }}>
+        <div style={{
+          width: '42px',
+          height: '42px',
+          border: '4px solid rgba(59, 130, 246, 0.2)',
+          borderTopColor: '#3b82f6',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }} />
+        <span style={{ fontSize: '15px', fontWeight: '800', letterSpacing: '0.04em' }}>
+          Entering Adventure World...
+        </span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (targetMapSlugOrId && customMapError && !customMapData) {
+    return (
+      <div style={{
+        height: '100vh',
+        width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#0f172a',
+        color: '#f8fafc',
+        gap: '16px',
+        padding: '24px',
+        textAlign: 'center',
+        fontFamily: "'Inter', sans-serif"
+      }}>
+        <div style={{
+          width: '64px',
+          height: '64px',
+          borderRadius: '50%',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          border: '2px solid rgba(239, 68, 68, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '28px'
+        }}>
+          🔒
+        </div>
+        <h2 style={{ fontSize: '20px', fontWeight: '800', margin: 0 }}>
+          Adventure Access Restricted
+        </h2>
+        <p style={{ maxWidth: '440px', fontSize: '14px', color: '#94a3b8', lineHeight: 1.5, margin: 0 }}>
+          {customMapError}
+        </p>
+        <button
+          onClick={() => navigate(classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard')}
+          style={{
+            marginTop: '8px',
+            padding: '10px 20px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
+            color: '#fff',
+            border: 'none',
+            fontSize: '13px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          {classId ? 'Return to Classroom' : 'Return to Dashboard'}
+        </button>
+      </div>
+    );
+  }
+
+  if (!journeyParam && !targetMapSlugOrId && !customMapData) {
     const initials = (user?.name || 'Alex').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     return (
       <div style={{
@@ -1143,6 +1389,7 @@ export default function AdventureMapPage() {
   const handleStart = (slug, mode) => {
     const sp = new URLSearchParams()
     if (classId) sp.set('classId', classId)
+    if (customMapId) sp.set('mapId', customMapId)
     sp.set('fromMap', '1')
     const suffix = `?${sp.toString()}`
     if (mode === 'reading') navigate(`/${slug}/reading${suffix}`)
@@ -1161,7 +1408,11 @@ export default function AdventureMapPage() {
     } else if (selectedStepKey === 'quiz') {
       handleStart(activeProject.slug, 'quiz')
     } else if (selectedStepKey === 'unlock') {
-      navigate(classId ? `/${activeProject.slug}/components?classId=${encodeURIComponent(classId)}` : `/${activeProject.slug}/components`)
+      const sp = new URLSearchParams()
+      if (classId) sp.set('classId', classId)
+      if (customMapId) sp.set('mapId', customMapId)
+      const q = sp.toString() ? `?${sp.toString()}` : ''
+      navigate(`/${activeProject.slug}/components${q}`)
     } else if (selectedStepKey === 'guide') {
       handleStart(activeProject.slug, 'guide')
     } else if (selectedStepKey === 'sim') {
@@ -1169,20 +1420,63 @@ export default function AdventureMapPage() {
     }
   }
 
-  // Row 1: left→right  |  Row 2: right→left
-  const NODE_POSITIONS = [
-    { top: '30%', left: '25%' },
-    { top: '30%', left: '50%' },
-    { top: '30%', left: '75%' },
-    { top: '70%', left: '75%' },
-    { top: '70%', left: '50%' },
-    { top: '70%', left: '25%' },
-  ]
+  // Dynamic responsive node layout based on current world project count
+  const getNodeLayout = (count) => {
+    if (count === 1) {
+      return {
+        positions: [{ top: '50%', left: '50%' }],
+        points: [[50, 50]],
+      }
+    }
+    if (count <= 4) {
+      return {
+        positions: [
+          { top: '32%', left: '30%' },
+          { top: '32%', left: '70%' },
+          { top: '68%', left: '70%' },
+          { top: '68%', left: '30%' },
+        ],
+        points: [
+          [30, 32], [70, 32], [70, 68], [30, 68],
+        ],
+      }
+    }
+    if (count <= 6) {
+      return {
+        positions: [
+          { top: '30%', left: '25%' },
+          { top: '30%', left: '50%' },
+          { top: '30%', left: '75%' },
+          { top: '70%', left: '75%' },
+          { top: '70%', left: '50%' },
+          { top: '70%', left: '25%' },
+        ],
+        points: [
+          [25, 30], [50, 30], [75, 30],
+          [75, 70], [50, 70], [25, 70],
+        ],
+      }
+    }
+    // 7 or 8 nodes (e.g. World 5 with 8 projects)
+    return {
+      positions: [
+        { top: '28%', left: '16%' },
+        { top: '28%', left: '38%' },
+        { top: '28%', left: '62%' },
+        { top: '28%', left: '84%' },
+        { top: '72%', left: '84%' },
+        { top: '72%', left: '62%' },
+        { top: '72%', left: '38%' },
+        { top: '72%', left: '16%' },
+      ],
+      points: [
+        [16, 28], [38, 28], [62, 28], [84, 28],
+        [84, 72], [62, 72], [38, 72], [16, 72],
+      ],
+    }
+  }
 
-  const PATH_POINTS = [
-    [25, 30], [50, 30], [75, 30],
-    [75, 70], [50, 70], [25, 70],
-  ]
+  const { positions: NODE_POSITIONS, points: PATH_POINTS } = getNodeLayout(currentWorldProjects.length)
 
   const userName = user?.name || 'Alex'
   const initials = userName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -1491,7 +1785,6 @@ export default function AdventureMapPage() {
                   palette={palette}
                 />
               </div>
-
             </div>
           )
         })}
@@ -1552,7 +1845,9 @@ export default function AdventureMapPage() {
                     key={j.id}
                     onClick={() => {
                       setActiveJourney(j.id);
+                      setActiveWorldIdx(0);
                       setSelectedProject(null);
+                      setShowRightPanel(false);
                       const nextParams = new URLSearchParams(searchParams);
                       nextParams.set('journey', j.id);
                       navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
@@ -1587,19 +1882,7 @@ export default function AdventureMapPage() {
                   Docs
                 </a>
                 <button
-                  onClick={handleLogout}
-                  style={{
-                    background: 'rgba(239,68,68,0.1)', border: 'none',
-                    borderRadius: 8, padding: '4px 8px', color: '#dc2626',
-                    fontWeight: 800, fontSize: 10, cursor: 'pointer',
-                    display: 'inline-flex', alignItems: 'center', gap: 2
-                  }}
-                >
-                  <LogOut size={10} strokeWidth={2.5} />
-                  Sign Out
-                </button>
-                <button
-                  onClick={() => navigate(classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard')}
+                  onClick={() => navigate(getDashboardPath())}
                   style={{
                     background: 'rgba(15,23,42,0.05)', border: 'none',
                     borderRadius: 8, padding: '4px 8px', color: '#0f172a',
@@ -1608,7 +1891,7 @@ export default function AdventureMapPage() {
                 >
                   Exit
                 </button>
-                <button onClick={() => navigate('/student/profile')} style={{
+                <button onClick={() => navigate(getProfilePath())} style={{
                   width: 26, height: 26, borderRadius: '50%', border: 'none',
                   background: '#ffffff', color: '#475569', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -1697,6 +1980,31 @@ export default function AdventureMapPage() {
                   <Award size={11} color="#ec4899" fill="#ec4899" />
                   <span style={{ fontSize: 10, fontWeight: 800, color: '#1e293b' }}>{earnedBadges.length}</span>
                 </div>
+
+                {/* Mobile Cert Pill */}
+                {activeJourney === 'arduino' && (
+                  <div
+                    onClick={() => {
+                      if (arduinoCertStats.isComplete) {
+                        setShowCertModal(true);
+                      } else {
+                        navigate('/certifications');
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 3,
+                      background: arduinoCertStats.isComplete ? '#10b981' : '#ffffff',
+                      color: arduinoCertStats.isComplete ? '#ffffff' : '#b45309',
+                      borderRadius: 12, padding: '4px 8px',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.05)', height: 26,
+                      cursor: 'pointer'
+                    }}
+                    title={arduinoCertStats.isComplete ? "View Official Certificate" : "View all certifications"}
+                  >
+                    <Award size={11} color={arduinoCertStats.isComplete ? '#ffffff' : '#d97706'} fill={arduinoCertStats.isComplete ? '#ffffff' : 'none'} />
+                    <span style={{ fontSize: 9, fontWeight: 800 }}>{arduinoCertStats.isComplete ? 'CERT 🏅' : `${arduinoCertStats.completedCount}/22`}</span>
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -1742,19 +2050,7 @@ export default function AdventureMapPage() {
               Docs
             </a>
             <button
-              onClick={handleLogout}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: 'rgba(239,68,68,0.1)', border: 'none',
-                borderRadius: 12, padding: '6px 14px', color: '#dc2626',
-                fontWeight: 800, fontSize: 11, cursor: 'pointer', transition: 'all 0.2s',
-              }}
-            >
-              <LogOut size={13} strokeWidth={2.5} />
-              Sign Out
-            </button>
-            <button
-              onClick={() => navigate(classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard')}
+              onClick={() => navigate(getDashboardPath())}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: 'rgba(15,23,42,0.05)', border: 'none',
@@ -1766,29 +2062,44 @@ export default function AdventureMapPage() {
               Exit
             </button>
 
-            <div style={{ display: 'flex', background: 'rgba(15,23,42,0.06)', borderRadius: 12, padding: 3, gap: 2 }}>
-              {[{ id: 'arduino', label: 'Arduino' }, { id: 'esp32', label: 'ESP32' }].map(j => (
-                <button
-                  key={j.id}
-                  onClick={() => {
-                    setActiveJourney(j.id);
-                    setSelectedProject(null);
-                    const nextParams = new URLSearchParams(searchParams);
-                    nextParams.set('journey', j.id);
-                    navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
-                  }}
-                  style={{
-                    padding: '5px 14px', borderRadius: 9, border: 'none', cursor: 'pointer',
-                    background: activeJourney === j.id ? 'rgba(255,255,255,0.7)' : 'transparent',
-                    color: activeJourney === j.id ? '#4f46e5' : '#64748b',
-                    fontWeight: 800, fontSize: 11, transition: 'all 0.2s',
-                    boxShadow: activeJourney === j.id ? '0 2px 6px rgba(0,0,0,0.05)' : 'none',
-                  }}
-                >
-                  {j.label}
-                </button>
-              ))}
-            </div>
+            {!customMapData ? (
+              <div style={{ display: 'flex', background: 'rgba(15,23,42,0.06)', borderRadius: 12, padding: 3, gap: 2 }}>
+                {[{ id: 'arduino', label: 'Arduino' }, { id: 'esp32', label: 'ESP32' }].map(j => (
+                  <button
+                    key={j.id}
+                    onClick={() => {
+                      setActiveJourney(j.id);
+                      setActiveWorldIdx(0);
+                      setSelectedProject(null);
+                      setShowRightPanel(false);
+                      const nextParams = new URLSearchParams(searchParams);
+                      nextParams.set('journey', j.id);
+                      nextParams.delete('mapId');
+                      navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
+                    }}
+                    style={{
+                      padding: '5px 14px', borderRadius: 9, border: 'none', cursor: 'pointer',
+                      background: activeJourney === j.id ? 'rgba(255,255,255,0.7)' : 'transparent',
+                      color: activeJourney === j.id ? '#4f46e5' : '#64748b',
+                      fontWeight: 800, fontSize: 11, transition: 'all 0.2s',
+                      boxShadow: activeJourney === j.id ? '0 2px 6px rgba(0,0,0,0.05)' : 'none',
+                    }}
+                  >
+                    {j.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(15,23,42,0.08)', borderRadius: 12, padding: '5px 12px'
+              }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: customMapData.badgeColor || '#10b981' }} />
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#1e293b' }}>
+                  {customMapData.campaignCode || 'CUSTOM WORLD'}
+                </span>
+              </div>
+            )}
 
             {/* Center World label/navigation */}
             <div style={{
@@ -1825,10 +2136,10 @@ export default function AdventureMapPage() {
                 gap: 1,
               }}>
                 <span style={{
-                  fontSize: 9, fontWeight: 900, color: 'rgba(255, 255, 255, 0.65)',
+                  fontSize: 9, fontWeight: 900, color: 'rgba(255, 255, 255, 0.75)',
                   letterSpacing: '0.08em', textTransform: 'uppercase'
                 }}>
-                  {activeJourney === 'arduino' ? 'Arduino' : 'ESP32'} World {activeWorldIdx + 1}
+                  {customMapData ? (customMapData.title || 'Custom Adventure') : (activeJourney === 'arduino' ? 'Arduino' : 'ESP32')} World {activeWorldIdx + 1}
                 </span>
                 <span style={{
                   fontSize: 12, fontWeight: 800, color: '#fbbf24', // Gold color for world name
@@ -1894,7 +2205,46 @@ export default function AdventureMapPage() {
                 </span>
               </div>
 
-              <button onClick={() => navigate('/student/profile')} style={{
+              {/* Arduino Certification Pill */}
+              {activeJourney === 'arduino' && (
+                <button
+                  onClick={() => {
+                    if (arduinoCertStats.isComplete) {
+                      setShowCertModal(true);
+                    } else {
+                      navigate('/certifications');
+                    }
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: arduinoCertStats.isComplete
+                      ? 'linear-gradient(135deg, #10b981, #059669)'
+                      : '#ffffff',
+                    color: arduinoCertStats.isComplete ? '#ffffff' : '#475569',
+                    border: arduinoCertStats.isComplete ? 'none' : '1px solid rgba(212, 175, 55, 0.4)',
+                    borderRadius: 20, padding: '6px 16px',
+                    boxShadow: arduinoCertStats.isComplete
+                      ? '0 4px 14px rgba(16, 185, 129, 0.4)'
+                      : '0 2px 10px rgba(0,0,0,0.05)',
+                    height: 38, cursor: 'pointer', transition: 'all 0.2s',
+                  }}
+                  title={arduinoCertStats.isComplete ? "View Official Certificate" : "View Hardware Engineering Certifications"}
+                >
+                  <Award
+                    size={18}
+                    color={arduinoCertStats.isComplete ? '#ffffff' : '#d97706'}
+                    fill={arduinoCertStats.isComplete ? '#ffffff' : 'none'}
+                    strokeWidth={2}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 800 }}>
+                    {arduinoCertStats.isComplete
+                      ? 'CERTIFIED 🏅'
+                      : `CERT: ${arduinoCertStats.completedCount}/22`}
+                  </span>
+                </button>
+              )}
+
+              <button onClick={() => navigate(getProfilePath())} style={{
                 width: 38, height: 38, borderRadius: '50%', border: 'none',
                 background: '#ffffff', color: '#475569', display: 'flex',
                 alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -1924,7 +2274,7 @@ export default function AdventureMapPage() {
         padding: '0 20px',
         border: '1px solid rgba(255,255,255,0.3)',
       }}>
-        <button onClick={() => navigate('/student/dashboard')} className="nav-tab-btn">
+        <button onClick={() => navigate(getDashboardPath())} className="nav-tab-btn">
           <BookOpen size={18} />
           <span>Dashboard</span>
         </button>
@@ -1961,12 +2311,27 @@ export default function AdventureMapPage() {
           <span>Play</span>
         </button>
 
-        <button onClick={() => navigate(classId ? `/components?classId=${encodeURIComponent(classId)}` : '/components')} className="nav-tab-btn">
+        <button
+          onClick={() => {
+            const currentFullUrl = `${location.pathname}${location.search}`;
+            sessionStorage.setItem('openhw_last_adventure_url', currentFullUrl);
+            localStorage.setItem('openhw_last_adventure_url', currentFullUrl);
+
+            const compParams = new URLSearchParams();
+            if (classId) compParams.set('classId', classId);
+            if (targetMapSlugOrId) compParams.set('mapId', targetMapSlugOrId);
+            else if (journeyParam) compParams.set('journey', journeyParam);
+
+            const compUrl = `/components${compParams.toString() ? `?${compParams.toString()}` : ''}`;
+            navigate(compUrl, { state: { returnTo: currentFullUrl } });
+          }}
+          className="nav-tab-btn"
+        >
           <Package size={18} />
           <span>Inventory</span>
         </button>
 
-        <button onClick={() => navigate('/student/profile')} className="nav-tab-btn">
+        <button onClick={() => navigate(getProfilePath())} className="nav-tab-btn">
           <User size={18} />
           <span>Profile</span>
         </button>
@@ -1987,6 +2352,7 @@ export default function AdventureMapPage() {
           flexDirection: 'column',
           zIndex: 30,
           overflow: 'hidden',
+          overflowY: isMobile ? 'auto' : 'hidden',
           boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
           border: '1px solid rgba(255, 255, 255, 0.4)',
         }}>
@@ -2051,7 +2417,7 @@ export default function AdventureMapPage() {
             )}
 
             {/* Body */}
-            <div style={{ padding: '16px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ padding: '16px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
               {/* Description */}
               <p style={{ margin: 0, fontSize: 13, color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
                 {activeProject.description || `Learn all about ${activeProject.title}, how it works, and build your own projects!`}
@@ -2106,9 +2472,9 @@ export default function AdventureMapPage() {
                   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
                 }}>
                   {[
-                    { icon: Star, value: '+150 XP', color: '#fbbf24' },
-                    { icon: Coins, value: '+50 Coins', color: '#f59e0b' },
-                    { icon: Award, value: 'Badge', color: '#8b5cf6' },
+                    { icon: Star, value: `+${activeProject.xpReward || 100} XP`, color: '#fbbf24' },
+                    { icon: Coins, value: `+${Math.round((activeProject.xpReward || 100) * 0.5)} Coins`, color: '#f59e0b' },
+                    { icon: Award, value: activeProject.badge?.name || 'Badge', color: '#8b5cf6' },
                   ].map(({ icon: Icon, value, color }) => (
                     <div key={value} style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, justifyContent: 'center' }}>
                       <Icon size={13} color={color} fill={color} />
@@ -2151,6 +2517,39 @@ export default function AdventureMapPage() {
           </div>
         </aside>
       )}
+
+      {/* Toast Notification for Map View */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(8px)',
+          color: '#ffffff',
+          padding: '12px 20px',
+          borderRadius: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          boxShadow: '0 12px 36px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          zIndex: 1000,
+          animation: 'toastFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}>
+          <Activity size={16} style={{ color: '#60a5fa', marginRight: 8 }} />
+          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.02em' }}>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* ── ARDUINO / ESP32 / CUSTOM MASTER CERTIFICATION MODAL ───────────────────────── */}
+      <CertificateModal
+        isOpen={showCertModal}
+        onClose={() => setShowCertModal(false)}
+        user={user}
+        track={customMapData ? 'arduino' : (journeyParam === 'esp32' ? 'esp32' : 'arduino')}
+        trackTitle={customMapData?.certification?.title || (journeyParam === 'esp32' ? 'Certified IoT Systems Architect — ESP32 & FreeRTOS' : 'Certified Embedded Systems Specialist — Arduino Architecture')}
+        completedProjects={completedProjects}
+      />
     </div>
   )
 }

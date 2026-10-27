@@ -30,8 +30,11 @@ export default function ProjectTheoryPage() {
     navigate('/')
   }
   const classId = new URLSearchParams(location.search).get('classId')
+  const mapId = new URLSearchParams(location.search).get('mapId')
   const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = classId
+  const mapPath = mapId
+    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
+    : classId
     ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
     : `/adventure?journey=${journey}`
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
@@ -53,7 +56,7 @@ export default function ProjectTheoryPage() {
     setLoadingCustom(true)
     const load = async () => {
       try {
-        const { project: classProject } = await getAdventureProjectContent(classId, projectName)
+        const { project: classProject } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         setCustomProject(toProjectDisplayMeta(classProject))
       } catch (err) {
@@ -65,7 +68,7 @@ export default function ProjectTheoryPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingCustom && !baseProject
@@ -93,7 +96,7 @@ export default function ProjectTheoryPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         setClassTheoryCards(Array.isArray(projectContent?.theory) && projectContent.theory.length ? projectContent.theory : null)
       } catch {
@@ -102,7 +105,7 @@ export default function ProjectTheoryPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName])
+  }, [classId, projectName, mapId])
 
   const flashcards = (classTheoryCards && classTheoryCards.length > 0)
     ? classTheoryCards
@@ -407,9 +410,23 @@ export default function ProjectTheoryPage() {
               position: 'absolute', inset: 24, borderRadius: 24,
               border: isDarkMode ? '1px dashed rgba(255,255,255,0.1)' : '1px dashed rgba(15, 23, 42, 0.1)',
             }} />
-            <div style={{ fontSize: 110, zIndex: 2, filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.15))' }}>
-              {card.emoji || '💡'}
-            </div>
+            {(card.image || (card.emoji && (card.emoji.startsWith('/') || card.emoji.endsWith('.png')))) ? (
+              <img
+                src={card.image || card.emoji}
+                alt={card.front || 'Component'}
+                style={{
+                  width: '65%',
+                  height: '65%',
+                  objectFit: 'contain',
+                  zIndex: 2,
+                  filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.2))',
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: 110, zIndex: 2, filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.15))' }}>
+                {card.emoji || '💡'}
+              </div>
+            )}
 
             <div style={{
               position: 'absolute', bottom: 24,

@@ -11,8 +11,10 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { 
   ArrowLeft, ArrowRight, Star, Coins, Sun, Moon, Cpu, Wrench, Play, RotateCcw, 
-  Trash2, Clipboard, ShieldAlert, Sparkles, CheckCircle2, AlertCircle, FileText, LogOut 
+  Trash2, Clipboard, ShieldAlert, Sparkles, CheckCircle2, AlertCircle, FileText, LogOut,
+  Layers
 } from 'lucide-react'
+import { generate3EvaluationTasks } from '../utils/circuitCriteriaUtils'
 
 // Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
 const ALL_ARDUINO_SLUGS = [
@@ -23,8 +25,8 @@ const ALL_ARDUINO_SLUGS = [
   'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
 ]
 
-const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
-const PHASE_COLOR = { wire: '#10b981', code: '#3b82f6', run: '#f59e0b' }
+const PHASE_LABEL = { components: 'Components', wire: 'Wiring', code: 'Coding', run: 'Run' }
+const PHASE_COLOR = { components: '#8b5cf6', wire: '#10b981', code: '#3b82f6', run: '#f59e0b' }
 
 // ─── Evaluation helpers ───────────────────────────────────────────────────────
 const ROLE_TO_TYPE = {
@@ -186,7 +188,7 @@ function evaluateAssessment(config, components, wires, code) {
     ok = bestResult.matched;
     issues.push(...bestResult.missing);
 
-    const score = bestResult.total ? Math.round((ok / bestResult.total) * 100) : 0
+    const score = bestResult.total ? Math.round((ok / bestResult.total) * 100) : 100
     total += score * weight
     res.wiringAccuracy = { title: 'Wiring', score, feedback: pickFeedback(score, sc.wiringAccuracy), issues }
   }
@@ -316,7 +318,7 @@ function StepCard({ step, index, total, isActive, onClick, isDarkMode }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: phaseColor,
         }}>
-          {step.phase === 'wire' ? <Wrench size={18} /> : step.phase === 'code' ? <Cpu size={18} /> : <Play size={18} />}
+          {step.phase === 'components' ? <Layers size={18} /> : step.phase === 'wire' ? <Wrench size={18} /> : step.phase === 'code' ? <Cpu size={18} /> : <Play size={18} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -368,8 +370,11 @@ export default function ProjectAssessmentPage() {
   const { projectName = '' } = useParams()
   const location = useLocation()
   const classId = new URLSearchParams(location.search).get('classId')
+  const mapId = new URLSearchParams(location.search).get('mapId')
   const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = classId
+  const mapPath = mapId
+    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
+    : classId
     ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
     : `/adventure?journey=${journey}`
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
@@ -382,7 +387,7 @@ export default function ProjectAssessmentPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const { project } = await getAdventureProjectContent(classId, projectName)
+        const { project } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         setClassProjectContent(project)
       } catch {
@@ -391,10 +396,33 @@ export default function ProjectAssessmentPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName])
+  }, [classId, projectName, mapId])
 
   const projectColor = location.state?.projectColor || '#10b981'
-  const steps = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
+  const steps = useMemo(() => {
+    // 1. Direct 3 tasks from project mission or assessment
+    if (classProjectContent?.assessment?.guidedSteps?.length === 3) {
+      return classProjectContent.assessment.guidedSteps;
+    }
+    if (classProjectContent?.projectMission?.tasks?.length === 3) {
+      return classProjectContent.projectMission.tasks;
+    }
+    if (classProjectContent?.guidedSteps?.length === 3) {
+      return classProjectContent.guidedSteps;
+    }
+    // 2. Synthesize 3 evaluation tasks from criteria or teacher solution circuit
+    if (classProjectContent?.evaluationCriteria || classProjectContent?.assessment?.evaluationCriteria || classProjectContent?.projectMission?.solutionCircuit) {
+      const ec = classProjectContent.evaluationCriteria || classProjectContent.assessment?.evaluationCriteria || {};
+      const sol = classProjectContent.projectMission?.solutionCircuit;
+      return generate3EvaluationTasks({
+        components: sol?.components || (ec.components?.required || []).map(r => ({ type: r.type, count: r.count })),
+        connections: sol?.wires || ec.wiringAccuracy?.requiredConnections || [],
+        code: sol?.code || classProjectContent.starterCode || '',
+        prompt: classProjectContent.projectMission?.prompt || classProjectContent.description || ''
+      });
+    }
+    return getProjectGuidedSteps(classProjectContent, projectName);
+  }, [classProjectContent, projectName])
 
   const [activeStep, setActiveStep] = useState(0)
   const [submission, setSubmission] = useState(null)
@@ -428,8 +456,8 @@ export default function ProjectAssessmentPage() {
       }
       return {
         passingThreshold: assessment.passingThreshold ?? 0,
-        evaluationCriteria: assessment.evaluationCriteria || {},
-        scoring: assessment.scoring || {},
+        evaluationCriteria: assessment.evaluationCriteria || classProjectContent.evaluationCriteria || {},
+        scoring: assessment.scoring || classProjectContent.scoring || {},
       }
     }
     return {
@@ -495,7 +523,10 @@ export default function ProjectAssessmentPage() {
   }
 
   const openSimulator = () => {
-    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    const q = new URLSearchParams()
+    if (classId) q.set('classId', classId)
+    if (mapId) q.set('mapId', mapId)
+    const suffix = q.toString() ? `?${q.toString()}` : ''
     navigate(`/${projectName}/guided${suffix}`, { state: { projectColor } })
   }
 

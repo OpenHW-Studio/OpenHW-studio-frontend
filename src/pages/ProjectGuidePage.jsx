@@ -45,29 +45,83 @@ const SLUG_MAP = {
   "line-following-robot": "line-following-robot",
 };
 
-import { markAdventureStepComplete } from "../services/adventureService";
+import { markAdventureStepComplete, getCustomMapProjectContent } from "../services/adventureService";
 import { findGuidedProjectBySlug } from "../services/exampleLoaderService.js";
 import PROJECT_INDEX from "../services/guideProjectsIndex.json";
+import { PROJECTS } from "../services/gamification/ProjectsConfig";
+
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor',
+  'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+];
 
 export default function ProjectGuidePage() {
   const navigate = useNavigate();
   const { projectName = "" } = useParams();
   const [searchParams] = useSearchParams();
   const classId = searchParams.get('classId');
+  const mapId = searchParams.get('mapId');
+
+  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32';
+  const mapPath = mapId
+    ? `/adventure?mapId=${encodeURIComponent(mapId)}`
+    : classId
+    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
+    : `/adventure?journey=${journey}`;
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } });
 
   useEffect(() => {
     if (projectName) {
       markAdventureStepComplete({
         classId,
         projectSlug: projectName,
-        stepKey: 'demo',
+        stepKey: 'guide',
         stepOrder: 4,
       }).catch(() => {});
     }
   }, [projectName, classId]);
 
+  const [customProject, setCustomProject] = useState(null);
+
+  useEffect(() => {
+    if (mapId && projectName) {
+      getCustomMapProjectContent(mapId, projectName)
+        .then(res => {
+          if (res) setCustomProject(res);
+        })
+        .catch(err => console.error("Error loading custom guide project:", err));
+    }
+  }, [mapId, projectName]);
+
   const jsonSlug = SLUG_MAP[projectName] || projectName;
   const project = (jsonSlug ? PROJECT_INDEX[jsonSlug] : null) || findGuidedProjectBySlug(projectName);
+  const configProject = PROJECTS.find(p => p.slug === projectName);
+  const displayProject = useMemo(() => {
+    if (customProject) {
+      return {
+        title: customProject.guideSample?.title || customProject.title || 'Guided Project Lab',
+        description: customProject.guideSample?.instruction || customProject.description || '',
+        board: customProject.board || 'Arduino Uno',
+        components: (customProject.components || []).map(c => typeof c === 'string' ? c : (c.name || c.label || c.type)),
+        starterCode: customProject.guideSample?.starterCode || '',
+        circuitPngBase64: customProject.guideSample?.circuitPngBase64 || '',
+        isCustom: true
+      };
+    }
+    return project || (configProject ? {
+      title: configProject.title,
+      description: configProject.description,
+      board: 'Arduino Uno',
+      components: (configProject.components || []).map(c => c.label || c.name || c.type),
+      starterCode: '',
+      circuitPngBase64: '',
+      isCustom: false
+    } : null);
+  }, [customProject, project, configProject]);
 
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
@@ -184,8 +238,8 @@ export default function ProjectGuidePage() {
     return () => document.head.removeChild(link)
   }, [canvasOnlyUrl])
 
-  const explanation = project?.description
-    ? `This project demonstrates ${project.description.charAt(0).toLowerCase() + project.description.slice(1)}. The code configures the board in the setup() function and runs the main logic repeatedly in the loop() function.`
+  const explanation = displayProject?.description
+    ? `This project demonstrates ${displayProject.description.charAt(0).toLowerCase() + displayProject.description.slice(1)}. The code configures the board in the setup() function and runs the main logic repeatedly in the loop() function.`
     : ''
 
   return (
@@ -202,7 +256,9 @@ export default function ProjectGuidePage() {
         {/* Close Button */}
         <button
           onClick={() => {
-            if (window.history.length > 1) {
+            if (searchParams.get('fromMap')) {
+              goBackToMap();
+            } else if (window.history.length > 1) {
               navigate(-1);
             } else {
               navigate('/examples');
@@ -252,36 +308,70 @@ export default function ProjectGuidePage() {
           background: "var(--bg, #0b1120)",
           position: "relative",
         }}>
-          <iframe
-            ref={iframeRef}
-            src={canvasOnlyUrl}
-            onLoad={() => setIframeLoading(false)}
-            style={{
-              width: "100%", height: "100%", border: "none", display: "block",
-            }}
-            title={`${projectName} Simulator`}
-            fetchpriority="high"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
-          />
-
-          {iframeLoading && (
+          {displayProject?.circuitPngBase64 ? (
             <div style={{
-              position: "absolute", inset: 0, zIndex: 10,
+              width: "100%", height: "100%",
               display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center",
-              gap: 16, background: "var(--bg, #0b1120)",
+              background: "radial-gradient(circle at center, #1e293b 0%, #0b1120 100%)",
+              padding: 24, position: "relative", overflow: "hidden"
             }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 0.8s linear infinite" }}>
-                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-              </svg>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #e2e8f0)" }}>
-                Loading circuit… Placing components and wiring connection
+              <div style={{
+                position: 'absolute', top: 16, left: 20, zIndex: 10,
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(8px)',
+                padding: '6px 14px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)'
+              }}>
+                <CircuitBoard size={14} color="#34d399" />
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                  Reference Circuit Blueprint
+                </span>
               </div>
+              <img
+                src={displayProject.circuitPngBase64}
+                alt="Guide Reference Circuit"
+                style={{
+                  maxWidth: "96%", maxHeight: "88%",
+                  objectFit: "contain", borderRadius: 12,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}
+              />
             </div>
+          ) : (
+            <>
+              <iframe
+                ref={iframeRef}
+                src={canvasOnlyUrl}
+                onLoad={() => setIframeLoading(false)}
+                style={{
+                  width: "100%", height: "100%", border: "none", display: "block",
+                }}
+                title={`${projectName} Simulator`}
+                fetchpriority="high"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
+              />
+
+              {iframeLoading && (
+                <div style={{
+                  position: "absolute", inset: 0, zIndex: 10,
+                  display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center",
+                  gap: 16, background: "var(--bg, #0b1120)",
+                }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 0.8s linear infinite" }}>
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #e2e8f0)" }}>
+                    Loading circuit… Placing components and wiring connection
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {project && (
+        {displayProject && (
         <div style={{
           width: 400, flexShrink: 0, height: "100%",
           borderLeft: "1px solid var(--border, rgba(255,255,255,0.08))",
@@ -304,7 +394,7 @@ export default function ProjectGuidePage() {
                 Mission Brief
               </div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text, #e2e8f0)", lineHeight: 1.3 }}>
-                {project.title}
+                {displayProject.title}
               </div>
             </div>
             <button
@@ -342,7 +432,7 @@ export default function ProjectGuidePage() {
               <Lightbulb size={12} strokeWidth={2.5} /> How It Works
             </div>
             <p style={{ margin: 0, fontSize: 14, color: "var(--text2, #94a3b8)", lineHeight: 1.7 }}>
-              {project.description}
+              {displayProject.description}
             </p>
           </div>
 
@@ -353,7 +443,7 @@ export default function ProjectGuidePage() {
               color: "#60a5fa", background: "rgba(96,165,250,0.1)",
             }}>
               <CircuitBoard size={11} strokeWidth={2.5} />
-              {project.board}
+              {displayProject.board}
             </div>
             <div style={{
               display: "flex", alignItems: "center", gap: 5,
@@ -361,26 +451,58 @@ export default function ProjectGuidePage() {
               color: "var(--text2, #94a3b8)", background: "var(--bg3, #1e293b)",
             }}>
               <FlaskConical size={11} strokeWidth={2.5} />
-              {project.components.length} components
+              {displayProject.components?.length || 0} components
             </div>
           </div>
 
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3, #64748b)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
-              <CircuitBoard size={12} strokeWidth={2.5} /> Required Components
+          {displayProject.components?.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3, #64748b)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+                <CircuitBoard size={12} strokeWidth={2.5} /> Required Components
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {displayProject.components.map((comp, i) => (
+                  <span key={i} style={{
+                    fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 6,
+                    background: "var(--bg3, #1e293b)", border: "1px solid var(--border, rgba(255,255,255,0.06))",
+                    color: "var(--text2, #94a3b8)",
+                  }}>
+                    {comp}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {project.components.map((comp, i) => (
-                <span key={i} style={{
-                  fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 6,
-                  background: "var(--bg3, #1e293b)", border: "1px solid var(--border, rgba(255,255,255,0.06))",
-                  color: "var(--text2, #94a3b8)",
-                }}>
-                  {comp}
+          )}
+
+          {displayProject?.starterCode && (
+            <div style={{
+              background: "rgba(15,23,42,0.6)", borderRadius: 10, padding: 14,
+              border: "1px solid rgba(255,255,255,0.08)"
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#a5f3fc", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Cpu size={12} strokeWidth={2.5} /> Sample Firmware Code
                 </span>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(displayProject.starterCode)}
+                  style={{
+                    padding: '2px 8px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.15)',
+                    backgroundColor: 'rgba(255,255,255,0.06)', color: '#94a3b8', fontSize: 10, cursor: 'pointer'
+                  }}
+                >
+                  Copy Code
+                </button>
+              </div>
+              <pre style={{
+                margin: 0, padding: '10px', borderRadius: 8, backgroundColor: '#070b14',
+                color: '#67e8f9', fontSize: 11, fontFamily: 'monospace', lineHeight: 1.5,
+                maxHeight: 180, overflowY: 'auto'
+              }}>
+                {displayProject.starterCode}
+              </pre>
             </div>
-          </div>
+          )}
 
           {explanation && (
             <div style={{
@@ -395,26 +517,22 @@ export default function ProjectGuidePage() {
             </div>
           )}
 
-
-            
-            {searchParams.get('fromMap') && (
-              <div style={{ marginTop: 'auto', paddingTop: 20 }}>
-                <button 
-                  onClick={() => {
-                    window.location.href = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure';
-                  }}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'center',
-                    padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                    color: '#fff', fontSize: 15, fontWeight: 800,
-                    boxShadow: '0 8px 24px rgba(34,197,94,0.35)',
-                  }}>
-                  ← Back to Adventure Map
-                </button>
-              </div>
-            )}
-          </div>
+          {searchParams.get('fromMap') && (
+            <div style={{ marginTop: 'auto', paddingTop: 20 }}>
+              <button 
+                onClick={goBackToMap}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'center',
+                  padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                  color: '#fff', fontSize: 15, fontWeight: 800,
+                  boxShadow: '0 8px 24px rgba(34,197,94,0.35)',
+                }}>
+                ← Back to Adventure Map
+              </button>
+            </div>
+          )}
+        </div>
         )}
       </div>
 
