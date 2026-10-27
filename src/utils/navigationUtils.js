@@ -122,6 +122,8 @@ export function getRoleDashboardPath(user, { classId, tab } = {}) {
     basePath = '/teacher/dashboard';
   } else if (user?.role === 'admin') {
     basePath = '/admin/dashboard';
+  } else if (user?.role === 'user') {
+    basePath = '/user/dashboard';
   }
 
   if (tab) {
@@ -136,5 +138,6 @@ export function getRoleDashboardPath(user, { classId, tab } = {}) {
 export function getRoleProfilePath(user) {
   if (user?.role === 'teacher') return '/teacher/profile';
   if (user?.role === 'admin') return '/admin/profile';
+  if (user?.role === 'user') return '/user/profile';
   return '/student/profile';
 }
