@@ -124,7 +124,7 @@ export async function claimAdventureCertificate(mapId) {
  * Assign a public or official adventure map to a classroom
  */
 export async function assignAdventureMapToClassroom(classId, mapId) {
-  const res = await fetch(`${API_BASE}/classrooms/${classId}/adventure-maps/assign`, {
+  const res = await fetch(`${API_BASE}/classroom/${classId}/adventure-maps/assign`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({ mapId })
@@ -140,7 +140,7 @@ export async function assignAdventureMapToClassroom(classId, mapId) {
  * Unassign an adventure map from a classroom
  */
 export async function unassignAdventureMapFromClassroom(classId, mapId) {
-  const res = await fetch(`${API_BASE}/classrooms/${classId}/adventure-maps/unassign`, {
+  const res = await fetch(`${API_BASE}/classroom/${classId}/adventure-maps/unassign`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({ mapId })

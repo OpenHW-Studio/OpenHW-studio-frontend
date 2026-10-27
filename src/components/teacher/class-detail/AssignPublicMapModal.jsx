@@ -39,6 +39,12 @@ export default function AssignPublicMapModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBoard, setSelectedBoard] = useState("all");
   const [actionMapId, setActionMapId] = useState(null);
+  const [localAssignedMapIds, setLocalAssignedMapIds] = useState(assignedMapIds || []);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  useEffect(() => {
+    setLocalAssignedMapIds(assignedMapIds || []);
+  }, [assignedMapIds]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -89,19 +95,25 @@ export default function AssignPublicMapModal({
   }, [maps, selectedBoard, searchQuery]);
 
   const handleToggleAssign = async (map) => {
-    const isAssigned = assignedMapIds.includes(map._id);
+    const isAssigned = (localAssignedMapIds || []).includes(map._id);
     setActionMapId(map._id);
     try {
       if (isAssigned) {
         await unassignAdventureMapFromClassroom(classId, map._id);
+        setLocalAssignedMapIds((prev) => prev.filter((id) => id !== map._id));
+        setToastMessage({ type: "info", text: `Unassigned "${map.title}" from this classroom.` });
       } else {
         await assignAdventureMapToClassroom(classId, map._id);
+        setLocalAssignedMapIds((prev) => [...prev, map._id]);
+        setToastMessage({ type: "success", text: `Assigned "${map.title}" to this classroom!` });
       }
       if (onMapAssigned) {
         await onMapAssigned();
       }
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (err) {
-      alert(err.message || "Failed to update assignment.");
+      setToastMessage({ type: "error", text: err.message || "Failed to update assignment." });
+      setTimeout(() => setToastMessage(null), 4000);
     } finally {
       setActionMapId(null);
     }
@@ -190,6 +202,37 @@ export default function AssignPublicMapModal({
             <X size={20} />
           </button>
         </div>
+
+        {/* Toast Notification Banner */}
+        {toastMessage && (
+          <div
+            style={{
+              padding: "10px 24px",
+              backgroundColor:
+                toastMessage.type === "success"
+                  ? "rgba(16, 185, 129, 0.12)"
+                  : toastMessage.type === "error"
+                  ? "rgba(239, 68, 68, 0.12)"
+                  : "rgba(99, 102, 241, 0.12)",
+              color:
+                toastMessage.type === "success"
+                  ? "#059669"
+                  : toastMessage.type === "error"
+                  ? "#ef4444"
+                  : "#6366f1",
+              fontSize: "13px",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              borderBottom: "1px solid var(--border, #e2e8f0)",
+              animation: "fadeIn 0.2s ease"
+            }}
+          >
+            {toastMessage.type === "success" ? <Check size={16} /> : null}
+            <span>{toastMessage.text}</span>
+          </div>
+        )}
 
         {/* Filters */}
         <div
@@ -336,7 +379,7 @@ export default function AssignPublicMapModal({
               }}
             >
               {filteredMaps.map((map) => {
-                const isAssigned = assignedMapIds.includes(map._id);
+                const isAssigned = (localAssignedMapIds || []).includes(map._id);
                 const isProcessing = actionMapId === map._id;
                 const totalXP =
                   map.worlds?.reduce(
