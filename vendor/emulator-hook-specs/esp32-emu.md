@@ -117,6 +117,72 @@ board worker.
 * `config.wifi` has **no declared shape** in the `.d.ts` — the runner passes
   it untyped, so a rename is silent.
 
+## Owner ask — per-edge GPIO timestamps (P1, measured 2026-11-02)
+
+**The gap.** `pollGpioChanges()` is the only GPIO-output edge channel and it
+returns
+
+```ts
+pollGpioChanges(): Promise<Array<{ pin: number; level: number }>>
+```
+
+— **pin and level, no time**. The runner can therefore say *“GPIO5 went HIGH,
+GPIO5 went LOW”* but never *when*. Every component that measures a pulse
+width is blind:
+
+* the HC-SR04 trigger (`digitalWrite(5,HIGH); delayMicroseconds(12);
+  digitalWrite(5,LOW)`) drains both edges in the same poll, so
+  `PulseProtocol.onPinStateChange` computes `durationUs = (t_low − t_high)/16
+  = 0` and the model rejected the trigger (frontend now accepts a 0 width as
+  “width unknown”, `openhw-studio-emulator` `4119e2d`);
+* the ECHO window the model drives back is then scaled by a *guessed*
+  steps-per-µs ratio. Measured today on a 25 cm target: `pulseIn(18,HIGH)` =
+  **245 µs (4.2 cm)** with the AVR default of 16 steps/µs, and **3097 µs then
+  2188 µs (53 cm / 38 cm)** when calibrated from `nanos` over the run —
+  the ratio drifts with guest workload, so no stable distance is reachable
+  from the frontend side. A calibration was implemented and **reverted** for
+  this reason (it also shifts DHT/IR/LCD timing).
+* the same gap blocks NEC IR decode (mark/space widths), servo-input decode,
+  and any “measure the pulse the guest emitted” cell.
+
+**Ask.** Timestamp each edge, in any monotonic base the runner can convert:
+
+```ts
+pollGpioChanges(): Promise<Array<{ pin: number; level: number; nanos: number }>>
+// nanos = engine time at the moment the edge was latched (same base as
+// `readonly nanos`), strictly monotonic across drains.
+```
+
+Contract we rely on:
+
+1. **No coalescing**: both edges of a pulse ≥ 2 µs apart must appear, in
+   order, even when the guest took many instructions between them. (Today a
+   10–12 µs pulse does deliver two entries — only the time is missing.)
+2. **Resolution ≤ 1 µs** (sub-µs welcome); the value may be coarse, but the
+   *difference* between two adjacent entries of the same pin must be the real
+   elapsed engine time, so a 12 µs trigger measures 12 µs ±10 %.
+3. **Monotonic across drains** — one shared base, so an edge drained at
+   poll N can be compared with an edge drained at poll N+1 (needed for echo
+   windows that straddle a poll).
+4. Idle cost stays one ring drain; a **dropped-edge counter**
+   (`getGpioEdgeDrops(): number`) would let the runner detect a pump
+   overflow instead of silently losing an edge.
+
+A cycle counter instead of `nanos` is fine (`{pin, level, cycles}` with the
+counter's own frequency documented) — we convert with
+`cyclesPerMicrosecond()` in `esp32-runner.ts`.
+
+**Runner work once delivered** (small, already mapped): `publishGpio` passes a
+real stamp into `onPinStateChange(pinId, isHigh, boardCycles)` instead of the
+shared poll counter, and `PulseProtocol` stops hard-coding `/16`. No component
+changes are needed; the models already take `durationUs`.
+
+**Acceptance cell** (`tests/e2e/esp32-sonar.spec.js`, to be written when the
+tap lands): HC-SR04 at `attrs.distance` 25 / 50 / 100 cm must read back
+`pulseIn(18,HIGH)` = 1469 / 2938 / 5876 µs ±2 % for three consecutive reads,
+and an NEC frame on GPIO from `openhw-ir-remote` must decode to the remote's
+ADDR/CMD.
+
 ## Signal-level guarantees
 
 - `reset()`-family reinstalls a fresh model synchronously; instruction
@@ -158,6 +224,9 @@ board worker.
   `wasm-bench` + `test-wasm-standalone` pass.
 - ESP32 cells: devkit hello TX, I2C OLED, SPI MAX7219, ADC pot,
   LEDC LED must stay green.
+- Pulse-width cells stay PARTIAL until the per-edge timestamps above land:
+  `pulseIn` on an HC-SR04 ECHO is 0 µs / workload-dependent, so the sonar
+  cell is not part of the green set yet (`matrix.md`, ESP32 component table).
 - `tests/e2e/esp32-wifi-gateway.spec.js` + `tests/e2e/esp32-cam-wifi-gateway.spec.js`:
   STA join + gateway DHCP (`STATUS=3`, `IP=192.168.4.x`) — must stay green.
   **These cells also exercise the inline `CMD_GET_WIFI_STATS` servicing**: if
