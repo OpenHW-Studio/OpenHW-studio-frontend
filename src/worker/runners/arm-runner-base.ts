@@ -642,6 +642,18 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 // Runner-agnostic board-drive service (plan §5.3): component
                 // → engine input injection without board-type branches.
                 // Engines without input injection simply ignore the call.
+                // Board clock (monotonic simulated milliseconds). Component
+                // animations (servo travel) need a time base; cycles are
+                // NOT milliseconds on non-AVR engines (ESP32 executes far
+                // fewer steps per emulated microsecond than its 240 MHz
+                // core implies), so 400 deg/s at 16 MHz steps moves ~36x
+                // too slowly there. AVR reports cycles/16 MHz, i.e. the
+                // exact same number as before — no AVR change.
+                if (!(inst as any)._boardTimeMs) {
+                    (inst as any)._boardTimeMs = () => {
+                        try { return this.getSimulatedTimeMs(); } catch { return 0; }
+                    };
+                }
                 if (!(inst as any)._driveBoardPin) {
                     (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
                         try { this.engine.setGpioInput?.(String(boardPin), !!isHigh); } catch { /* ignore */ }

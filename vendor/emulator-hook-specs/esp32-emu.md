@@ -183,6 +183,31 @@ tap lands): HC-SR04 at `attrs.distance` 25 / 50 / 100 cm must read back
 and an NEC frame on GPIO from `openhw-ir-remote` must decode to the remote's
 ADDR/CMD.
 
+## Owner ask — LEDC duty resolution in `getLedc` (P2, measured 2026-11-02)
+
+`getLedc(ch)` returns `{ duty, freq, timer }` where `duty` is the driver's
+**raw count** and the configured resolution (`ledcAttach(pin, freq, res)`) is
+not reported anywhere: `native_ledc_*` exports are duty/freq/timer/pin only,
+and the LEDC register block reads 0 through `readMmio` (GPIO matrix reads
+work, LEDC does not — checked hid 0..10 at `0x3FF590A0`/`0x3FF59008`).
+
+Consequence for a PWM consumer: a duty count alone is ambiguous (192 is 75 %
+at 8-bit, 2.3 % at 13-bit). For an RC servo the runner has to *infer* the
+resolution from the 0.4–2.6 ms pulse band — exact when the count is large
+(16-bit firmware, 4915 → 1500 µs → **92.7°**, working today) and undecidable
+for small counts, where the servo must ignore the sample instead of reporting
+a wrong angle.
+
+**Ask:** add `res` (bits) — or `dutyMax` — to the `getLedc` reply:
+
+```ts
+getLedc(channel: number): Promise<{ duty: number; freq: number; timer: number; res: number }>
+```
+
+One line in the WASM facade (`native_ledc_get_res` over the timer config is
+enough). Then `esp32-runner.ledcDutyRatio()` returns the exact ratio for
+every PWM consumer and the band heuristic can be deleted.
+
 ## Signal-level guarantees
 
 - `reset()`-family reinstalls a fresh model synchronously; instruction

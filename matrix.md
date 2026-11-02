@@ -368,6 +368,9 @@ model's own state alone):
 | DHT22 (RMT) | `esp32-dht22` | FULL | 27.3 °C / 61.2 % |
 | PIR motion (`wokwi-pir-motion-sensor`) | `pir:OUT → GPIO27`, `attrs.motion` true/false | FULL | `digitalRead(27)` = 1 with motion, 0 without |
 | Photoresistor (analog) | `ldr:2 → GPIO34`, `attrs.lux` | FULL (ADC side) | lux 500 → `analogRead(34)` 3033; lux 200 → 1214 (tracks the model's 5 V ÷ 1023 mapping) |
+| DC motor | `motor:1 → GPIO26`, `GND → motor:2` | FULL | live `speed` 0.49 while the pin is HIGH (test: `esp32-actuators`) |
+| Buzzer (passive) | `SIG → GPIO25`, `ledcAttach(25,1000,10)` + `ledcWrite(25,512)` | FULL | live `isBuzzing: true`, `frequency: 1000 Hz` (test: `esp32-actuators`) |
+| Servo (RC PWM) | `PWM → GPIO13`, `ledcAttach(13,50,16)` | FULL (angle) / PARTIAL (width source) | 1500 µs → **92.7°**, 2000 µs → **141.2°** (exact for the 544–2400 µs band); the pulse width is recovered by disambiguating 50–400 Hz duty counts, so a firmware whose duty count fits two resolutions is ignored instead of guessed (`pwmWidthExact`) |
 | HC-SR04 ultrasonic | `TRIG → GPIO5`, `ECHO → GPIO18`, `attrs.distance=25` | **PARTIAL** | `pulseIn(18, HIGH)` 0 µs before the fix, 245 µs after → 4.2 cm; with a measured steps/µs calibration 3097 / 2188 µs (53 / 38 cm) — the ratio drifts with guest workload, so no stable distance |
 
 HC-SR04 is the one engine-limited component: `esp32-emu`

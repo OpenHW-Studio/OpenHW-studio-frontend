@@ -1598,14 +1598,14 @@ export class Esp32Runner extends ArmRunnerBase {
                             const freq = Number(st?.freq) || 0;
                             if (duty <= 0 || freq <= 0) return;
                             const cached = this.ledcPinCache.get(ch);
-                            if (cached !== undefined) { this.driveEsp32Led(cached, duty, freq); return; }
+                            if (cached !== undefined) { this.driveEsp32Pwm(cached, duty, freq); return; }
                             if (typeof sim.getLedcPin !== 'function') return;
                             (sim.getLedcPin(ch) as Promise<any>).then((pin) => {
                                 try {
                                     const gpio = Number(pin);
                                     if (!Number.isFinite(gpio) || gpio < 0) return;
                                     this.ledcPinCache.set(ch, gpio);
-                                    this.driveEsp32Led(gpio, duty, freq);
+                                    this.driveEsp32Pwm(gpio, duty, freq);
                                 } catch { /* ignore */ }
                             }).catch(() => {});
                         } catch { /* ignore */ }
@@ -1615,43 +1615,122 @@ export class Esp32Runner extends ArmRunnerBase {
         } catch { /* PWM never breaks the tick */ }
     }
 
-    private driveEsp32Led(gpio: number, duty: number, freq: number): void {
+    /**
+     * Fan out one LEDC channel's state to the components wired to its pin.
+     *
+     * Two consumer shapes exist:
+     *  - plain brightness consumers (openhw-led): onPWM(<anode pin>, meta);
+     *  - PWMProtocol subclasses (servo, buzzer): they only settle a signal
+     *    when the meta carries a PULSE WIDTH (meta.pulseUs), and they watch
+     *    their own pin names (servo PWM/SIG, buzzer SIG). Skipping them here
+     *    — and calling the fixed LED names 'A'/'ANODE'/'+' — is why a servo
+     *    or buzzer on ESP32 never reacted at all while the LED did.
+     */
+    private driveEsp32Pwm(gpio: number, duty: number, freq: number): void {
         try {
-            const duty01 = Math.max(0, Math.min(1, duty > 255 ? duty / 8191 : duty / 255));
-            if (duty01 <= 0) return;
-            for (const inst of this.instances.values()) {
+            if (!(freq > 0)) return;
+            const periodUs = 1e6 / freq;
+            const { duty01, exact } = this.ledcDutyRatio(duty, freq, periodUs);
+            if (!(duty01 > 0)) return;
+            // pulseUs is what PWMProtocol measures in real hardware. The
+            // width is always finite (a NaN sample poisons PWMProtocol's
+            // jitter gate, which then never settles for ANY consumer — the
+            // buzzer stayed silent for exactly that reason); consumers that
+            // need a trustworthy width check meta.widthExact.
+            const meta = {
+                dutyCycle: duty01,
+                frequencyHz: freq,
+                periodUs,
+                pulseUs: duty01 * periodUs,
+                widthExact: exact,
+                cycles: this.simCycleCount,
+            };
+            for (const [inst, pins] of this.componentPinsOnGpio(gpio)) {
                 try {
                     if (typeof (inst as any)?.onPWM !== 'function') continue;
-                    if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
-                    let wired = false;
-                    try {
-                        for (const [node, netId] of (this as any).pinToNet ?? []) {
-                            const sep = node.indexOf(':');
-                            if (sep < 0) continue;
-                            if (node.slice(0, sep) !== this.boardId) continue;
-                            // Compare by GPIO NUMBER, not by label text: the
-                            // board shells label the same pin differently
-                            // (DevKit 'GPIO16', cam shell '16', 'D16',
-                            // 'GP16'). The exact-text compare below only
-                            // matched the DevKit's 'GPIO<n>' form, so the
-                            // cam shell's LED never lit (ledc duty read back
-                            // 192 in the guest, LED model glow=false).
-                            if (Esp32Runner.gpioNum(node.slice(sep + 1)) !== gpio) continue;
-                            for (const [node2, net2] of (this as any).pinToNet) {
-                                if (net2 !== netId) continue;
-                                if (node2.slice(0, node2.indexOf(':')) === this.boardId) continue;
-                                if (node2.slice(0, node2.indexOf(':')) === (inst as any)?.id) { wired = true; break; }
-                            }
-                            if (wired) break;
+                    const names = typeof (inst as any)?.getPWMPinNames === 'function'
+                        ? ((inst as any).getPWMPinNames() as any[]).map((n) => String(n).toUpperCase())
+                        : null;
+                    if (names) {
+                        const targeted = pins.filter((pn) => names.includes(String(pn).toUpperCase()));
+                        for (const pn of (targeted.length ? targeted : pins)) {
+                            try { (inst as any).onPWM(pn, meta); } catch { /* ignore */ }
                         }
-                    } catch { /* ignore */ }
-                    if (!wired) continue;
-                    for (const pn of ['A', 'ANODE', '+']) {
-                        try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: freq }); } catch { /* ignore */ }
+                    } else {
+                        for (const pn of ['A', 'ANODE', '+']) {
+                            try { (inst as any).onPWM(pn, meta); } catch { /* ignore */ }
+                        }
                     }
                 } catch { /* one instance never breaks pwm */ }
             }
         } catch { /* ignore */ }
+    }
+
+    /**
+     * LEDC channels driven by `pin` → the component pins on the same net.
+     * Resolved through pinToNet so board shells that label the same GPIO
+     * '16'/'D16'/'GP16'/'GPIO16' all match (number compare, not text).
+     */
+    private componentPinsOnGpio(gpio: number): Map<any, string[]> {
+        const out = new Map<any, string[]>();
+        try {
+            const pinToNet = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!pinToNet || typeof pinToNet.forEach !== 'function') return out;
+            const nets = new Set<number>();
+            pinToNet.forEach((netId: number, node: string) => {
+                const sep = node.indexOf(':');
+                if (sep < 0) return;
+                if (node.slice(0, sep) !== this.boardId) return;
+                if (Esp32Runner.gpioNum(node.slice(sep + 1)) !== gpio) return;
+                nets.add(netId);
+            });
+            if (nets.size === 0) return out;
+            pinToNet.forEach((netId: number, node: string) => {
+                if (!nets.has(netId)) return;
+                const sep = node.indexOf(':');
+                if (sep < 0) return;
+                const compId = node.slice(0, sep);
+                if (compId === this.boardId) return;
+                const inst = this.instances.get(compId);
+                if (!inst) return;
+                const list = out.get(inst) || [];
+                list.push(node.slice(sep + 1));
+                out.set(inst, list);
+            });
+        } catch { /* ignore */ }
+        return out;
+    }
+
+    /**
+     * Duty ratio of an LEDC channel from the tap's RAW duty count.
+     *
+     * `getLedc()` reports the driver's duty count but not the configured
+     * resolution, so one count is ambiguous (192 = 75 % at 8-bit, 2.3 % at
+     * 13-bit). In the 50-400 Hz band the signal is an RC-servo pulse train,
+     * whose width is physically bounded to 0.4-2.6 ms: accept a resolution
+     * only when exactly one candidate lands in that band. Everything else
+     * falls back to the historical 8-bit/13-bit rule and is marked
+     * inexact. `res` from the engine would retire the guess
+     * (vendor/emulator-hook-specs/esp32-emu.md, P2).
+     */
+    private ledcDutyRatio(duty: number, freq: number, periodUs: number): { duty01: number; exact: boolean } {
+        try {
+            const servoBand = freq > 0 && freq <= 400;
+            const hits: number[] = [];
+            for (let res = 8; res <= 16; res++) {
+                const max = Math.pow(2, res) - 1;
+                if (duty > max) continue;
+                const ratio = duty / max;
+                if (servoBand) {
+                    const pulse = ratio * periodUs;
+                    if (pulse < 400 || pulse > 2600) continue;
+                }
+                hits.push(ratio);
+            }
+            if (servoBand && hits.length === 1) return { duty01: hits[0], exact: true };
+            const fallback = Math.max(0, Math.min(1, duty > 255 ? duty / 8191 : duty / 255));
+            return { duty01: fallback, exact: false };
+        } catch { return { duty01: 0, exact: false }; }
     }
 
     protected budgetForDelta(deltaMs: number): number {
