@@ -17,6 +17,7 @@ import { test, expect } from '@playwright/test';
 const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f42' },
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
+  { tag: 'V407', type: 'openhw-stm32f407ve', id: 'f47e' },
 ];
 
 const CODE = '#include <stdint.h>\n#define LTDC_BASE 0x40016800UL\n#define R8(o) (*(volatile uint32_t*)(LTDC_BASE + (o)))\nstatic uint32_t fb[64*32];\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("LTDC_READY");\n  for (int y = 0; y < 32; y++)\n    for (int x = 0; x < 64; x++)\n      fb[y*64+x] = 0xFF000000UL | ((uint32_t)x<<16) | ((uint32_t)y<<8) | (uint32_t)(x+y);\n  R8(0x08) = (7UL<<16)|7UL;\n  R8(0x0C) = (8UL<<16)|8UL;\n  R8(0x10) = (31UL<<16)|63UL;\n  R8(0x40) = 49UL;\n  R8(0x34) = 0x0FUL;\n  R8(0x84) = 0;\n  R8(0x94) = 0;\n  R8(0x88) = 63UL|(31UL<<16);\n  R8(0x8C) = 63UL|(31UL<<16);\n  R8(0xAC) = (uint32_t)(uintptr_t)fb;\n  R8(0xB0) = (256UL<<16)|256UL;\n  R8(0xB4) = 32UL;\n  R8(0x84) = 1;\n  R8(0x18) = R8(0x18)|1UL;\n  Serial.println("scanout started");\n}\nvoid loop() {\n  uint32_t isr = R8(0x38);\n  if (isr & 2UL) {\n    uint32_t sum = fb[0]+fb[1]+fb[63]+fb[64*32-1];\n    Serial.print("LTDC_SUM:");\n    Serial.println(sum, HEX);\n    Serial.println("LTDC_OK");\n    delay(2000);\n  } else {\n    Serial.println("LTDC_WAIT");\n    delay(1000);\n  }\n}\n';
@@ -34,7 +35,11 @@ test.describe('F4 LTDC (scanout to TFT)', () => {
   for (const { tag, type, id } of TYPES) {
     test(`gradient scans out: ISR flag + exact pixels on the sink (${type})`, async ({ page }) => {
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(8000);
+      // Harness gate: the plain waitForTimeout(8000) variant loses the race
+      // on a loaded box and dies with "Cannot read properties of undefined
+      // (reading 'setupCircuit')" (seen on the f407ve cell 2026-10-20).
+      await page.waitForFunction(() => !!window.OpenHWE2E, null, { timeout: 90000 });
+      await page.waitForTimeout(2000);
       const setup = await page.evaluate(({ t, i, code }) => window.OpenHWE2E.setupCircuit({
         components: [
           { id: i, type: t, attrs: {}, x: 100, y: 100 },

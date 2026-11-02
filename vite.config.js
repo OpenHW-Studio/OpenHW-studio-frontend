@@ -22,18 +22,42 @@ export default defineConfig(({ mode }) => {
     resolvedEmulatorPath = dockerEmulatorPath;
   }
 
-  // Engine folders (owner sources, pre-npm): runners import by exact
-  // npm-shaped specifiers; these aliases are the single dev-resolution
-  // point (folder now, npm packages later — flip targets, not sources).
-  // NOTE: vendor mirrors under public/vendor keep their OpenHW patches
-  // (SAB TextDecoder, mosiLog, Dallas) and are deploy-only; dev loads
-  // folder bytes below.
+  // Engine bytes: runners import by exact npm-shaped specifiers; these
+  // aliases are the single resolution point (repo bytes now, npm packages
+  // later — flip targets, not sources).
+  //
+  // WHY REPO BYTES (2026-10-20) and not the owner folders:
+  //  1. the container build (Dockerfile / .github/workflows/deploy.yml)
+  //     checks out ONLY this repo + openhw-studio-emulator — the owner
+  //     folders do not exist there, and an alias to a missing path is a
+  //     HARD BUILD FAILURE ("Could not load …"). This bit us for real:
+  //     the owner's `esp32 emu/dist/` was deleted mid-session, so
+  //     `npm run build` failed with ENOENT on worker-proxy.js.
+  //  2. the owner rebuilds those folders every few minutes, so "dev reads
+  //     the folder" can never equal "deploy reads a committed snapshot".
+  // So every engine's bytes are committed under src/engines/<engine>/ and
+  // dev + build + runtime fallback all read the same files. The vendor
+  // mirrors under public/vendor/board-engines/ carry the same bytes plus
+  // the OpenHW patches and stay in sync (see each README's refresh
+  // recipe).
+  //
+  // OPT-OUT for engine development: `OPENHW_ENGINE_FROM=owner npm run dev`
+  // points the Pico/ESP32 aliases back at the owner's live folders
+  // (they carry the newest engine work). NEVER in CI — CI must build
+  // from the committed snapshot.
+  const engineFromOwner = process.env.OPENHW_ENGINE_FROM === 'owner';
   const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
   const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
   const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
-  // STM32F1 engine bytes committed in THIS repo (dev + deploy + runtime
+  // Engine bytes committed in THIS repo (dev + build + deploy + runtime
   // fallback all resolve the same files) — see the alias block below.
   const f1EngineDir = path.resolve(__dirname, 'src/engines/stm32f1-emu');
+  const picoEngineDir = engineFromOwner
+    ? picoFolder
+    : path.resolve(__dirname, 'src/engines/pico-emu');
+  const esp32EngineDir = engineFromOwner
+    ? esp32Folder
+    : path.resolve(__dirname, 'src/engines/esp32-emu/dist/sab');
 
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
@@ -150,19 +174,24 @@ export default defineConfig(({ mode }) => {
           find: '@openhw/emulator',
           replacement: resolvedEmulatorPath,
         }] : []),
-        // Pico (folder-first): stock glue + wasm bytes from the owner
-        // folder. The `.wasm?url` regex form is needed so the query
-        // survives aliasing (exact strings don't match with ?url).
-        { find: 'pico-emu/picoemu.wasm.js', replacement: path.join(picoFolder, 'picoemu.wasm.js') },
-        // (Replacement `$1` re-appends the query: @rollup/plugin-alias
-        // uses String.replace semantics, so captures survive.)
-        { find: /^pico-emu\/picoemu\.wasm\.wasm(\?.*)?$/, replacement: path.join(picoFolder, 'picoemu.wasm.wasm') + '$1' },
+        // Pico: repo-committed bytes (src/engines/pico-emu) — the glue and
+        // its wasm are ONE matched pair (md5 c3b784f0 + 0c74dffe, byte-equal
+        // to the owner's `rp2350/Pico-emu/web` build of 2026-10-08).
+        // The `.wasm?url` regex form is needed so the query survives
+        // aliasing (exact strings don't match with ?url); the replacement
+        // `$1` re-appends the query (@rollup/plugin-alias uses
+        // String.replace semantics, so captures survive).
+        { find: 'pico-emu/picoemu.wasm.js', replacement: path.join(picoEngineDir, 'picoemu.wasm.js') },
+        { find: /^pico-emu\/picoemu\.wasm\.wasm(\?.*)?$/, replacement: path.join(picoEngineDir, 'picoemu.wasm.wasm') + '$1' },
         // Board-engine SAB proxy: package exports map only exposes ".",
         // whose root pulls node:crypto (no browser shim). Alias the deep
         // file so `import 'esp32-emu/dist/sab/worker-proxy.js'` resolves in
         // vite dev AND the worker build (file has zero node: imports).
-        // Folder-first: owner `esp32 emu` checkout (dist == 1.2.0 bytes).
-        { find: 'esp32-emu/dist/sab/worker-proxy.js', replacement: path.join(esp32Folder, 'worker-proxy.js') },
+        // Repo-committed bytes (src/engines/esp32-emu/dist/sab) — the same
+        // byte set as the runtime fallback mirror, including the OpenHW
+        // patches: the node:crypto MD5 stub and the inline
+        // CMD_GET_WIFI_STATS service while RUN=1 (the upstream wedge fix).
+        { find: 'esp32-emu/dist/sab/worker-proxy.js', replacement: path.join(esp32EngineDir, 'worker-proxy.js') },
         // STM32F1 — repo-canonical owner engine bytes (src/engines/… is the
         // single resolution point for dev AND deploy).
         //

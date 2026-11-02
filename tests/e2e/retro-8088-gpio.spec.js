@@ -19,6 +19,10 @@ test.describe('Retro 8088 GPIO + RX echo', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
     const setup = await page.evaluate(
       ({ asm }) =>
         window.OpenHWE2E.setupCircuit({
@@ -59,6 +63,10 @@ test.describe('Retro 8088 GPIO + RX echo', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
     const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
       components: [
         { id: 'r88', type: 'openhw-8088', attrs: {}, x: 100, y: 100 },
@@ -90,6 +98,10 @@ test.describe('Retro 8088 GPIO + RX echo', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
     const asm = `ORG 100h\nMOV DX, OFFSET msg\nMOV AH, 09h\nINT 21h\necho:\nIN AL, 51h\nTEST AL, 02h\nJZ echo\nIN AL, 50h\nOUT 50h, AL\nJMP echo\nmsg: DB 'RX88_RDY$'\nEND`;
     const setup = await page.evaluate((code) => window.OpenHWE2E.setupCircuit({
       components: [{ id: 'r88e', type: 'openhw-8088', attrs: {}, x: 100, y: 100 }],

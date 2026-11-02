@@ -1156,8 +1156,32 @@ export class PicoRunner extends ArmRunnerBase {
                 try {
                     const n = self.gpioIndex(pinId);
                     if (n < 0) return;
-                    const setFn = self.mod?._picoemu_set_gpio || self.mod?.set_gpio;
-                    if (typeof setFn === 'function') setFn.call(self.mod, n, high ? 1 : 0);
+                    // ── IN-LATCH injection ────────────────────────────────────
+                    // The guest-visible IN latch is what digitalRead()/
+                    // attachInterrupt() sample; the OUT latch is NOT it.
+                    // `_picoemu_set_gpio` writes the OUT latch only
+                    // (engine gpio.c: gpio_set_pin -> gpio_state.gpio_out),
+                    // so every external level was invisible to the guest
+                    // (stuck-at-HIGH inputs).
+                    //
+                    // Preferred route: the owner's direct export
+                    // `_picoemu_set_gpio_input` (patches/
+                    // pico-in-latch-inject.patch). Only present in engine
+                    // builds newer than the 2026-10-20 snapshot.
+                    const direct = self.mod?._picoemu_set_gpio_input;
+                    if (typeof direct === 'function') {
+                        direct.call(self.mod, n, high ? 1 : 0);
+                        return;
+                    }
+                    // Fallback (2026-10-20 build): the engine's devtools
+                    // script path reaches the same C function —
+                    // `_picoemu_script_load` -> script_init/script_poll ->
+                    // gpio_set_input_pin(pin, value) (engine devtools.c:696).
+                    // Script line format (engine devtools.c sscanf):
+                    //   "<ms>ms: gpio<pin> <level>"   (e.g. "0ms: gpio7 0")
+                    // Events fire on the next 1024-instruction poll, so the
+                    // level lands within a few microseconds of guest time.
+                    self.injectGpioInputLevel(n, high);
                 } catch { /* ignore */ }
             },
             // ADC sampler (GP26/27/28 → ADC0/1/2): volts → raw level pushed
@@ -1279,6 +1303,91 @@ export class PicoRunner extends ArmRunnerBase {
 
 
     private lastGpioOut = 0;
+
+    /** Board-to-board GPIO fan-out (mirrors the ESP32/F1 override).
+     *
+     * The base runner has NO board→board propagation: publishGpio only
+     * fans a driven level out to COMPONENT pins. Without this override a
+     * wire between two pins of the SAME board (the classic
+     * GP12→GP13 loopback an EXTI/ISR cell needs) is electrically dead —
+     * the guest's own output never reaches its input latch, so the ISR
+     * count stays 0 even though the engine's IN-latch injection works.
+     *
+     * Output-vs-output is a short: a target pin the firmware drives as an
+     * output is skipped (the engine's OE mask says so).
+     */
+    protected override publishGpio(pinId: string, isHigh: boolean, analogV?: number): void {
+        try { super.publishGpio(pinId, isHigh, analogV); } catch { /* never break propagation */ }
+        try {
+            const src = this.gpioIndex(pinId);
+            if (src < 0) return;
+            let net: number | undefined;
+            for (const cand of [`${this.boardId}:GP${src}`, `${this.boardId}:GPIO${src}`,
+                `${this.boardId}:${src}`, `${this.boardId}:D${src}`]) {
+                const v = this.pinToNet.get(cand);
+                if (v !== undefined) { net = v; break; }
+            }
+            if (net === undefined) return;
+            for (const [node, netId] of this.pinToNet) {
+                if (netId !== net) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                if (node.slice(0, sep) !== this.boardId) continue;
+                const bPin = node.slice(sep + 1);
+                if (!bPin) continue;
+                const tgt = this.gpioIndex(bPin);
+                if (tgt < 0 || tgt === src) continue;
+                try {
+                    // Firmware drives it → output wins (a short otherwise).
+                    const s = this.engine.sampleGpioOut?.(bPin);
+                    if (s && s.driving) continue;
+                } catch { /* unknown drive: source wins */ }
+                try { this.engine.setGpioInput?.(bPin, !!isHigh); } catch { /* ignore */ }
+            }
+        } catch { /* board fan-out never breaks the tick */ }
+    }
+
+    /** Guest-visible IN-latch levels injected so far (pin index → 0/1).
+     *  Used by the script-path fallback in setGpioInput. */
+    private gpioInLevels = new Map<number, number>();
+
+    /**
+     * Inject a level into the guest-visible IN latch through the engine's
+     * devtools script path (the only exported route to `gpio_set_input_pin`
+     * in the 2026-10-20 engine build; the owner's direct export
+     * `_picoemu_set_gpio_input` is preferred when present).
+     *
+     * Engine side (pico-emu): `_picoemu_script_load` writes the text to
+     * /script.txt and `script_init` parses lines of the form
+     *     "<ms>ms: gpio<pin> <level>"
+     * (devtools.c sscanf "%ums: %31s %255[^\n]"), and `script_poll` fires
+     * each event through `gpio_set_input_pin(pin, value)` — the IN latch
+     * the guest samples, with edge/IRQ detection.
+     *
+     * The whole map is rewritten on every change so several pins keep
+     * their levels (the engine holds one script at a time). Re-injecting
+     * an unchanged level is edge-free (old == new effective level).
+     */
+    private injectGpioInputLevel(pin: number, high: boolean): void {
+        const level = high ? 1 : 0;
+        if (this.gpioInLevels.get(pin) === level) return;
+        this.gpioInLevels.set(pin, level);
+        try {
+            const m = this.mod;
+            const load = m?._picoemu_script_load;
+            if (typeof load !== 'function') return;
+            const lines: string[] = [];
+            for (const [p, lv] of this.gpioInLevels) lines.push(`0ms: gpio${p} ${lv}`);
+            if (!lines.length) return;
+            const bytes = new TextEncoder().encode(`${lines.join('\n')}\n`);
+            const ptr = m._malloc(bytes.length);
+            if (!ptr) return;
+            m.HEAPU8.set(bytes, ptr);
+            load.call(m, ptr, bytes.length);
+            m._free(ptr);
+        } catch { /* ignore */ }
+    }
+
     /** Board pin label → RP2040 GPIO index (GPn, Dn/An aliases, bare n). */
     public gpioIndex(pinId: string): number {
         const raw = String(pinId || '').toUpperCase();

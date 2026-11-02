@@ -17,9 +17,10 @@ networking. The old in-emulator WiFi/IP stack (picow-net, wifi-ap component,
 the frontend Network Worker) is **deleted**. Networking is proven live for
 Pico W, Pico-ETH, Pico 2 W, Pico 2 ETH, ESP32, ESP32-CAM and F407/407VE/429.
 What is *not* proven is broad: many peripheral columns are still NONE, and the
-ESP32-CAM 2-board LAN cell is flaky. Engines are consumed from the owner's
-local folders in dev (vite aliases) while npm-shaped specifiers stay in the
-source, so the future npm flip is a one-file change.
+ESP32-CAM 2-board LAN cell is flaky. Engine bytes are committed in this repo
+(`src/engines/<engine>/`) and aliased from there, so dev, the CI/Docker build
+and the runtime `/vendor` fallback read the same files — the npm-shaped
+specifiers stay in the source, so the future npm flip is a one-file change.
 
 ---
 
@@ -67,13 +68,23 @@ Dev resolves engines from the **owner's local folders** via `resolve.alias` in
 
 | Engine | Dev source (folder) | Notes |
 |---|---|---|
-| pico-emu | `~/Documents/rp2350/Pico-emu/web/` | glue+wasm are a matched pair from one build |
-| esp32-emu | `~/Documents/"esp32 emu"/dist/sab/` | folder `dist/` == npm 1.2.0 bytes |
+| pico-emu | **repo-committed** `src/engines/pico-emu/` (glue c3b784f0 + wasm 0c74dffe, a matched pair, byte-equal to the owner's `rp2350/Pico-emu/web` build of 2026-10-08) | `OPENHW_ENGINE_FROM=owner` points the alias back at the owner's folder |
+| esp32-emu | **repo-committed** `src/engines/esp32-emu/dist/sab/` (worker-proxy 3c5c1866 + worker-entry 4afe24dd — the OpenHW-patched bytes: node:crypto stub, inline `CMD_GET_WIFI_STATS`/`CMD_GET_TWAI_TX` service while RUN=1) | same opt-out as pico |
 | stm32f4-emu | **npm** (`stm32f4-emu@1.6.x`) | the owner folder is mid-rebuild — keep npm until they land |
-| stm32f1-emu | npm + `public/vendor/board-engines/stm32f1-emu/pkg/` mirror | dev/deploy byte alignment being fixed in `lane/net-f1` |
+| stm32f1-emu | **repo-committed** `src/engines/stm32f1-emu/` (+ `public/vendor/board-engines/stm32f1-emu/pkg/` mirror) | dev = deploy = /vendor fallback; the pinned owner bytes are the ones the cells are green on |
 | microbit | `src/wasm/autowiring`-style copy in `public/vendor/board-engines/microbit/` | engine pair mirrored; the runner bundles `src/worker/engines/microbit/` |
 
 **Rules (violating these breaks boards):**
+0. **The engine bytes live in THIS repo** (`src/engines/<engine>/`), not in the
+   owner's folders — the CI/Docker build checks out only this repo, so an
+   alias to an owner folder is a HARD BUILD FAILURE. That is not
+   hypothetical: the owner's `esp32 emu/dist/` was deleted mid-session on
+   2026-10-20 and `npm run build` died with
+   `[vite:worker-import-meta-url] Could not load …/esp32 emu/dist/sab/
+   worker-proxy.js … ENOENT`. Fixed in `lane/engine-bytes` (all three
+   engines now repo-committed; build green, no owner path in `dist/`).
+   `OPENHW_ENGINE_FROM=owner npm run dev` points pico+esp32 back at the
+   owner's live folders for engine work — never in CI.
 1. **glue and .wasm must come from the SAME build.** A mixed pair misbinds
    exports (e.g. `malloc→undefined`, then an OOB trap). Never mix a folder
    glue with an npm wasm or vice versa.
@@ -146,9 +157,17 @@ HTTP via NAT `stm32f4-http-gateway` · IWDG + HASH (FIPS vectors) + pace in
 
 ## 7. What is NOT proven (the honest gap list)
 
-- **ESP32-CAM 2-board LAN** — flaky: server side completes, client stops
-  after `CCLI-BEGUN` (the 2nd ESP32 never comes alive). Prior fixes: CMD-flood
-  gate + RUN re-post (`9a0a7968`), per-board MAC attr (`01e24802`).
+- **ESP32-CAM 2-board LAN** — flaky: measured 2 of 3 runs green on
+  2026-10-20 with the committed SAB bytes (the failure signatures are BOTH
+  "the 2nd board never comes alive": the client stops after `CCLI-BEGUN`, or
+  the server never joins at all). Root cause measured in `lane/esp32-cov`:
+  the SAB proxy busy-spins per CMD and the engine only services a fixed
+  allow-list inline while `RUN=1`, so a CMD the runner polls (the wedge is
+  fixed for `CMD_GET_WIFI_STATS`/`CMD_GET_TWAI_TX` in the committed bytes)
+  wedges that board's host-side UART drain. Tooling kept:
+  `tests/e2e/esp32-cam-lan-diag.spec.js`, `patches/esp32-cov-diag-probe.patch`.
+  Prior fixes: CMD-flood gate + RUN re-post (`9a0a7968`), per-board MAC attr
+  (`01e24802`).
 - **W6300 boards** (pico-w6300 / pico-w6300-2) — runner path + DORA proof in
   flight (`lane/net-6300`); no W6300 board shells exist yet.
 - **W5500 INTn/GPIO21 interrupt path** — the ETH cells are polled; the
@@ -168,8 +187,9 @@ HTTP via NAT `stm32f4-http-gateway` · IWDG + HASH (FIPS vectors) + pace in
   esp32 `scanNetworks()` hang; pico `softAPConfig` ignored / `live=0` DHCP
   stall / W5500 explicit-MAC breaking peer ARP / busy-spin starving the lwIP
   pump; esp32 `CMD_GET_WIFI_STATS` (already on engine `wifi-fix@a0684ef`).
-- F1: dev resolves npm while deploy serves the owner's 19:31 bytes
-  (`d1e69c28`) — alignment in flight (`lane/net-f1`).
+- F1: dev = deploy = /vendor fallback — **RESOLVED 2026-10-20** (`ca8ced3d`,
+  bytes pinned in `src/engines/stm32f1-emu`); the DHT22 RED was the stale npm
+  engine build, green on the pinned bytes.
 
 ---
 
@@ -233,12 +253,205 @@ npm run build
 npm run check:autowiring-pins && npm run check:autowiring-wasm
 # one e2e cell (from your lane)
 npx playwright test --config=playwright.agent.config.js tests/e2e/<file>.spec.js --workers=1
+# dev against the engine owner's LIVE folders (engine work only; never in CI)
+OPENHW_ENGINE_FROM=owner npm run dev
 # gateway rebuild
 cd openhw-unified-gateway && go build -o openhw-gw . && go test ./...
 ```
 
 **Never `pkill -f <pattern>` that matches your own shell command** (it kills
 the tool call). Kill by PID (`pgrep -x <name>`) instead.
+
+---
+
+## 11. Decision log — engine sourcing (READ THIS BEFORE TOUCHING vite.config.js)
+
+There are three decisions in the tree about *where* engine bytes come from.
+They were made on different days and they do not agree; here is the truth.
+
+| when | decision | where | still true? |
+|---|---|---|---|
+| 2026-10-06 | "Runners consume the engine folders **directly**; no copying engine code into this tree, no vendored snapshots to go stale. Flipping to npm later is a root swap in `importEngine` + the `resolve.alias` entries." | `AGENTS.md` (workspace root) | **partly superseded** — see below |
+| 2026-10-20 (earlier) | STM32F1 engine bytes **committed** in `src/engines/stm32f1-emu/` and aliased from there | `matrix.md` infra notes, `src/engines/stm32f1-emu/README.md` | yes |
+| 2026-10-20 (this lane) | Pico + ESP32 bytes committed the same way (`src/engines/pico-emu/`, `src/engines/esp32-emu/dist/sab/`) | `src/engines/*/README.md`, `vite.config.js` | yes |
+
+**Why the folder rule had to bend:** the container build checks out only
+this repo + `openhw-studio-emulator`. An alias to an owner folder is a hard
+build failure there ("Could not load …"), and it is not hypothetical: the
+owner's `esp32 emu/dist/` was deleted mid-session on 2026-10-20 and
+`npm run build` died with ENOENT. A folder alias also bakes an absolute
+owner path into the built wasm asset, so the deployed Pico would 404 on its
+engine.
+
+**What did NOT change:** the npm endgame. The runners still import the exact
+npm-shaped specifiers (`pico-emu/picoemu.wasm.js`,
+`esp32-emu/dist/sab/worker-proxy.js`, `stm32f1-emu/...`), everything still
+funnels through `importEngine` + the `resolve.alias` block, and publishing
+the engines to npm is still a one-file flip in `vite.config.js`.
+
+**How the "moving target" is handled now:** the owner folders are live and
+rebuilt constantly, so the repo snapshot is a *deliberate, refreshable*
+artifact, not a live link:
+- `OPENHW_ENGINE_FROM=owner npm run dev` → dev against the owner's live
+  folders (engine work; never in CI).
+- `npm run check:engine-bytes` → compares the pinned bytes with the owner
+  folders and flags SAME / DIFFERENT / **MISMATCHED PAIR** / NOT BUILT.
+  The STM32F1 folder is a MISMATCHED PAIR today (new wasm `641abe52` + old
+  glue `43c24f16`) — refreshing from it right now would break the F1 boards.
+- Refresh only from a stable owner build, keep glue+wasm from ONE build,
+  re-run that engine's cells, then commit the new snapshot.
+
+**Open point for the user:** whether "dev reads the live folder" should be
+the default again once the engines are published to npm (then the npm
+package IS the artifact and the question disappears).
+
+---
+
+## 12. Lane roster (2026-10-20, five parallel lanes)
+
+| lane | worktree | branch | dev port | gateway room | owns |
+|---|---|---|---|---|---|
+| engine-bytes | `sim-engine-bytes` | `lane/engine-bytes` | 5186 | — | the build fix + the engine byte pinning (this file's §11) |
+| f1-cov2 | `sim-f1-cov2` | `lane/f1-cov2` | 5174 | `netf1cov2` | the six STM32F1 board rows + the F1 system/crypto row |
+| f4-cov2 | `sim-f4-cov2` | `lane/f4-cov2` | 5175 | `netf4cov2` | the five STM32F4 board rows + the F4 system/crypto row |
+| esp32-cov2 | `sim-esp32-cov2` | `lane/esp32-cov2` | 5176 | `netcamcov2` | the two ESP32 rows + the ESP32 system/crypto row + the flaky CAM LAN cell |
+| pico-cov2 | `sim-pico-cov2` | `lane/pico-cov2` | 5177 | `netpicocov2` | the three Pico rows + the Pico system/crypto row + the engine patch files |
+| matrix-complete | `sim-matrix-complete` | `lane/matrix-complete` | 5178 | — | the global matrix sweep, the connectivity table, the byte-status table, `scripts/check-engine-bytes.mjs` |
+
+Every lane has its own vite `cacheDir` — the default `node_modules/.vite` is
+shared with :5173 and a foreign re-optimize reloads the page and kills the
+cell. Every lane must use its own `NETWORK_ROOM_CODE`.
+
+### The cell slot lock (added 2026-10-20 after two app crashes)
+
+Four lanes running browsers at once saturated the box (load average 16 on 16
+cores) and took the app down twice — every agent session died, though the
+worktrees survived. So every cell run now takes a shared slot:
+
+```bash
+flock -w 1800 /tmp/e2e-slot.lock -c \
+  "npx playwright test --config=playwright.agent.config.js tests/e2e/<spec>.spec.js --workers=1 --reporter=line"
+```
+
+Only ONE lane runs a browser at a time; the others block (that is the point,
+not a hang) and use the wait to edit docs, matrix rows and patch files. The
+lock file is `/tmp/e2e-slot.lock` — recreate it if the box reboots
+(`touch /tmp/e2e-slot.lock`).
+
+**The second lock (added after the third crash).** `npm run build` and
+`npx vitest run` are the memory hogs (a build peaks around 2 GiB), and two of
+them at once is what tips the app over. They take their own slot:
+
+```bash
+flock -w 1800 /tmp/gate-slot.lock -c "npm run build"
+flock -w 1800 /tmp/gate-slot.lock -c "npx vitest run"
+```
+
+### Two distinct death modes (both hit this box on 2026-10-21/22)
+
+**(a) The renderer is OOM-killed** — the app closes with a "device memory
+full" error and the user must reopen it. Chromium's renderer needs ~1 GiB on
+its own; with **two Android emulator instances** (`qemu-system-x86_64`, 4.9
+GiB + 2.0 GiB) the box had **1.3 GiB free of 15.5 GiB** and the renderer was
+the biggest thing it could kill. Check with `free -m` + `pgrep -af
+qemu-system` before blaming the lanes. Killed orphans also accumulate after
+each crash (a Playwright chromium ~675 MB, lane vite servers) — reap them by
+PID.
+
+**(b) The health monitor restarts the service** (see below) — the service
+dies with no error line and every agent session dies with it.
+
+The app's own knobs for (b) are env vars, set before launching the app:
+
+```bash
+export OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS=30000
+export OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES=200
+```
+
+---
+
+The app does NOT crash — the **opencode service dies**, and every agent
+session is a child of it, so all of them die with it. The service is killed
+by OpenChamber's own health monitor (from the app bundle):
+
+| knob | default | meaning |
+|---|---|---|
+| `HEALTH_CHECK_INTERVAL` | 15000 ms | how often it probes the service |
+| `OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS` | 5000 ms | how long `/api/info` may take |
+| `HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES` | 20 | failures before the service is restarted |
+
+So: if `/api/info` cannot answer within **5 s** for **20 consecutive checks
+(~5 min)**, the app restarts the service → `killProcessOnPort` → every agent
+session dies at once. That matches the observed 5–14 min spacing between
+crashes, and the service log ends with **no error line** (it is killed, it
+does not crash).
+
+Why `/api/info` stalls: the service's event loop is saturated. Measured on
+the box: the service opened **3,201 file watchers over 93 paths** (your whole
+home tree — every engine repo, `.git/HEAD` of each) and the snapshot
+machinery recorded every file change into **543 MB across 31 snapshot repos**
+(its git executor was already throwing `fatal: not a git repository` and
+`tratto: is a directory`). With four lanes editing files plus the engine
+owners rebuilding their repos, the watcher/snapshot churn starves the event
+loop.
+
+**Applied fix** in `~/.config/opencode/opencode.jsonc` (both keys are in the
+official schema):
+
+```jsonc
+"snapshots": false,          // stop the git-snapshot machinery
+"watcher": { "ignore": [ …the churning engine folders… ] }
+```
+
+Measured effect: watcher subscriptions **3,201 → 170** for the new service
+run. Trade-off: the app's "revert file changes" button stops working (git
+still gives you undo).
+
+**If it still stalls**, raise the app's tolerance (env vars, set before
+launching the app):
+
+```bash
+export OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS=30000
+export OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES=200
+```
+
+The other contributor is memory pressure: an Android emulator + Gradle take
+6.7 GiB of the 15 GiB box, which makes the stalls (and any OOM kill) more
+likely.
+
+---
+
+`wlp108s0` has only a link-local IPv6 address (`fe80::/64`) and there is NO
+global IPv6 route, but DNS hands out AAAA records for the API host. Node's
+default resolver order is "verbatim", so it tries the IPv6 address first and
+the call fails — that is what killed all four agents at once with
+`getaddrinfo ENOTFOUND opencode.ai`. Fix it once, with root:
+
+```bash
+sudo sh -c 'echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf'   # prefer IPv4
+# or: sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+# or: start the app with NODE_OPTIONS=--dns-result-order=ipv4first
+```
+
+**Crash recovery, for the next agent:** the app crash kills the agent
+sessions but NOT the worktrees. The uncommitted work is still on disk —
+read it, continue from it, do not restart from scratch. And the stack comes
+back with:
+
+```bash
+podman start mongodb                     # the container's storage can break on an
+                                        # unclean shutdown: re-pull the image and
+                                        # `podman run -d --name mongodb -p 27017:27017
+                                        #  -v mongodb_data:/data/db mongo:latest`
+cd openhw-studio-backend && (setsid nohup npm start > /tmp/backend.log 2>&1 &)
+cd OpenHW-studio-frontend && (setsid nohup npm run dev -- --port 5173 --host 127.0.0.1 > /tmp/vite-dev.log 2>&1 &)
+cd openhw-unified-gateway && (setsid nohup ./openhw-gw > /tmp/gateway.log 2>&1 &)
+node /tmp/host-http-8092.mjs &           # /tmp is wiped on reboot — recreate it
+```
+
+Health: backend :5000 → 200, vite :5173 → 200, gateway :5030 → 404 (alive),
+host :8092 → "hello-openhw". The backend must be started AFTER Mongo is up
+(it gives up on the first connection attempt).
 
 ---
 

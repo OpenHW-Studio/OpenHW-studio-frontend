@@ -15,6 +15,7 @@ import { test, expect } from '@playwright/test';
 const TYPES = [
   { tag: 'F429', type: 'openhw-stm32f429', id: 'f42' },
   { tag: 'F407', type: 'openhw-stm32f4', id: 'f41' },
+  { tag: 'V407', type: 'openhw-stm32f407ve', id: 'f47e' },
 ];
 
 const CODE = '#define RCC_AHB3ENR (*(volatile uint32_t*)0x40023838UL)\n#define FSMC_BCR1 (*(volatile uint32_t*)0xA0000000UL)\n#define FSMC_BTR1 (*(volatile uint32_t*)0xA0000004UL)\n#define LCD_CMD (*(volatile unsigned short*)0x60000000UL)\n#define LCD_DATA (*(volatile unsigned short*)(0x60000000UL + (1UL<<17)))\n#define BANK4_CELL (*(volatile unsigned short*)0x90000000UL)\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println("FSMC_READY");\n  RCC_AHB3ENR |= 1UL;\n  FSMC_BCR1 = (1UL<<0)|(1UL<<4)|(1UL<<12);\n  FSMC_BTR1 = 0x1053UL;\n}\nvoid loop() {\n  LCD_CMD = 0x2A; LCD_DATA = 0x0000; LCD_DATA = 0x00EF;\n  LCD_CMD = 0x2C;\n  for (int i = 0; i < 64; i++) LCD_DATA = (unsigned short)(0xF800 + i);\n  LCD_CMD = 0x04;\n  delay(50);\n  unsigned short id = LCD_DATA;\n  Serial.print("FSMC_ID:"); Serial.println(id, HEX);\n  if (id == 0x9341) Serial.println("FSMC read OK");\n  BANK4_CELL = 0xDEAD;\n  if (BANK4_CELL == 0) Serial.println("FSMC_BANK4_OK");\n  delay(2000);\n}\n';
@@ -32,7 +33,11 @@ test.describe('F4 FSMC (8080 burst to sink)', () => {
   for (const { tag, type, id } of TYPES) {
     test(`pixel burst lands on the sink, RDDID answers, bank4 inert (${type})`, async ({ page }) => {
       await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(8000);
+      // Harness gate: the plain waitForTimeout(8000) variant loses the race
+      // on a loaded box and dies with "Cannot read properties of undefined
+      // (reading 'setupCircuit')" (seen on the f407ve cell 2026-10-20).
+      await page.waitForFunction(() => !!window.OpenHWE2E, null, { timeout: 90000 });
+      await page.waitForTimeout(2000);
       const setup = await page.evaluate(({ t, i, code }) => window.OpenHWE2E.setupCircuit({
         components: [
           { id: i, type: t, attrs: {}, x: 100, y: 100 },

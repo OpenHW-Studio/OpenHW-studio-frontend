@@ -1,0 +1,168 @@
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 2600428..b48e3a0 100755
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -62,7 +62,7 @@ EXPORTS='[
+   "_picoemu_set_cores","_picoemu_get_cores","_picoemu_set_quantum",
+   "_picoemu_set_jit","_picoemu_set_debug","_picoemu_set_semihosting",
+   "_picoemu_flash_save","_picoemu_flash_load","_picoemu_flash_write",
+-  "_picoemu_sdcard_load","_picoemu_emmc_load",
++  "_picoemu_sdcard_load","_picoemu_sdcard_cs_pin","_picoemu_emmc_load",
+   "_picoemu_net_enable","_picoemu_net_enable6300","_picoemu_sdd_add",  "_picoemu_eth_push_rx",
+   "_picoemu_jsmirror_pending","_picoemu_jsmirror_drops","_picoemu_jsmirror_pop",
+   "_picoemu_spimirror_pending","_picoemu_spimirror_drops","_picoemu_spimirror_pop",
+diff --git a/include/gpio.h b/include/gpio.h
+index 8ade020..3800d4a 100644
+--- a/include/gpio.h
++++ b/include/gpio.h
+@@ -120,6 +120,13 @@ void gpio_unmark_driven(uint8_t pin);
+  * without edge/IRQ side effects. Skips emulator-driven board lines so
+  * a slave can never fight W5500 INTn / CYW43 HOST_WAKE. */
+ void gpio_inject_level(uint8_t pin, uint8_t value);
++/* SPI CS watch: mirror the pad level of one GPIO line into the attached
++ * SPI device's CS callback (spi_device_cs). The ARM path never reported
++ * CS assert/deassert (only the RV32 path did), so the SD model stayed at
++ * cs_active=0 and sdcard_spi_xfer() answered 0xFF forever.
++ * pin: GPIO index (0..47) or -1 to disable. spi_num: 0/1.
++ * CS is active-low: pad LOW == CS asserted. */
++void gpio_set_cs_watch(int pin, int spi_num);
+ 
+ /* External state */
+ extern gpio_state_t gpio_state;
+diff --git a/src/gpio.c b/src/gpio.c
+index f8b91f9..0071f04 100644
+--- a/src/gpio.c
++++ b/src/gpio.c
+@@ -356,6 +356,10 @@ uint32_t gpio_read32(uint32_t addr) {
+ }
+ 
+ /* Write to GPIO register space */
++/* Forward: the SPI CS watch is published from the SIO write path
++ * (gpio_write32) — see the definition further down. */
++static void gpio_cs_watch_publish(void);
++
+ void gpio_write32(uint32_t addr, uint32_t val) {
+     /* SIO GPIO registers (fast access with atomic operations) */
+     if (addr >= SIO_BASE_GPIO && addr < SIO_BASE_GPIO + 0x100) {
+@@ -511,6 +515,9 @@ void gpio_write32(uint32_t addr, uint32_t val) {
+             w6300_board_gpio_write(16, (eff >> 16) & 1u);
+             w6300_board_gpio_write(22, (eff >> 22) & 1u);
+         }
++        /* SPI CS watch (SD/eMMC): mirror the CS pad level into the SPI
++         * device so the attached model sees assert/deassert. */
++        gpio_cs_watch_publish();
+         return;
+     }
+ 
+@@ -671,6 +678,53 @@ void gpio_write32(uint32_t addr, uint32_t val) {
+     }
+ }
+ 
++/* ---- SPI CS watch -------------------------------------------------------
++ * The ARM path (M0+/M33) never told the attached SPI device about CS
++ * assert/deassert: spi_device_cs() was only called from the RV32 path
++ * (src/rp2350_rv/rv_membus.c). The SD model gates every byte on
++ * `sd->cs_active` (src/sdcard.c:379), so an ARM guest talking to an SD
++ * card got 0xFF for every response while the MOSI bytes went out
++ * normally (measured on 2026-10-20: 60 MOSI bytes, 0 CS events,
++ * R0/R7/R1/OCR = 0xFF).
++ *
++ * The host tells the engine which GPIO line carries CS; this watch
++ * mirrors the pad level into spi_device_cs(). CS is active-low on every
++ * SD/QSPI shield, so pad LOW == CS asserted. The watch is edge-free:
++ * only a real level change reaches the device. */
++static int gpio_cs_watch_pin = -1;
++static int gpio_cs_watch_spi = 0;
++static int gpio_cs_watch_active = -1;
++
++void gpio_set_cs_watch(int pin, int spi_num) {
++    gpio_cs_watch_pin = (pin >= 0 && pin < NUM_GPIO_PINS) ? pin : -1;
++    gpio_cs_watch_spi = (spi_num >= 0 && spi_num <= 1) ? spi_num : 0;
++    gpio_cs_watch_active = -1;
++}
++
++/* Publish the CS pad level to the SPI device. */
++static void gpio_cs_watch_publish(void) {
++    if (gpio_cs_watch_pin < 0) return;
++    extern void spi_device_cs(int spi_num, int cs_active);
++    uint32_t pin = (uint32_t)gpio_cs_watch_pin;
++    int cs;
++    if (pin < 32) {
++        uint32_t eff = gpio_effective_pins();
++        cs = (int)((eff >> pin) & 1u);
++    } else {
++        /* High bank (RP2350 pins 32..47): gpio_effective_pins() only
++         * covers the low 32 pins, so the level is computed from the
++         * high latches directly (same formula as the low bank). */
++        uint32_t b = pin - 32u;
++        uint32_t eff_hi = (gpio_state.gpio_out_hi & gpio_state.gpio_oe_hi) |
++                          (gpio_state.gpio_in_hi & ~gpio_state.gpio_oe_hi);
++        cs = (int)((eff_hi >> b) & 1u);
++    }
++    int active = cs ? 0 : 1;   /* CS is active-low */
++    if (active == gpio_cs_watch_active) return;
++    gpio_cs_watch_active = active;
++    spi_device_cs(gpio_cs_watch_spi, active);
++}
++
+ /* Helper functions for GPIO pin operations */
+ 
+ void gpio_set_pin(uint8_t pin, uint8_t value) {
+@@ -696,6 +750,7 @@ void gpio_set_pin(uint8_t pin, uint8_t value) {
+             w6300_board_gpio_write(16, (eff >> 16) & 1u);
+             w6300_board_gpio_write(22, (eff >> 22) & 1u);
+         }
++        gpio_cs_watch_publish();
+     } else {
+         uint32_t b = (uint32_t)pin - 32u;
+         uint32_t mask = 1u << b;
+@@ -796,6 +851,7 @@ void gpio_set_direction(uint8_t pin, uint8_t output) {
+         } else {
+             gpio_state.gpio_oe &= ~mask;
+         }
++        gpio_cs_watch_publish();
+     } else {
+         uint32_t mask = 1u << ((uint32_t)pin - 32u);
+         if (output) {
+diff --git a/src/picoemu_wasm.c b/src/picoemu_wasm.c
+index bdca8fe..4248a9b 100644
+--- a/src/picoemu_wasm.c
++++ b/src/picoemu_wasm.c
+@@ -75,6 +75,7 @@ static int current_arch = 1;
+ /* WASM device instances (defined early for picoemu_step polling) */
+ static sdcard_t wasm_sdcard;
+ static int wasm_sdcard_on = 0;
++static int wasm_sdcard_spi_num = 0;
+ static emmc_t wasm_emmc;
+ static int wasm_emmc_on = 0;
+ static w5500_t wasm_w5500;
+@@ -781,6 +782,21 @@ int picoemu_flash_write(const uint8_t *data, int len, int offset) {
+ }
+ 
+ /* SD/eMMC images from JS buffers -> MEMFS -> native init + SPI attach */
++/* Tell the engine which GPIO line carries the SD card's CS (active low).
++ * The ARM path never reported CS assert/deassert to the SPI device
++ * (spi_device_cs is only called from the RV32 path), so the SD model
++ * stayed at cs_active=0 and answered 0xFF for every byte.
++ * pin: GPIO index 0..47, or -1 to disable the watch.
++ *
++ * The watch is a property of the SPI BUS, not of the card, so it is
++ * armed even when no card is attached (the return value only says
++ * whether a card is present: 0 = card attached, 1 = watch armed with
++ * no card). That keeps the CS edge observable for any SPI device
++ * (an SPI tap, a shield with its own model), not just the SD card. */
++int picoemu_sdcard_cs_pin(int pin) {
++    gpio_set_cs_watch(pin, wasm_sdcard_spi_num);
++    return wasm_sdcard_on ? 0 : 1;
++}
+ int picoemu_sdcard_load(const uint8_t *data, int len, int spi_num) {
+     if (!data || len <= 0) return -1;
+     FILE *f = fopen("/sdcard.img", "wb");
+@@ -792,6 +808,7 @@ int picoemu_sdcard_load(const uint8_t *data, int len, int spi_num) {
+     if (mb < 1) mb = 1;
+     if (sdcard_init(&wasm_sdcard, "/sdcard.img", mb * 1024 * 1024) < 0) return -1;
+     spi_attach_device(spi_num, sdcard_spi_xfer, sdcard_spi_cs, &wasm_sdcard);
++    wasm_sdcard_spi_num = spi_num;
+     wasm_sdcard_on = 1;
+     return 0;
+ }

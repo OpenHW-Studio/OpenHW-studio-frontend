@@ -20,6 +20,10 @@ test.describe('Retro 8051 Timer0 IRQ', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
+    // The harness installs window.OpenHWE2E asynchronously; a fixed wait
+    // races on a loaded host ("Cannot read properties of undefined
+    // (reading 'setupCircuit')"). Wait for it explicitly.
+    await page.waitForFunction(() => window.OpenHWE2E, null, { timeout: 90000 });
     const lines = [
       'ORG 0',
       'LJMP main',
