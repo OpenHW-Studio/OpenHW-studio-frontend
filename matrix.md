@@ -340,7 +340,7 @@ until the engine lands — do not weaken them to HIGH-only.
 
 | Board | UART | I2C | SPI | ADC | PWM/LEDC | DAC | DMA | GPIO-in | 1-Wire | DHT-RMT | TWAI | I2S | Camera | MicroPython | WiFi/ETH | SD-SPI | Display-ext | Touch |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | PARTIAL (SSD1306+MAX7219 proven; ILI9341/ePaper/N5110 not) | NONE |
+| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | FULL (SSD1306 I2C, ILI9341 SPI, ePaper full frame, N5110 fill, LCD1602 I2C, MAX7219 VSPI) | NONE |
 | openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP + 2-board LAN + HTTP/NAT 2026-10-20; LAN cell FLAKY: 2nd ESP32 board sometimes never joins — client serial stops after CCLI-BEGUN while the server side completes) | NONE | NONE | NONE |
 
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
@@ -352,7 +352,8 @@ esp32-touch, esp32-cam-adc, esp32-gpio-in, esp32-nvs, esp32-interrupts
 esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
 esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc,
 esp32-cam-wifi-gateway, esp32-cam-lan, esp32-cam-http-gateway,
-esp32-displays (7-segment + TM1637, mid-run model sampling).
+esp32-displays (7-segment + TM1637, mid-run model sampling),
+esp32-displays-ext (LCD1602 I2C + MAX7219 VSPI, mid-run model sampling).
 
 ### Attached components on the DevKit shell (measured 2026-11-02)
 
@@ -372,6 +373,10 @@ model's own state alone):
 | DC motor | `motor:1 → GPIO26`, `GND → motor:2` | FULL | live `speed` 0.49 while the pin is HIGH (test: `esp32-actuators`) |
 | Buzzer (passive) | `SIG → GPIO25`, `ledcAttach(25,1000,10)` + `ledcWrite(25,512)` | FULL | live `isBuzzing: true`, `frequency: 1000 Hz` (test: `esp32-actuators`) |
 | Servo (RC PWM) | `PWM → GPIO13`, `ledcAttach(13,50,16)` | FULL (angle) / PARTIAL (width source) | 1500 µs → **92.7°**, 2000 µs → **141.2°** (exact for the 544–2400 µs band); the pulse width is recovered by disambiguating 50–400 Hz duty counts, so a firmware whose duty count fits two resolutions is ignored instead of guessed (`pwmWidthExact`) |
+| LCD1602 (I2C PCF8574 0x27) | `SDA → GPIO21`, `SCL → GPIO22`, raw Wire HD44780 init | FULL | live `textContent` = `Hi1602`, `lineCount` 2, backlight true on every sample (test: `esp32-displays-ext`) |
+| MAX7219 8-digit (SPI) | `DIN → GPIO23`, `CLK → GPIO18`, `CS → GPIO5` | FULL | live `matrix[0]` = 0x7E, `matrix[1]` = 0x30, `shutdown` false on every sample (test: `esp32-displays-ext`) |
+| ePaper 2.9" (SPI) | `CS 5 / DC 21 / RST 22 / DIN 23 / CLK 18` | FULL | `ramPointer` 4736 = full 296×128 frame, `powerStatus` On (test: `esp32-epaper`) |
+| Nokia 5110 (PCD8544, SPI) | `SCE 5 / RST 21 / DC 22 / DIN 23 / CLK 18` | FULL | `fillPercent` 100 after the firmware fill (test: `esp32-n5110`) |
 | 7-segment digit (direct drive) | `A..G → GPIO12..18`, `COM.1 → GND` | FULL | live `digitSegments[0]` = A..G **true**, DP false, steady across the run (test: `esp32-displays`) |
 | TM1637 4-digit (bit-banged CLK/DIO) | `CLK → GPIO22`, `DIO → GPIO23`, `3V3/GND` | FULL | live `digits` = `[0x3F,0x06,0x5B,0x4F]` ('0','1','2','3') — exact after `0x40`/`0xC0`/`0x8F`, on every sample (test: `esp32-displays`) |
 | NeoPixel matrix/ring (WS2812) | `DIN → GPIO4`, `Adafruit_NeoPixel(8,4,NEO_GRB+NEO_KHZ800)` | **PARTIAL (engine)** | model `pixels` stays `[]`: Adafruit transmits over RMT and the engine ends a TX after **one symbol** — the tap returns `words=1` per `show()` (237 shows → 237 words). Runner side is ready (`rmt-neopixel.ts`, 8 unit tests; flat-word tap shape normalized) — needs owner ask P3 |

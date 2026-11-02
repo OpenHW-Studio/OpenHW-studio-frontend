@@ -46,6 +46,7 @@ import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-511
 import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic';
 import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { Lcd1602I2CLogic } from '@openhw/emulator/src/components/openhw-lcd1602-i2c/logic';
 import { Lcd2004ParallelLogic } from '@openhw/emulator/src/components/openhw-lcd2004/logic';
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
@@ -158,8 +159,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-lcd1602': Lcd1602Logic,
     'wokwi-lcd2004': Lcd2004ParallelLogic,
     'openhw-lcd2004': Lcd2004ParallelLogic,
-    'wokwi-lcd1602-i2c': Lcd2004I2CLogic,
-    'openhw-lcd1602-i2c': Lcd2004I2CLogic,
+    // A 16x2 part must not be simulated by the 20x4 controller: the DDRAM
+    // row map and the reported line/char counts both differ (2004 rows sit
+    // at 0x00/0x40/0x14/0x54, 1602 at 0x00/0x40 with 16 columns), so a
+    // sketch that writes line 2 at 0x40 wraps at the wrong column.
+    'wokwi-lcd1602-i2c': Lcd1602I2CLogic,
+    'openhw-lcd1602-i2c': Lcd1602I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
     'openhw-ssd1306-oled': SSD1306Logic,
     max30102: MAX30102Logic,
