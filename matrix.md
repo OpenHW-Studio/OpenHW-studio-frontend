@@ -353,6 +353,34 @@ esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
 esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc,
 esp32-cam-wifi-gateway, esp32-cam-lan, esp32-cam-http-gateway.
 
+### Attached components on the DevKit shell (measured 2026-11-02)
+
+Signal-in / signal-out to the component models, each with its own probe
+circuit and a guest-side needle (no cell claims a component green from the
+model's own state alone):
+
+| Component | Circuit | Verdict | Needle (what the guest read) |
+|---|---|---|---|
+| LED, digitalWrite(GPIO2) | `esp1:GPIO2 → led:A`, `GND → led:C` | FULL | `vHistory` 3.3 V ×20, `pins.A=true`, 1.80 V drop / 8.18 mA, canvas lit; 162 publishes (80 H / 82 L) for a 300 ms blink |
+| LED, LEDC duty 192 (GPIO16) | `esp32-pwm` | FULL | guest `ESPPWM_G:` = 192, model status `dim`, `glow=true` |
+| OLED SSD1306 (I2C) | `esp32-user-oled` / `-debug` | FULL | `USER_OLED_READY`, vramFill 4.1 %, power On |
+| TFT ILI9341 (SPI) | `esp32-ili9341` | FULL | writeCount 2400, vramFill 3.1 %, 240×320 |
+| DHT22 (RMT) | `esp32-dht22` | FULL | 27.3 °C / 61.2 % |
+| PIR motion (`wokwi-pir-motion-sensor`) | `pir:OUT → GPIO27`, `attrs.motion` true/false | FULL | `digitalRead(27)` = 1 with motion, 0 without |
+| Photoresistor (analog) | `ldr:2 → GPIO34`, `attrs.lux` | FULL (ADC side) | lux 500 → `analogRead(34)` 3033; lux 200 → 1214 (tracks the model's 5 V ÷ 1023 mapping) |
+| HC-SR04 ultrasonic | `TRIG → GPIO5`, `ECHO → GPIO18`, `attrs.distance=25` | **PARTIAL** | `pulseIn(18, HIGH)` 0 µs before the fix, 245 µs after → 4.2 cm; with a measured steps/µs calibration 3097 / 2188 µs (53 / 38 cm) — the ratio drifts with guest workload, so no stable distance |
+
+HC-SR04 is the one engine-limited component: `esp32-emu`
+`pollGpioChanges()` returns `[{pin, level}]` **without timestamps**, so both
+edges of a 10–12 µs TRIG pulse carry the same poll stamp (width 0 µs) and
+the ECHO window can only be scaled by a guessed steps/µs ratio. Fixed what
+the frontend owns (`openhw-studio-emulator` `4119e2d`: accept a 0-width
+trigger as "width unknown", scale the echo through the
+`_boardCyclesPerUs` service instead of hard-coded AVR 16). Accurate
+pulse-width components on ESP32 (HC-SR04, IR decode, servo input) stay
+PARTIAL until the engine exposes a per-edge timestamp/cycle counter —
+owner ask.
+
 ## micro:bit v2 / Retro (survey-verified 2026-10-09; re-swept 2026-10-20)
 
 **Engine bytes (micro:bit):** repo-pinned `public/vendor/board-engines/microbit/` + `src/worker/engines/microbit/` + `public/wasm/nrf52833_periph_wasm_bg.wasm` — glue `112f7ab3` + wasm `d5a0e574`, **ONE** pair, byte-equal to the owner's `microbit-v2/demo/pkg` freeze (owner commit `4a46800`). Owner folder verdict 2026-10-20: **SAME**. Refresh recipe: `public/vendor/board-engines/microbit/README.md`.
