@@ -208,6 +208,56 @@ One line in the WASM facade (`native_ledc_get_res` over the timer config is
 enough). Then `esp32-runner.ledcDutyRatio()` returns the exact ratio for
 every PWM consumer and the band heuristic can be deleted.
 
+## Owner ask — RMT TX actually transmits, and tap returns the frame (P3, measured 2026-11-02)
+
+NeoPixel (WS2812) is dead on the classic ESP32 because the RMT model never
+emits more than one symbol per TX, and the TX capture then reports a word
+that was never written by the guest.
+
+Measured with `Adafruit_NeoPixel(8, 4, NEO_GRB+NEO_KHZ800)` (core 2.x
+legacy RMT driver, `rmt_config` clk_div 2 → 40 MHz, `rmtWrite` of 192
+items):
+
+* every `show()` yields exactly **one** word from `pollRmtTx(0)` (237 shows
+  → 237 words over one run), so no frame ever reaches the host;
+* a hand-built 6-item burst (`d0 = 100+i*10, l0 = 1, d1 = 50, l1 = 0`)
+  returns `words=6`, but the first captured word is `0x00050180`
+  (`d0=384, l0=0, d1=5, l1=0`) while the guest wrote `0x00328064`
+  (`d0=100, l0=1, d1=50, l1=0`) at the channel's RAM start — the capture
+  (and the TX stream) read a different RAM offset than the guest wrote;
+* `SimulatorWorker.readMemory(0x3FF56800, 96)` returns an empty array, so
+  the host cannot recover the frame from RMT MEM either.
+
+Two concrete defects in `engine-wasm/src/peripherals/common/rmt_rng_math.rs`:
+
+1. `write_conf0()` reads MEM_SIZE with the **v2/S3 CH0CONF0 layout**
+   (`(cpu_val >> 24) & 15`). On the classic ESP32 (v1) the field is
+   `CONF0[11:8]`, so `mem_size` becomes 0 and `transmit_next()` calls
+   `transmit_done()` after the first symbol (`tx_offset=2`, captured
+   `nwords = tx_offset/4 + 1 = 1`). That is the one-word-per-show result.
+2. `transmit_done()` captures from `mem_start` but the driver writes its
+   items through the APB data window (`RMT_CHnDATA`, `+0x400 + ch*4`); the
+   two do not agree for channel ≠ 0 (and for ch 0 in the burst test above).
+
+**Ask:**
+
+* MEM_SIZE for the classic (v1) register layout = `CONF0[11:8]`, with the
+  v2 layout kept for v2 chips (the `self.config.v2` split already exists);
+* capture exactly the words the guest wrote for this TX (same base the
+  driver used), i.e. `nwords = tx_offset/4 + 1` from that base;
+* lift the **65-word cap** (`core::cmp::min(..., 65)`): a 2-pixel frame is
+  49 words, a 3-pixel frame is 73 — anything beyond two LEDs is truncated
+  today. 4096 words (the JS queue bound) is enough for a 170-pixel strip;
+* optional but cheap: make `SimulatorWorker.pollRmtTx(ch)` return the
+  `{ch, items, tickHz}` groups the `RmtTap` class already produces (the
+  d.ts promises `number[]` for the worker and groups for the tap). The
+  runner normalizes both shapes today, so this is not blocking.
+
+Frontend side is ready and waiting (`src/worker/runners/rmt-neopixel.ts`,
+8 unit tests covering both clock rates, WS2811 timings, GRB→RGB and split
+frames; wired into `pollRmtTxHost`). No runner change is needed once the
+tap returns a real frame.
+
 ## Signal-level guarantees
 
 - `reset()`-family reinstalls a fresh model synchronously; instruction

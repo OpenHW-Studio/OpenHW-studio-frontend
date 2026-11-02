@@ -28,6 +28,8 @@ import { AVRRunnerOptions } from '../registries/component-registry.ts';
 import { createI2CBridge, createSPIBridge, collectI2CSlaveAddresses, levelPassiveNets } from '../bus-bridge.ts';
 import { armEsp32I2sTx, pollEsp32I2sTx } from './esp32-i2s-pump.ts';
 import { wireEsp32CameraTap, pollEsp32CameraTap } from './esp32-camera-pump.ts';
+import { neopixelSinks } from './pico-pio-pump.ts';
+import { rmtWordsToPixels } from './rmt-neopixel.ts';
 
 const ESP32_UART_TX = ['1', 'D1', 'TX', 'TX0', 'GPIO1'];
 const ESP32_UART_RX = ['3', 'D3', 'RX', 'RX0', 'GPIO3'];
@@ -1481,13 +1483,17 @@ export class Esp32Runner extends ArmRunnerBase {
             const c = ((self.rmtDhtTick || 0) + 1) % 20;
             self.rmtDhtTick = c;
             if (c !== 0) return;
+            // DHT firmware picks any free RMT channel; the runner arms 0..1.
+            const ch = Number(self.rmtDhtCh || 0) % 2;
+            self.rmtDhtCh = (ch + 1) % 2;
             let p: any = null;
-            try { p = self.sim.pollRmtTx(); } catch { /* ignore */ }
+            try { p = self.sim.pollRmtTx(ch); } catch { /* ignore */ }
             if (!p || typeof (p as any).then !== 'function') return;
-            (p as Promise<Array<{ ch: number; items: number[]; tickHz: number }>>).then((res) => {
+            (p as Promise<any>).then((res) => {
                 try {
                     let starts = 0;
-                    for (const r of res || []) {
+                    // Shape may be flat words (SAB proxy) or groups (RmtTap).
+                    for (const r of self.normalizeRmtPoll(res, ch)) {
                         for (const w of r.items || []) {
                             const ww = w >>> 0;
                             const d0 = ww & 0x7fff; const l0 = (ww >>> 15) & 1;
@@ -1517,36 +1523,105 @@ export class Esp32Runner extends ArmRunnerBase {
         } catch { /* never breaks tick */ }
     }
 
-    /** RMT-TX IR observer (guest→host NEC/raw capture). Yields whenever
-     * the DHT cell owns RMT (pollRmtTx drains — two pollers would steal
-     * each other's windows). Non-empty captures ride the serial needle
-     * as HOST_RMT_TX. Same res shape as the proven DHT pump above. */
+    /** Cached RMT channel tick rates (divider is a boot-time constant per
+     * channel; Adafruit NeoPixel never changes it between frames). */
+    private rmtTickHzCache = new Map<number, number>();
+
+    /**
+     * RMT-TX observer: one drain per window for every channel this runner
+     * armed at boot (0..1), shaped as `{ch, items, tickHz}`.
+     *
+     * Two consumers ride the same drain because `pollRmtTx` DESTROYS the
+     * queue — a second poller would steal the first one's frames:
+     *  - NeoPixel sinks: Adafruit_NeoPixel on ESP32 transmits over RMT
+     *    (legacy driver: `rmtWrite`), so DIN carries no GPIO edges at all
+     *    and `NeoPixelProtocol`'s edge framer never sees a bit. The raw
+     *    item words are the only copy of the frame; they decode straight
+     *    to pixels (see rmt-neopixel.ts).
+     *  - IR/other captures with no NeoPixel sink present: keep the proven
+     *    `HOST_RMT_TX:` serial evidence line (that is what esp32-rmt-ir
+     *    asserts).
+     *
+     * `pollRmtTx` returns FLAT u32 words for one channel (worker-proxy
+     * `async pollRmtTx(ch = 0) → number[]`), not the `{ch, items}` groups
+     * of `RmtTap`; the old group-shaped loop therefore never matched and
+     * both consumers were silently dead. Shape is normalized here so both
+     * proxy generations work.
+     *
+     * Yields while the DHT pump owns RMT (same single-queue rule).
+     */
     private pollRmtTxHost(): void {
         try {
             const self = this as any;
             if (self.rmtDhtArmed) return;
             if (typeof self.sim?.pollRmtTx !== 'function') return;
-            const c = ((self.rmtHostTick || 0) + 1) % 20;
+            const sinks = neopixelSinks(this.instances as any);
+            // NeoPixel frames are one-shot in firmware setup() — poll every
+            // tick so the model lights up while the sketch is still running.
+            // Without sinks the observer only needs evidence lines.
+            const period = sinks.length > 0 ? 1 : 20;
+            const c = ((self.rmtHostTick || 0) + 1) % period;
             self.rmtHostTick = c;
             if (c !== 0) return;
-            let p: any = null;
-            try { p = self.sim.pollRmtTx(); } catch { /* ignore */ }
-            if (!p || typeof (p as any).then !== 'function') return;
-            (p as Promise<Array<{ ch: number; items: number[]; tickHz: number }>>).then((res) => {
-                try {
-                    for (const r of res || []) {
-                        const items = (r as any)?.items;
-                        if (!Array.isArray(items) || items.length < 2) continue;
-                        let nonZero = false;
-                        for (const w of items) { if ((w >>> 0) !== 0) { nonZero = true; break; } }
-                        if (!nonZero) continue;
-                        const line = `HOST_RMT_TX:ch=${Number((r as any)?.ch || 0)},words=${items.length},first=${(items[0] >>> 0).toString(16)}\n`;
-                        const st = ((((self as any).hostSerialStash as number[] | undefined) || ((self as any).hostSerialStash = [])) as number[]);
-                        for (let i = 0; i < line.length && st.length < 4096; i++) st.push(line.charCodeAt(i) & 0xff);
-                    }
-                } catch { /* observer never breaks tick */ }
-            }).catch(() => {});
+            const channels = sinks.length > 0 ? [0, 1] : [0];
+            for (const ch of channels) {
+                let p: any = null;
+                try { p = self.sim.pollRmtTx(ch); } catch { /* ignore */ }
+                if (!p || typeof (p as any).then !== 'function') continue;
+                (p as Promise<any>).then((res: any) => {
+                    try {
+                        for (const g of self.normalizeRmtPoll(res, ch)) {
+                            const items: number[] = Array.isArray(g.items) ? g.items : [];
+                            if (items.length < 2) continue;
+                            let nonZero = false;
+                            for (const w of items) { if ((w >>> 0) !== 0) { nonZero = true; break; } }
+                            if (!nonZero) continue;
+                            if (sinks.length > 0) {
+                                const pixels = rmtWordsToPixels(items, Number(g.tickHz) || 0);
+                                if (pixels.length === 0) continue;
+                                for (const sink of sinks) {
+                                    try { (sink as any).onNeoPixelFrame(pixels.slice()); } catch { /* one sink never breaks the fan-out */ }
+                                }
+                                continue;
+                            }
+                            const line = `HOST_RMT_TX:ch=${Number(g.ch || 0)},words=${items.length},first=${(items[0] >>> 0).toString(16)}\n`;
+                            const st = ((((self as any).hostSerialStash as number[] | undefined) || ((self as any).hostSerialStash = [])) as number[]);
+                            for (let i = 0; i < line.length && st.length < 4096; i++) st.push(line.charCodeAt(i) & 0xff);
+                        }
+                    } catch { /* observer never breaks tick */ }
+                }).catch(() => {});
+            }
         } catch { /* never breaks tick */ }
+    }
+
+    /** `pollRmtTx` shape differs by proxy generation: `RmtTap` returns
+     * `{ch, items, tickHz}[]`, the SAB worker-proxy returns flat u32 words
+     * for ONE channel. Normalize to groups and attach a cached tick rate. */
+    private normalizeRmtPoll(res: any, ch: number): Array<{ ch: number; items: number[]; tickHz: number }> {
+        try {
+            if (!Array.isArray(res) || res.length === 0) return [];
+            const first = res[0] as any;
+            if (first && typeof first === 'object' && Array.isArray(first.items)) {
+                return res as Array<{ ch: number; items: number[]; tickHz: number }>;
+            }
+            return [{ ch, items: res.map((w: any) => Number(w) >>> 0), tickHz: this.rmtTickHz(ch) }];
+        } catch { return []; }
+    }
+
+    /** Channel tick rate, fetched once (a CMD) and cached; 0 when the tap
+     * is missing, which the decoder treats as the legacy 40 MHz default. */
+    private rmtTickHz(ch: number): number {
+        const cached = this.rmtTickHzCache.get(ch);
+        if (cached !== undefined) return cached;
+        const self = this as any;
+        if (typeof self.sim?.getRmtTickHz !== 'function') return 0;
+        try {
+            void (self.sim.getRmtTickHz(ch) as Promise<number>).then((hz) => {
+                const n = Number(hz);
+                if (Number.isFinite(n) && n > 0) this.rmtTickHzCache.set(ch, n);
+            }).catch(() => {});
+        } catch { /* ignore */ }
+        return 0;
     }
 
     /** Board pin label → GPIO number for the 1-Wire DQ net. */

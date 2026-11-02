@@ -351,7 +351,8 @@ esp32-touch, esp32-cam-adc, esp32-gpio-in, esp32-nvs, esp32-interrupts
 (centrally green), esp32-ili9341 (centrally green), esp32-sys, esp32-pcnt,
 esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
 esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc,
-esp32-cam-wifi-gateway, esp32-cam-lan, esp32-cam-http-gateway.
+esp32-cam-wifi-gateway, esp32-cam-lan, esp32-cam-http-gateway,
+esp32-displays (7-segment + TM1637, mid-run model sampling).
 
 ### Attached components on the DevKit shell (measured 2026-11-02)
 
@@ -371,6 +372,9 @@ model's own state alone):
 | DC motor | `motor:1 → GPIO26`, `GND → motor:2` | FULL | live `speed` 0.49 while the pin is HIGH (test: `esp32-actuators`) |
 | Buzzer (passive) | `SIG → GPIO25`, `ledcAttach(25,1000,10)` + `ledcWrite(25,512)` | FULL | live `isBuzzing: true`, `frequency: 1000 Hz` (test: `esp32-actuators`) |
 | Servo (RC PWM) | `PWM → GPIO13`, `ledcAttach(13,50,16)` | FULL (angle) / PARTIAL (width source) | 1500 µs → **92.7°**, 2000 µs → **141.2°** (exact for the 544–2400 µs band); the pulse width is recovered by disambiguating 50–400 Hz duty counts, so a firmware whose duty count fits two resolutions is ignored instead of guessed (`pwmWidthExact`) |
+| 7-segment digit (direct drive) | `A..G → GPIO12..18`, `COM.1 → GND` | FULL | live `digitSegments[0]` = A..G **true**, DP false, steady across the run (test: `esp32-displays`) |
+| TM1637 4-digit (bit-banged CLK/DIO) | `CLK → GPIO22`, `DIO → GPIO23`, `3V3/GND` | FULL | live `digits` = `[0x3F,0x06,0x5B,0x4F]` ('0','1','2','3') — exact after `0x40`/`0xC0`/`0x8F`, on every sample (test: `esp32-displays`) |
+| NeoPixel matrix/ring (WS2812) | `DIN → GPIO4`, `Adafruit_NeoPixel(8,4,NEO_GRB+NEO_KHZ800)` | **PARTIAL (engine)** | model `pixels` stays `[]`: Adafruit transmits over RMT and the engine ends a TX after **one symbol** — the tap returns `words=1` per `show()` (237 shows → 237 words). Runner side is ready (`rmt-neopixel.ts`, 8 unit tests; flat-word tap shape normalized) — needs owner ask P3 |
 | HC-SR04 ultrasonic | `TRIG → GPIO5`, `ECHO → GPIO18`, `attrs.distance=25` | **PARTIAL** | `pulseIn(18, HIGH)` 0 µs before the fix, 245 µs after → 4.2 cm; with a measured steps/µs calibration 3097 / 2188 µs (53 / 38 cm) — the ratio drifts with guest workload, so no stable distance |
 
 HC-SR04 is the one engine-limited component: `esp32-emu`
