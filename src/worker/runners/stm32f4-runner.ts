@@ -1950,6 +1950,21 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     const m = raw.match(/^P?([A-K])(\d{1,2})$/);
                     if (!m) return;
                     self.mcu?.gpio?.pin?.(m[1], Number(m[2]))?.setInput?.(!!high);
+                    // IDR is what digitalRead() samples. The engine only
+                    // refreshes it on an observed edge, so a level static from
+                    // reset reads 0 forever. Mirror it directly (GPIO base
+                    // 0x40020000, IDR +0x10, 0x400 stride; F4 register map).
+                    try {
+                        const emu = (self.mcu as any)?._emu;
+                        if (emu && typeof emu.periphRead === 'function' && typeof emu.periphWrite === 'function') {
+                            const idrAddr = 0x40020010 + (m[1].charCodeAt(0) - 65) * 0x400;
+                            const n = Number(m[2]);
+                            const cur = emu.periphRead(idrAddr, 4) >>> 0;
+                            const mask = (1 << n) >>> 0;
+                            const next = high ? ((cur | mask) >>> 0) : ((cur & ~mask) >>> 0);
+                            if (next !== cur) emu.periphWrite(idrAddr, 4, next);
+                        }
+                    } catch { /* ignore */ }
                 } catch { /* ignore */ }
             },
             readAnalog(_ref: string): number {

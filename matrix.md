@@ -157,7 +157,23 @@ stm32f1-dbg (2/2: DBGMCU IDCODE per chip), stm32f1-usb (6/6: USB-FS
 control-plane enumeration, one run per F1 board),
 stm32-gd32-uart (3/3), stm32-gd32-analog (9/9),
 stm32-gd32-core (15/15: DMA/CRC/WDG/EXTI/BKP),
-stm32-gd32-wave2 (12/12: softserial/RTC/DHT/CAN).
+stm32-gd32-wave2 (12/12: softserial/RTC/DHT/CAN),
+stm32f1-inputs (4/4, 2026-11-03 — real DOM component interaction with the
+guest as the judge: pushbutton held (`BTN:` 1→0→1), slide switch flipped
+MID-RUN both ways (`SWI:` 1→0→1), 4x4 membrane keypad key '5' (`KEY:none` →
+`KEY:11` → `KEY:none`, external 10k pull-ups on the columns), analog
+joystick both axes leave mid-rail (`JOYX:`/`JOYY:`). Runner changes this
+round (arm-runner-base.ts): inputs are now a DC netlist — a wire-only
+union-find net map (pinToNet stays as-is: it bridges resistor bodies for
+output fan-out, which merges every pulled-up keypad column into the rail
+net) + an MNA solve over rails/resistors/contacts, written back onto the
+component pins and pushed to the guest. F1/F4 `gpio_set_input` stores the
+level (`readInput()` follows) but the IDR bit the firmware reads only moves
+on an observed edge, so a level static from reset read 0 forever; the
+runner now pre-polls BEFORE the first step and mirrors the level into IDR
+via periphRead/periphWrite (OWNER ASK: latch the level on load instead).
+Keypad spec bug fixed: the sketch used `'PA4'` character literals, not pin
+macros.
 
 ## STM32F4 (survey-verified 2026-10-09; chip flags from engine CHIPS table)
 
@@ -197,6 +213,13 @@ stm32f4-rng (lane/f4-cov2 2026-10-22 — the model's DRDY is RNG_SR bit 6,
 not bit 0; RNG_DR yields distinct nonzero words on F407/F407VE/F429),
 stm32f4-cryp (lane/f4-cov2 2026-10-22 — AES-128 ECB vs the FIPS-197
 published vector: CRYP is not NONE),
+stm32f4-inputs (4/4, 2026-11-03 — same four cells on the Disco: pushbutton
+`BTN:` 1→0→1, slide switch MID-RUN `SWI:` 1→0→1, keypad `KEY:11`, joystick
+both axes. Board gotcha: this board's `Serial` is USART2 on **PA2/PA3**, so
+the switch cell uses PC0 — PA2 is firmware-driven TX and can never follow a
+switch. Shares the F1 ARM input path (DC netlist solve + boot pre-poll + IDR
+mirror, see the STM32F1 note above); the F4 IDR mirror derives its address
+from the wire-only net map pin (`0x40020010 + (port-65)*0x400`).
 F4 sibling NO-GOs (engine-side, specs left failing): SdFat FS (P_ERR init
 contradiction), ILI9341 (tap death on 120ms+ delays),
 DHT22 / 1-Wire (SysTick->VAL modelled as a latch toggle, not a down-counter

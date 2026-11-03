@@ -1436,6 +1436,21 @@ export class Stm32f1Runner extends ArmRunnerBase {
                     const [port, n] = portPinFor(pinId);
                     if (!port) return;
                     self.mcu?.gpio?.pin?.(port, n)?.setInput?.(!!high);
+                    // IDR is the register the firmware reads. The engine only
+                    // refreshes it on an observed edge, so a level that is
+                    // static from reset reads 0 forever (proven: readInput()
+                    // 1, IDR 0 for minutes). Mirror the driven level into IDR
+                    // so the very first digitalRead() sees it.
+                    try {
+                        const emu = (self.mcu as any)?._emu;
+                        if (emu && typeof emu.periphRead === 'function' && typeof emu.periphWrite === 'function') {
+                            const idrAddr = 0x40010808 + (port.charCodeAt(0) - 65) * 0x400;
+                            const cur = emu.periphRead(idrAddr, 4) >>> 0;
+                            const mask = (1 << n) >>> 0;
+                            const next = high ? ((cur | mask) >>> 0) : ((cur & ~mask) >>> 0);
+                            if (next !== cur) emu.periphWrite(idrAddr, 4, next);
+                        }
+                    } catch { /* ignore */ }
                 } catch { /* ignore */ }
             },
             readAnalog(ref: string): number {

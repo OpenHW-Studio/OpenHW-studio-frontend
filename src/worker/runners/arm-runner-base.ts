@@ -188,6 +188,21 @@ export abstract class ArmRunnerBase implements BoardRunner {
     // (LEDs, buttons, sensors, I2C/SPI/UART protocol handlers, …).
     protected pinToNet: Map<string, number> = new Map();
     protected protocolEndpointsCache = new Map<string, ConnectedComponentPin[]>();
+    /**
+     * Nets the switch-input DC solve owns (buildInputSolveCache) plus the
+     * rail voltage of every rail net. Both are wire-fixed, so they are
+     * built once per boot; only switch state and resistor values move.
+     */
+    private inputSolveGroups: Array<{
+        nodes: string[];
+        parts: Array<{ id: string; kind: 'res' | 'stamp' }>;
+    }> = [];
+    private netRailVolts = new Map<number, number>();
+    private inputSolveNetOf = new Map<string, number>();
+    /** Board pins the DC solve drives (its nets). The legacy pump must not
+     * push these: it re-asserts the same level every tick, which cancels the
+     * solve's boot-time edge (see solveInputNets). */
+    private solveOwnedPins = new Set<string>();
 
     protected readonly onStateUpdate: (state: any) => void;
     protected readonly onByteTransmitCb?: (payload: { boardId: string; value: number; char: string; source?: string }) => void;
@@ -247,6 +262,12 @@ export abstract class ArmRunnerBase implements BoardRunner {
     /** Async boot: load firmware, then start the tick timer. Subclasses call after super(). */
     protected async boot(boardType: string): Promise<void> {
         await this.engine.loadFirmware(this.hexData, boardType);
+        // Input levels must exist BEFORE the first step: the firmware's very
+        // first loop iteration samples GPIO earlier than any per-tick poll,
+        // and F1/F4 latch IDR only from a level that was already present
+        // (proven: first scan of a keypad reads every column LOW, then all
+        // HIGH once a poll has run).
+        try { this.pollGpioBidirectional(); } catch { /* never blocks boot */ }
         this.running = true;
         this.lastTime = performance.now();
         this.runLoop();
@@ -676,7 +697,25 @@ export abstract class ArmRunnerBase implements BoardRunner {
                 }
                 if (!(inst as any)._boardNetOf) {
                     (inst as any)._boardNetOf = (componentPin: string): string | null => {
-                        try { return this.boardPinForComponentPin(cDef.id, componentPin); } catch { return null; }
+                        try {
+                            // Wire-only map: pinToNet bridges resistor bodies
+                            // on purpose (output fan-out), which merges every
+                            // pulled-up keypad column into the rail net — the
+                            // handler then drove the WRONG column (or a rail
+                            // pin). The solve map keeps wires ideal and parts
+                            // separate, which is what a component pin's own
+                            // net means.
+                            const net = this.inputSolveNetOf.get(`${cDef.id}:${componentPin}`);
+                            if (net === undefined) return null;
+                            for (const [node, netId] of this.inputSolveNetOf) {
+                                if (netId !== net) continue;
+                                const sep = node.indexOf(':');
+                                if (sep < 0) continue;
+                                if (node.slice(0, sep) !== this.boardId) continue;
+                                return node.slice(sep + 1);
+                            }
+                            return null;
+                        } catch { return null; }
                     };
                 }
                 this.instances.set(cDef.id, inst);
@@ -870,6 +909,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
             }
             currentNet++;
         }
+        try { this.buildInputSolveCache(); } catch { /* solve cache never blocks boot */ }
     }
 
     /** Dispatch optional protocol callbacks for a pin edge (PWM/OneWire…). */
@@ -956,6 +996,292 @@ export abstract class ArmRunnerBase implements BoardRunner {
     }
 
     /**
+     * Per-boot netlist for the switch-input DC solve below. Only nets that
+     * hold a board GPIO and nothing but passives we can model are claimed:
+     * resistors, push-buttons, slide switches, membrane keypads. A net with
+     * any other part (sensor, LED, active driver) stays with the legacy
+     * component-voltage pump, so this pass can never fight those paths.
+     */
+    protected buildInputSolveCache(): void {
+        this.inputSolveGroups = [];
+        this.netRailVolts.clear();
+        this.inputSolveNetOf.clear();
+        this.solveOwnedPins.clear();
+        const railVolts = (pin: string): number | null => {
+            if (/^(GND|AGND)([._]?\d*)?$/i.test(pin)) return 0;
+            if (/^(3V3|3\.3V|VCC|VDD)([._]?\d*)?$/i.test(pin)) return 3.3;
+            if (/^(5V|VBUS|VSYS|VIN)([._]?\d*)?$/i.test(pin)) return 5;
+            return null;
+        };
+        try {
+            // Own union-find over the wires: the shared pinToNet is built for
+            // GPIO fan-out and bridges passive bodies (a resistor's p1↔p2
+            // lands in one net), which would short every divider the solve
+            // needs to see.
+            const parent = new Map<string, string>();
+            const find = (node: string): string => {
+                let root = node;
+                while (parent.get(root) !== undefined && parent.get(root) !== root) root = parent.get(root)!;
+                let cur = node;
+                while (cur !== root) { const next = parent.get(cur)!; parent.set(cur, root); cur = next; }
+                return root;
+            };
+            const union = (a: string, b: string) => {
+                if (!parent.has(a)) parent.set(a, a);
+                if (!parent.has(b)) parent.set(b, b);
+                const ra = find(a);
+                const rb = find(b);
+                if (ra !== rb) parent.set(ra, rb);
+            };
+            for (const wire of this.currentWires) {
+                if (wire?.from && wire?.to) union(String(wire.from), String(wire.to));
+            }
+            const netIds = new Map<string, number>();
+            for (const node of parent.keys()) {
+                const root = find(node);
+                let id = netIds.get(root);
+                if (id === undefined) { id = netIds.size; netIds.set(root, id); }
+                this.inputSolveNetOf.set(node, id);
+            }
+            const byNet = new Map<number, string[]>();
+            for (const [node, net] of this.inputSolveNetOf) {
+                let arr = byNet.get(net);
+                if (!arr) { arr = []; byNet.set(net, arr); }
+                arr.push(node);
+            }
+            for (const [net, nodes] of byNet) {
+                for (const node of nodes) {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const v = railVolts(node.slice(sep + 1));
+                    if (v !== null) { this.netRailVolts.set(net, v); break; }
+                }
+            }
+            for (const [net, nodes] of byNet) {
+                if (this.netRailVolts.has(net)) continue; // a rail net is a source, not a group
+                const pins: string[] = [];
+                const ids = new Set<string>();
+                for (const node of nodes) {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) continue;
+                    const compId = node.slice(0, sep);
+                    const pinId = node.slice(sep + 1);
+                    if (compId === this.boardId) {
+                        if (railVolts(pinId) === null && !/^(VBAT|RESET|RST|BOOT0|SWD|SWCLK|SWDIO)/i.test(pinId)) pins.push(pinId);
+                        continue;
+                    }
+                    ids.add(compId);
+                }
+                if (!pins.length || nodes.length > 24) continue;
+                const parts: Array<{ id: string; kind: 'res' | 'stamp' }> = [];
+                let dirty = false;
+                for (const id of ids) {
+                    const inst = this.instances.get(id) as any;
+                    if (!inst) { dirty = true; break; }
+                    const t = String(inst.type || '');
+                    if (t === 'openhw-resistor') { parts.push({ id, kind: 'res' }); continue; }
+                    if (t === 'openhw-slide-switch' || t === 'openhw-membrane-keypad'
+                        || (/pushbutton|ks2e/i.test(t) && typeof inst.getMnaStamps === 'function')) {
+                        parts.push({ id, kind: 'stamp' });
+                        continue;
+                    }
+                    dirty = true;
+                    break;
+                }
+                if (dirty || !parts.length) continue;
+                for (const p of pins) this.solveOwnedPins.add(p);
+                this.inputSolveGroups.push({ nodes: Array.from(new Set(nodes)), parts });
+            }
+        } catch { this.inputSolveGroups = []; }
+    }
+
+    /**
+     * DC solve for switch-style input nets.
+     *
+     * Button/switch/keypad models publish conductances (getMnaStamps) and
+     * never a pin voltage, and the ARM runners have no netlist solve of
+     * their own — so a 10k pull-up to 3V3 produced 0 V on every net and the
+     * guest read digitalRead() as permanently LOW (proven on F1+F4: model
+     * pressed=true, analogVoltages all 0, serial stuck at the boot level).
+     * Rails, resistors and two-terminal contacts form a linear network
+     * small enough for a direct solve; the result is written back onto the
+     * component pins only, and the base pump keeps owning the engine push
+     * (output-wins and transaction guards stay in one place).
+     *
+     * Row scans (keypad) need the firmware's driven level as a source, so
+     * a board pin the engine drives is fixed at its level: sampleGpioOut
+     * where the engine has it, else the published pin state (change-hook
+     * engines such as F1/F4).
+     */
+    private solveInputNets(peek: ((pinId: string) => { level: number; driving: boolean } | null) | null): void {
+        if (!this.inputSolveGroups.length) return;
+        for (const group of this.inputSolveGroups) {
+            const netCache = new Map<number, number>();
+            // Fixed voltage of a net outside the matrix: a rail, or a net the
+            // firmware drives as an output (keypad row scan).
+            const fixedVolts = (net: number): number => {
+                const cached = netCache.get(net);
+                if (cached !== undefined) return cached;
+                let out = NaN;
+                const rail = this.netRailVolts.get(net);
+                if (rail !== undefined) out = rail;
+                else {
+                    for (const [nd, n2] of this.inputSolveNetOf) {
+                        if (n2 !== net) continue;
+                        const sep = nd.indexOf(':');
+                        if (sep < 0 || nd.slice(0, sep) !== this.boardId) continue;
+                        const label = nd.slice(sep + 1);
+                        if (peek) {
+                            let s: { level: number; driving: boolean } | null = null;
+                            try { s = peek(label); } catch { s = null; }
+                            if (s && s.driving) { out = s.level ? 3.3 : 0; break; }
+                            continue;
+                        }
+                        const st = this.pinStates[label];
+                        if (st !== undefined) { out = st ? 3.3 : 0; break; }
+                    }
+                }
+                netCache.set(net, out);
+                return out;
+            };
+            // One matrix node per NET (wires are ideal): distinct pins on the
+            // same net are the same electrical node. A net the firmware
+            // drives (or a rail) is a source, never an unknown.
+            const netIndex = new Map<number, number>();
+            for (const node of group.nodes) {
+                const net = this.inputSolveNetOf.get(node);
+                if (net === undefined || netIndex.has(net)) continue;
+                if (Number.isFinite(fixedVolts(net))) continue;
+                netIndex.set(net, netIndex.size);
+            }
+            const n = netIndex.size;
+            if (n < 1 || n > 24) continue;
+            const G = new Float64Array(n * n);
+            const I = new Float64Array(n);
+            const stamp = (na: string, nb: string, g: number) => {
+                if (!(g > 0) || !Number.isFinite(g)) return;
+                const netA = this.inputSolveNetOf.get(na);
+                const netB = this.inputSolveNetOf.get(nb);
+                const ia = netA !== undefined && netIndex.has(netA) ? netIndex.get(netA)! : -1;
+                const ib = netB !== undefined && netIndex.has(netB) ? netIndex.get(netB)! : -1;
+                const va = ia >= 0 ? NaN : (netA !== undefined ? fixedVolts(netA) : NaN);
+                const vb = ib >= 0 ? NaN : (netB !== undefined ? fixedVolts(netB) : NaN);
+                if (ia < 0 && !Number.isFinite(va)) return; // far end unknown: open
+                if (ib < 0 && !Number.isFinite(vb)) return;
+                if (ia >= 0) G[ia * n + ia] += g;
+                if (ib >= 0) G[ib * n + ib] += g;
+                if (ia >= 0 && ib >= 0) { G[ia * n + ib] -= g; G[ib * n + ia] -= g; }
+                else if (ia >= 0) I[ia] += g * vb;
+                else if (ib >= 0) I[ib] += g * va;
+            };
+            for (const part of group.parts) {
+                const inst = this.instances.get(part.id) as any;
+                if (!inst) continue;
+                try {
+                    if (part.kind === 'res') {
+                        stamp(`${part.id}:p1`, `${part.id}:p2`, Number(inst.getConductance?.()) || 0);
+                        continue;
+                    }
+                    const stamps = inst.getMnaStamps?.() || [];
+                    for (const st of stamps) {
+                        const pins = Array.isArray(st?.pins) ? st.pins : [];
+                        if (pins.length !== 2) continue;
+                        stamp(`${part.id}:${pins[0]}`, `${part.id}:${pins[1]}`, Number(st?.g) || 0);
+                    }
+                } catch { /* one part never breaks the solve */ }
+            }
+            // Leak to ground keeps an isolated terminal (a button's far
+            // contact) a defined row instead of a singular matrix.
+            for (let k = 0; k < n; k++) G[k * n + k] += 1e-12;
+            const sol = ArmRunnerBase.linearSolve(G, I, n);
+            if (!sol) continue;
+            // The solve owns these nets end to end: write the levels onto the
+            // component pins and push the board pins (the legacy pump skips
+            // nets with an engine sampler / driven pins, which is why the
+            // solved level never reached the guest on its own).
+            const netVolts = new Map<number, number>();
+            for (const [net, k] of netIndex) netVolts.set(net, sol[k]);
+            const drivenNets = new Set<number>();
+            for (const node of group.nodes) {
+                const sp = node.indexOf(':');
+                if (sp < 0) continue;
+                if (node.slice(0, sp) === this.boardId) continue;
+                const inst = this.instances.get(node.slice(0, sp)) as any;
+                if (!inst || inst._drivingBus !== true) continue;
+                const net = this.inputSolveNetOf.get(node);
+                if (net !== undefined) drivenNets.add(net);
+            }
+            for (const node of group.nodes) {
+                const net = this.inputSolveNetOf.get(node);
+                if (net === undefined) continue;
+                // A component that actively drives this net (keypad column
+                // drive, same contract as AVR) is the source of truth.
+                if (drivenNets.has(net)) continue;
+                const v = netVolts.get(net);
+                if (v === undefined || !Number.isFinite(v) || v < -0.01 || v > 5.5) continue;
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                const compId = node.slice(0, sep);
+                const pinId = node.slice(sep + 1);
+                if (compId === this.boardId) {
+                    if (typeof this.engine.setGpioInput !== 'function') continue;
+                    // F1/F4 latch IDR only when the CPU observes a level
+                    // change across steps. The boot pre-poll in boot() runs
+                    // before the first step, so the initial level is part of
+                    // the reset state and the guest's first digitalRead()
+                    // sees it (proven: keypad first scan reads all columns
+                    // HIGH instead of LOW).
+                    try { this.engine.setGpioInput(pinId, v > 0.5); } catch { /* ignore */ }
+                    continue;
+                }
+                const inst = this.instances.get(compId) as any;
+                if (!inst || typeof inst.setPinVoltage !== 'function') continue;
+                try { inst.setPinVoltage(pinId, Math.max(0, v)); } catch { /* ignore */ }
+            }
+        }
+    }
+
+    /** Gaussian elimination with partial pivoting; null when singular. */
+    private static linearSolve(G: Float64Array, I: Float64Array, n: number): Float64Array | null {
+        try {
+            const w = n + 1;
+            const a = new Float64Array(n * w);
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) a[r * w + c] = G[r * n + c];
+                a[r * w + n] = I[r];
+            }
+            for (let col = 0; col < n; col++) {
+                let piv = col;
+                for (let r = col + 1; r < n; r++) {
+                    if (Math.abs(a[r * w + col]) > Math.abs(a[piv * w + col])) piv = r;
+                }
+                if (Math.abs(a[piv * w + col]) < 1e-15) return null;
+                if (piv !== col) {
+                    for (let c = 0; c < w; c++) {
+                        const t = a[col * w + c];
+                        a[col * w + c] = a[piv * w + c];
+                        a[piv * w + c] = t;
+                    }
+                }
+                const d = a[col * w + col];
+                for (let r = col + 1; r < n; r++) {
+                    const f = a[r * w + col] / d;
+                    if (!f) continue;
+                    for (let c = col; c < w; c++) a[r * w + c] -= f * a[col * w + c];
+                }
+            }
+            const x = new Float64Array(n);
+            for (let r = n - 1; r >= 0; r--) {
+                let s = a[r * w + n];
+                for (let c = r + 1; c < n; c++) s -= a[r * w + c] * x[c];
+                x[r] = s / a[r * w + r];
+                if (!Number.isFinite(x[r])) return null;
+            }
+            return x;
+        } catch { return null; }
+    }
+
+    /**
      * Bidirectional GPIO poll (runs every tick, after stepBudget):
      *  1. INPUT: read each wired non-board pin's driven voltage and push it
      *     into the engine (setGpioInput when available). Buttons/sensors own
@@ -992,6 +1318,9 @@ export abstract class ArmRunnerBase implements BoardRunner {
                     ? (pinId: string) => { try { return (this as any).peekGpioOut(pinId); } catch { return null; } }
                     : sampler);
         if (!sampler && typeof this.engine.setGpioInput !== 'function') return;
+        // Switch nets: rails + resistors + contacts solved as a DC network,
+        // result written back onto the component pins the input half reads.
+        try { this.solveInputNets(peeker); } catch { /* solve never breaks the tick */ }
         // INPUT half: external components driving nets the board reads.
         // Skipped per-pin when the engine drives that pin (output wins).
         if (typeof this.engine.setGpioInput === 'function') {
@@ -1006,6 +1335,10 @@ export abstract class ArmRunnerBase implements BoardRunner {
                         seen.add(end);
                         const inst = this.instances.get(compId);
                         if (!inst || typeof (inst as any).getPinVoltage !== 'function') continue;
+                        // A resistor never sources a level: its pin voltage is
+                        // only meaningful once the net solve wrote it back, and
+                        // the far end of a pull-up reads 0 V by construction.
+                        try { if (String((inst as any).type || '') === 'openhw-resistor') continue; } catch { /* keep going */ }
                         // Bidirectional one-wire models (DHT-22 et al., marked
                         // by isTransactionActive) drive the engine directly via
                         // _driveBoardPin at signal time; the idle pull-up is
@@ -1020,13 +1353,19 @@ export abstract class ArmRunnerBase implements BoardRunner {
                         } catch { /* fall through to legacy push */ }
                         let voltage = 0;
                         try { voltage = Number((inst as any).getPinVoltage(pinId)) || 0; } catch { continue; }
-                        // Find the board pin on the same net.
-                        const net = this.pinToNet.get(end);
+                        // Find the board pin on the same net. Nets come from
+                        // the wire-only map: the shared pinToNet bridges
+                        // resistor bodies, which made a pull-up's rail the SAME
+                        // net as the pin it pulls (the far pin's 0 V then
+                        // overrode the real level every tick).
+                        const net = this.inputSolveNetOf.get(end);
                         if (net === undefined) continue;
-                        for (const [node, netId] of this.pinToNet) {
+                        for (const [node, netId] of this.inputSolveNetOf) {
                             if (netId !== net) continue;
                             const [bId, bPin] = node.split(':');
                             if (bId !== this.boardId || !bPin) continue;
+                            if (/^(GND|AGND|3V3|5V|VCC|VDD|VBAT|VBUS|VSYS|VIN)([._]?\d*)?$/i.test(bPin)) continue;
+                            if (this.solveOwnedPins.has(bPin)) continue; // solve owns its nets
                             try {
                                 if (peeker) {
                                     const s = peeker(bPin);
@@ -1051,7 +1390,10 @@ export abstract class ArmRunnerBase implements BoardRunner {
         if (typeof this.engine.setGpioInput === 'function') {
             try {
                 const byNet = new Map<number, string[]>();
-                for (const [node, net] of this.pinToNet) {
+                // Wire-only nets: with resistor bodies bridged, a 10k pull-up
+                // to 3V3 put the rail on the SAME net as the pin and this pass
+                // drove it HIGH over the button's LOW every tick.
+                for (const [node, net] of this.inputSolveNetOf) {
                     const sep = node.indexOf(':');
                     if (sep < 0) continue;
                     if (node.slice(0, sep) !== this.boardId) continue;
