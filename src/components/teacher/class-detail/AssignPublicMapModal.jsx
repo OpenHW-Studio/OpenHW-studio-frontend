@@ -10,7 +10,9 @@ import {
   Award,
   Sparkles,
   Layers,
-  Globe
+  Globe,
+  FolderHeart,
+  BookOpen
 } from "lucide-react";
 import {
   fetchAdventureMaps,
@@ -27,12 +29,15 @@ const BOARDS = [
 
 export default function AssignPublicMapModal({
   isOpen,
+  initialTab = "public",
   onClose,
   classId,
   classroomName,
   assignedMapIds = [],
-  onMapAssigned
+  onMapAssigned,
+  onCreateNewMap
 }) {
+  const [activeTab, setActiveTab] = useState(initialTab || "public");
   const [maps, setMaps] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -47,18 +52,31 @@ export default function AssignPublicMapModal({
   }, [assignedMapIds]);
 
   useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab || "public");
+    }
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
-    const loadPublicMaps = async () => {
+    const loadMaps = async () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetchAdventureMaps({ limit: 100 });
-        if (!cancelled) {
-          // Filter to public maps (those without a classroomId)
-          const publicMaps = (res?.maps || []).filter((m) => !m.classroomId);
-          setMaps(publicMaps);
+        if (activeTab === "my-maps") {
+          const res = await fetchAdventureMaps({ tab: "my-maps", limit: 100 });
+          if (!cancelled) {
+            setMaps(res?.maps || []);
+          }
+        } else {
+          const res = await fetchAdventureMaps({ limit: 100 });
+          if (!cancelled) {
+            // Filter to public maps (those without a classroomId)
+            const publicMaps = (res?.maps || []).filter((m) => !m.classroomId);
+            setMaps(publicMaps);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -69,11 +87,11 @@ export default function AssignPublicMapModal({
       }
     };
 
-    loadPublicMaps();
+    loadMaps();
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, activeTab]);
 
   const filteredMaps = useMemo(() => {
     return maps.filter((m) => {
@@ -160,7 +178,10 @@ export default function AssignPublicMapModal({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: "linear-gradient(to right, rgba(99, 102, 241, 0.05), transparent)"
+            background:
+              activeTab === "my-maps"
+                ? "linear-gradient(to right, rgba(16, 185, 129, 0.06), transparent)"
+                : "linear-gradient(to right, rgba(99, 102, 241, 0.05), transparent)"
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -169,21 +190,26 @@ export default function AssignPublicMapModal({
                 width: "42px",
                 height: "42px",
                 borderRadius: "12px",
-                backgroundColor: "rgba(99, 102, 241, 0.12)",
-                color: "#6366f1",
+                backgroundColor:
+                  activeTab === "my-maps"
+                    ? "rgba(16, 185, 129, 0.12)"
+                    : "rgba(99, 102, 241, 0.12)",
+                color: activeTab === "my-maps" ? "#10b981" : "#6366f1",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center"
               }}
             >
-              <Globe size={22} />
+              {activeTab === "my-maps" ? <FolderHeart size={22} /> : <Globe size={22} />}
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "var(--text, #0f172a)" }}>
-                Assign Public Adventure Map
+                {activeTab === "my-maps" ? "Select Your Adventure Maps" : "Assign Public Adventure Map"}
               </h2>
               <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "var(--text2, #64748b)" }}>
-                Select an existing community or official journey to assign to <b>{classroomName || "this class"}</b>
+                {activeTab === "my-maps"
+                  ? `Choose from maps you created to assign to ${classroomName || "this class"}`
+                  : `Select an existing community or official journey to assign to ${classroomName || "this class"}`}
               </p>
             </div>
           </div>
@@ -200,6 +226,61 @@ export default function AssignPublicMapModal({
             }}
           >
             <X size={20} />
+          </button>
+        </div>
+
+        {/* Tab Switcher */}
+        <div
+          style={{
+            display: "flex",
+            borderBottom: "1px solid var(--border, #e2e8f0)",
+            padding: "0 24px",
+            gap: "8px",
+            backgroundColor: "var(--bg, #f8fafc)"
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab("public")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 18px",
+              border: "none",
+              background: "transparent",
+              fontSize: "13px",
+              fontWeight: activeTab === "public" ? 700 : 500,
+              color: activeTab === "public" ? "#4f46e5" : "var(--text2, #64748b)",
+              borderBottom: activeTab === "public" ? "2.5px solid #4f46e5" : "2.5px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.15s ease"
+            }}
+          >
+            <Globe size={15} />
+            Assign Public Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("my-maps")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 18px",
+              border: "none",
+              background: "transparent",
+              fontSize: "13px",
+              fontWeight: activeTab === "my-maps" ? 700 : 500,
+              color: activeTab === "my-maps" ? "#10b981" : "var(--text2, #64748b)",
+              borderBottom: activeTab === "my-maps" ? "2.5px solid #10b981" : "2.5px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.15s ease"
+            }}
+          >
+            <FolderHeart size={15} />
+            Select Your Maps
           </button>
         </div>
 
@@ -333,7 +414,11 @@ export default function AssignPublicMapModal({
               }}
             >
               <Loader2 size={32} className="teacher-spinner" style={{ animation: "spin 1s linear infinite" }} />
-              <span style={{ fontSize: "14px" }}>Loading adventure journeys...</span>
+              <span style={{ fontSize: "14px" }}>
+                {activeTab === "my-maps"
+                  ? "Loading your created adventure maps..."
+                  : "Loading adventure journeys..."}
+              </span>
             </div>
           ) : error ? (
             <div
@@ -360,15 +445,54 @@ export default function AssignPublicMapModal({
                 gap: "10px"
               }}
             >
-              <Compass size={40} style={{ color: "var(--text3, #94a3b8)" }} />
-              <strong style={{ fontSize: "15px", color: "var(--text, #0f172a)" }}>
-                No maps found
-              </strong>
-              <p style={{ margin: 0, fontSize: "13px", color: "var(--text2, #64748b)", maxWidth: "340px" }}>
-                {searchQuery
-                  ? "Try refining your search terms or selecting another board category."
-                  : "No public adventure maps are currently available."}
-              </p>
+              {activeTab === "my-maps" ? (
+                <>
+                  <Sparkles size={40} style={{ color: "#10b981" }} />
+                  <strong style={{ fontSize: "16px", color: "var(--text, #0f172a)" }}>
+                    No created maps found
+                  </strong>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text2, #64748b)", maxWidth: "380px", lineHeight: 1.5 }}>
+                    {searchQuery
+                      ? "No maps matched your search filter."
+                      : "You haven't created any custom maps yet. You can design one in the Adventure Creator Studio!"}
+                  </p>
+                  {onCreateNewMap && (
+                    <button
+                      type="button"
+                      onClick={onCreateNewMap}
+                      className="btn btn-primary"
+                      style={{
+                        marginTop: 10,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "9px 18px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: "linear-gradient(135deg, #4f46e5, #6366f1)",
+                        color: "#fff",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer"
+                      }}
+                    >
+                      <Plus size={16} /> Create Map Now
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Compass size={40} style={{ color: "var(--text3, #94a3b8)" }} />
+                  <strong style={{ fontSize: "15px", color: "var(--text, #0f172a)" }}>
+                    No maps found
+                  </strong>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text2, #64748b)", maxWidth: "340px" }}>
+                    {searchQuery
+                      ? "Try refining your search terms or selecting another board category."
+                      : "No public adventure maps are currently available."}
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div
@@ -379,7 +503,12 @@ export default function AssignPublicMapModal({
               }}
             >
               {filteredMaps.map((map) => {
-                const isAssigned = (localAssignedMapIds || []).includes(map._id);
+                const isNativeClassMap =
+                  map.classroomId &&
+                  (map.classroomId === classId ||
+                    map.classroomId?._id === classId ||
+                    map.classroomId?.toString() === classId?.toString());
+                const isAssigned = (localAssignedMapIds || []).includes(map._id) || isNativeClassMap;
                 const isProcessing = actionMapId === map._id;
                 const totalXP =
                   map.worlds?.reduce(
@@ -415,37 +544,69 @@ export default function AssignPublicMapModal({
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
-                          marginBottom: "10px"
+                          marginBottom: "10px",
+                          gap: "8px",
+                          flexWrap: "wrap"
                         }}
                       >
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            textTransform: "uppercase",
-                            padding: "3px 8px",
-                            borderRadius: "6px",
-                            backgroundColor:
-                              map.boardArchitecture?.badgeColor || "#10b981",
-                            color: "#ffffff",
-                            letterSpacing: "0.5px"
-                          }}
-                        >
-                          {map.boardArchitecture?.board || "Hardware"}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              textTransform: "uppercase",
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              backgroundColor:
+                                map.boardArchitecture?.badgeColor || "#10b981",
+                              color: "#ffffff",
+                              letterSpacing: "0.5px"
+                            }}
+                          >
+                            {map.boardArchitecture?.board || "Hardware"}
+                          </span>
 
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: "600",
-                            padding: "2px 8px",
-                            borderRadius: "6px",
-                            backgroundColor: "var(--bg2, #f1f5f9)",
-                            color: "var(--text2, #475569)"
-                          }}
-                        >
-                          {map.difficulty || "Beginner"}
-                        </span>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              backgroundColor: "var(--bg2, #f1f5f9)",
+                              color: "var(--text2, #475569)"
+                            }}
+                          >
+                            {map.difficulty || "Beginner"}
+                          </span>
+                        </div>
+
+                        {isNativeClassMap ? (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(16, 185, 129, 0.12)",
+                              color: "#059669"
+                            }}
+                          >
+                            ✓ Native Class Map
+                          </span>
+                        ) : activeTab === "my-maps" ? (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(99, 102, 241, 0.08)",
+                              color: "#4f46e5"
+                            }}
+                          >
+                            Created by You
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Title & Tagline */}
@@ -504,38 +665,50 @@ export default function AssignPublicMapModal({
                         </span>
                       </div>
 
-                      <button
-                        onClick={() => handleToggleAssign(map)}
-                        disabled={isProcessing}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          padding: "6px 14px",
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          cursor: "pointer",
-                          border: isAssigned ? "1px solid #6366f1" : "none",
-                          backgroundColor: isAssigned
-                            ? "transparent"
-                            : "var(--primary, #4f46e5)",
-                          color: isAssigned ? "#6366f1" : "#ffffff",
-                          transition: "all 0.15s ease"
-                        }}
-                      >
-                        {isProcessing ? (
-                          <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                        ) : isAssigned ? (
-                          <>
-                            <Check size={13} /> Assigned
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={13} /> Assign
-                          </>
-                        )}
-                      </button>
+                      {isNativeClassMap ? (
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#059669"
+                          }}
+                        >
+                          Always Active
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleAssign(map)}
+                          disabled={isProcessing}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "6px 14px",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                            fontWeight: "700",
+                            cursor: "pointer",
+                            border: isAssigned ? "1px solid #6366f1" : "none",
+                            backgroundColor: isAssigned
+                              ? "transparent"
+                              : "var(--primary, #4f46e5)",
+                            color: isAssigned ? "#6366f1" : "#ffffff",
+                            transition: "all 0.15s ease"
+                          }}
+                        >
+                          {isProcessing ? (
+                            <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                          ) : isAssigned ? (
+                            <>
+                              <Check size={13} /> Assigned
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={13} /> Assign
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

@@ -122,6 +122,7 @@ export default function TeacherClassDetailPage() {
   const [isAdventureCreatorOpen, setIsAdventureCreatorOpen] = useState(false);
   const [editingAdventureMap, setEditingAdventureMap] = useState(null);
   const [isAssignMapModalOpen, setIsAssignMapModalOpen] = useState(false);
+  const [assignModalTab, setAssignModalTab] = useState("public");
 
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
@@ -1164,7 +1165,10 @@ export default function TeacherClassDetailPage() {
                 classroomMaps={classroomMaps}
                 loadingClassroomMaps={loadingClassroomMaps}
                 onOpenCreateMap={handleOpenCreateMap}
-                onOpenAssignModal={() => setIsAssignMapModalOpen(true)}
+                onOpenAssignModal={(tab = "public") => {
+                  setAssignModalTab(tab);
+                  setIsAssignMapModalOpen(true);
+                }}
                 onEditMap={handleEditMap}
                 onDeleteMap={handleDeleteMap}
                 onUnassignMap={handleUnassignMap}
@@ -1303,12 +1307,17 @@ export default function TeacherClassDetailPage() {
       {isAssignMapModalOpen ? (
         <AssignPublicMapModal
           isOpen={isAssignMapModalOpen}
+          initialTab={assignModalTab}
           onClose={() => setIsAssignMapModalOpen(false)}
           classId={classId}
           classroomName={classroom?.name}
           assignedMapIds={classroomMaps.map((m) => m._id)}
           onMapAssigned={() => {
             loadClassroomMaps();
+          }}
+          onCreateNewMap={() => {
+            setIsAssignMapModalOpen(false);
+            handleOpenCreateMap();
           }}
         />
       ) : null}

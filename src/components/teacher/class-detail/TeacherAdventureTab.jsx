@@ -6,6 +6,7 @@ import {
   Layers,
   Sparkles,
   Globe,
+  FolderHeart,
   Lock,
   Unlink,
   Trash2,
@@ -50,7 +51,7 @@ export default function TeacherAdventureTab({
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             type="button"
-            onClick={onOpenAssignModal}
+            onClick={() => onOpenAssignModal && onOpenAssignModal("public")}
             className="btn"
             style={{
               display: "flex",
@@ -69,6 +70,29 @@ export default function TeacherAdventureTab({
           >
             <Globe size={16} style={{ color: "#6366f1" }} />
             Assign Public Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenAssignModal && onOpenAssignModal("my-maps")}
+            className="btn"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "9px 16px",
+              borderRadius: 10,
+              border: "1px solid var(--border, #cbd5e1)",
+              backgroundColor: "var(--card, #ffffff)",
+              color: "var(--text, #0f172a)",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: "pointer",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+            }}
+          >
+            <FolderHeart size={16} style={{ color: "#10b981" }} />
+            Select Your Maps
           </button>
 
           <button
@@ -158,7 +182,26 @@ export default function TeacherAdventureTab({
             </button>
             <button
               type="button"
-              onClick={onOpenAssignModal}
+              onClick={() => onOpenAssignModal && onOpenAssignModal("my-maps")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "9px 16px",
+                borderRadius: 8,
+                background: "var(--card, #fff)",
+                color: "var(--text, #0f172a)",
+                fontWeight: 600,
+                fontSize: 13,
+                border: "1px solid var(--border, #cbd5e1)",
+                cursor: "pointer"
+              }}
+            >
+              <FolderHeart size={15} style={{ color: "#10b981" }} /> Select Your Maps
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenAssignModal && onOpenAssignModal("public")}
               style={{
                 display: "flex",
                 alignItems: "center",
