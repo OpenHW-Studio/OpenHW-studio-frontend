@@ -42,7 +42,9 @@ const CODE = [
 ].join('\n');
 
 test.describe('ESP32 speed', () => {
-  test.setTimeout(420000);
+  // Scaled in the test body (it depends on the preset): a 4x faster guest
+  // clock needs 4x the wall window for the same `forMs` guest-time run.
+  test.setTimeout(1500000);
 
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/**', async (route) => {
@@ -69,6 +71,10 @@ test.describe('ESP32 speed', () => {
     // (liveness = retired instructions); 40 MHz now boots.
     // Computed in Node: nothing inside page.evaluate can see process.env.
     const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    // Guest time per wall second scales with 160/preset, and `forMs` is guest
+    // time: a 4x faster guest clock needs 4x the wall window. Keep every wait
+    // proportional so the cell measures rather than times out.
+    const div = tickMHz ? 160 / Number(tickMHz) : 1;
     const setup = await page.evaluate(({ code, tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
         {
@@ -90,7 +96,7 @@ test.describe('ESP32 speed', () => {
 
     // Timestamp the two delay markers as they reach the serial monitor.
     const marks = {};
-    const deadline = Date.now() + 120000;
+    const deadline = Date.now() + 60000 * Math.min(div, 8);
     while ((!marks.D0 || !marks.D1) && Date.now() < deadline) {
       const text = await page.evaluate(() => String(window.OpenHWE2E.snapshot()?.serialText || ''));
       if (!marks.D0 && /(^|\n)D0\s*(\r?\n|$)/.test(text)) marks.D0 = Date.now();
@@ -99,10 +105,19 @@ test.describe('ESP32 speed', () => {
       await page.waitForTimeout(100);
     }
 
+    // Printed BEFORE the SPD wait so a timed-out cell still shows whether the
+    // board booted (D0/D1) or never reached setup.
+    console.log('ESP32SPEED marks:', JSON.stringify({
+      tickMHz: tickMHz || 'native',
+      D0: !!marks.D0,
+      D1: !!marks.D1,
+      delayWallMs: marks.D0 && marks.D1 ? marks.D1 - marks.D0 : null,
+      serial: await page.evaluate(() => String(window.OpenHWE2E.snapshot()?.serialText || '').slice(-160)),
+    }));
     await page.waitForFunction(
       () => String(window.OpenHWE2E.snapshot()?.serialText || '').includes('SPD '),
       null,
-      { timeout: 180000 },
+      { timeout: 180000 * Math.min(div, 4) },
     );
 
     const sample = () => page.evaluate(() => {
@@ -161,7 +176,6 @@ test.describe('ESP32 speed', () => {
     // native constants. Whether the delay actually gets faster at a lower
     // clock is what the printed numbers are for — the bound only says the
     // wait was not skipped.
-    const div = tickMHz ? 160 / Number(tickMHz) : 1;
     const nativeDelayMs = 1840; // measured 2026-11-03, native timebase
     const minDelay = div === 1 ? 1500 : Math.max(20, (nativeDelayMs / div) * 0.25);
     expect(Number.isFinite(delayWallMs)).toBe(true);

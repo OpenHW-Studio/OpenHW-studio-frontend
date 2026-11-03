@@ -148,16 +148,16 @@ export const ComponentContextMenu = ({
       });
     }
 
-    // ESP32 clock preset REMOVED 2026-11-03: board attr tickMHz rides
-    // init config cpuFrequency, but this engine's timebase is a FIXED
-    // 160 MHz cycle counter (recompute_clock) — the preset only rescales the
-    // REPORTED nanos, it does not cut the cycles executed per guest second.
-    // Re-measured after the runner liveness fix (presets do boot now): loops
-    // per GUEST second is 32.4M at native, 40 and 8 MHz alike, so the guest
-    // clock never moves; delay(2000) costs 1805/1805/2479 ms wall and 8 MHz
-    // loses ~43% of wall throughput. Shipping it would be a lie at 40 and a
-    // regression at 8. A real preset needs the engine to make CPU clock =
-    // cycles per unit time (how esp32sim/Wokwi model it). See the P7 ask in
+    // ESP32 clock presets stay OUT (2026-11-03). The engine now HAS the
+    // Wokwi/esp32sim model behind a patch on the pinned baseline (CPU clock =
+    // cycles per guest second; engine repo `tests/tmp-clk-model.patch`), and at
+    // 8 MHz it behaves: loops per GUEST second 32.4M -> 1.62M and
+    // compute-bound code reaches 1.02 guest-s per wall-s. Two defects block
+    // exposing it: at 80 MHz the board never boots (zero serial in 480 s,
+    // D0/D1 absent) though 8 MHz does, and at 8 MHz delay() is 7.8x slower in
+    // wall time (2 s delay = 14.1 s) because the 1 kHz tick saturates the core
+    // and the idle fast-forward never runs. The pinned bytes are unchanged
+    // (wasm d6d17d79, worker 4afe24dd). See P7 in
     // vendor/emulator-hook-specs/esp32-emu.md.
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {

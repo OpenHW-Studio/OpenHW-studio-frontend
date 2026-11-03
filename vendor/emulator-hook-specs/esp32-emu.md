@@ -397,6 +397,32 @@ per unit time as esp32sim does: one guest second at 8 MHz = 8M cycles, at
 ~1.1× at 8 MHz. It touches timer/UART/LEDC/ADC timing derivation, so it needs
 an owner pass plus a regression sweep, not a frontend knob.
 
+**Implemented on the pinned baseline (2026-11-03, engine worktree).** The model
+above now exists as `tests/tmp-clk-model.patch` in the engine repo (untracked,
+not committed). It was written against `c03f3927` — the commit whose wasm is the
+pinned `d6d17d79`, which rebuilds byte-identically here in 11 s — so it applies
+to the bytes this app actually ships. Changes: a `CLK_CPU_HZ` static plus a
+`native_set_cpu_hz(hz)` export, `recompute_clock()` divides by the CPU clock
+while APB/RTC keep their absolute frequencies, `native_fast_forward()` converts
+nanos→cycles at the CPU clock, and the worker sets it from `config.cpuFrequency`
+with `nanosMultiplier` removed (that double scale was what moved only the
+reported number). Native is unchanged: 32.4M loops/guest-s, delay 1813 ms.
+
+At 8 MHz the model delivers the intended effect: loops per GUEST second 32.4M
+→ 1.62M (1/20) and compute-bound code at **1.02 guest-s per wall-s** (0.056
+before). Two defects block shipping a preset:
+
+1. `delay(2000)` costs **14.1 s** wall at 8 MHz (1.8 s native): with 8k CPU
+   cycles per 1 kHz tick the tick/scheduler work saturates the core, the idle
+   fast-forward never runs, so the wall-time win is compute-only.
+2. 80 MHz never boots — zero serial in 480 s, `D0`/`D1` absent, while 8 MHz
+   boots. Cause not isolated; the boot-time clock-switch poll versus the guest
+   timebase is the suspect.
+
+The pinned bytes are therefore untouched (`d6d17d79` wasm, `4afe24dd` worker)
+and no Clock preset is exposed. Next engine steps: the 80/40/20 boot failure,
+then the idle clock coupling.
+
 **The real lever is the JIT, and it is not in our bytes.** Upstream HEAD ships
 the page-JIT tier (CHANGELOG: 230-540 MIPS, `jitBoot` 12M-instruction warmup,
 `jitPage` default). The pinned worker (md5 `4afe24dd`, wasm `d6d17d79`)
