@@ -152,11 +152,13 @@ export const ComponentContextMenu = ({
     // init config cpuFrequency, but this engine's timebase is a FIXED
     // 160 MHz cycle counter (recompute_clock) — the preset only rescales the
     // REPORTED nanos, it does not cut the cycles executed per guest second.
-    // Measured at 40 MHz: pump healthy (7000+ CMDs, alive=true) but
-    // queued=0, emitted=15 — only the runner's own ESP32CLK marker, no guest
-    // byte, ever. Native boots in 4.9 s. A real preset needs the engine to
-    // make CPU clock = cycles per unit time (how esp32sim/Wokwi model it).
-    // See the P7 ask in vendor/emulator-hook-specs/esp32-emu.md.
+    // Re-measured after the runner liveness fix (presets do boot now): loops
+    // per GUEST second is 32.4M at native, 40 and 8 MHz alike, so the guest
+    // clock never moves; delay(2000) costs 1805/1805/2479 ms wall and 8 MHz
+    // loses ~43% of wall throughput. Shipping it would be a lie at 40 and a
+    // regression at 8. A real preset needs the engine to make CPU clock =
+    // cycles per unit time (how esp32sim/Wokwi model it). See the P7 ask in
+    // vendor/emulator-hook-specs/esp32-emu.md.
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');

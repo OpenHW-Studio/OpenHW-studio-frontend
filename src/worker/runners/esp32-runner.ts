@@ -455,24 +455,24 @@ export class Esp32Runner extends ArmRunnerBase {
                 // relative-URL fetch (404 under /vendor/) when absent — the
                 // old loadWasm-after-init call never existed on the proxy
                 // and the bytes were silently dropped (blank engine).
-                // Clock preset (virtual time compression): board attr tickMHz
-                // (160 Full / 80 / 40) rides init config cpuFrequency — the
-                // engine scales virtual nanos by native/target, so lower
-                // clocks cost fewer host cycles per virtual ms. Default off
-                // (omitted → native). Marker for evidence.
-                let espTickDiv = 1;
+                // Clock preset (board attr tickMHz): rides init config
+                // cpuFrequency, which this engine uses ONLY to rescale the
+                // REPORTED nanos (nanosMultiplier = native/target). Measured
+                // 2026-11-03: the guest timebase is fixed at 160 MHz — loops
+                // per GUEST second is 32.4M at native, 40 MHz and 8 MHz alike
+                // (delay(2000) 1.80/1.81/2.48 s wall). So the preset is not a
+                // speed knob; at 8 MHz it costs ~40% wall throughput (1.05M vs
+                // 1.84M loops/wall-s) because the idle fast-forward then
+                // over-advances virtual time. Not exposed in the UI; the attr
+                // path stays for the P7 engine fix (clock = cycles per guest
+                // second, like esp32sim/Wokwi). Default off (omitted → native).
+                let espFreqMHz = 0;
                 try {
                     const battrs = self.compAttrById?.get?.(self.boardId) || {};
                     const want = Math.floor(Number((battrs as any)?.tickMHz) || 0);
-                    if (want > 0 && want < 160) {
-                        espTickDiv = Math.max(1, Math.round(160 / want));
-                        try {
-                            const tag = `ESP32CLK:div=${espTickDiv} `;
-                            for (let i = 0; i < tag.length; i++) txQueue.push(tag.charCodeAt(i) & 0xff);
-                        } catch { /* ignore */ }
-                    }
+                    if (want > 0 && want < 160) espFreqMHz = want;
                 } catch { /* ignore */ }
-                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espTickDiv > 1 ? { cpuFrequency: Math.max(1, Math.round(160 / espTickDiv)) } : {}), ...self.netWifiConfig(), ...self.netMacConfig() }, flash, rom);
+                await self.sim.init('ESP32', { board: self.board, flashSizeMB: 4, mmuPages: 64, strapValue: 0x13, budget: 5_000_000, wasmBinary, ...(espFreqMHz ? { cpuFrequency: espFreqMHz } : {}), ...self.netWifiConfig(), ...self.netMacConfig() }, flash, rom);
                 // MMU mapping: init already seeds the identity map
                 // (mmuTablePro[p] = p, Pro+App) twice — in applyBasicSetup
                 // and again after loadWasm+reset (worker-entry.js). Do NOT
@@ -517,10 +517,18 @@ export class Esp32Runner extends ArmRunnerBase {
                     let alive = false;
                     while (Date.now() - t0 < 10000) {
                         try { self.sim.pollUart(); } catch { /* ignore */ }
+                        // Liveness = retired instructions ONLY. UART bytes
+                        // are not evidence: the clock marker
+                        // (ESP32CLK:div=N) is injected into this same queue
+                        // by the runner, and counted as proof-of-life it
+                        // stopped the RUN re-post loop before the engine
+                        // ever started — measured with tickMHz=40: PC
+                        // frozen at 0x40000400, inst=0, no guest byte for
+                        // 45 s. (Native has no marker, which is why it
+                        // booted.)
                         let inst = 0;
                         try { inst = Number((self.sim as any)?.instTotal) || 0; } catch { inst = 0; }
                         if (inst > 0) { alive = true; break; }
-                        try { if (txQueue.length > 0) { alive = true; break; } } catch { /* ignore */ }
                         await new Promise((r) => setTimeout(r, 50));
                     }
                     if (!alive) { try { self.sim.run(); } catch { /* ignore */ } }
@@ -558,7 +566,7 @@ export class Esp32Runner extends ArmRunnerBase {
                     try {
                         let inst = 0;
                         try { inst = Number((self.sim as any)?.instTotal) || 0; } catch { inst = 0; }
-                        if (inst > 0 || txQueue.length > 0) self.coreAlive = true;
+                        if (inst > 0) self.coreAlive = true;
                     } catch { /* ignore */ }
                     if (self.coreAlive) {
                         try { self.pollBusTaps(); } catch { /* ignore */ }
@@ -578,7 +586,9 @@ export class Esp32Runner extends ArmRunnerBase {
                     try { self.pumpPythonInject(); } catch { /* inject never breaks the pump */ }
                     // Liveness gate for stats CMDs (see pollNetStats):
                     // first UART flow proves RUN was consumed.
-                    try { if (txQueue.length > 0) (self as any).netAlive = true; } catch { /* ignore */ }
+                    // Gate on coreAlive, not on queued bytes: the clock
+                    // marker is a queued byte too and must not arm stats.
+                    try { if (self.coreAlive) (self as any).netAlive = true; } catch { /* ignore */ }
                     try { self.pollNetStats(); } catch { /* stats never break the pump */ }
                     // Boot watchdog: RUN is fire-and-forget, so a lost RUN
                     // (see above) would idle silently for the whole window.
@@ -591,7 +601,7 @@ export class Esp32Runner extends ArmRunnerBase {
                         const w = (self as any);
                         if (!w.bootWdDone) {
                             let uartFlow = false;
-                            try { uartFlow = (txQueue.length > 0); } catch { uartFlow = false; }
+                            try { uartFlow = (Number((self.sim as any)?.instTotal) || 0) > 0; } catch { uartFlow = false; }
                             if (uartFlow) { w.bootWdDone = true; }
                             else if (Date.now() - Number(w.bootWdT0 || Date.now()) > 20000) {
                                 let inst = -1;

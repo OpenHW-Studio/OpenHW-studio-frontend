@@ -356,22 +356,40 @@ That is the opposite of how a faithful emulator does it. `esp32sim`
 (mikroverk/esp32sim, `docs/esp32.md` "Clock model") binds bus time to a fixed
 240 MHz reference and lets SOC_CLK_SEL/CPUPERIOD_SEL choose 40/80/160/240 MHz,
 i.e. the CPU clock decides **how many CPU cycles run per unit of time**. That
-is why a lower clock helps there (and in Wokwi): fewer instructions per guest
-second means a host that cannot sustain 240 MHz can still hit real time — and
-delay/blink sketches reach their guest deadlines sooner in wall time. Their
-speed headline still comes from a JIT ("about 30 times faster than real time"),
-not from the clock. A fixed amount of computation is unaffected either way: N
-instructions cost N/host-rate at any clock.
+is why a lower clock helps there (and in Wokwi): a sketch that pegs the CPU
+covers a guest second with `clock` cycles, so a fixed guest-time window (a 10 s
+measurement, a 2 s burst) costs 8M cycles/s at 8 MHz vs 240M at 240 MHz — some
+30x less wall time for the same guest span, while a fixed instruction count
+costs the same either way. Idle already fast-forwards, so delays do not change.
+Their speed headline still comes from a JIT ("about 30 times faster than real
+time"), not from the clock.
 
-Re-measured 2026-11-03 at 40 MHz with the runner's `cmdTrace` on: the pump is
-healthy (`ticks` climbing, 7000+ engine CMDs, `alive=true`) but
-**`queued=0 emitted=15`** — the only bytes are the runner's own
-`ESP32CLK:div=4` marker. So the core retires instructions and never emits a
-guest byte: boot does not complete. The pace governor is NOT the cause (earlier
-note corrected — the pump keeps running); the guest dies because time is
-rescaled around a cycle counter that did not change. Native clock boots in
-4.9 s. The presets (160/80/40, and a 20/8 MHz attempt) were removed from the
-board context menu on 2026-11-03 for that reason.
+**Re-measured 2026-11-03, after the frontend bug was fixed.** At 40 MHz the
+board boots and runs normally (`setup` in 6.2 s vs 5.0 s native, `P-SETUP` and
+`P-LOOP` both present). The earlier "zero guest serial at any preset" result was
+**not** the engine: the runner injected an `ESP32CLK:div=N` marker into the same
+TX queue as UART bytes and counted that queue as proof-of-life, so it stopped
+re-posting RUN before the core ever started (PC frozen at `0x40000400`, `inst=0`).
+Liveness is now retired instructions only.
+
+With the preset actually running, the numbers settle the question:
+
+| preset | loops/guest-s | loops/wall-s | guest/wall | `delay(2000)` wall |
+|---|---|---|---|---|
+| native (160) | 32.4M | 1.85M | 0.057 | 1805 ms |
+| 40 MHz | 32.4M | 1.85M | 0.057 | 1805 ms |
+| 8 MHz | 32.4M | 1.05M | 0.032 | 2479 ms |
+
+Loops per GUEST second is identical at all three presets — the guest's own
+`millis()` and timers do not follow `cpuFrequency`, confirming the fixed
+160 MHz timebase. What does follow it is the pace pill (EMA of `sim.nanos`:
+0.441 at 40 MHz vs 0.081 native), i.e. the reported number moves while the work
+done does not. At 8 MHz the misalignment costs ~43% of wall throughput and
+`delay()` gets slower, because the idle fast-forward over-advances virtual time
+against a counter it cannot actually run slower. **So there is no honest preset
+to ship**: it would either be a lie (reported time) or a regression (8 MHz).
+The attr path stays dormant in the runner for the engine fix below; the context
+menu keeps the presets removed, with the corrected reason in the comment.
 
 **What would make the preset real (engine).** Make the CPU clock decide cycles
 per unit time as esp32sim does: one guest second at 8 MHz = 8M cycles, at

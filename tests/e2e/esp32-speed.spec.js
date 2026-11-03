@@ -59,13 +59,14 @@ test.describe('ESP32 speed', () => {
   });
 
   test('compute throughput, delay pacing and the pace pill', async ({ page }) => {
-    // ESP32_TICK_MHZ=<n> re-checks the board Clock attr path (board attr
+    // ESP32_TICK_MHZ=<n> measures the board Clock preset (board attr
     // tickMHz -> init config cpuFrequency -> engine nanosMultiplier =
-    // native/target). It is a NEGATIVE control, not a speed knob: measured
-    // 2026-11-03, any value below native leaves the board with zero guest
-    // serial (only the runner's ESP32CLK marker) because the engine scales
-    // the REPORTED time and the pace governor then starves the core. Unset
-    // (the default) measures the real, native behaviour.
+    // native/target, i.e. guest cycles per virtual second = target MHz).
+    // Unset (the default) is the native 160 MHz timebase.
+    // History: until 2026-11-03 any value below native left the board with
+    // zero guest serial — the runner counted its own ESP32CLK marker as
+    // proof-of-life and never re-posted RUN. Fixed in esp32-runner
+    // (liveness = retired instructions); 40 MHz now boots.
     // Computed in Node: nothing inside page.evaluate can see process.env.
     const tickMHz = process.env.ESP32_TICK_MHZ || '';
     const setup = await page.evaluate(({ code, tickMHz }) => window.OpenHWE2E.setupCircuit({
@@ -154,12 +155,21 @@ test.describe('ESP32 speed', () => {
       '(sim ms per wall ms, engine sim.nanos)');
 
     // Both halves are real numbers, not thresholds tuned to one machine.
+    // At a preset the guest clock is target MHz, so the same host throughput
+    // reports `div` times more guest time per wall second and `div` times
+    // fewer loops per guest second. Bracket against that rather than the
+    // native constants. Whether the delay actually gets faster at a lower
+    // clock is what the printed numbers are for — the bound only says the
+    // wait was not skipped.
+    const div = tickMHz ? 160 / Number(tickMHz) : 1;
+    const nativeDelayMs = 1840; // measured 2026-11-03, native timebase
+    const minDelay = div === 1 ? 1500 : Math.max(20, (nativeDelayMs / div) * 0.25);
     expect(Number.isFinite(delayWallMs)).toBe(true);
-    expect(delayWallMs).toBeGreaterThan(1500);          // the delay is not skipped
+    expect(delayWallMs).toBeGreaterThan(minDelay);      // the delay is not skipped
     expect(delayWallMs).toBeLessThan(60000);            // and not 20x slow either
     expect(Number.isFinite(realtime)).toBe(true);
     expect(realtime).toBeGreaterThan(0.01);             // compute-bound code progresses
-    expect(loopsPerGuestSec).toBeGreaterThan(1000000); // core throughput is real
+    expect(loopsPerGuestSec).toBeGreaterThan(1000000 / div); // core throughput is real
     expect(iters).toBeGreaterThan(0);
 
     await page.evaluate(() => window.OpenHWE2E.stop());
