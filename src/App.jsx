@@ -52,6 +52,9 @@ import ProjectsGallery from "./pages/ProjectsGallery.jsx";
 import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
+const AdventureCreatorPage = React.lazy(
+  () => import("./pages/adventure/AdventureCreatorPage.jsx")
+);
 const ProjectGuidePage = React.lazy(
   () => import("./pages/ProjectGuidePage.jsx"),
 );
@@ -309,6 +312,8 @@ export default function App() {
                   <Route path="/alignment-lab" element={<ComponentLab />} />
 
                   <Route path="/adventure" element={<AdventureMapPage />} />
+                  <Route path="/adventure/create" element={<AdventureCreatorPage />} />
+                  <Route path="/adventure/edit/:mapId" element={<AdventureCreatorPage />} />
                   <Route path="/grade" element={<GradingPage />} />
 
                   {/* Guest accessible simulator */}
@@ -500,6 +505,14 @@ export default function App() {
                     element={
                       <ProtectedRoute allowedRole="teacher">
                         <TeacherDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/adventure-creator"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <AdventureCreatorPage />
                       </ProtectedRoute>
                     }
                   />
