@@ -365,6 +365,34 @@ logs `[WASM] ESP32 engine (wasm) initialized` and then no serial ever appears.
 So the upgrade is an integration pass, not a file swap; the working bytes were
 restored unchanged.
 
+**How far the JIT build actually gets (measured 2026-11-03, native clock).**
+A probe board with `cmdTrace: '1'` (= the runner's `[ESP32-DIAG]` line) shows
+the pinned and HEAD builds side by side:
+
+| | pinned `4afe24dd` / `d6d17d79` | owner HEAD `npm run build` / `0f54edd2` |
+|---|---|---|
+| peripheral init | all `[WASM] … init OK` | all `[WASM] … init OK` (same) |
+| worker `ready` | `[WASM-INIT] READY entering commandLoop` | runner logs `initialized`, so `ready` did arrive |
+| guest executes | yes | **yes** — 281–325 boot bytes queued in the UART ring |
+| runner pump | ticks keep coming (19+), `alive=true`, `emitted=342` | **one tick**, then silence: `alive=false queued=325 emitted=0 ticks=1` |
+| guest serial in UI | `ets … / P-SETUP / P-LOOP` at 4.9 s | **none**, for 90 s |
+
+So the bytes are not broken: the engine's own `tests/test-package-smoke.mjs`
+passes on this exact build in Node (bundle boots, core0 PC in ROM). What
+differs is the **browser worker's run loop**: it stops servicing timers after
+the first chunk, which kills the runner's `setTimeout` pump (that pump is what
+moves bytes from the WASM ring to the UI) and with it every later CMD.
+
+**Rejected hypothesis, for the record.** The HEAD build yields through
+`MessageChannel` when `setImmediate` is absent (every browser; Node has it,
+which is why the smoke test is green). Chrome prioritises MessageChannel tasks
+over timers, so this *looked* like the cause. Forcing `_yieldCh = null`
+(`yieldMacrotask` → plain `setTimeout(0)`) changed the progress slightly
+(325 → 281 queued bytes) but the worker still wedged after one pump tick.
+A cooperative-yield scheduling bug would have moved the needle; it did not, so
+the stall is **synchronous inside `runSimChunk`** — a JIT-compiled window that
+never returns control (or jumps somewhere that spins). That is engine-side.
+
 **Acceptance.** Either (a) the pinned build gains an execution-scale knob that
 the governor does not read as time travel, or (b) a JIT build that boots and
 runs under `esp32-runner.ts`, proven on `esp32-speed` (guest/wall must rise
