@@ -679,10 +679,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         code,
       };
       sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
-      // Preserve classId when navigating to assessment page to maintain class context
-      const targetPath = classId
-        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
-        : `/${assessmentName}/assessment`;
+      // Preserve classId, mapId, and journey when navigating to assessment page to maintain class context
+      const sp = new URLSearchParams();
+      if (classId) sp.set('classId', classId);
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlMapId = urlParams.get('mapId');
+      const urlJourney = urlParams.get('journey');
+      if (urlMapId) sp.set('mapId', urlMapId);
+      if (urlJourney) sp.set('journey', urlJourney);
+      const suffix = sp.toString() ? `?${sp.toString()}` : '';
+      const targetPath = `/${assessmentName}/assessment${suffix}`;
       // If running in iframe (guided mode), navigate parent window to replace the whole page
       if (window.self !== window.top) {
         window.parent.location.href = targetPath;

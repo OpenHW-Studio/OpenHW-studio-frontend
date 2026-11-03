@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Plus,
   Compass,
@@ -11,6 +12,11 @@ import {
   Unlink,
   Trash2,
   Loader2,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  HelpCircle,
+  Trophy,
 } from "lucide-react";
 
 export default function TeacherAdventureTab({
@@ -25,6 +31,15 @@ export default function TeacherAdventureTab({
   onUnassignMap,
   studentAdventureProgress,
 }) {
+  const [expandedStudentId, setExpandedStudentId] = useState(null);
+
+  const formatSlug = (slug) => {
+    if (!slug) return "Project";
+    return slug
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  };
   return (
     <section className="teacher-list-block">
       {/* Top Header */}
@@ -415,39 +430,246 @@ export default function TeacherAdventureTab({
 
       {/* Student Progress Overview */}
       <div style={{ marginTop: 32 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 700, color: "var(--text, #0f172a)", marginBottom: 12 }}>
-          Student Adventure Activity
-        </h4>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <h4 style={{ fontSize: 15, fontWeight: 700, color: "var(--text, #0f172a)", margin: 0 }}>
+              Student Adventure Activity & Grading
+            </h4>
+            <small style={{ color: "var(--text2, #64748b)", fontSize: "12px" }}>
+              Click any student to review their completed missions, simulation assessments, and quiz grades.
+            </small>
+          </div>
+          {studentAdventureProgress?.summary && (
+            <div style={{ display: "flex", gap: 10, fontSize: 12, fontWeight: 600 }}>
+              <span style={{ padding: "4px 10px", borderRadius: 8, background: "rgba(99, 102, 241, 0.08)", color: "#4f46e5" }}>
+                {studentAdventureProgress.summary.totalStudents || 0} Enrolled
+              </span>
+              <span style={{ padding: "4px 10px", borderRadius: 8, background: "rgba(16, 185, 129, 0.08)", color: "#059669" }}>
+                {studentAdventureProgress.summary.activeStudents || 0} Active Learners
+              </span>
+            </div>
+          )}
+        </div>
+
         {studentAdventureProgress?.students?.length ? (
           <div style={{ display: "grid", gap: 10 }}>
-            {studentAdventureProgress.students.map((row) => (
-              <div
-                key={row.student._id}
-                className="teacher-classwork-card"
-                style={{
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  padding: "14px 16px",
-                  background: "var(--card)",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <strong style={{ fontSize: 14, color: "var(--text)", fontWeight: 700 }}>{row.student.name}</strong>
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: "var(--green, #10b981)", fontWeight: 700 }}>{row.progress.completedProjectsCount}</span> projects
-                    </span>
-                    <span style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: "var(--accent, #6366f1)", fontWeight: 700 }}>{row.progress.xp.toLocaleString()}</span> XP
-                    </span>
-                    <span style={{ fontSize: 12, color: "var(--text3, #94a3b8)" }}>
-                      {row.progress.lastActivityAt ? new Date(row.progress.lastActivityAt).toLocaleString() : "No activity yet"}
-                    </span>
+            {studentAdventureProgress.students.map((row) => {
+              const isExpanded = expandedStudentId === row.student._id;
+              const completedList = row.progress?.completedProjects || [];
+              const quizList = row.progress?.quizAttempts || [];
+
+              return (
+                <div
+                  key={row.student._id}
+                  className="teacher-classwork-card"
+                  style={{
+                    border: isExpanded ? "1.5px solid #6366f1" : "1px solid var(--border)",
+                    borderRadius: 12,
+                    background: "var(--card)",
+                    transition: "all 0.2s ease",
+                    overflow: "hidden"
+                  }}
+                >
+                  <div
+                    onClick={() => setExpandedStudentId((prev) => (prev === row.student._id ? null : row.student._id))}
+                    style={{
+                      padding: "14px 16px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      backgroundColor: isExpanded ? "rgba(99, 102, 241, 0.03)" : "transparent"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: "50%",
+                          backgroundColor: "rgba(99, 102, 241, 0.12)",
+                          color: "#6366f1",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: 700,
+                          fontSize: 13
+                        }}
+                      >
+                        {row.student.name ? row.student.name.charAt(0).toUpperCase() : "S"}
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 14, color: "var(--text)", fontWeight: 700, display: "block" }}>
+                          {row.student.name}
+                        </strong>
+                        <span style={{ fontSize: 12, color: "var(--text3, #94a3b8)" }}>
+                          {row.student.email}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <CheckCircle2 size={15} style={{ color: "var(--green, #10b981)" }} />
+                        <span style={{ color: "var(--green, #10b981)", fontWeight: 700 }}>
+                          {row.progress.completedProjectsCount}
+                        </span>{" "}
+                        missions
+                      </span>
+                      <span style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <Trophy size={15} style={{ color: "#eab308" }} />
+                        <span style={{ color: "var(--accent, #6366f1)", fontWeight: 700 }}>
+                          {row.progress.xp.toLocaleString()}
+                        </span>{" "}
+                        XP
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--text3, #94a3b8)" }}>
+                        {row.progress.lastActivityAt
+                          ? new Date(row.progress.lastActivityAt).toLocaleString()
+                          : "No activity yet"}
+                      </span>
+                      <div style={{ color: "var(--text3, #94a3b8)", marginLeft: 4 }}>
+                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Expanded Breakdown Drawer */}
+                  {isExpanded && (
+                    <div
+                      style={{
+                        padding: "16px",
+                        borderTop: "1px solid var(--border)",
+                        backgroundColor: "var(--bg, #f8fafc)",
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                        gap: 16,
+                        animation: "fadeIn 0.2s ease"
+                      }}
+                    >
+                      {/* Completed Projects / Island Assessments */}
+                      <div
+                        style={{
+                          backgroundColor: "var(--card, #ffffff)",
+                          border: "1px solid var(--border, #e2e8f0)",
+                          borderRadius: 10,
+                          padding: 14
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                          <CheckCircle2 size={16} style={{ color: "#10b981" }} />
+                          <strong style={{ fontSize: 13, color: "var(--text, #0f172a)" }}>
+                            Completed Island Challenges ({completedList.length})
+                          </strong>
+                        </div>
+                        {completedList.length === 0 ? (
+                          <p style={{ margin: 0, fontSize: 12, color: "var(--text3, #94a3b8)", fontStyle: "italic" }}>
+                            No simulator project assessments passed yet.
+                          </p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {completedList.map((item, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "6px 10px",
+                                  borderRadius: 6,
+                                  backgroundColor: "var(--bg, #f1f5f9)",
+                                  fontSize: 12
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: "var(--text, #0f172a)" }}>
+                                  {formatSlug(item.projectSlug)}
+                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ color: "#10b981", fontWeight: 700, fontSize: 11 }}>
+                                    +{item.xpEarned || 100} XP
+                                  </span>
+                                  {item.completedAt && (
+                                    <span style={{ color: "var(--text3, #94a3b8)", fontSize: 11 }}>
+                                      {new Date(item.completedAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quiz Assessments */}
+                      <div
+                        style={{
+                          backgroundColor: "var(--card, #ffffff)",
+                          border: "1px solid var(--border, #e2e8f0)",
+                          borderRadius: 10,
+                          padding: 14
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                          <HelpCircle size={16} style={{ color: "#6366f1" }} />
+                          <strong style={{ fontSize: 13, color: "var(--text, #0f172a)" }}>
+                            Quiz Performance ({quizList.length})
+                          </strong>
+                        </div>
+                        {quizList.length === 0 ? (
+                          <p style={{ margin: 0, fontSize: 12, color: "var(--text3, #94a3b8)", fontStyle: "italic" }}>
+                            No island concept quizzes submitted yet.
+                          </p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {quizList.map((item, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "6px 10px",
+                                  borderRadius: 6,
+                                  backgroundColor: "var(--bg, #f1f5f9)",
+                                  fontSize: 12
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: "var(--text, #0f172a)" }}>
+                                  {formatSlug(item.projectSlug)}
+                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span
+                                    style={{
+                                      padding: "2px 6px",
+                                      borderRadius: 4,
+                                      fontWeight: 700,
+                                      fontSize: 11,
+                                      backgroundColor: item.passed
+                                        ? "rgba(16, 185, 129, 0.12)"
+                                        : "rgba(239, 68, 68, 0.12)",
+                                      color: item.passed ? "#059669" : "#ef4444"
+                                    }}
+                                  >
+                                    {item.score}% {item.passed ? "Passed" : "Retake"}
+                                  </span>
+                                  {item.attemptedAt && (
+                                    <span style={{ color: "var(--text3, #94a3b8)", fontSize: 11 }}>
+                                      {new Date(item.attemptedAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="teacher-inline-state" style={{ textAlign: "center", padding: "24px", color: "var(--text3)" }}>

@@ -8,6 +8,7 @@ import {
   markAdventureStepComplete,
   postProjectCompleted,
 } from '../services/adventureService'
+import { recordAdventureMissionComplete } from '../services/adventureMapService'
 import { useAuth } from '../context/AuthContext'
 import { 
   ArrowLeft, ArrowRight, Star, Coins, Sun, Moon, Cpu, Wrench, Play, RotateCcw, 
@@ -516,8 +517,15 @@ export default function ProjectAssessmentPage() {
           xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0,
         }).catch(() => {})
       }
+      if (mapId) {
+        recordAdventureMissionComplete(
+          mapId,
+          projectName,
+          classProjectContent?.xpReward || 100
+        ).catch(() => {})
+      }
     }
-  }, [assessmentConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
+  }, [assessmentConfig, submission, classId, mapId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
 
   const clearResult = () => {
     sessionStorage.removeItem(`openhw_assessment_result:${projectName}`)
