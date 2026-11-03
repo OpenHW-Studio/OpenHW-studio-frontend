@@ -111,9 +111,10 @@ board worker.
 
 * **ESP32-CAM beyond WiFi**: only WiFi + DHCP are proven — no LAN TCP, no
   HTTP through the NAT for the cam preset.
-* **`scanNetworks()` can hang.** It is a blocking call that intermittently
-  never returns on this engine (reproduced 2/5 runs by the coverage lane).
-  Cells that need a scan result must scan **after** their proof markers.
+* **`scanNetworks()` can hang when associated.** It works on a fresh STA
+  (`SCAN n=1`, ~5 s) but stalls or returns `-2` when called after
+  `WiFi.begin()` — see the P6 ask below. Cells that need a scan result scan
+  **before** the join.
 * `config.wifi` has **no declared shape** in the `.d.ts` — the runner passes
   it untyped, so a rename is silent.
 
@@ -299,6 +300,40 @@ Impact while open: `matrix.md` keeps GPIO-in at **FULL for externally pulled
 nets** (rails, switch wiper, keypad, joystick) and names these two gaps
 instead of papering over them. Workaround used by the cells: external 10 kΩ
 pull-up; do not rely on `INPUT_PULLUP` or output readback.
+
+## Owner ask — `scanNetworks()` stalls once the station is associated (P6, measured 2026-11-03)
+
+**What works.** A fresh station scans fine. `WiFi.mode(WIFI_STA);
+WiFi.disconnect(); delay(200); WiFi.scanNetworks()` returns `SCAN n=1` in
+~5 s wall against the gateway — the engine's internal AP answers, the driver
+collects the result. `esp32-wifi-gateway` now asserts `SCAN n>=1` in that
+position.
+
+**The gap.** Issue the same call AFTER `WiFi.begin()` + association and it
+stalls the guest (no UART for minutes; only `stop()` recovers) or returns
+`SCAN n=-2` (`WIFI_SCAN_FAILED`). Reproduced 3x on 2026-11-03 (first run of
+`esp32-wifi-gateway`, `esp32-cam-http-gateway`, and a probe that did
+mode+disconnect immediately before the scan) on top of the coverage lane's
+2/5 earlier. Join, DHCP, ARP and NAT HTTP are unaffected — `STATUS=3` and
+`IP=192.168.4.x` are correct on both sides of the stall.
+
+**Where it is not.** The scan RPC in the engine
+(`engine-wasm/src/peripherals/common/hosted.rs`: `start_scan()` ->
+`on_schedule_scan_complete` -> `complete_scan()`) is **dead code**:
+`EspHostedDevice::new()` has no caller anywhere in the crate and
+`complete_scan()` has no caller but that never-assigned callback. That module
+is not the live path and editing it changes nothing (verified by inspection,
+2026-11-03). The live path is the internal AP model
+(`peripherals/common/wifi_bridge.rs`, `NativeInternetAP`, 10 Hz beacons from
+`native_wifi_ap_send_beacon`), which works pre-join.
+
+**So the defect is in the associated-state path**: either the station stops
+receiving beacon/probe frames once connected, or the driver's scan-while-
+connected state never gets its completion. Both are engine-side.
+
+**Acceptance.** `WiFi.scanNetworks()` returns in bounded time both before and
+after association and reports >= 1 network while the engine's AP is on the
+air; the post-join scan then joins `SCAN n>=1` in the cell's assertions.
 
 ## Signal-level guarantees
 
