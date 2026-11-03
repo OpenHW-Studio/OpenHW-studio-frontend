@@ -149,15 +149,14 @@ export const ComponentContextMenu = ({
     }
 
     // ESP32 clock preset REMOVED 2026-11-03: board attr tickMHz rides
-    // init config cpuFrequency, and the engine only scales the REPORTED
-    // virtual nanos (nanosMultiplier = native/target) — the guest executes
-    // exactly as fast. Worse, the runner's own pace governor reads that
-    // inflated time, decides the core is ahead of wall and sets budget=0,
-    // so the board never prints: measured on div=2 (80 MHz) and div=4
-    // (40 MHz), serial contained only the runner's `ESP32CLK:div=N` marker
-    // for 70 s, with the engine logging READY. Do not re-add presets until
-    // the engine scales execution (see the P7 ask in
-    // vendor/emulator-hook-specs/esp32-emu.md).
+    // init config cpuFrequency, but this engine's timebase is a FIXED
+    // 160 MHz cycle counter (recompute_clock) — the preset only rescales the
+    // REPORTED nanos, it does not cut the cycles executed per guest second.
+    // Measured at 40 MHz: pump healthy (7000+ CMDs, alive=true) but
+    // queued=0, emitted=15 — only the runner's own ESP32CLK marker, no guest
+    // byte, ever. Native boots in 4.9 s. A real preset needs the engine to
+    // make CPU clock = cycles per unit time (how esp32sim/Wokwi model it).
+    // See the P7 ask in vendor/emulator-hook-specs/esp32-emu.md.
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');

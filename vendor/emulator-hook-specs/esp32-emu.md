@@ -345,15 +345,39 @@ feel real-time. No frontend knob can change this: the ESP32 core is
 free-running inside the worker (`stepBudget` only pumps peripherals), so the
 runner cannot grant it more cycles per tick.
 
-**The board Clock preset is not a speed control.** `tickMHz` rides init
-`config.cpuFrequency`, and the engine applies `nanosMultiplier =
-native/target` to the REPORTED SAB nanos only — execution is unchanged. The
-runner's pace governor then reads that inflated time, decides the core is
-ahead of wall and sets `budget = 0`. Measured: div=2 (80 MHz) and div=4
-(40 MHz) both produced **zero guest serial in 70 s** (only the runner's
-`ESP32CLK:div=N` marker) while the engine logged `[WASM-INIT] READY`. The
-presets were removed from the board context menu on 2026-11-03 for that
-reason (a 20/8 MHz option was tried and removed in the same pass).
+**The board Clock preset is not a speed control *in this engine*.** `tickMHz`
+rides init `config.cpuFrequency`, and the engine applies `nanosMultiplier =
+native/target` to the REPORTED SAB nanos only. Its own timebase is fixed:
+`recompute_clock()` derives nanos from the cycle counter at 160 MHz whatever
+the configured CPU clock, so lowering the preset does not reduce the cycles
+executed per guest second — it only changes the number the guest reads back.
+
+That is the opposite of how a faithful emulator does it. `esp32sim`
+(mikroverk/esp32sim, `docs/esp32.md` "Clock model") binds bus time to a fixed
+240 MHz reference and lets SOC_CLK_SEL/CPUPERIOD_SEL choose 40/80/160/240 MHz,
+i.e. the CPU clock decides **how many CPU cycles run per unit of time**. That
+is why a lower clock helps there (and in Wokwi): fewer instructions per guest
+second means a host that cannot sustain 240 MHz can still hit real time — and
+delay/blink sketches reach their guest deadlines sooner in wall time. Their
+speed headline still comes from a JIT ("about 30 times faster than real time"),
+not from the clock. A fixed amount of computation is unaffected either way: N
+instructions cost N/host-rate at any clock.
+
+Re-measured 2026-11-03 at 40 MHz with the runner's `cmdTrace` on: the pump is
+healthy (`ticks` climbing, 7000+ engine CMDs, `alive=true`) but
+**`queued=0 emitted=15`** — the only bytes are the runner's own
+`ESP32CLK:div=4` marker. So the core retires instructions and never emits a
+guest byte: boot does not complete. The pace governor is NOT the cause (earlier
+note corrected — the pump keeps running); the guest dies because time is
+rescaled around a cycle counter that did not change. Native clock boots in
+4.9 s. The presets (160/80/40, and a 20/8 MHz attempt) were removed from the
+board context menu on 2026-11-03 for that reason.
+
+**What would make the preset real (engine).** Make the CPU clock decide cycles
+per unit time as esp32sim does: one guest second at 8 MHz = 8M cycles, at
+240 MHz = 240M. With this host at ~9M instructions/s that turns 0.055× into
+~1.1× at 8 MHz. It touches timer/UART/LEDC/ADC timing derivation, so it needs
+an owner pass plus a regression sweep, not a frontend knob.
 
 **The real lever is the JIT, and it is not in our bytes.** Upstream HEAD ships
 the page-JIT tier (CHANGELOG: 230-540 MIPS, `jitBoot` 12M-instruction warmup,
