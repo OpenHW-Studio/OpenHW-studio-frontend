@@ -148,22 +148,16 @@ export const ComponentContextMenu = ({
       });
     }
 
-    // ESP32 clock preset: runner passes tickMHz as init cpuFrequency —
-    // the engine scales virtual nanos by native/target. Default native.
-    if (kind.includes('esp32')) {
-      const baseMHz = 160;
-      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', String(baseMHz));
-      const presets = [baseMHz, 80, 40];
-      menus.push({
-        label: 'Clock',
-        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
-        options: presets.map((mhz) => ({
-          label: mhz === baseMHz ? `${mhz} MHz (Full)` : `${mhz} MHz`,
-          active: String(currentTick) === String(mhz),
-          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
-        })),
-      });
-    }
+    // ESP32 clock preset REMOVED 2026-11-03: board attr tickMHz rides
+    // init config cpuFrequency, and the engine only scales the REPORTED
+    // virtual nanos (nanosMultiplier = native/target) — the guest executes
+    // exactly as fast. Worse, the runner's own pace governor reads that
+    // inflated time, decides the core is ahead of wall and sets budget=0,
+    // so the board never prints: measured on div=2 (80 MHz) and div=4
+    // (40 MHz), serial contained only the runner's `ESP32CLK:div=N` marker
+    // for 70 s, with the engine logging READY. Do not re-add presets until
+    // the engine scales execution (see the P7 ask in
+    // vendor/emulator-hook-specs/esp32-emu.md).
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');

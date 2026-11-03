@@ -335,6 +335,42 @@ connected state never gets its completion. Both are engine-side.
 after association and reports >= 1 network while the engine's AP is on the
 air; the post-join scan then joins `SCAN n>=1` in the cell's assertions.
 
+## Owner ask — speed: no JIT in the pinned bytes, and `cpuFrequency` is not a speed control (P7, measured 2026-11-03)
+
+**Measured (cell `esp32-speed`).** Compute-bound guest code runs at ~0.06x
+wall: 32.4M volatile increments per GUEST second (7.4 cycles/iteration at
+240 MHz, so the guest clock is honest) but 1.85M per WALL second. `delay()`
+waits are fast-forwarded (~1.2x wall), which is why delay-driven sketches
+feel real-time. No frontend knob can change this: the ESP32 core is
+free-running inside the worker (`stepBudget` only pumps peripherals), so the
+runner cannot grant it more cycles per tick.
+
+**The board Clock preset is not a speed control.** `tickMHz` rides init
+`config.cpuFrequency`, and the engine applies `nanosMultiplier =
+native/target` to the REPORTED SAB nanos only — execution is unchanged. The
+runner's pace governor then reads that inflated time, decides the core is
+ahead of wall and sets `budget = 0`. Measured: div=2 (80 MHz) and div=4
+(40 MHz) both produced **zero guest serial in 70 s** (only the runner's
+`ESP32CLK:div=N` marker) while the engine logged `[WASM-INIT] READY`. The
+presets were removed from the board context menu on 2026-11-03 for that
+reason (a 20/8 MHz option was tried and removed in the same pass).
+
+**The real lever is the JIT, and it is not in our bytes.** Upstream HEAD ships
+the page-JIT tier (CHANGELOG: 230-540 MIPS, `jitBoot` 12M-instruction warmup,
+`jitPage` default). The pinned worker (md5 `4afe24dd`, wasm `d6d17d79`)
+contains **no `jit` symbol at all** — it predates the tier. A build of owner
+HEAD (`npm run build`; worker-entry 11548 lines, wasm `0f54edd2`) does not
+reach the worker's `[WASM-INIT] READY` under `esp32-runner.ts`: the runner
+logs `[WASM] ESP32 engine (wasm) initialized` and then no serial ever appears.
+So the upgrade is an integration pass, not a file swap; the working bytes were
+restored unchanged.
+
+**Acceptance.** Either (a) the pinned build gains an execution-scale knob that
+the governor does not read as time travel, or (b) a JIT build that boots and
+runs under `esp32-runner.ts`, proven on `esp32-speed` (guest/wall must rise
+well above 0.06) plus `esp32-wifi-gateway` and `esp32-displays`, with the new
+md5s recorded in `src/engines/esp32-emu/README.md`.
+
 ## Signal-level guarantees
 
 - `reset()`-family reinstalls a fresh model synchronously; instruction

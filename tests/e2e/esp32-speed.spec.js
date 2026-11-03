@@ -59,13 +59,28 @@ test.describe('ESP32 speed', () => {
   });
 
   test('compute throughput, delay pacing and the pace pill', async ({ page }) => {
-    const setup = await page.evaluate((code) => window.OpenHWE2E.setupCircuit({
+    // ESP32_TICK_MHZ=<n> re-checks the board Clock attr path (board attr
+    // tickMHz -> init config cpuFrequency -> engine nanosMultiplier =
+    // native/target). It is a NEGATIVE control, not a speed knob: measured
+    // 2026-11-03, any value below native leaves the board with zero guest
+    // serial (only the runner's ESP32CLK marker) because the engine scales
+    // the REPORTED time and the pace governor then starves the core. Unset
+    // (the default) measures the real, native behaviour.
+    // Computed in Node: nothing inside page.evaluate can see process.env.
+    const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    const setup = await page.evaluate(({ code, tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
-        { id: 'esp1', type: 'openhw-esp32', attrs: { macAddress: '24:6F:28:00:00:41' }, x: 100, y: 100 },
+        {
+          id: 'esp1',
+          type: 'openhw-esp32',
+          attrs: { macAddress: '24:6F:28:00:00:41', ...(tickMHz ? { tickMHz } : {}) },
+          x: 100,
+          y: 100,
+        },
       ],
       wires: [],
       code,
-    }), CODE);
+    }), { code: CODE, tickMHz });
     expect(setup.ok).toBe(true);
 
     const runP = page.evaluate(() => window.OpenHWE2E.run({
@@ -128,6 +143,7 @@ test.describe('ESP32 speed', () => {
     const delayWallMs = marks.D0 && marks.D1 ? marks.D1 - marks.D0 : NaN;
     const delayRatio = Number.isFinite(delayWallMs) ? 2000 / delayWallMs : NaN;
 
+    console.log('ESP32SPEED tickMHz:', process.env.ESP32_TICK_MHZ || 'native');
     console.log('ESP32SPEED delay: guest-ms 2000 in wall-ms', delayWallMs,
       'guest/wall:', Number.isFinite(delayRatio) ? delayRatio.toFixed(3) : 'n/a');
     console.log('ESP32SPEED compute: guest/wall:', Number.isFinite(realtime) ? realtime.toFixed(3) : 'n/a',
