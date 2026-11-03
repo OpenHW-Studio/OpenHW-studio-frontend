@@ -258,6 +258,48 @@ Frontend side is ready and waiting (`src/worker/runners/rmt-neopixel.ts`,
 frames; wired into `pollRmtTxHost`). No runner change is needed once the
 tap returns a real frame.
 
+## Owner ask — pad pull-up and output readback reach `digitalRead` (P4/P5, measured 2026-11-03)
+
+Two pad-model facts make ordinary Arduino input code read wrong on the DevKit.
+Both are host-visible from the guest (`digitalRead`) and both are in the pad
+model, not the runner.
+
+**P4 — internal pull-up is configured but never drives the input value.**
+Circuit: `GPIO4 → pushbutton 1l`, `GND → 2l`, sketch `pinMode(4, INPUT_PULLUP)`
++ `digitalRead(4)`.
+
+* idle (button open) reads **0**, pressed reads **0** — the pin never goes HIGH;
+* the same circuit with an **external 10 kΩ to 3V3** reads 1 idle / 0 pressed,
+  so the switch, the net and the input pump are all fine.
+
+`gpio_core.rs` has `internal_pull_up` (`PAD_DRIVER`/`FUN_PU`, set by
+`pinMode(INPUT_PULLUP)`) and `update()` does fold it into `PinState::PullUp`,
+but `set_pin_input_value()` (line 745) only stores `input_value_raw` and then
+gates the `input_values` write on
+`pins[i].input_value(&self.input_values) != input_value_raw`. With no external
+driver the pad keeps reporting `Input`/0, so the raw 0 from the host pump wins
+forever.
+
+**Ask:** when a pin has `internal_pull_up` (or `rtc_pull_up`) set and no
+external driver is attached, `digitalRead` must follow the pull state (HIGH);
+same for pull-down → LOW. That is the silicon behaviour every sketch relies on
+(`INPUT_PULLUP` + switch to GND is the default wiring in the Arduino docs).
+
+**P5 — a pin driven as OUTPUT always reads back 0.**
+Sketch: `pinMode(2, OUTPUT)` and `Serial.println(digitalRead(2))` alternating
+`digitalWrite`. The guest prints `0` for both levels (`esp32-inputs.spec.js`,
+cell marked `test.fixme` with this ask). On silicon the pad loopback shows the
+driven level.
+
+**Ask:** feed the driven output level into the input register for the same pad
+(the GPIO matrix's `gpio_in` mux already selects the pad; the pad value just
+needs to be the driven level when `gpio_output`/`open_drain` is active).
+
+Impact while open: `matrix.md` keeps GPIO-in at **FULL for externally pulled
+nets** (rails, switch wiper, keypad, joystick) and names these two gaps
+instead of papering over them. Workaround used by the cells: external 10 kΩ
+pull-up; do not rely on `INPUT_PULLUP` or output readback.
+
 ## Signal-level guarantees
 
 - `reset()`-family reinstalls a fresh model synchronously; instruction

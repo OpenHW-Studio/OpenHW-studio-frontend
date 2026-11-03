@@ -340,7 +340,7 @@ until the engine lands — do not weaken them to HIGH-only.
 
 | Board | UART | I2C | SPI | ADC | PWM/LEDC | DAC | DMA | GPIO-in | 1-Wire | DHT-RMT | TWAI | I2S | Camera | MicroPython | WiFi/ETH | SD-SPI | Display-ext | Touch |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | PARTIAL (input path via pumps; no switch→digitalRead cell; output readback gap) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | FULL (SSD1306 I2C, ILI9341 SPI, ePaper full frame, N5110 fill, LCD1602 I2C, MAX7219 VSPI) | NONE |
+| openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | FULL (static rails, switch wiper both directions, pushbutton w/ external 10k, keypad, joystick ADC; `INPUT_PULLUP` alone and output readback are engine gaps P4/P5) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | FULL (SSD1306 I2C, ILI9341 SPI, ePaper full frame, N5110 fill, LCD1602 I2C, MAX7219 VSPI) | NONE |
 | openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP + 2-board LAN + HTTP/NAT 2026-10-20; LAN cell FLAKY: 2nd ESP32 board sometimes never joins — client serial stops after CCLI-BEGUN while the server side completes) | NONE | NONE | NONE |
 
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
@@ -353,7 +353,9 @@ esp32-sdspi, esp32-epaper, esp32-n5110, esp32-wdt-sleep, esp32-cam-sweep,
 esp32-cam-mp, esp32-cam-sdspi, esp32-freertos, esp32-hash-crc,
 esp32-cam-wifi-gateway, esp32-cam-lan, esp32-cam-http-gateway,
 esp32-displays (7-segment + TM1637, mid-run model sampling),
-esp32-displays-ext (LCD1602 I2C + MAX7219 VSPI, mid-run model sampling).
+esp32-displays-ext (LCD1602 I2C + MAX7219 VSPI, mid-run model sampling),
+esp32-inputs (pushbutton + keypad + joystick, real DOM interaction *after*
+firmware boot), esp32-gpio-in-switch (slide-switch wiper flipped mid-run).
 
 ### Attached components on the DevKit shell (measured 2026-11-02)
 
@@ -370,6 +372,10 @@ model's own state alone):
 | DHT22 (RMT) | `esp32-dht22` | FULL | 27.3 °C / 61.2 % |
 | PIR motion (`wokwi-pir-motion-sensor`) | `pir:OUT → GPIO27`, `attrs.motion` true/false | FULL | `digitalRead(27)` = 1 with motion, 0 without |
 | Photoresistor (analog) | `ldr:2 → GPIO34`, `attrs.lux` | FULL (ADC side) | lux 500 → `analogRead(34)` 3033; lux 200 → 1214 (tracks the model's 5 V ÷ 1023 mapping) |
+| Pushbutton (external 10k pull-up) | `GPIO4 → btn:1l`, `GND → 2l`, `10k: 3V3 → 1l`, `pinMode(4, INPUT)` | FULL | DOM press mid-run → `BTN:0`, release → `BTN:1` (test: `esp32-inputs`) |
+| Slide switch (wiper → GPIO13) | `3V3 → 3`, `GND → 1`, `2 → GPIO13` | FULL | guest read follows the wiper **both ways** while running: `GPIO13=1` → DOM flip → `0` → flip → `1` (test: `esp32-gpio-in-switch`) |
+| 4×4 membrane keypad | rows `GPIO4/5/12/13`, cols `GPIO14/15/16/17` | FULL | DOM hold on key `5` during a matrix scan → `KEY:11` (row 1, col 1) (test: `esp32-inputs`) |
+| Analog joystick | `VCC/GND`, `HORZ → GPIO34`, `VERT → GPIO35`, `SEL → GPIO25` | FULL (axes) / PARTIAL (SEL) | DOM drag mid-run → `analogRead(34)` and `analogRead(35)` leave 2048 together (2048 → 686); `SEL` needs an external pull-up (P4) (test: `esp32-inputs`) |
 | DC motor | `motor:1 → GPIO26`, `GND → motor:2` | FULL | live `speed` 0.49 while the pin is HIGH (test: `esp32-actuators`) |
 | Buzzer (passive) | `SIG → GPIO25`, `ledcAttach(25,1000,10)` + `ledcWrite(25,512)` | FULL | live `isBuzzing: true`, `frequency: 1000 Hz` (test: `esp32-actuators`) |
 | Servo (RC PWM) | `PWM → GPIO13`, `ledcAttach(13,50,16)` | FULL (angle) / PARTIAL (width source) | 1500 µs → **92.7°**, 2000 µs → **141.2°** (exact for the 544–2400 µs band); the pulse width is recovered by disambiguating 50–400 Hz duty counts, so a firmware whose duty count fits two resolutions is ignored instead of guessed (`pwmWidthExact`) |
@@ -392,6 +398,20 @@ trigger as "width unknown", scale the echo through the
 pulse-width components on ESP32 (HC-SR04, IR decode, servo input) stay
 PARTIAL until the engine exposes a per-edge timestamp/cycle counter —
 owner ask.
+
+**Interaction timing (cost three red cells before it was named).** Every
+component UI renders with `pointer-events: none` until React `isRunning`
+flips, and that flip can land before the guest has booted. A DOM click in that
+window hits the canvas, so the model never sees the event and the cell reads
+"the component does nothing". Both input specs now gate on
+`OpenHWE2E.snapshot()`: `running` **and** the sketch's readiness needle in
+`serialText` (new e2e-only field) **and** the target element's computed
+`pointer-events !== 'none'`. No fixed sleeps, no retries of the whole circuit.
+
+**ADC pin ids.** On the DevKit shell the ADC nets are addressed as
+`GPIO34`/`GPIO35` in wires; a bare `34` endpoint does not land on the injected
+net, so `analogRead` stays at its 2048 default and the component looks dead
+while its model is fine.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09; re-swept 2026-10-20)
 

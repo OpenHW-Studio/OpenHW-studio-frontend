@@ -4613,6 +4613,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           pins: JSON.parse(JSON.stringify(renderPinsByBoardRef.current || {})),
           telemetry: Array.isArray(telemetry) ? telemetry.slice(0, 50) : telemetry,
           compileProbe,
+          // e2e: last 4k of captured serial so a spec can wait for a
+          // firmware readiness needle before touching a component UI.
+          // Interacting earlier lands on the canvas (isRunning lags boot)
+          // and reads as "the component does nothing".
+          serialText: serialHistoryRef.current
+            .map((e) => String(e?.text ?? e ?? ''))
+            .join('')
+            .slice(-4000),
         };
       },
     };
