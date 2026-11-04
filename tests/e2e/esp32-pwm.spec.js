@@ -18,9 +18,11 @@ test.describe('ESP32 PWM (devkit LED)', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
-    const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
+    // ESP32_TICK_MHZ=<n> exercises the board Clock preset; unset = native.
+    const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    const setup = await page.evaluate(({ tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
-        { id: 'esp1', type: 'openhw-esp32', attrs: {}, x: 100, y: 100 },
+        { id: 'esp1', type: 'openhw-esp32', attrs: tickMHz ? { tickMHz } : {}, x: 100, y: 100 },
         { id: 'led1', type: 'openhw-led', attrs: {}, x: 450, y: 120 },
       ],
       wires: [
@@ -28,14 +30,14 @@ test.describe('ESP32 PWM (devkit LED)', () => {
         { from: 'esp1:GND', to: 'led1:C' },
       ],
       code: 'void setup(){Serial.begin(115200);Serial.println("ESPPWM_RDY2");ledcAttach(16,5000,8);ledcWrite(16,192);Serial.println("ESPPWM_SET");}\nvoid loop(){Serial.print("ESPPWM_G:");Serial.println(ledcRead(16));Serial.println("ESPPWM_TICK");delay(1000);}\n',
-    }));
+    }), { tickMHz });
     expect(setup.ok).toBe(true);
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
       // NOTE: ESP32 ticks are ~1/sec in the browser worker and Arduino
       // boot is slow, so LEDC config lands near the tail and steady
       // state needs a long window (duty=1 single samples are
       // mid-update transients, not the settled value).
-      forMs: 240000, selectTelemetry: ['led1'], serialNeedle: 'ESPPWM_SET', telemetryMode: 'detail',
+      forMs: 240000, selectTelemetry: ['led1'], serialNeedle: 'ESPPWM_G:', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     console.log('ESPPWM reasons:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);

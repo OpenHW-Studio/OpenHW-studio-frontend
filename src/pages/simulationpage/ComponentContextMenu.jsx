@@ -121,6 +121,18 @@ export const ComponentContextMenu = ({
           ]
         });
       }
+
+      // Wokwi-style presets; attr rides the runner's init cpuFrequency.
+      const currentTick = resolveComponentAttrString(comp?.attrs, 'tickMHz', '160');
+      menus.push({
+        label: 'Clock',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+        options: [160, 80, 40, 20, 8].map((mhz) => ({
+          label: mhz === 160 ? `${mhz} MHz (Full)` : `${mhz} MHz`,
+          active: String(currentTick) === String(mhz),
+          onClick: () => updateComponentAttr?.(comp.id, 'tickMHz', String(mhz)),
+        })),
+      });
     }
 
     // STM32F4 Clock menu REMOVED (proven inert 2026-10-10): the wasm
@@ -148,16 +160,13 @@ export const ComponentContextMenu = ({
       });
     }
 
-    // ESP32 clock presets stay OUT (2026-11-03). The engine now HAS the
-    // Wokwi/esp32sim model behind a patch on the pinned baseline (CPU clock =
-    // cycles per guest second; engine repo `tests/tmp-clk-model.patch`), and at
-    // 8 MHz it behaves: loops per GUEST second 32.4M -> 1.62M and
-    // compute-bound code reaches 1.02 guest-s per wall-s. Two defects block
-    // exposing it: at 80 MHz the board never boots (zero serial in 480 s,
-    // D0/D1 absent) though 8 MHz does, and at 8 MHz delay() is 7.8x slower in
-    // wall time (2 s delay = 14.1 s) because the 1 kHz tick saturates the core
-    // and the idle fast-forward never runs. The pinned bytes are unchanged
-    // (wasm d6d17d79, worker 4afe24dd). See P7 in
+    // ESP32 Clock menu (2026-11-04): the engine applies the CPU clock as
+    // cycles per GUEST second (Wokwi/esp32sim model; APB 80 MHz and RTC
+    // 32.768 kHz stay absolute). Compute scales linearly — 32.4M / 16.2M /
+    // 8.1M / 4.05M / 1.62M loops per guest-s at 160/80/40/20/8 — and delay()
+    // stays tick-accurate. The old "never boots at 80 MHz" was an Intel-HEX
+    // artifact the runner never parsed (all-0xFF flash), and the 8 MHz delay
+    // cost was a setTimeout-clamped idle yield. See P7 in
     // vendor/emulator-hook-specs/esp32-emu.md.
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {

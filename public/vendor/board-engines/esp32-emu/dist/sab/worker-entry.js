@@ -7074,12 +7074,15 @@ function setError(msg) {
   if (ctrl) ctrl[SAB_ERR_FLAG] = 1;
   send({ type: "error", message: msg });
 }
-function nanosMultiplier() {
-  if (!chip || !ctrl) return 1;
-  const targetFreq = ctrl[SAB_CPU_FREQ];
-  if (!targetFreq || targetFreq <= 0) return 1;
-  const native = chip._nativeFrequency || 16e7;
-  return targetFreq >= native ? 1 : native / targetFreq;
+// OPENHW MIRROR PATCH (CPU clock model, 2026-11-03): guest time is
+// cycles / CPU clock, and the SAME value drives the Rust timebase
+// (native_set_cpu_hz), so timers/UART/RTC and this SAB nanos agree.
+// No extra multiplier here: scaling twice was the old bug — it moved the
+// reported clock while the guest kept running at 160 MHz.
+function cpuHz() {
+  const cf = ctrl ? Number(ctrl[SAB_CPU_FREQ]) : 0;
+  if (cf > 0) return cf;
+  return chip?._cpuHz || chip?._nativeFrequency || 16e7;
 }
 var _dbgUserCodeNotified = false;
 var _dbgRunNotified = false;
@@ -7087,10 +7090,9 @@ var _dbgStage2Notified = false;
 var _writeSABCount = 0;
 function writeSABState() {
   if (!ctrl) return;
-  const n = chip ? chip.cycles / 16e7 * 1e9 : 0;
-  const scaled = n * nanosMultiplier();
-  ctrl[SAB_NANOS_LO] = scaled | 0;
-  ctrl[SAB_NANOS_HI] = scaled / 4294967296 | 0;
+  const n = chip ? chip.cycles / cpuHz() * 1e9 : 0;
+  ctrl[SAB_NANOS_LO] = n | 0;
+  ctrl[SAB_NANOS_HI] = n / 4294967296 | 0;
   if (chip._wasmCores?.[0]) {
     ctrl[SAB_PC] = chip._wasmCores[0].PC;
   } else {
@@ -7575,7 +7577,32 @@ function finishSim() {
 function syncClockState(exp) {
   const e = exp || chip?._wasmLoader?.exports;
   if (!e?.native_set_clock_state) return;
+  // OPENHW MIRROR PATCH (CPU clock model): the CPU clock decides how the
+  // cycle counter maps to guest time, so it is re-applied on every sync —
+  // the worker re-runs this after each reset, and a fresh WASM instance
+  // starts at the 160 MHz default.
+  try {
+    e.native_set_cpu_hz?.(cpuHz());
+  } catch {}
   e.native_set_clock_state(Number(chip.cycles ?? 0) >>> 0);
+}
+// Yield helper: a MessageChannel task is a real macrotask, so pending worker
+// messages, WebSocket frames (gateway WiFi/BT) and timers run, but it is not
+// subject to setTimeout's ~4 ms nested-timer clamp. The old clamped yield cost
+// ~11 s of pure sleep across a single idle fast-forward at 8 MHz.
+var _yieldCh = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
+var _yieldResolve = null;
+if (_yieldCh) _yieldCh.port1.onmessage = () => {
+  const r = _yieldResolve;
+  _yieldResolve = null;
+  if (r) r();
+};
+function yieldTask() {
+  if (!_yieldCh) return new Promise((r) => setTimeout(r, 0));
+  return new Promise((r) => {
+    _yieldResolve = r;
+    _yieldCh.port2.postMessage(0);
+  });
 }
 async function runSimChunk() {
   if (!chip || !ctrl || !Atomics.load(ctrl, SAB_RUN)) {
@@ -8150,7 +8177,10 @@ async function runSimChunk() {
       }
       if ((cycles & 524287) === 0) writeSABState();
       if (!Atomics.load(ctrl, SAB_RUN)) break;
-      if ((steps & 511) === 0) await new Promise((r) => setTimeout(r, 0));
+      // Busy: yield every 512 steps. Idle fast-forward: every 2048 (a
+      // clamped timer here was the 8 MHz delay cost; a macrotask keeps socket
+      // fairness without the sleep).
+      if ((steps & (isIdle ? 2047 : 511)) === 0) await yieldTask();
     }
   } catch (err) {
     console.error("[SIM-ERROR]", err.message, err.stack);
@@ -9259,18 +9289,23 @@ async function onMessage(type, data) {
         else if (config.simMode === "tight") needsEventLoop = false;
         else if (config.simMode === "blocking") needsEventLoop = false;
         if (typeof config.chunkSize === "number" && config.chunkSize > 0) simChunkSize = config.chunkSize;
-        if (config.nanos !== void 0) {
-          chip.cycles = Math.round(Number(config.nanos) / 1e9 * 16e7);
-          syncClockState();
-        }
         {
           const cf = config.cpuFrequency;
           const native = chip._nativeFrequency || 16e7;
-          ctrl[SAB_CPU_FREQ] = !cf || cf === "max" ? native : cf === "auto" ? 8e6 : Number(cf) * 1e6;
+          const hz = !cf || cf === "max" ? native : cf === "auto" ? 8e6 : Number(cf) * 1e6;
+          ctrl[SAB_CPU_FREQ] = hz;
+          chip._cpuHz = hz;
+          try {
+            chip._wasmLoader?.exports?.native_set_cpu_hz?.(hz);
+          } catch (_) {}
+        }
+        if (config.nanos !== void 0) {
+          chip.cycles = Math.round(Number(config.nanos) / 1e9 * cpuHz());
+          syncClockState();
         }
         writeSABState();
         console.log(`[WASM-INIT] READY entering commandLoop`);
-        send({ type: "ready", memoryRegions: getMemorySABs(chip), engineMode, chipInfo: { board: chip.board || "esp32", flashSizeMB: chip._flashSizeMB, psramSizeMB: chip._psramSizeMB, psramType: chip._psramType, cpuFrequency: 16e7, _nativeFrequency: chip._nativeFrequency }, msgId });
+        send({ type: "ready", memoryRegions: getMemorySABs(chip), engineMode, chipInfo: { board: chip.board || "esp32", flashSizeMB: chip._flashSizeMB, psramSizeMB: chip._psramSizeMB, psramType: chip._psramType, cpuFrequency: cpuHz(), _nativeFrequency: chip._nativeFrequency }, msgId });
         if (config.simMode === "blocking") {
           setTimeout(() => blockingCommandLoop(), 0);
         } else {

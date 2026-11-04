@@ -337,6 +337,44 @@ air; the post-join scan then joins `SCAN n>=1` in the cell's assertions.
 
 ## Owner ask — speed: no JIT in the pinned bytes, and `cpuFrequency` is not a speed control (P7, measured 2026-11-03)
 
+**Resolved 2026-11-04 — clock presets ship.** The model was ported onto the
+pinned baseline and both blockers were root-caused. The app now carries the
+rebuilt wasm (`f860d5a7`) with the clock model in both `worker-entry.js`
+copies, and the board context menu exposes 160/80/40/20/8 MHz (attr `tickMHz`
+→ init `cpuFrequency`).
+
+- “80 MHz never boots” was not the clock. The backend returns an Intel HEX
+  artifact and the runner only base64-decoded it, so `atob` threw and the ROM
+  sat in download-mode with `flash[0]=ff`, `PC=0x4000fcac`, `inst=1024`,
+  `nanos=64000`, zero serial. `intelHexToU8()` now parses `:` images.
+- The 8 MHz `delay()` cost was the run-loop yield: `setTimeout(0)` clamps to
+  ~4 ms, and a 2 s delay paid ~2,800 yields (~11 s). The loop now yields via
+  a MessageChannel macrotask — busy every 512 steps, idle every 2048 — which
+  still services worker/WebSocket traffic without the clamp.
+
+Final `esp32-speed` (loops are the firmware's own count per GUEST second;
+`delay` is 2000 guest-ms of FreeRTOS ticks):
+
+| preset | loops/guest-s | guest/wall | delay(2000) wall | pace pill |
+|---|---|---|---|---|
+| 160 (native) | 32.4M | 0.057 | 330 ms | 0.08 |
+| 80 | 16.2M | 0.211 | 382 ms | 0.50 |
+| 40 | 8.1M | 0.497 | 450 ms | — |
+| 20 | 4.05M | 0.960 | 775 ms | — |
+| 8 | 1.62M | 2.42 | 1.06 s | 1.23 |
+
+`esp32-pwm` at 8 MHz passes (duty 192 reaches the LED). Scaling is exactly
+160/preset; APB 80 MHz and RTC 32.768 kHz stay absolute. The engine patch
+stays uncommitted in the owner's repo (`tests/tmp-clk-model.patch`, baseline
+`c03f3927`) pending owner sign-off; the app ships only the rebuilt wasm.
+
+**Known engine limitation (pre-existing, not preset-specific).** During idle
+fast-forward, `millis()`/esp_timer runs ahead of `xTaskGetTickCount()` (~6x
+at 160 MHz; the gap scales as 160/clock). It reproduces on the pinned baseline
+at the default clock; `delay()` itself is tick-accurate and was not changed.
+
+The 2026-11-03 investigation below is kept for history.
+
 **Measured (cell `esp32-speed`).** Compute-bound guest code runs at ~0.06x
 wall: 32.4M volatile increments per GUEST second (7.4 cycles/iteration at
 240 MHz, so the guest clock is honest) but 1.85M per WALL second. `delay()`
@@ -386,10 +424,10 @@ Loops per GUEST second is identical at all three presets — the guest's own
 0.441 at 40 MHz vs 0.081 native), i.e. the reported number moves while the work
 done does not. At 8 MHz the misalignment costs ~43% of wall throughput and
 `delay()` gets slower, because the idle fast-forward over-advances virtual time
-against a counter it cannot actually run slower. **So there is no honest preset
-to ship**: it would either be a lie (reported time) or a regression (8 MHz).
-The attr path stays dormant in the runner for the engine fix below; the context
-menu keeps the presets removed, with the corrected reason in the comment.
+against a counter it cannot actually run slower. **So at the time there was no honest preset
+to ship: it would either be a lie (reported time) or a regression (8 MHz).
+The attr path stayed dormant and the context menu kept the presets removed
+until the resolution above.
 
 **What would make the preset real (engine).** Make the CPU clock decide cycles
 per unit time as esp32sim does: one guest second at 8 MHz = 8M cycles, at
@@ -419,9 +457,10 @@ before). Two defects block shipping a preset:
    boots. Cause not isolated; the boot-time clock-switch poll versus the guest
    timebase is the suspect.
 
-The pinned bytes are therefore untouched (`d6d17d79` wasm, `4afe24dd` worker)
-and no Clock preset is exposed. Next engine steps: the 80/40/20 boot failure,
-then the idle clock coupling.
+**Superseded 2026-11-04**: the app now ships the patched wasm and exposes the
+Clock presets; the engine patch itself is still uncommitted in the owner's
+repo. The two blockers above were the Intel HEX artifact and the clamped idle
+yield, not the clock model.
 
 **The real lever is the JIT, and it is not in our bytes.** Upstream HEAD ships
 the page-JIT tier (CHANGELOG: 230-540 MIPS, `jitBoot` 12M-instruction warmup,

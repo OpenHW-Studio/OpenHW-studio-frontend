@@ -62,9 +62,9 @@ test.describe('ESP32 speed', () => {
 
   test('compute throughput, delay pacing and the pace pill', async ({ page }) => {
     // ESP32_TICK_MHZ=<n> measures the board Clock preset (board attr
-    // tickMHz -> init config cpuFrequency -> engine nanosMultiplier =
-    // native/target, i.e. guest cycles per virtual second = target MHz).
-    // Unset (the default) is the native 160 MHz timebase.
+    // tickMHz -> init config cpuFrequency -> engine CPU clock: guest cycles
+    // per virtual second = target MHz, while APB 80 MHz and RTC 32.768 kHz
+    // stay absolute). Unset (the default) is the native 160 MHz timebase.
     // History: until 2026-11-03 any value below native left the board with
     // zero guest serial — the runner counted its own ESP32CLK marker as
     // proof-of-life and never re-posted RUN. Fixed in esp32-runner
@@ -173,11 +173,11 @@ test.describe('ESP32 speed', () => {
     // At a preset the guest clock is target MHz, so the same host throughput
     // reports `div` times more guest time per wall second and `div` times
     // fewer loops per guest second. Bracket against that rather than the
-    // native constants. Whether the delay actually gets faster at a lower
-    // clock is what the printed numbers are for — the bound only says the
-    // wait was not skipped.
-    const nativeDelayMs = 1840; // measured 2026-11-03, native timebase
-    const minDelay = div === 1 ? 1500 : Math.max(20, (nativeDelayMs / div) * 0.25);
+    // native constants. delay() is tick-based and the idle loop fast-forwards
+    // straight to the next alarm, so its wall time is mostly host cost, not
+    // guest time: the bound only says the wait was not skipped (160 MHz
+    // ~330 ms, 8 MHz ~1 s after the MessageChannel yield fix).
+    const minDelay = 50;
     expect(Number.isFinite(delayWallMs)).toBe(true);
     expect(delayWallMs).toBeGreaterThan(minDelay);      // the delay is not skipped
     expect(delayWallMs).toBeLessThan(60000);            // and not 20x slow either

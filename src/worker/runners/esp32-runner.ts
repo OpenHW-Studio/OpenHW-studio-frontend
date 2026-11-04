@@ -42,6 +42,37 @@ function b64ToU8(b64: string): Uint8Array {
     return out;
 }
 
+/**
+ * Parse an Intel HEX image (the compiler's `hex` artifact, which starts with
+ * ':') into a flat flash image. Without this the runner fed the ASCII hex
+ * text to atob, which threw and silently left all-0xFF flash: the ROM then
+ * sat in its download-mode poll forever with zero guest serial — observed as
+ * a "board never boots" that looked like an engine/clock defect. Records are
+ * standard: 00 data, 01 EOF, 02 ext segment, 04 ext linear; anything else is
+ * skipped, and bytes outside the flash size are dropped.
+ */
+function intelHexToU8(text: string, size: number): Uint8Array {
+    const out = new Uint8Array(size).fill(0xff);
+    let base = 0;
+    for (const line of text.split(/\r?\n/)) {
+        const s = line.trim();
+        if (!s.startsWith(':') || s.length < 11) continue;
+        const n = parseInt(s.slice(1, 3), 16);
+        const addr = parseInt(s.slice(3, 7), 16);
+        const type = parseInt(s.slice(7, 9), 16);
+        if (type === 0) {
+            const at = base + addr;
+            for (let i = 0; i < n; i++) {
+                const v = parseInt(s.slice(9 + i * 2, 11 + i * 2), 16);
+                if (at + i < size) out[at + i] = v;
+            }
+        } else if (type === 1) break;
+        else if (type === 2) base = parseInt(s.slice(9, 13), 16) << 4;
+        else if (type === 4) base = parseInt(s.slice(9, 13), 16) << 16;
+    }
+    return out;
+}
+
 export class Esp32Runner extends ArmRunnerBase {
     protected uartTxPins = ESP32_UART_TX;
     protected uartRxPins = ESP32_UART_RX;
@@ -401,15 +432,20 @@ export class Esp32Runner extends ArmRunnerBase {
                 const flash = new Uint8Array(4 * 1024 * 1024).fill(0xff);
                 const s = String(firmware || '').trim();
                 if (s) {
-                    const isBin = !s.startsWith('UF2BASE64:') && !s.startsWith('ELFBASE64:') && !s.startsWith(':');
-                    void isBin;
-                    // Backend `bin` artifacts arrive as raw base64 (no prefix).
-                    const raw = s.startsWith('UF2BASE64:') || s.startsWith('ELFBASE64:')
-                        ? s.slice(s.indexOf(':') + 1) : s;
-                    try {
-                        const img = b64ToU8(raw);
-                        flash.set(img.subarray(0, flash.length), 0);
-                    } catch { /* boot ROM only */ }
+                    if (s.startsWith(':')) {
+                        // Intel HEX (compiler `hex` artifact): parse to a flat
+                        // image. The old path fed this text to atob, threw,
+                        // and booted an all-0xFF flash with no serial.
+                        flash.set(intelHexToU8(s, flash.length), 0);
+                    } else {
+                        // Backend `bin` artifacts arrive as raw base64 (no prefix).
+                        const raw = s.startsWith('UF2BASE64:') || s.startsWith('ELFBASE64:')
+                            ? s.slice(s.indexOf(':') + 1) : s;
+                        try {
+                            const img = b64ToU8(raw);
+                            flash.set(img.subarray(0, flash.length), 0);
+                        } catch { /* boot ROM only */ }
+                    }
                 } else {
                     // No Arduino image: try MicroPython base image.
                     try {
@@ -456,16 +492,13 @@ export class Esp32Runner extends ArmRunnerBase {
                 // old loadWasm-after-init call never existed on the proxy
                 // and the bytes were silently dropped (blank engine).
                 // Clock preset (board attr tickMHz): rides init config
-                // cpuFrequency, which this engine uses ONLY to rescale the
-                // REPORTED nanos (nanosMultiplier = native/target). Measured
-                // 2026-11-03: the guest timebase is fixed at 160 MHz — loops
-                // per GUEST second is 32.4M at native, 40 MHz and 8 MHz alike
-                // (delay(2000) 1.80/1.81/2.48 s wall). So the preset is not a
-                // speed knob; at 8 MHz it costs ~40% wall throughput (1.05M vs
-                // 1.84M loops/wall-s) because the idle fast-forward then
-                // over-advances virtual time. Not exposed in the UI; the attr
-                // path stays for the P7 engine fix (clock = cycles per guest
-                // second, like esp32sim/Wokwi). Default off (omitted → native).
+                // cpuFrequency, which the engine now applies as the CPU clock
+                // (cycles per GUEST second, Wokwi/esp32sim model); APB 80 MHz
+                // and RTC 32.768 kHz stay absolute. Verified 2026-11-04:
+                // compute scales linearly (32.4M / 16.2M / 8.1M / 4.05M /
+                // 1.62M loops per guest-s at 160/80/40/20/8) and delay()
+                // stays tick-accurate (8 MHz: 2000 guest-ms in ~1 s wall).
+                // Omitted → native 160 MHz.
                 let espFreqMHz = 0;
                 try {
                     const battrs = self.compAttrById?.get?.(self.boardId) || {};
