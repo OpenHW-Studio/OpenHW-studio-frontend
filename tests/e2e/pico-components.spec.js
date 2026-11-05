@@ -82,10 +82,133 @@ void loop(){ Serial.println("BUZ_TICK"); delay(1000); }
 `;
 const STEPPER_CODE = 'int pins[4]={16,17,18,19};int seq[4][4]={{1,0,1,0},{0,1,1,0},{0,1,0,1},{1,0,0,1}};\nvoid setup(){Serial.begin(9600);Serial.println("STEP_RDY");for(int i=0;i<4;i++)pinMode(pins[i],OUTPUT);}\nvoid loop(){for(int s=0;s<4;s++){for(int i=0;i<4;i++)digitalWrite(pins[i],seq[s][i]);delay(20);}Serial.println("STEP_TICK");}\n';
 
+// ── displays ────────────────────────────────────────────────────────────
+// I2C0 on GP4/GP5 (arduino-pico: Wire.setSDA/setSCL before Wire.begin).
+const OLED_CODE = `#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+Adafruit_SSD1306 d(128, 64, &Wire, -1);
+void setup(){
+  Serial.begin(9600);
+  Serial.println("OLED_RDY");
+  Wire.setSDA(4); Wire.setSCL(5);
+  d.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  d.clearDisplay();
+  d.setTextSize(2); d.setTextColor(SSD1306_WHITE);
+  d.setCursor(0, 0); d.println("OpenHW"); d.display();
+  Serial.println("OLED_DRAWN");
+}
+void loop(){
+  d.clearDisplay(); d.setCursor(0, 0); d.println(millis()); d.display();
+  Serial.println("OLED_TICK"); delay(300);
+}
+`;
+const LCD2004_CODE = `#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+void setup(){
+  Serial.begin(9600);
+  Serial.println("LCD_RDY");
+  Wire.setSDA(4); Wire.setSCL(5);
+  lcd.init(); lcd.backlight();
+  lcd.setCursor(0, 0); lcd.print("OpenHW");
+  lcd.setCursor(0, 1); lcd.print("Pico");
+  Serial.println("LCD_SET");
+}
+void loop(){ Serial.println("LCD_TICK"); delay(1000); }
+`;
+
+// ── i2c sensors ─────────────────────────────────────────────────────────
+// Raw Wire on purpose: these prove the DEVICE MODEL answers a real bus
+// transaction, independent of any vendor library's register quirks.
+const MPU6050_CODE = `#include <Wire.h>
+void setup(){
+  Serial.begin(9600);
+  Serial.println("MPU_RDY");
+  Wire.setSDA(4); Wire.setSCL(5); Wire.begin();
+  Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0); Wire.endTransmission();
+  delay(100);
+}
+void loop(){
+  Wire.beginTransmission(0x68); Wire.write(0x3B); Wire.endTransmission(false);
+  Wire.requestFrom(0x68, 14);
+  int ax = Wire.read() << 8 | Wire.read();
+  int ay = Wire.read() << 8 | Wire.read();
+  int az = Wire.read() << 8 | Wire.read();
+  Serial.print("MPU_ACC:"); Serial.print(ax); Serial.print(",");
+  Serial.print(ay); Serial.print(","); Serial.println(az);
+  delay(500);
+}
+`;
+const BMP180_CODE = `#include <Wire.h>
+void setup(){
+  Serial.begin(9600);
+  Serial.println("BMP_RDY");
+  Wire.setSDA(4); Wire.setSCL(5); Wire.begin();
+  Wire.beginTransmission(0x77); Wire.write(0xD0); Wire.endTransmission(false);
+  Wire.requestFrom(0x77, 2);
+  int id = Wire.read(); Wire.read();
+  Serial.print("BMP_ID:"); Serial.println(id, HEX);
+}
+void loop(){
+  Wire.beginTransmission(0x77); Wire.write(0xF4); Wire.write(0x2E); Wire.endTransmission();
+  delay(50);
+  Wire.beginTransmission(0x77); Wire.write(0xF6); Wire.endTransmission(false);
+  Wire.requestFrom(0x77, 2);
+  int ut = Wire.read() << 8 | Wire.read();
+  Serial.print("BMP_UT:"); Serial.println(ut);
+  delay(1000);
+}
+`;
+
+// ── inputs ──────────────────────────────────────────────────────────────
+const POT_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("POT_RDY");
+  analogReadResolution(12);
+}
+void loop(){ Serial.print("POT:"); Serial.println(analogRead(26)); delay(500); }
+`;
+// Pressed from boot via attrs (the switch model closes, ~1k to GND) — the
+// guest-side read is the proof that the component's state reaches the pin.
+const BUTTON_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("BTN_RDY");
+  pinMode(16, INPUT_PULLUP);
+}
+void loop(){ Serial.print("BTN:"); Serial.println(digitalRead(16)); delay(200); }
+`;
+
+// ── spi ─────────────────────────────────────────────────────────────────
+const MAX7219_CODE = `#include <SPI.h>
+void wr(uint8_t r, uint8_t d){
+  digitalWrite(17, LOW); SPI.transfer(r); SPI.transfer(d); digitalWrite(17, HIGH);
+}
+void setup(){
+  Serial.begin(9600);
+  Serial.println("MX_RDY");
+  SPI.begin();
+  SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
+  pinMode(17, OUTPUT);
+  wr(0x0C, 0x01);  // shutdown -> normal
+  wr(0x0A, 0x08);  // intensity
+  wr(0x0B, 0x07);  // scan all 8 digits
+  wr(0x01, 0x7E);  // digit 0: segments B..G
+  wr(0x02, 0x30);
+  Serial.println("MX_DRAWN");
+}
+void loop(){ Serial.println("MX_TICK"); delay(1000); }
+`;
+
 const st = (v, id) => (v.liveOop || {})[id] || {};
 const tel = (v, id) => {
   const t = (v.telemetry || []).find((x) => x.id === id);
   return t?.details?.state || t?.details?.custom || {};
+};
+// Custom (human-named) telemetry only — details.state is the raw mirror.
+const custom = (v, id) => {
+  const t = (v.telemetry || []).find((x) => x.id === id);
+  return t?.details?.custom || t?.details?.metrics?.custom || {};
 };
 
 const CASES = [
@@ -173,6 +296,128 @@ const CASES = [
     code: STEPPER_CODE, needle: 'STEP_TICK', runMs: 20000,
     check: (v) => expect(Math.abs(Number(st(v, 'c1').angle || 0))).toBeGreaterThan(0.5),
   },
+  {
+    family: 'displays', name: 'oled', type: 'openhw-ssd1306-oled',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: OLED_CODE, needle: 'OLED_DRAWN', runMs: 22000,
+    check: (v) => {
+      // vramFillPercentage is the model's own pixel count; updateCount
+      // proves the controller accepted draw commands even if the sample
+      // lands on an empty frame.
+      const fill = Number(custom(v, 'c1').vramFillPercentage
+        ?? st(v, 'c1').vramFillPercentage ?? NaN);
+      const updates = Number(st(v, 'c1').updateCount || 0);
+      expect(Number.isFinite(fill) && fill > 0 ? true : updates > 0).toBe(true);
+    },
+  },
+  {
+    family: 'displays', name: 'lcd2004', type: 'openhw-lcd2004-i2c',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: LCD2004_CODE, needle: 'LCD_SET', runMs: 22000,
+    check: (v) => {
+      const lines = (st(v, 'c1').lines || []).join(' ');
+      expect(lines).toContain('OpenHW');
+      expect(lines).toContain('Pico');
+    },
+  },
+  {
+    family: 'i2c', name: 'mpu6050', type: 'openhw-mpu6050',
+    blocked: 'engine gap: the pico I2C mirror answers every master read with '
+      + '0xFF (sdd_jsmirror.c jsmirror_i2c_read) and exposes no read-inject '
+      + 'export, so device models can never answer the guest. Writes are '
+      + 'proven by the oled/lcd2004 cells; promote this cell when the engine '
+      + 'adds an I2C read queue.',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: MPU6050_CODE, needle: 'MPU_ACC:', runMs: 22000,
+    check: (v) => {
+      const acc = [...String(v.serial || '').matchAll(/MPU_ACC:(-?\d+),(-?\d+),(-?\d+)/g)]
+        .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+      expect(acc.length).toBeGreaterThan(3);
+      // Static defaults: ax=ay=0, az=1g (16384 LSB). The first samples can
+      // be lagged transaction openers; the tail must hold gravity.
+      const [ax, ay, az] = acc[acc.length - 1];
+      expect(Math.abs(ax)).toBeLessThan(2000);
+      expect(Math.abs(ay)).toBeLessThan(2000);
+      expect(Math.abs(az - 16384)).toBeLessThan(2000);
+      expect(Number(st(v, 'c1').az)).toBeCloseTo(1, 1);
+    },
+  },
+  {
+    family: 'i2c', name: 'bmp180', type: 'openhw-bmp180',
+    blocked: 'engine gap: no I2C read-inject (see mpu6050 above); the '
+      + 'calibration/UT readback needs master reads.',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VIN' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: BMP180_CODE, needle: 'BMP_UT:', runMs: 22000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      expect(s).toContain('BMP_ID:55');
+      const uts = [...s.matchAll(/BMP_UT:(\d+)/g)].map((m) => Number(m[1]));
+      expect(uts.length).toBeGreaterThan(2);
+      // UT = temp*160+32760: 25C -> 36760. The barometric readback only
+      // reaches this range when the calibration + write/read path works.
+      for (const ut of uts.slice(-3)) expect(ut > 30000 && ut < 42000).toBe(true);
+      expect(Number(st(v, 'c1').temperature)).toBeCloseTo(25, 0);
+      expect(Number(st(v, 'c1').pressure)).toBeGreaterThan(30000);
+    },
+  },
+  {
+    family: 'inputs', name: 'potentiometer', type: 'openhw-potentiometer',
+    wires: (b) => [
+      { from: `${b}:GP26`, to: 'c1:SIG' },
+      { from: `${b}:3V3`, to: 'c1:1' }, { from: `${b}:GND`, to: 'c1:2' },
+    ],
+    code: POT_CODE, needle: 'POT:', runMs: 22000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/POT:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      // 50% wiper on a 3V3 rail -> 12-bit mid-scale.
+      for (const x of vals.slice(-3)) expect(Math.abs(x - 2048)).toBeLessThan(500);
+      expect(Number(st(v, 'c1').value)).toBeCloseTo(50, 0);
+    },
+  },
+  {
+    family: 'inputs', name: 'pushbutton', type: 'openhw-pushbutton',
+    attrs: { pressed: true },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:1l' }, { from: `${b}:GND`, to: 'c1:2l' },
+    ],
+    code: BUTTON_CODE, needle: 'BTN:', runMs: 22000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/BTN:(\d)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      // Closed switch (~1k to GND) must read LOW at the guest pin.
+      for (const x of vals.slice(-3)) expect(x).toBe(0);
+      expect(st(v, 'c1').pressed).toBe(true);
+    },
+  },
+  {
+    family: 'spi', name: 'max7219', type: 'openhw-max7219',
+    wires: (b) => [
+      { from: `${b}:GP19`, to: 'c1:DIN' }, { from: `${b}:GP18`, to: 'c1:CLK' },
+      { from: `${b}:GP17`, to: 'c1:CS' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: MAX7219_CODE, needle: 'MX_DRAWN', runMs: 22000,
+    check: (v) => {
+      const mx = custom(v, 'c1');
+      const matrix = mx.matrix || st(v, 'c1').matrix || [];
+      expect(mx.shutdown === false || st(v, 'c1').shutdown === false).toBe(true);
+      expect(matrix[0]).toBe(0x7e);
+      expect(matrix[1]).toBe(0x30);
+    },
+  },
 ];
 
 const wanted = String(process.env.PICO_COMP_FAMILIES || '')
@@ -190,6 +435,11 @@ for (const board of BOARDS) {
   for (const c of selected) {
     test(`${board.key} ${c.name}`, async ({ page }) => {
       test.setTimeout(300000);
+      if (c.blocked) {
+        console.log(`PICOCOMP ${board.key}/${c.name} BLOCKED: ${c.blocked}`);
+        test.skip(true, c.blocked);
+        return;
+      }
       await page.route('**/api/**', async (route) => {
         const url = route.request().url();
         if (url.includes('/compile')) return route.continue();
@@ -206,7 +456,7 @@ for (const board of BOARDS) {
       }), {
         comps: [
           { id: 'b1', type: board.type, attrs: {}, x: 100, y: 100 },
-          { id: 'c1', type: c.type, attrs: {}, x: 480, y: 120 },
+          { id: 'c1', type: c.type, attrs: c.attrs || {}, x: 480, y: 120 },
         ],
         wires: c.wires('b1'),
         code: typeof c.code === 'function' ? c.code(board.key) : c.code,
