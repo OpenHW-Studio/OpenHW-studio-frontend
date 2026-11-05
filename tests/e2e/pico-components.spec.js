@@ -235,6 +235,33 @@ void loop(){
   delay(1000);
 }
 `;
+// 4x4 matrix scan: rows GP2-5 driven one at a time, columns GP6-9 read.
+// The keypad model's contact is a 1k conductance, so a pressed key pulls
+// exactly one column high on exactly one row.
+const KEYPAD_CODE = `const int rows[4] = {2, 3, 4, 5};
+const int cols[4] = {6, 7, 8, 9};
+void setup(){
+  Serial.begin(9600);
+  Serial.println("KP_RDY");
+  for (int i = 0; i < 4; i++) {
+    pinMode(rows[i], OUTPUT); digitalWrite(rows[i], LOW);
+    pinMode(cols[i], INPUT);
+  }
+}
+void loop(){
+  for (int r = 0; r < 4; r++) {
+    digitalWrite(rows[r], HIGH);
+    delay(60);
+    for (int c = 0; c < 4; c++) {
+      if (digitalRead(cols[c])) {
+        Serial.print("KP:"); Serial.print(r); Serial.print(","); Serial.println(c);
+      }
+    }
+    digitalWrite(rows[r], LOW);
+    delay(60);
+  }
+}
+`;
 
 // ── spi ─────────────────────────────────────────────────────────────────
 const MAX7219_CODE = `#include <SPI.h>
@@ -732,6 +759,40 @@ const CASES = [
       expect(us).toBeGreaterThan(4000);
       expect(us).toBeLessThan(8000);
       expect(Number(st(v, 'c1').distance)).toBe(100);
+    },
+  },
+  {
+    // The model only connects a key from an event/state, so the cell seeds
+    // the press pair directly (the UI does the same on key 5: R2,C1).
+    family: 'inputs', name: 'membrane-keypad', type: 'openhw-membrane-keypad',
+    attrs: { pressedKey: '5', connectedPair: ['R2', 'C1'] },
+    wires: (b) => [
+      { from: `${b}:GP2`, to: 'c1:R1' }, { from: `${b}:GP3`, to: 'c1:R2' },
+      { from: `${b}:GP4`, to: 'c1:R3' }, { from: `${b}:GP5`, to: 'c1:R4' },
+      { from: `${b}:GP6`, to: 'c1:C1' }, { from: `${b}:GP7`, to: 'c1:C2' },
+      { from: `${b}:GP8`, to: 'c1:C3' }, { from: `${b}:GP9`, to: 'c1:C4' },
+    ],
+    code: KEYPAD_CODE, needle: 'KP:', runMs: 24000,
+    check: (v) => {
+      const keys = [...String(v.serial || '').matchAll(/KP:(\d),(\d)/g)].map((m) => `${m[1]}${m[2]}`);
+      expect(keys.length).toBeGreaterThan(2);
+      // Key 5 sits at row 2 / col 1 (R2,C1) -> scan reports 1,0.
+      expect(keys).toContain('10');
+      expect(String(st(v, 'c1').pressedKey)).toBe('5');
+    },
+  },
+  {
+    family: 'i2c', name: 'pca9865', type: 'openhw-pca9865',
+    attrs: { i2cAddress: '0x40' },
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: PCA9685_CODE, needle: 'PCA_SET', runMs: 22000,
+    check: (v) => {
+      const duty = custom(v, 'c1').dutyCycles || {};
+      expect(Number(duty['0'] ?? duty[0] ?? NaN)).toBeCloseTo(50, 0);
+      expect(Number(duty['1'] ?? duty[1] ?? NaN)).toBeGreaterThan(99);
     },
   },
   {

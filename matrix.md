@@ -361,14 +361,16 @@ readback 0 → 1 in a patched build, M0+/M33 unchanged).
 Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
 one component per cell, both boards, host-model state as the verdict):
 **outputs 8/8**, **displays 2/2** (SSD1306 OLED + LCD2004 over I2C0),
-**inputs 8/8** (potentiometer wiper at 50% → 2048; pushbutton held closed →
+**inputs 9/9** (potentiometer wiper at 50% → 2048; pushbutton held closed →
 LOW; LDR module → ~401; soil moisture 50% → 1.65 V; NTC 25 °C → 1.65 V;
 slide pot 25% → ~1024; joystick (0.25,0.75) → GP26/GP27 ~1024/~3071; slide
-switch → LOW), **SPI 4/4** (MAX7219 frame
+switch → LOW; 4×4 keypad scan reports key 5 as `KP:1,0`), **SPI 4/4**
+(MAX7219 frame
 12,1,10,8,11,7,1,126,2,48 → matrix[0]=0x7E; 74HC595 latches 0x81 into
 outputs; Nokia 5110 fills 100 % of its 84×48 framebuffer; ILI9341 accepts a
-256-pixel RAMWR window) and **I2C write-only 1/1** (PCA9685 duty 50 % / full
-on from raw register writes). Every cell is green on BOTH boards. Blocked:
+256-pixel RAMWR window) and **I2C write-only 2/2** (PCA9685 and PCA9865:
+duty 50 % / full on from raw register writes). Every cell is green on BOTH
+boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:
 (g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
