@@ -25,9 +25,12 @@ test.describe('ESP32 SPI (devkit MAX7219)', () => {
     });
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
-    const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
+    const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    // forMs is a WALL window; boot is host-bound and needs more at a low
+    // clock. 90 s stays inside the 240 s test timeout.
+    const setup = await page.evaluate(({ tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
-        { id: 'esp1', type: 'openhw-esp32', attrs: {}, x: 100, y: 100 },
+        { id: 'esp1', type: 'openhw-esp32', attrs: tickMHz ? { tickMHz } : {}, x: 100, y: 100 },
         { id: 'mx1', type: 'openhw-max7219', attrs: {}, x: 450, y: 120 },
       ],
       wires: [
@@ -38,11 +41,12 @@ test.describe('ESP32 SPI (devkit MAX7219)', () => {
         { from: 'esp1:GND.1', to: 'mx1:GND' },
       ],
       code: '#include <SPI.h>\nvoid wr(uint8_t r,uint8_t d){digitalWrite(5,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(5,HIGH);}\nvoid setup(){Serial.begin(115200);Serial.println("ESP_SPI_READY");SPI.begin();pinMode(5,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);Serial.println("ESP_SPI_DRAWN");}\nvoid loop(){Serial.println("ESP_SPI_TICK");delay(1000);}\n',
-    }));
+    }), { tickMHz });
     expect(setup.ok).toBe(true);
-    const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 20000, selectTelemetry: ['mx1'], serialNeedle: 'ESP_SPI_DRAWN', telemetryMode: 'detail',
-    }));
+    const runMs = tickMHz ? 90000 : 20000;
+    const verdict = await page.evaluate((runMs) => window.OpenHWE2E.run({
+      forMs: runMs, selectTelemetry: ['mx1'], serialNeedle: 'ESP_SPI_DRAWN', telemetryMode: 'detail',
+    }), runMs);
     expect(verdict.ok).toBe(true);
     console.log('ESPSPI reasons:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
     expect(verdict.pass).toBe(true);

@@ -26,9 +26,12 @@ test.describe('ESP32 I2C (devkit OLED)', () => {
     page.on('pageerror', (err) => console.log('ESP-PAGEERROR:', String(err).slice(0, 400)));
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
-    const setup = await page.evaluate(() => window.OpenHWE2E.setupCircuit({
+    const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    // forMs is a WALL window (SimulatorPage.run sleeps it); keep the
+    // original 200 s so the cell stays inside its 420 s test timeout.
+    const setup = await page.evaluate(({ tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
-        { id: 'esp1', type: 'openhw-esp32', attrs: {}, x: 100, y: 100 },
+        { id: 'esp1', type: 'openhw-esp32', attrs: tickMHz ? { tickMHz } : {}, x: 100, y: 100 },
         { id: 'oled1', type: 'openhw-ssd1306-oled', attrs: {}, x: 450, y: 100 },
       ],
       wires: [
@@ -38,11 +41,12 @@ test.describe('ESP32 I2C (devkit OLED)', () => {
         { from: 'esp1:GND.1', to: 'oled1:GND' },
       ],
       code: '#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 d(128,64,&Wire,-1);\nvoid setup(){Serial.begin(115200);Serial.println("ESP_OLED_READY");d.begin(SSD1306_SWITCHCAPVCC,0x3C);d.clearDisplay();d.setTextSize(2);d.setTextColor(SSD1306_WHITE);d.setCursor(0,0);d.println("HiESP");d.display();Serial.println("ESP_OLED_DRAWN");}\nvoid loop(){d.clearDisplay();d.setCursor(0,0);d.println(millis());d.display();Serial.println("ESP_OLED_TICK");delay(500);}\n',
-    }));
+    }), { tickMHz });
     expect(setup.ok).toBe(true);
-    const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 200000, selectTelemetry: ['oled1'], serialNeedle: 'ESP_OLED_DRAWN', telemetryMode: 'detail',
-    }));
+    const runMs = 200000;
+    const verdict = await page.evaluate((runMs) => window.OpenHWE2E.run({
+      forMs: runMs, selectTelemetry: ['oled1'], serialNeedle: 'ESP_OLED_DRAWN', telemetryMode: 'detail',
+    }), runMs);
     expect(verdict.ok).toBe(true);
     console.log('ESP reasons:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
     console.log('ESP serial:', JSON.stringify((verdict.serial || '').slice(-500)));

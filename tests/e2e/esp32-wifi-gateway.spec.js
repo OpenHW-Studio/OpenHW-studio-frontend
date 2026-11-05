@@ -27,17 +27,21 @@ test.describe('ESP32 WiFi gateway', () => {
   test('ESP32 joins AP + DHCP via gateway', async ({ page }) => {
     await page.goto('/simulator', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(8000);
-    const setup = await page.evaluate((code) => window.OpenHWE2E.setupCircuit({
+    const tickMHz = process.env.ESP32_TICK_MHZ || '';
+    // forMs is a WALL window (SimulatorPage.run sleeps it): the low-clock
+    // boot + gateway association need more real time, not guest time.
+    const setup = await page.evaluate(({ code, tickMHz }) => window.OpenHWE2E.setupCircuit({
       components: [
-        { id: 'esp1', type: 'openhw-esp32', attrs: { macAddress: '24:6F:28:00:00:31' }, x: 100, y: 100 },
+        { id: 'esp1', type: 'openhw-esp32', attrs: { macAddress: '24:6F:28:00:00:31', ...(tickMHz ? { tickMHz } : {}) }, x: 100, y: 100 },
       ],
       wires: [],
       code,
-    }), CODE);
+    }), { code: CODE, tickMHz });
     expect(setup.ok).toBe(true);
-    const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 45000, serialNeedle: 'ESP-WIFI-DONE', telemetryMode: 'detail',
-    }));
+    const runMs = tickMHz ? 180000 : 45000;
+    const verdict = await page.evaluate((runMs) => window.OpenHWE2E.run({
+      forMs: runMs, serialNeedle: 'ESP-WIFI-DONE', telemetryMode: 'detail',
+    }), runMs);
     expect(verdict.ok).toBe(true);
     console.log('ESPWIFI verdict:', JSON.stringify(verdict.reasons || []), 'lines:', verdict.serialLines);
     console.log('ESPWIFI serial:', (verdict.serial || '').slice(0, 400));
