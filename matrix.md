@@ -318,6 +318,9 @@ pico-periph (EEPROM readback: PICO_EE_RB / PICO_NVS_RB),
 pico2-periph (EEPROM readback: PICO2_EE_RB / PICO2_NVS_RB),
 pico2-pio-dma (M33 PIO/WS2812 + M33 DMA), pico-usb (M0+ + M33 USB CDC),
 pico-gpio-in (M0+ + M33 GPIO-in: `PICO_IN_LEVEL:0:1` / `PICO2_IN_LEVEL:0:1`),
+pico-components (Pico 1 + Pico 2 component compatibility sweep, one
+component per cell with the host model's state as the verdict; families via
+`PICO_COMP_FAMILIES`, names via `PICO_COMP_ONLY`; outputs = 16/16 green),
 pico-exti (M0+ + M33 IO_BANK0 edge ISR: `PICO_EXT_CNT:0..9` / `PICO2_EXT_CNT:0..20`),
 pico2-rv32-arduino (RV32 with a REAL arduino-pico RISC-V sketch: `RV32_UART:OK`, `RV32_ADC:512:102`),
 pico2-w-wifi-gateway, pico2-eth-gateway, pico2-w-lan, pico2-w-ap2,
@@ -354,6 +357,37 @@ SIO GPIO registers while the engine implements the RP2040 map for both
 chips, and the RISC-V core has no GPIO coprocessor — patch
 `patches/pico-rp2350-sio-gpio-map.patch` delivered + VERIFIED (the guest
 readback 0 → 1 in a patched build, M0+/M33 unchanged).
+
+Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
+one component per cell, both boards, host-model state as the verdict):
+**outputs family 8/8 green on BOTH boards** — LED, RGB LED, 7-segment,
+motor, relay, servo, buzzer, stepper. Three findings came out of it:
+(g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
+(optional, not yet implemented)"). Measured on Pico 2: `ADD=0.00 MULT=0.00
+DIV=0.00` and `(float)i=0.00`, while compile-time-folded constants stay
+correct (`(int)3.75f=3`, `150e6/510000=294`). Pico 1 (M0+, soft-float) is
+unaffected. Consequence: arduino-pico's float-based `analogWrite()` writes
+DIV=0/TOP=0xFEFF on the M33, so the standard Arduino PWM call is broken on
+Pico 2 until the engine implements VFP arithmetic. Runner workaround: the
+sweep drives integer `pwm_config_*` registers instead (2kHz/50% tone,
+50Hz/1472us servo) — the component models are proven, the Arduino helper is
+not;
+(h) **PIO-based `Servo` library cannot be proven**: arduino-pico's `Servo`
+is PIO (`libraries/Servo/src/servo.pio`), and the engine steps PIO only
+once per guest instruction — a sketch sitting in `delay()` never advances
+the state machine, and the engine's GPIO VCD tap records only SIO writes,
+not PIO `gpio_set_pin` output. The servo component is proven on both boards
+via hardware PWM; `Servo.h` stays an engine ask (PIO timing + an observe
+tap), consistent with the P2 "no cells written yet" note in
+`vendor/emulator-hook-specs/pico-emu.md`;
+(i) **buzzer silence detector mis-detected the board clock** (fixed in the
+component model, `openhw-buzzer/logic.ts`): it scanned the runner's
+instance map for a board type, but that map holds components only, so every
+Pico fell back to the AVR 16MHz window (1.6M steps) while one Pico tick is
+~2M steps — the model declared silence on every tick and never stayed
+buzzing. It now uses the runner-agnostic `_boardCyclesPerUs` service
+(125/150MHz), preserving the AVR path exactly.
+
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.
 

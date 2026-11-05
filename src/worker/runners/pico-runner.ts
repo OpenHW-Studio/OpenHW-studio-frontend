@@ -558,48 +558,130 @@ export class PicoRunner extends ArmRunnerBase {
         } catch { /* ADC never breaks the tick */ }
     }
 
-    /** PWM observe: poll slices 0-7 via _picoemu_pwm_read (freq + duty A/B
-     * in basis points); strongest duty drives LED models via onPWM.
+    /** GPIO number carried by a Pico pin id (`GP16`, `GPIO16`, `16`). */
+    private static gpioOfPin(pinId: string): number | null {
+        const m = /^(?:GPIO|GP)?\s*(\d+)$/i.exec(String(pinId || '').trim());
+        if (!m) return null;
+        const n = Number(m[1]);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    /**
+     * Fan one PWM channel's state to a component pin.
+     *
+     * Two consumer shapes exist (same contract as the ESP32 LEDC path):
+     *  - plain brightness consumers (openhw-led): onPWM(<pin>, meta);
+     *  - PWMProtocol subclasses (servo, buzzer): settle only when the meta
+     *    carries a pulse width AND the call names one of their monitored
+     *    pins (servo PWM/SIG, buzzer SIG/1/2). The old funnel called the
+     *    fixed LED names 'A'/'ANODE'/'+' with no pulseUs, so a servo or
+     *    buzzer on Pico never reacted at all while the LED did.
+     */
+    private drivePicoPwm(inst: any, pinId: string, duty01: number, freq: number): void {
+        try {
+            if (!(freq > 0) || !(duty01 > 0)) return;
+            if (typeof inst?.onPWM !== 'function') return;
+            const names = typeof inst?.getPWMPinNames === 'function'
+                ? (inst.getPWMPinNames() as any[]).map((n) => String(n).toUpperCase())
+                : null;
+            // PWMProtocol ignores unmonitored pins; callers pass the real
+            // wired pin, so a mismatch means the consumer does not own it.
+            if (names && !names.includes(String(pinId).toUpperCase())) return;
+            const periodUs = 1e6 / freq;
+            inst.onPWM(pinId, {
+                dutyCycle: duty01,
+                frequencyHz: freq,
+                periodUs,
+                pulseUs: duty01 * periodUs,
+                widthExact: true,
+                cycles: this.simCycleCount,
+            });
+        } catch { /* PWM fan-out never breaks the tick */ }
+    }
+
+    /** PWM observe: read slices 0-7 once, then drive every component pin
+     * wired to a GPIO on that slice/channel.
+     *
+     * The slice number alone does not identify a GPIO (GP0 and GP16 are both
+     * slice 0 channel A), so the wired pins are resolved through pinToNet
+     * and the duty is read for THEIR channel. The engine's readout swaps the
+     * CC halves relative to silicon (CH_CC is CC_B high / CC_A low, but
+     * picoemu_pwm_read reports A from the high half): channel A's level
+     * arrives as `db`, B's as `da`. Proven on GP16 (25% → db 2509) and GP17
+     * (75% → da 7529) in a live M0 run.
+     *
      * No-ops on cores without the export. Single scratch allocation per
-     * poll (was one per slice — same values read, 8× fewer mallocs). */
+     * poll. */
     private pollPicoPWM(): void {
         try {
             const mod = this.mod;
             if (!mod || typeof mod._picoemu_pwm_read !== 'function' || typeof mod._malloc !== 'function') return;
-            let best = 0;
-            let bestFreq = 0;
             const ptr = mod._malloc(16);
             try {
+                const b = mod.HEAPU8;
+                const u32 = (o: number) => ((b[o] || 0) | ((b[o + 1] || 0) << 8) | ((b[o + 2] || 0) << 16) | ((b[o + 3] || 0) << 24)) >>> 0;
+                const freqs: number[] = [], da: number[] = [], db: number[] = [], ens: number[] = [];
                 for (let slice = 0; slice < 8; slice++) {
                     try {
                         const r = mod._picoemu_pwm_read(slice, ptr, ptr + 4, ptr + 8, ptr + 12);
                         // NOTE: returns 0 on success (like POSIX), nonzero
                         // on bad slice — the old `if (!r) continue` was
                         // inverted and skipped every valid slice.
-                        if (r !== 0) continue;
-                        // NOTE: read via HEAPU8, never HEAPU32 — emscripten
-                        // 6.x builds may not export typed views (the I2C
-                        // drain hit the same issue with HEAPU16).
-                        const b = mod.HEAPU8;
-                        const u32 = (o: number) => ((b[o] || 0) | ((b[o + 1] || 0) << 8) | ((b[o + 2] || 0) << 16) | ((b[o + 3] || 0) << 24)) >>> 0;
-                        const freq = u32(ptr), da = u32(ptr + 4), db = u32(ptr + 8), en = u32(ptr + 12) ? 1 : 0;
-                        if (!en) continue;
-                        const d = Math.max(da, db) / 100;
-                        if (d > best) { best = d; bestFreq = freq; }
-                    } catch { /* one slice never breaks the poll */ }
+                        freqs[slice] = r === 0 ? u32(ptr) : 0;
+                        da[slice] = r === 0 ? u32(ptr + 4) : 0;
+                        db[slice] = r === 0 ? u32(ptr + 8) : 0;
+                        ens[slice] = r === 0 && u32(ptr + 12) ? 1 : 0;
+                    } catch { freqs[slice] = 0; ens[slice] = 0; }
                 }
-            } finally { try { mod._free(ptr); } catch { /* ignore */ } }
-            if (best <= 0) return;
-            const duty01 = Math.max(0, Math.min(1, best / 100));
-            for (const inst of this.instances.values()) {
-                try {
-                    if (typeof (inst as any)?.onPWM !== 'function') continue;
-                    if (typeof (inst as any)?.getPWMPinNames === 'function') continue;
-                    for (const pn of ['A', 'ANODE', '+']) {
-                        try { (inst as any).onPWM(pn, { dutyCycle: duty01, frequencyHz: bestFreq }); } catch { /* ignore */ }
+                // net id → board GPIO (first board pin on the net wins; the
+                // aliases all name the same physical pin).
+                const netToGpio = new Map<number, number>();
+                this.pinToNet.forEach((netId, node) => {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) return;
+                    if (node.slice(0, sep) !== this.boardId) return;
+                    const g = PicoRunner.gpioOfPin(node.slice(sep + 1));
+                    if (g !== null && !netToGpio.has(netId)) netToGpio.set(netId, g);
+                });
+                if (netToGpio.size === 0) return;
+                const driven = new Set<string>();
+                this.pinToNet.forEach((netId, node) => {
+                    const sep = node.indexOf(':');
+                    if (sep < 0) return;
+                    const compId = node.slice(0, sep);
+                    if (!compId || compId === this.boardId) return;
+                    if (driven.has(`${compId}:${netId}`)) return;
+                    const gpio = netToGpio.get(netId);
+                    if (gpio === undefined) return;
+                    const slice = (gpio >> 1) & 7;
+                    const ch = gpio & 1;
+                    if (!ens[slice] || !(freqs[slice] > 0)) return;
+                    const duty = (ch === 0 ? db[slice] : da[slice]) / 10000;
+                    if (!(duty > 0)) return;
+                    const inst = this.instances.get(compId);
+                    if (!inst) return;
+                    // Pick the alias that the consumer actually monitors
+                    // (servo PWM/SIG, buzzer SIG; plain LEDs have none).
+                    let pinId = node.slice(sep + 1);
+                    if (typeof (inst as any)?.getPWMPinNames === 'function') {
+                        const names = ((inst as any).getPWMPinNames() as any[]).map((n) => String(n).toUpperCase());
+                        if (!names.includes(pinId.toUpperCase())) {
+                            let alt: string | null = null;
+                            this.pinToNet.forEach((n2, node2) => {
+                                if (alt || n2 !== netId) return;
+                                const s2 = node2.indexOf(':');
+                                if (s2 < 0 || node2.slice(0, s2) !== compId) return;
+                                const p2 = node2.slice(s2 + 1);
+                                if (names.includes(p2.toUpperCase())) alt = p2;
+                            });
+                            if (!alt) return;
+                            pinId = alt;
+                        }
                     }
-                } catch { /* one instance never breaks pwm */ }
-            }
+                    driven.add(`${compId}:${netId}`);
+                    this.drivePicoPwm(inst, pinId, Math.max(0, Math.min(1, duty)), freqs[slice]);
+                });
+            } finally { try { mod._free(ptr); } catch { /* ignore */ } }
         } catch { /* PWM never breaks the tick */ }
     }
 
@@ -1035,9 +1117,13 @@ export class PicoRunner extends ArmRunnerBase {
                     if ((self.slowPollTick & 3) === 0) {
                         // ADC inject: pot wipers drive RP2040 ADC0-2 (GP26-28).
                         try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
-                        // PWM observe: first enabled slice drives LED models.
-                        try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
                     }
+                    // PWM every tick: consumers have a 100ms silence window
+                    // (PWMProtocol `_lastEdgeCycle`), so a 4-tick (~66ms)
+                    // cadence let a steady tone flip back to silent between
+                    // samples — the buzzer model oscillated instead of
+                    // settling. Eight wasm reads/tick are cheap.
+                    try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
                     // Watchdog countdown: unfed WDT reboots (no engine tick).
                     try { self.pollPicoWDT(); } catch { /* drain never breaks tick */ }
                     // PIO WS2812 mirror: PIO0 SM0 RX words → NeoPixel frames.
