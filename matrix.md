@@ -369,7 +369,8 @@ switch → LOW), **SPI 4/4** (MAX7219 frame
 outputs; Nokia 5110 fills 100 % of its 84×48 framebuffer; ILI9341 accepts a
 256-pixel RAMWR window) and **I2C write-only 1/1** (PCA9685 duty 50 % / full
 on from raw register writes). Every cell is green on BOTH boards. Blocked:
-I2C sensor reads (j) and the HC-SR04 echo pulse (k). Findings:
+I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
+HD44780). Findings:
 (g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
 (optional, not yet implemented)"). Measured on Pico 2: `ADD=0.00 MULT=0.00
 DIV=0.00` and `(float)i=0.00`, while compile-time-folded constants stay
@@ -410,15 +411,20 @@ The cells `i2c/mpu6050` and `i2c/bmp180` carry a `blocked` reason and skip in
 `tests/e2e/pico-components.spec.js`; promote them as soon as the engine
 lands a read queue (mirror of the F1 `i2c1.injectRx` path).
 
-(k) **Component-driven GPIO pulses shorter than one runner tick are
-invisible to the guest** (blocks the HC-SR04 cell and, by the same
-mechanism, DHT/IR pulse-width protocols on Pico): the HC-SR04 model
+(k) **GPIO strobes shorter than one runner tick do not cross the model
+boundary** (blocks HC-SR04, the parallel HD44780 displays, DHT/IR
+pulse-width protocols, and any bit-banged protocol whose handshake fits
+inside a tick). The Pico runner samples GPIO levels once per tick (~16 ms)
+instead of dispatching edges: (1) component→guest: the HC-SR04 model
 measures correctly (`lastMeasurement` 100 cm, `echoDurationUs` 5800) but
-holds ECHO high for only 5.8 ms while the Pico runner samples
-component→board levels once per tick (~16 ms). The guest's `pulseIn()`
-therefore returns 0 (`SR:0`). Fix belongs on the runner/engine side — an
-edge-timed component→board pin path (the per-tick IN-latch script cannot
-carry a sub-tick pulse). The cell is `blocked` in the sweep, not weakened.
+its 5.8 ms ECHO pulse is sampled as a level, so the guest's `pulseIn()`
+returns 0 (`SR:0`); (2) guest→component: the 4-bit LCD write sets RS +
+nibble + E high + E low inside one tick, so the model never observes the
+E falling edge that latches a nibble and its lines stay blank (the I2C
+backpack variants are proven, because the I2C mirror delivers bytes).
+Fix belongs on the runner/engine side — an edge-timed GPIO path (the
+per-tick IN-latch script cannot carry a sub-tick pulse) — not in the
+component models. Both cells are `blocked` in the sweep, not weakened.
 
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.

@@ -118,6 +118,32 @@ void setup(){
 void loop(){ Serial.println("LCD_TICK"); delay(1000); }
 `;
 
+// Parallel HD44780 (4-bit): RS GP15, E GP16, D4-D7 GP17-20.
+const LCD2004P_CODE = `#include <LiquidCrystal.h>
+LiquidCrystal lcd(15, 16, 17, 18, 19, 20);
+void setup(){
+  Serial.begin(9600);
+  Serial.println("LC4_RDY");
+  lcd.begin(20, 4);
+  lcd.setCursor(0, 0); lcd.print("OpenHW");
+  lcd.setCursor(0, 1); lcd.print("Pico");
+  Serial.println("LC4_SET");
+}
+void loop(){ Serial.println("LC4_TICK"); delay(1000); }
+`;
+const LCD1602P_CODE = `#include <LiquidCrystal.h>
+LiquidCrystal lcd(15, 16, 17, 18, 19, 20);
+void setup(){
+  Serial.begin(9600);
+  Serial.println("LC2_RDY");
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0); lcd.print("OpenHW");
+  lcd.setCursor(0, 1); lcd.print("Pico");
+  Serial.println("LC2_SET");
+}
+void loop(){ Serial.println("LC2_TICK"); delay(1000); }
+`;
+
 // ── i2c sensors ─────────────────────────────────────────────────────────
 // Raw Wire on purpose: these prove the DEVICE MODEL answers a real bus
 // transaction, independent of any vendor library's register quirks.
@@ -462,6 +488,52 @@ const CASES = [
       { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
     ],
     code: LCD2004_CODE, needle: 'LCD_SET', runMs: 22000,
+    check: (v) => {
+      const lines = (st(v, 'c1').lines || []).join(' ');
+      expect(lines).toContain('OpenHW');
+      expect(lines).toContain('Pico');
+    },
+  },
+  {
+    family: 'displays', name: 'lcd2004-parallel', type: 'openhw-lcd2004',
+    blocked: 'runner strobe gap (see matrix (k)): the HD44780 latches on '
+      + 'the E falling edge, but the parallel 4-bit write (RS + nibble + E '
+      + 'high + E low) completes inside one runner tick (~16ms) and GPIO '
+      + 'levels are sampled once per tick, so the model never sees E high. '
+      + 'The I2C backpack variants are proven green; this needs per-edge '
+      + 'GPIO dispatch like the SPI/I2C mirrors.',
+    wires: (b) => [
+      { from: `${b}:GP15`, to: 'c1:RS' }, { from: `${b}:GP16`, to: 'c1:E' },
+      { from: `${b}:GP17`, to: 'c1:D4' }, { from: `${b}:GP18`, to: 'c1:D5' },
+      { from: `${b}:GP19`, to: 'c1:D6' }, { from: `${b}:GP20`, to: 'c1:D7' },
+      { from: `${b}:3V3`, to: 'c1:VDD' }, { from: `${b}:GND`, to: 'c1:VSS' },
+      { from: `${b}:GND`, to: 'c1:V0' }, { from: `${b}:3V3`, to: 'c1:A' },
+      { from: `${b}:GND`, to: 'c1:K' },
+    ],
+    code: LCD2004P_CODE, needle: 'LC4_SET', runMs: 22000,
+    check: (v) => {
+      const lines = (st(v, 'c1').lines || []).join(' ');
+      expect(lines).toContain('OpenHW');
+      expect(lines).toContain('Pico');
+    },
+  },
+  {
+    family: 'displays', name: 'lcd1602-parallel', type: 'openhw-lcd1602',
+    blocked: 'runner strobe gap (see matrix (k)): the HD44780 latches on '
+      + 'the E falling edge, but the parallel 4-bit write (RS + nibble + E '
+      + 'high + E low) completes inside one runner tick (~16ms) and GPIO '
+      + 'levels are sampled once per tick, so the model never sees E high. '
+      + 'The I2C backpack variants are proven green; this needs per-edge '
+      + 'GPIO dispatch like the SPI/I2C mirrors.',
+    wires: (b) => [
+      { from: `${b}:GP15`, to: 'c1:RS' }, { from: `${b}:GP16`, to: 'c1:E' },
+      { from: `${b}:GP17`, to: 'c1:D4' }, { from: `${b}:GP18`, to: 'c1:D5' },
+      { from: `${b}:GP19`, to: 'c1:D6' }, { from: `${b}:GP20`, to: 'c1:D7' },
+      { from: `${b}:3V3`, to: 'c1:VDD' }, { from: `${b}:GND`, to: 'c1:VSS' },
+      { from: `${b}:GND`, to: 'c1:V0' }, { from: `${b}:3V3`, to: 'c1:A' },
+      { from: `${b}:GND`, to: 'c1:K' },
+    ],
+    code: LCD1602P_CODE, needle: 'LC2_SET', runMs: 22000,
     check: (v) => {
       const lines = (st(v, 'c1').lines || []).join(' ');
       expect(lines).toContain('OpenHW');
