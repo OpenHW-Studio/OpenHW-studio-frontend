@@ -1452,6 +1452,12 @@ const CASES = [
       + 'so the relay can never energise from this board.',
   },
   {
+    family: 'displays', name: 'ltdc-display', type: 'openhw-ltdc-display',
+    blocked: 'STM32 LTDC-only panel: neither RP2040 nor RP2350 has an LTDC '
+      + 'controller and the Pico runner has no RGB-parallel frame lane '
+      + '(the F4 runner pushes frames into this model).',
+  },
+  {
     family: 'inputs', name: 'hp4067', type: 'openhw-hp4067',
     blocked: 'no logic class / registry entry (matrix (r)): UI-only mux.',
   },

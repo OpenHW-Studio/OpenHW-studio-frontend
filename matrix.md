@@ -389,15 +389,16 @@ write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
 writes). 44 component types, 88 green cells; every cell is green on BOTH
 boards (verified board-by-board on 2026-11-06 with `PICO_COMP_BOARD`;
 chunks stay under 15 minutes so a long headless run cannot take the app
-down). Another 24 cells are `blocked`, each with a measured reason, so every
+down). Another 25 cells are `blocked`, each with a measured reason, so every
 peripheral type in the catalog is accounted for: I2C master reads (j: mpu6050,
 bmp180, ds1307-rtc, adxl345, ili9341-touch), sub-tick GPIO strobes (k:
 hc-sr04, lcd2004/lcd1602 parallel, tm1637, ir-receiver), event-only inputs
 with no headless injection path (p: rotary-encoder, 6mm-pushbutton, ir-remote,
 ir-receiver), SPI master reads (s: sd-card, mfrc522, nrf24l01, cc1101),
 I2S (t: inmp441, sph0645, max98357, pcm5102), 1-Wire (u: ds18b20), the 5 V
-relay coil (q: ks2e-m-dc5) and the mux without a logic class (r: hp4067). No
-cell is weakened to make it green. Findings:
+relay coil (q: ks2e-m-dc5), the mux without a logic class (r: hp4067) and the
+STM32-LTDC-only panel (ltdc-display, no RP2040/RP2350 LTDC). No cell is
+weakened to make it green. Findings:
 (g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
 (optional, not yet implemented)"). Measured on Pico 2: `ADD=0.00 MULT=0.00
 DIV=0.00` and `(float)i=0.00`, while compile-time-folded constants stay
