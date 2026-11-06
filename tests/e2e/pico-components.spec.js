@@ -20,6 +20,12 @@ const BOARDS = [
 
 const GP = (n) => `GP${n}`;
 
+// PIO WS2812 fixture shared with pico-pio.spec.js: PIO0 SM0 shifts GRB
+// words to GP2 and mirrors each 32-bit word to the RX FIFO, which the
+// runner pumps into onNeoPixelFrame once per tick.
+const NEOPIXEL_CODE = fs.readFileSync(
+  path.resolve(process.cwd(), 'tests/e2e/fixtures/pico-pio-ws2812.ino'), 'utf8');
+
 const LED_CODE = 'void setup(){Serial.begin(9600);Serial.println("LED_RDY");pinMode(16,OUTPUT);digitalWrite(16,HIGH);}\nvoid loop(){Serial.println("LED_TICK");delay(1000);}\n';
 const RGB_CODE = 'void setup(){Serial.begin(9600);Serial.println("RGB_RDY");pinMode(16,OUTPUT);pinMode(17,OUTPUT);pinMode(18,OUTPUT);digitalWrite(16,HIGH);digitalWrite(17,HIGH);digitalWrite(18,HIGH);}\nvoid loop(){Serial.println("RGB_TICK");delay(1000);}\n';
 const SEG_CODE = 'void setup(){Serial.begin(9600);Serial.println("SEG_RDY");int p[]={2,3,4,5,6,7,8};for(int i=0;i<7;i++){pinMode(p[i],OUTPUT);digitalWrite(p[i],LOW);}digitalWrite(3,HIGH);digitalWrite(4,HIGH);}\nvoid loop(){Serial.println("SEG_TICK");delay(1000);}\n';
@@ -776,6 +782,34 @@ const CASES = [
       expect(Number(av['2A'])).toBeLessThan(0.5);
       expect(Number(av['2B'])).toBeGreaterThan(2.5);
       expect(st(v, 'c1').active).toBe(true);
+    },
+  },
+  {
+    // PIO WS2812 path: 3-pixel GRB frame (red/green/blue).
+    family: 'outputs', name: 'neopixel-matrix', type: 'openhw-neopixel-matrix',
+    wires: (b) => [
+      { from: `${b}:GP2`, to: 'c1:DIN' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: NEOPIXEL_CODE, needle: 'PICO_PIO_TICK', runMs: 22000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(Number(c.activePixels)).toBe(3);
+      expect(Number(c.totalPixels)).toBe(3);
+    },
+  },
+  {
+    // Ring type shares the same NeoPixel logic class and PIO pump.
+    family: 'outputs', name: 'neopixel-ring', type: 'openhw-neopixel-ring',
+    wires: (b) => [
+      { from: `${b}:GP2`, to: 'c1:DIN' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: NEOPIXEL_CODE, needle: 'PICO_PIO_TICK', runMs: 22000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(Number(c.activePixels)).toBe(3);
+      expect(Number(c.totalPixels)).toBe(3);
     },
   },
   {

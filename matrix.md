@@ -360,13 +360,15 @@ readback 0 → 1 in a patched build, M0+/M33 unchanged).
 
 Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
 one component per cell, both boards, host-model state as the verdict):
-**outputs 14/14** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
+**outputs 16/16** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
 stepper, biaxial-stepper — 1157 outer steps / 2082.6° while the inner gimbal
 stays 0; 5 W speaker tone path; L293D enable + IN1/IN2 → OUT1 5 V / OUT2 0 V;
 L298N-style motor driver ENA/IN1 → OUT1 5 V while IN2 keeps OUT2 at 0; A4988
 full-step indexer ends on phase 3 = 1A/2B high, 1B/2A low after three STEP
 edges; NPN low-side switch pulls the collector from 5 V to 0.2 V with the
-base high, and releases it to 5 V with the base low), **displays 4/4**
+base high, and releases it to 5 V with the base low; NeoPixel matrix and
+ring both accept the PIO0 SM0 RX-mirrored 3-pixel GRB frame → 3 active
+pixels), **displays 4/4**
 (SSD1306 OLED, LCD2004 and LCD1602 both over I2C0; ePaper 2.9" accepts the
 0x24 RAM-write command and 32 data bytes → `ramPointer` 32), **inputs 15/15**
 (potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; 6 mm
@@ -381,7 +383,7 @@ and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read),
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 40 component types, 80 green cells; every cell is green on BOTH
+writes). 42 component types, 84 green cells; every cell is green on BOTH
 boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:
