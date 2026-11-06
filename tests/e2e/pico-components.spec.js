@@ -1444,6 +1444,93 @@ const CASES = [
       expect(Number(duty['1'] ?? duty[1] ?? NaN)).toBeGreaterThan(99);
     },
   },
+  // ── blocked cells: every remaining peripheral is accounted for ──────
+  {
+    family: 'outputs', name: 'ks2e-relay', type: 'openhw-ks2e-m-dc5',
+    blocked: 'coil needs >3.5 V differential (matrix (q)): a Pico GPIO '
+      + 'tops out at 3.3 V and the 5V board pins are not modeled sources, '
+      + 'so the relay can never energise from this board.',
+  },
+  {
+    family: 'inputs', name: 'hp4067', type: 'openhw-hp4067',
+    blocked: 'no logic class / registry entry (matrix (r)): UI-only mux.',
+  },
+  {
+    family: 'inputs', name: 'rotary-encoder', type: 'openhw-rotary-encoder',
+    blocked: 'event-only model (matrix (p)): rotation comes from '
+      + 'onEvent(rotate-cw/ccw) and nothing in the UI or E2E emits it.',
+  },
+  {
+    family: 'inputs', name: '6mm-pushbutton', type: 'openhw-6mm-pushbutton',
+    blocked: 'event-only model (matrix (p)): press/release only via '
+      + 'onEvent, no attrs or headless injection path.',
+  },
+  {
+    family: 'inputs', name: 'ir-receiver', type: 'openhw-ir-receiver',
+    blocked: 'event-driven NEC burst (matrix (p, k)): transmitNEC only '
+      + 'runs on an onEvent button press, and the 38 kHz burst needs '
+      + 'edge timing finer than one runner tick.',
+  },
+  {
+    family: 'inputs', name: 'ir-remote', type: 'openhw-ir-remote',
+    blocked: 'event-only model (matrix (p)): button_press comes from the '
+      + 'UI; no sketch-side or E2E injection.',
+  },
+  {
+    family: 'displays', name: 'tm1637', type: 'openhw-tm1637-7segment',
+    blocked: 'bit-banged CLK/DIO (matrix (k)): the runner has no '
+      + 'TwoWireProtocol bridge and samples GPIO once per tick.',
+  },
+  {
+    family: 'inputs', name: 'ds18b20', type: 'openhw-ds18b20',
+    blocked: '1-Wire has no Pico dispatch path (matrix (u)) and the '
+      + 'reset/presence pulses are shorter than one runner tick.',
+  },
+  {
+    family: 'i2c', name: 'ds1307-rtc', type: 'openhw-ds1307-rtc',
+    blocked: 'I2C master reads return 0xFF (matrix (j)).',
+  },
+  {
+    family: 'i2c', name: 'adxl345', type: 'openhw-adxl345',
+    blocked: 'I2C/SPI master reads return 0xFF (matrix (j, s)).',
+  },
+  {
+    family: 'i2c', name: 'ili9341-touch', type: 'openhw-ili9341-touch',
+    blocked: 'touch controller needs I2C reads (matrix (j)); the TFT '
+      + 'write path itself is green via openhw-ili9341.',
+  },
+  {
+    family: 'spi', name: 'sd-card', type: 'openhw-sd-card',
+    blocked: 'SPI full-duplex reads return 0xFF (matrix (s)).',
+  },
+  {
+    family: 'spi', name: 'mfrc522', type: 'openhw-mfrc522',
+    blocked: 'SPI register reads return 0xFF (matrix (s)).',
+  },
+  {
+    family: 'spi', name: 'nrf24l01', type: 'openhw-nrf24l01',
+    blocked: 'SPI register reads return 0xFF (matrix (s)).',
+  },
+  {
+    family: 'spi', name: 'cc1101', type: 'openhw-cc1101',
+    blocked: 'SPI register reads return 0xFF (matrix (s)).',
+  },
+  {
+    family: 'i2s', name: 'inmp441', type: 'openhw-inmp441',
+    blocked: 'no PIO I2S observation tap (matrix (t)).',
+  },
+  {
+    family: 'i2s', name: 'sph0645', type: 'openhw-sph0645',
+    blocked: 'no PIO I2S observation tap (matrix (t)).',
+  },
+  {
+    family: 'i2s', name: 'max98357', type: 'openhw-max98357',
+    blocked: 'no PIO I2S observation tap (matrix (t)).',
+  },
+  {
+    family: 'i2s', name: 'pcm5102', type: 'openhw-pcm5102',
+    blocked: 'no PIO I2S observation tap (matrix (t)).',
+  },
 ];
 
 const wanted = String(process.env.PICO_COMP_FAMILIES || '')

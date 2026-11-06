@@ -387,9 +387,15 @@ outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
 writes). 44 component types, 88 green cells; every cell is green on BOTH
-boards. Blocked:
-I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
-HD44780). Findings:
+boards. Another 24 cells are `blocked`, each with a measured reason, so every
+peripheral type in the catalog is accounted for: I2C master reads (j: mpu6050,
+bmp180, ds1307-rtc, adxl345, ili9341-touch), sub-tick GPIO strobes (k:
+hc-sr04, lcd2004/lcd1602 parallel, tm1637, ir-receiver), event-only inputs
+with no headless injection path (p: rotary-encoder, 6mm-pushbutton, ir-remote,
+ir-receiver), SPI master reads (s: sd-card, mfrc522, nrf24l01, cc1101),
+I2S (t: inmp441, sph0645, max98357, pcm5102), 1-Wire (u: ds18b20), the 5 V
+relay coil (q: ks2e-m-dc5) and the mux without a logic class (r: hp4067). No
+cell is weakened to make it green. Findings:
 (g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
 (optional, not yet implemented)"). Measured on Pico 2: `ADD=0.00 MULT=0.00
 DIV=0.00` and `(float)i=0.00`, while compile-time-folded constants stay
@@ -475,6 +481,44 @@ stopped between the CS-low marker and the next line, `ramPointer` 0) until
 the sketch added `SPI.beginTransaction(SPISettings(4000000, MSBFIRST,
 SPI_MODE0))`, the same call the working ILI9341 cell already made. Worth
 documenting in the SPI recipe; no engine change needed.
+
+(p) **Event-only input components have no headless injection path** —
+`openhw-rotary-encoder`, `openhw-6mm-pushbutton` (the 4-pin type, distinct
+from `openhw-pushbutton-6mm`), `openhw-ir-remote` and `openhw-ir-receiver`
+act only on `onEvent` (`rotate-cw/ccw`, `press/release`, `button_press`).
+`window.OpenHWE2E` exposes setup/run/stop only and nothing in the UI emits
+`rotate-cw`/`rotate-ccw` (repo grep: zero producers), so no headless cell can
+turn the knob or press the button. Blocked until the UI or E2E surface gains
+a component-interaction entry point.
+
+(q) **The Pico cannot energise a 5 V relay coil** — `openhw-ks2e-m-dc5`
+switches only when the coil differential exceeds 3.5 V; a GPIO tops out at
+3.3 V, and the board's `5V` pin is not a modeled source (only pins named
+`VCC`/`vcc`/`1` on a 3V3 net are driven by the ADC rail hack). Even an
+external transistor has no 5 V rail to switch. Blocked until the runner
+models a powered 5 V rail.
+
+(r) **`openhw-hp4067` is UI-only** — manifest + UI module, no logic class and
+no `LOGIC_REGISTRY` entry, so the worker never instantiates it (`liveOop`
+stays `{}`). The cell stays blocked until the engine lands a mux model.
+
+(s) **SPI master reads cannot be answered in time** — full-duplex devices
+need MISO during the same tick the guest clocks the byte. The engine has
+`picoemu_spimirror_inject`, but the PL022 model executes each DR write
+synchronously inside the engine step while the runner drains the mirror only
+afterwards (`drainSPIMirror` also discards `exchange()`'s return), so every
+read latches 0xFF. Write-only SPI is fully proven (MAX7219, 74HC595, NLSF595,
+Nokia 5110, ILI9341, ePaper). Blocks `sd-card`, `mfrc522`, `nrf24l01`,
+`cc1101` and `ili9341-touch` (the last also needs I2C reads).
+
+(t) **No PIO I2S observation tap** — `inmp441`, `sph0645`, `max98357` and
+`pcm5102` speak I2S over BCLK/LRC/DIN; the runner's PIO pump only drains
+NeoPixel RX frames. Blocked until the pump exposes an I2S lane.
+
+(u) **1-Wire has no Pico dispatch path** — `dispatchOptionalProtocols` has no
+Pico caller, and the DS18B20 reset/presence handshake is shorter than one
+runner tick, so `openhw-ds18b20` cannot be addressed. Blocked until the
+engine gains a per-edge 1-Wire path (same root as (k)).
 
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.
