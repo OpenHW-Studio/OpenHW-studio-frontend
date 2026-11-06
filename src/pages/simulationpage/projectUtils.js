@@ -678,13 +678,9 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
 }
 */
 export function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  if (boardKind === 'rp2040') {
-    const rp2040Mode = hardwareUtils.normalizeRp2040Env(options?.rp2040Mode || 'native');
-    if (hardwareUtils.isRp2040PythonEnv(rp2040Mode)) {
-      return hardwareUtils.getRp2040PythonEntryFileName(rp2040Mode);
-    }
-    return `${boardId}.ino`;
-  }
+  void options;
+  // Retro boards edit assembly, not Arduino sketches.
+  if (String(boardKind || '').startsWith('retro')) return `${boardId}.asm`;
   return `${boardId}.ino`;
 }
 
@@ -924,10 +920,6 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (icModel) {
         attrs.icType = icModel;
       }
-      if (hardwareUtils.normalizeBoardKind(type) === 'rp2040') {
-        attrs.env = hardwareUtils.normalizeRp2040Env(hardwareUtils.resolveComponentAttrString(attrs, 'env', 'native'));
-      }
-
       return {
         ...component,
         id,

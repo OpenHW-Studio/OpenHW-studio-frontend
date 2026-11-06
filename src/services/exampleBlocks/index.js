@@ -37,7 +37,6 @@ import bluetoothHc05Block from './bluetooth-hc05.js';
 import irRemoteControlBlock from './ir-remote-control.js';
 import rfRemoteControlBlock from './rf-remote-control.js';
 import communicationProtocolsBlock from './communication-protocols.js';
-import wifiLedControlBlock from './wifi-led-control.js';
 import smartHomeAutomationBlock from './smart-home-automation.js';
 import obstacleAvoidingRobotBlock from './obstacle-avoiding-robot.js';
 import lineFollowingRobotBlock from './line-following-robot.js';
@@ -77,7 +76,6 @@ export const EXAMPLE_BLOCK_MAP = {
   ["ir-remote-control"]: irRemoteControlBlock,
   ["rf-remote-control"]: rfRemoteControlBlock,
   ["communication-protocols"]: communicationProtocolsBlock,
-  ["wifi-led-control"]: wifiLedControlBlock,
   ["smart-home-automation"]: smartHomeAutomationBlock,
   ["obstacle-avoiding-robot"]: obstacleAvoidingRobotBlock,
   ["line-following-robot"]: lineFollowingRobotBlock,
@@ -129,7 +127,6 @@ export {
   irRemoteControlBlock,
   rfRemoteControlBlock,
   communicationProtocolsBlock,
-  wifiLedControlBlock,
   smartHomeAutomationBlock,
   obstacleAvoidingRobotBlock,
   lineFollowingRobotBlock,

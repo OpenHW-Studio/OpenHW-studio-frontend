@@ -94,7 +94,6 @@ export const CIRCUIT_IMAGE_MAP = {
   'line-following-robot':    { folder: 'obstacle-avoiding-robot', file: 'circuit.png' },
   'bluetooth-hc05':          { folder: 'smart-home-automation',   file: 'circuit.png' },
   'rf-remote-control':       { folder: 'ir-remote-control-system',file: 'circuit.png' },
-  'wifi-led-control':        { folder: 'smart-home-automation',   file: 'circuit.png' },
   'communication-protocols': { folder: 'button-led',              file: 'circuit.png' },
 };
 

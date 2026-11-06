@@ -1,0 +1,186 @@
+a/src/pages/simulationpage/utils/protocolObserver.js b/src/pages/simulationpage/utils/protocolObserver.js
+index 7cbe8280..54750271 100644
+--- a/src/pages/simulationpage/utils/protocolObserver.js
++++ b/src/pages/simulationpage/utils/protocolObserver.js
+@@ -38,6 +38,18 @@ export function handleProtocolObserverMessage(msg, ctx) {
+             const resolvedBoardId = hasKnownBoard
+               ? incomingBoardId
+               : singleBoardFallback || incomingBoardId || "default";
++            // DIAG: count what the main thread actually receives per board
++            try {
++              const g = globalThis;
++              g.__diagMain = g.__diagMain || {};
++              const k = String(resolvedBoardId);
++              g.__diagMain[k] = (g.__diagMain[k] || 0) + String(msg.data || "").length;
++              const now = Date.now();
++              if (!g.__diagMainLast || now - g.__diagMainLast > 1000) {
++                g.__diagMainLast = now;
++                console.log('[DIAG-MAIN] serial received ' + JSON.stringify(g.__diagMain) + ' known=' + hasKnownBoard + ' boards=' + JSON.stringify(boardComponents.map((b) => b.id)));
++              }
++            } catch { /* ignore */ }
+             pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || "sim");
+           }
+ 
+diff --git a/src/worker/runners/esp32-runner.ts b/src/worker/runners/esp32-runner.ts
+index 70b540d9..30091a7a 100644
+--- a/src/worker/runners/esp32-runner.ts
++++ b/src/worker/runners/esp32-runner.ts
+@@ -324,6 +324,57 @@ export class Esp32Runner extends ArmRunnerBase {
+                     } catch { /* boot ROM only */ }
+                 }
+                 self.sim = new SimulatorWorker();
++                // DIAG: wrap every engine CMD call with a timing probe so a
++                // blocked (busy-wait) CMD round-trip is visible instead of
++                // silently freezing this board worker.
++                try {
++                    const simAny = self.sim as any;
++                    const seen = new Set<string>();
++                    for (let obj: any = simAny; obj && obj !== Object.prototype; obj = Object.getPrototypeOf(obj)) {
++                        for (const key of Object.getOwnPropertyNames(obj)) {
++                            if (key === 'constructor' || seen.has(key)) continue;
++                            seen.add(key);
++                            const desc = Object.getOwnPropertyDescriptor(obj, key);
++                            if (!desc || typeof desc.value !== 'function') continue;
++                            const orig = desc.value;
++                            Object.defineProperty(obj, key, {
++                                ...desc,
++                                value: function (...args: any[]) {
++                                    const t0 = Date.now();
++                                    const wrap = (r: any) => {
++                                        const dt = Date.now() - t0;
++                                        if (dt > 1200) console.log(`[DIAG-CMD] board=${self.boardId} ${key} SLOW ${dt}ms`);
++                                        try { const D = (self as any)._diag; if (D) D.pending = ''; } catch { }
++                                        return r;
++                                    };
++                                    // DIAG: entry trace — the LAST entry
++                                    // without a matching exit is the frozen
++                                    // CMD (the proxy spin-waits inside).
++                                    try {
++                                        const D = (self as any)._diag || ((self as any)._diag = { calls: [] });
++                                        D.pending = key;
++                                        D.pendingSince = t0;
++                                        D.calls.push(key);
++                                        if (D.calls.length > 40) D.calls.shift();
++                                    } catch { /* ignore */ }
++                                    try {
++                                        const r = orig.apply(this, args);
++                                        if (r && typeof r.then === 'function') {
++                                            return r.then((v: any) => {
++                                                try { const D = (self as any)._diag; if (D) D.pending = ''; } catch { }
++                                                return wrap(v);
++                                            });
++                                        }
++                                        try { const D = (self as any)._diag; if (D) D.pending = ''; } catch { }
++                                        return wrap(r);
++                                    } catch (e) {
++                                        console.log(`[DIAG-CMD] board=${self.boardId} ${key} THREW after ${Date.now() - t0}ms: ${String((e as any)?.message || e).slice(0, 140)}`);
++                                        throw e;
++                                    }
++                                },                            });
++                        }
++                    }
++                } catch { /* probe never breaks boot */ }
+                 self.sim._onUART = (b: number) => {
+                     txQueue.push(b & 0xff);
+                     // REPL prompt sniff at arrival: the drain cadence only
+@@ -430,6 +481,19 @@ export class Esp32Runner extends ArmRunnerBase {
+                 const pump = () => {
+                     if (!self.sim) return;
+                     try { self.sim.pollUart(); } catch { /* ignore */ }
++                    // DIAG: heartbeat counters (temporary probe)
++                    try {
++                        const d = (self as any).diag || ((self as any).diag = { polled: 0, emitted: 0, ticks: 0 });
++                        d.ticks++;
++                        d.polled = txQueue.length;
++                        const now = Date.now();
++                        if (!d.last || now - d.last > 1000) {
++                            d.last = now;
++                            const D = (self as any)._diag;
++                            const pend = D && D.pending ? `${D.pending} for ${now - (D.pendingSince || now)}ms` : 'none';
++                            console.log(`[DIAG-RUNNER] board=${self.boardId} alive=${self.coreAlive} queued=${txQueue.length} emitted=${d.emitted} ticks=${d.ticks} pending=${pend}`);
++                        }
++                    } catch { /* ignore */ }
+                     // Liveness probe (pure reads, no CMD): retired
+                     // instructions or the first UART byte both prove the
+                     // engine consumed RUN.
+@@ -457,7 +521,21 @@ export class Esp32Runner extends ArmRunnerBase {
+                     // Liveness gate for stats CMDs (see pollNetStats):
+                     // first UART flow proves RUN was consumed.
+                     try { if (txQueue.length > 0) (self as any).netAlive = true; } catch { /* ignore */ }
+-                    try { self.pollNetStats(); } catch { /* stats never break the pump */ }
++                    // DIAG: time the wifi-stats CMD round-trip (suspected hang)
++                    try {
++                        const t0 = Date.now();
++                        (self as any).pollNetStats?.();
++                        const dt = Date.now() - t0;
++                        if (dt > 500) console.log(`[DIAG-NETSTATS] board=${self.boardId} pollNetStats took ${dt}ms netAlive=${(self as any).netAlive}`);
++                    } catch { /* never break the pump */ }
++                    // DIAG: entry trace for the engine CMD round-trips that
++                    // pollBusTaps issues (a lost CMD = a permanent spin-wait
++                    // in the proxy, which freezes this board worker).
++                    try {
++                        const d = (self as any).diag || ((self as any).diag = {});
++                        d.lastCmd = `${Date.now()}|${(self as any).diagCmd || ''}`;
++                        (self as any).diagCmd = 'pump';
++                    } catch { /* ignore */ }
+                     // Boot watchdog: RUN is fire-and-forget, so a lost RUN
+                     // (see above) would idle silently for the whole window.
+                     // If the core retired zero instructions after 20s wall,
+@@ -504,6 +582,7 @@ export class Esp32Runner extends ArmRunnerBase {
+             },
+             drainUartOut(): number[] {
+                 try { self.sim?.pollUart?.(); } catch { /* ignore */ }
++                try { const d = (self as any).diag; if (d) d.drains = (d.drains || 0) + 1; } catch { /* ignore */ }
+                 // Per-tick SPI idle flush (same contract as the F1 runner):
+                 // closes a frame whose last byte is older than the 2ms sim
+                 // gap when the real CS deassert never dispatches.
+@@ -521,6 +600,7 @@ export class Esp32Runner extends ArmRunnerBase {
+                 // ride the serial needle with a HOST_ prefix so cells assert
+                 // engine-observed facts — never firmware self-report.
+                 const drained = txQueue.splice(0, Math.min(txQueue.length, 1024));
++            try { const d = (self as any).diag; if (d) d.emitted += drained.length; } catch { /* ignore */ }
+                 if (stash.length > 0) {
+                     try {
+                         drained.push(...stash.splice(0, Math.max(0, 1024 - drained.length)));
+diff --git a/src/worker/simulation.worker.ts b/src/worker/simulation.worker.ts
+index 51b13efe..182c61ae 100644
+--- a/src/worker/simulation.worker.ts
++++ b/src/worker/simulation.worker.ts
+@@ -192,6 +192,18 @@ const serialLineBuf: Map<string, string> = new Map();
+ const SERIAL_LINE_FLUSH_CAP = 256;
+ function emitSerialMonitorChunk(boardId: string, chunk: string, source: string, value: number): void {
+     appendBoardSerialOutput(boardId, chunk);
++    // DIAG: count what the parent actually posts to the main thread
++    try {
++        const g: any = globalThis as any;
++        g.__diagPost = g.__diagPost || {};
++        const k = String(boardId);
++        g.__diagPost[k] = (g.__diagPost[k] || 0) + chunk.length;
++        const now = Date.now();
++        if (!g.__diagPostLast || now - g.__diagPostLast > 1000) {
++            g.__diagPostLast = now;
++            console.log('[DIAG-PARENT] posted ' + JSON.stringify(g.__diagPost) + ' ingest ' + JSON.stringify(g.__diagUart || {}));
++        }
++    } catch { /* ignore */ }
+     postMessage({ type: 'serial', data: chunk, boardId, value, source });
+ }
+ function pushSerialLineByte(boardId: string, char: string, source: string, value: number): void {
+@@ -949,6 +961,18 @@ function isSoftSerialLabel(label: string): boolean {
+ function ingestWorkerUartByte(targetBoardId: string, kind: number, value: number): void {
+     const source = uartSourceFromKind(kind);
+     const char = String.fromCharCode(value & 0xff);
++    // DIAG: per-board ingest counters (temporary probe)
++    try {
++        const g: any = globalThis as any;
++        g.__diagUart = g.__diagUart || {};
++        const k = String(targetBoardId);
++        g.__diagUart[k] = (g.__diagUart[k] || 0) + 1;
++        const now = Date.now();
++        if (!g.__diagUartLast || now - g.__diagUartLast > 1000) {
++            g.__diagUartLast = now;
++            console.log('[DIAG-PARENT] uart ingest ' + JSON.stringify(g.__diagUart));
++        }
++    } catch { /* ignore */ }
+     pushSerialLineByte(targetBoardId, char, source, value & 0xff);
+     try {
+         agentRecorder.pushSerial(targetBoardId, char, source);

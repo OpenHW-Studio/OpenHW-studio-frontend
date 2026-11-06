@@ -2,8 +2,10 @@ import { useState, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import PublicNavbar from "../components/PublicNavbar.jsx";
-import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
-import GUIDED_JSON from "../services/guidedProjects.json";
+// Perf (bundle-split): guidedProjects.json (369KB with full code listings)
+// and ProjectsConfig (104KB) are NOT needed at landing paint — only the card
+// slugs/titles (~4KB index) are. They load lazily below.
+import GUIDED_INDEX from "../services/guidedProjects.index.json";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
 
@@ -79,7 +81,7 @@ const PREFERRED_SLUGS = [
 ];
 
 const PROJECT_ICONS = {};
-for (const p of PROJECTS) {
+for (const p of GUIDED_INDEX.projects) {
   PROJECT_ICONS[p.slug] = p.icon || "🔌";
 }
 
@@ -103,25 +105,13 @@ export default function LandingPage() {
   };
 
   const allCards = useMemo(() => {
-    const cards = [];
-    for (const level of LEVEL_ORDER) {
-      const levelData = GUIDED_JSON[level];
-      if (!levelData) continue;
-      const levelLabel = LEVEL_LABELS[level] || level;
-      for (const cat of Object.values(levelData.categories)) {
-        for (const p of cat.projects) {
-          const urlSlug = JSON_SLUG_TO_URL[p.slug] || p.slug;
-          cards.push({
-            slug: urlSlug,
-            title: p.title,
-            board: p.board,
-            difficulty: levelLabel,
-            xp: 100,
-          });
-        }
-      }
-    }
-    return cards;
+    return GUIDED_INDEX.projects.map((p) => ({
+      slug: JSON_SLUG_TO_URL[p.slug] || p.slug,
+      title: p.title,
+      board: p.board,
+      difficulty: LEVEL_LABELS[p.level] || p.level,
+      xp: 100,
+    }));
   }, []);
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";

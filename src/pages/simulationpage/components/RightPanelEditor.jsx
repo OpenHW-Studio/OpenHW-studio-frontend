@@ -1,6 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import MonacoEditor, { DiffEditor as MonacoDiffEditor } from '@monaco-editor/react';
+import React, { useState, useEffect, useRef, useCallback, memo, Suspense } from 'react';
 import { useEditorStore } from '../store/useEditorStore';
+import { applyOpenHwThemes } from '../../../utils/monacoConfig';
+
+// Perf (bundle-split): Monaco (~1MB via @monaco-editor/react + monaco-editor)
+// must NOT ride the initial SimulatorPage chunk. It loads on demand the first
+// time the code tab actually renders an editor, with a lightweight fallback.
+const MonacoEditor = React.lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.default })));
+const MonacoDiffEditor = React.lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.DiffEditor })));
 
 const RightPanelEditor = memo(({
   theme,
@@ -45,8 +51,19 @@ const RightPanelEditor = memo(({
     return () => clearTimeout(timeout);
   }, [localCode, activeCodeFileId, setFileContent, setCode]);
 
+  const handleBeforeMount = useCallback((monaco) => {
+    // Sync: themes must exist BEFORE first paint, otherwise Monaco renders
+    // the default light theme (white editor in dark mode).
+    applyOpenHwThemes(monaco);
+  }, []);
+
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
+    // Perf: configure themes lazily on first editor mount (main.jsx no longer
+    // boots Monaco — this is now the single entry point for loader.init()).
+    import('../../../utils/monacoConfig').then(({ ensureMonacoConfigured }) => {
+      ensureMonacoConfigured().catch(() => {});
+    });
 
     // Add Custom Commands to the Command Palette (F1)
     editor.addAction({
@@ -100,31 +117,37 @@ const RightPanelEditor = memo(({
           <div style={{ padding: '4px 12px', background: 'var(--accent)', color: '#000', fontSize: 10, fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>COMPARING: {activeFile?.name} vs {compareFile?.name}</span>
           </div>
-          <MonacoDiffEditor
-            height="calc(100% - 20px)"
-            original={compareFile?.content || ''}
-            modified={localCode}
-            language={editorLanguage}
-            theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
-            options={{ ...editorOptions, readOnly: true }}
-          />
+          <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>Loading editor…</div>}>
+            <MonacoDiffEditor
+              height="calc(100% - 20px)"
+              original={compareFile?.content || ''}
+              modified={localCode}
+              language={editorLanguage}
+              theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
+              beforeMount={handleBeforeMount}
+              options={{ ...editorOptions, readOnly: true }}
+            />
+          </Suspense>
         </div>
       ) : (
-        <MonacoEditor
-          height="100%"
-          language={editorLanguage}
-          theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
-          value={localCode}
-          onMount={handleEditorMount}
-          onChange={v => {
-            if (editorOptions?.readOnly) return;
-            if (activeCodeFileId === 'project/diagram.json') return;
-            if (editingDisabled) return;
-            isInternalUpdate.current = true;
-            setLocalCode(v || '');
-          }}
-          options={editorOptions}
-        />
+        <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>Loading editor…</div>}>
+          <MonacoEditor
+            height="100%"
+            language={editorLanguage}
+            theme={theme === 'light' ? 'openhw-light' : 'openhw-dark'}
+            value={localCode}
+            beforeMount={handleBeforeMount}
+            onMount={handleEditorMount}
+            onChange={v => {
+              if (editorOptions?.readOnly) return;
+              if (activeCodeFileId === 'project/diagram.json') return;
+              if (editingDisabled) return;
+              isInternalUpdate.current = true;
+              setLocalCode(v || '');
+            }}
+            options={editorOptions}
+          />
+        </Suspense>
       )}
     </div>
   );

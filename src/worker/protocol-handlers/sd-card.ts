@@ -222,7 +222,10 @@ export class SDCardLogic extends SPIProtocol {
     constructor(id: string, manifest: any) {
         super(id, manifest);
 
-        const capacityKbRaw = Number(manifest?.attrs?.capacityKB ?? 2048);
+        // Default 32 MB: FAT16 needs >= 4085 data clusters and Arduino's
+        // bundled SD library mounts FAT16/FAT32 only — smaller images
+        // format best-effort but cannot mount there.
+        const capacityKbRaw = Number(manifest?.attrs?.capacityKB ?? 32768);
         const capacityKB = Number.isFinite(capacityKbRaw) && capacityKbRaw > 64
             ? Math.floor(capacityKbRaw)
             : 2048;
@@ -231,6 +234,12 @@ export class SDCardLogic extends SPIProtocol {
         this.storage = new Uint8Array(this.blockCount * this.blockSize);
         this.storage.fill(0xff);
         this.mounted = String(manifest?.attrs?.mounted ?? 'true') !== 'false';
+        // FAT16 volume so real stacks (Arduino SD.h) mount, create, write
+        // and read files. Fixed geometry derived from blockCount; README
+        // content lands in data cluster 2 (mirrors the shadow file below).
+        // NOTE: this file is a fork of the emulator's protocol-handlers/
+        // sd-card.ts (worker bundling); keep the two in sync.
+        this.formatFat16();
 
         this.writeShadowFile('/README.TXT', this.textEncoder.encode('OpenHW virtual SD card\n'));
 
@@ -262,6 +271,106 @@ export class SDCardLogic extends SPIProtocol {
         const raw = String(pathLike || '').trim().replace(/\\/g, '/');
         if (!raw) return '/UNTITLED.TXT';
         return raw.startsWith('/') ? raw : `/${raw}`;
+    }
+
+    /**
+     * Minimal FAT16 formatter (MBR + PBR + 2 FATs + root + README data).
+     * Genuine FAT16 (NOT FAT12): Arduino's bundled SD library mounts
+     * FAT16/FAT32 only, and FAT16 needs >= 4085 data clusters — images too
+     * small for that keep a best-effort layout but won't mount there.
+     * Sectors/cluster adapts (1..64) to land in range.
+     * Geometry: reserved 1, 2 FATs, 512 root entries, 8 sectors/cluster.
+     * Pure arithmetic over this.storage — no I/O, no dependencies. Lets
+     * genuine FAT stacks mount the virtual card and do file I/O through
+     * CMD17/CMD24 against the same blocks. Keep in sync with the
+     * emulator's protocol-handlers/sd-card.ts twin.
+     */
+    private formatFat16(): void {
+        const S = this.blockSize;
+        const total = this.blockCount;
+        if (total < 64) return;
+        const set16 = (off: number, v: number) => {
+            this.storage[off] = v & 0xff;
+            this.storage[off + 1] = (v >> 8) & 0xff;
+        };
+        const set32 = (off: number, v: number) => {
+            set16(off, v & 0xffff);
+            set16(off + 2, Math.floor(v / 65536) & 0xffff);
+        };
+        // MBR (LBA 0): one FAT16 partition spanning LBA 1..total-1.
+        // Boot indicator MUST be 0x00/0x80: Arduino rejects entries with
+        // any other low 7 bits as "not a valid partition".
+        const part = 446;
+        this.storage[part] = 0x00;
+        this.storage[part + 4] = 0x06;
+        set32(part + 8, 1);
+        set32(part + 12, total - 1);
+        this.storage[510] = 0x55;
+        this.storage[511] = 0xaa;
+        // PBR (LBA 1).
+        const pbr = S;
+        this.storage[pbr] = 0xeb;
+        this.storage[pbr + 1] = 0x3c;
+        this.storage[pbr + 2] = 0x90;
+        const oem = 'MSDOS5.0';
+        for (let i = 0; i < 8; i += 1) this.storage[pbr + 3 + i] = oem.charCodeAt(i);
+        set16(pbr + 11, S);
+        // Sectors/cluster adapts so data clusters land in FAT16 range.
+        const rootSectors = 32;
+        let spc = 8;
+        let fatSectors = 2;
+        for (const cand of [1, 2, 4, 8, 16, 32, 64]) {
+            const fat = Math.max(1, Math.ceil((((total - 1 - rootSectors) / cand) * 2) / S));
+            const clusters = Math.floor((total - 1 - rootSectors - 2 * fat) / cand);
+            if (clusters >= 4085 && clusters <= 65525) {
+                spc = cand;
+                fatSectors = fat;
+                break;
+            }
+        }
+        this.storage[pbr + 13] = spc; // sectors per cluster
+        set16(pbr + 14, 1); // reserved sectors
+        this.storage[pbr + 16] = 2; // FAT count
+        set16(pbr + 17, 512); // root entries
+        set16(pbr + 19, total - 1); // total16
+        this.storage[pbr + 21] = 0xf8; // media
+        set16(pbr + 22, fatSectors);
+        set16(pbr + 24, 32); // sectors per track
+        set16(pbr + 26, 64); // heads
+        set32(pbr + 28, 1); // hidden (PBR LBA)
+        this.storage[pbr + 510] = 0x55;
+        this.storage[pbr + 511] = 0xaa;
+        const fatBase = (1 + 1) * S;
+        // FAT copies: media + EOF markers, README at cluster 2 (EOF).
+        // All other entries MUST be zero (free): the region starts life as
+        // 0xFF (flash-erased), which FAT reads as 0xFFFF = used/EOF, so
+        // cluster allocation finds no free space and every file write
+        // returns 0 bytes — exactly the live WROTE:0 seen before this.
+        for (let copy = 0; copy < 2; copy += 1) {
+            const base = fatBase + copy * fatSectors * S;
+            for (let i = 0; i < fatSectors * S; i += 1) this.storage[base + i] = 0x00;
+            this.storage[base] = 0xf8;
+            this.storage[base + 1] = 0xff;
+            this.storage[base + 2] = 0xff;
+            this.storage[base + 3] = 0xff;
+            this.storage[base + 4] = 0xff;
+            this.storage[base + 5] = 0xff;
+        }
+        // Root directory: README.TXT, cluster 2. The region MUST be
+        // zero-filled first: free directory entries are 0x00 and deleted
+        // ones 0xE5 — leftover 0xFF bytes look used, so creation scans all
+        // 512 entries, finds no free slot, and fails with "no space".
+        const readme = this.textEncoder.encode('OpenHW virtual SD card\n');
+        const rootBase = (1 + 1 + 2 * fatSectors) * S;
+        for (let i = 0; i < rootSectors * S; i += 1) this.storage[rootBase + i] = 0x00;
+        const name = 'README  TXT';
+        for (let i = 0; i < 11; i += 1) this.storage[rootBase + i] = name.charCodeAt(i);
+        this.storage[rootBase + 11] = 0x20; // archive
+        set16(rootBase + 26, 2); // first cluster
+        set32(rootBase + 28, readme.length);
+        // Data cluster 2.
+        const dataBase = (1 + 1 + 2 * fatSectors + rootSectors) * S;
+        this.storage.set(readme, dataBase);
     }
 
     private computeUsedBytes(): number {
@@ -344,6 +453,11 @@ export class SDCardLogic extends SPIProtocol {
             stage: 'token',
             data: [],
         };
+        // R1 for the command itself: 0x00 (accepted). The DATA_ACCEPTED
+        // token (0x05) is queued separately by completeWriteBlock after
+        // the payload lands — queueing it here would let the 512 payload
+        // clocks eat it (Arduino checks (status & 0x1F) === 0x05 on the
+        // post-payload read).
         this.queueResponse([0x00]);
     }
 
@@ -425,8 +539,20 @@ export class SDCardLogic extends SPIProtocol {
         }
 
         if (command === 58) {
-            // OCR with CCS bit set (SDHC-compatible addressing for simulator simplicity).
-            this.queueResponse([0x00, 0x40, 0x00, 0x00, 0x00]);
+            // OCR: power-up complete (bit31) + CCS/SDHC (bit30) + 2.7–3.6V
+            // window. A ready card MUST report power-up complete — stacks
+            // reject OCRs with bit31 clear even after ACMD41 went ready.
+            this.queueResponse([0x00, 0xc0, 0xff, 0x80, 0x00]);
+            return;
+        }
+
+        if (command === 13) {
+            // SEND_STATUS (R2 = R1 + status). Arduino's blocking
+            // writeBlock() requires cardCommand(CMD13, 0) === 0 AND the
+            // following status byte === 0; anything else aborts the write
+            // with SD_CARD_ERROR_WRITE_PROGRAMMING, so every cache flush
+            // (dir entries, FAT, file data) silently failed before this.
+            this.queueResponse([0x00, 0x00]);
             return;
         }
 
@@ -613,32 +739,35 @@ export class SDCardLogic extends SPIProtocol {
         this.bytesIn += 1;
         this.state.bytesIn = this.bytesIn;
 
-        if (this.responseQueue.length > 0) {
-            return this.emitResponseByte();
-        }
-
         if (this.writeState) {
             this.handleWriteByte(byte);
+            // If this byte completed the block, its data response belongs
+            // to the FOLLOWING clocks (real cards idle during CRC) — do
+            // not emit the just-queued token on the completing clock.
+            if (!this.writeState) return 0xff;
             return this.emitResponseByte();
         }
 
-        if (this.commandFrame.length === 0) {
-            if ((byte & 0xc0) === 0x40) {
-                this.commandFrame.push(byte);
-            } else if (byte === 0x9f) {
-                // Legacy SPI probe compatibility.
-                this.queueResponse([0x53, 0x44, 0x30]);
+        // Command-frame assembly consumes clocks silently (MISO idle-high):
+        // a 0x40-masked start byte opens a frame and supersedes any unread
+        // stale tail (hardware drops it too). Reads (0xFF clocks) and the
+        // 0x9F legacy probe fall through to the queue below. Checking the
+        // queue FIRST here would spend stale responses on command clocks
+        // and shift every subsequent read by one.
+        if ((byte & 0xc0) === 0x40 || this.commandFrame.length > 0) {
+            if (this.commandFrame.length === 0) this.responseQueue.length = 0;
+            this.commandFrame.push(byte);
+            if (this.commandFrame.length >= 6) {
+                const frame = this.commandFrame.slice(0, 6);
+                this.commandFrame = [];
+                this.handleCommandFrame(frame);
             }
-            return this.emitResponseByte();
+            return 0xff;
         }
-
-        this.commandFrame.push(byte);
-        if (this.commandFrame.length >= 6) {
-            const frame = this.commandFrame.slice(0, 6);
-            this.commandFrame = [];
-            this.handleCommandFrame(frame);
+        if (byte === 0x9f) {
+            // Legacy SPI probe compatibility.
+            this.queueResponse([0x53, 0x44, 0x30]);
         }
-
         return this.emitResponseByte();
     }
 

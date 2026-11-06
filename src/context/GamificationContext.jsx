@@ -1,9 +1,20 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LEVELS, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
-import { PROJECTS, getProjectStatus } from '../services/gamification/ProjectsConfig.js';
+// Perf (bundle-split): ProjectsConfig (104KB: full descriptions, steps, quizzes)
+// is NOT needed at boot — the provider only needs slug/xp/badge/prerequisite
+// metadata (7KB ProjectsMeta.json, generated from ProjectsConfig).
+import PROJECTS_META from '../services/gamification/ProjectsMeta.json';
 import { useAuth } from './AuthContext.jsx';
 import { fetchUserGamificationState, saveUserGamificationState } from '../services/gamification/unlockService';
+
+// Meta array doubles as the PROJECTS list for provider purposes (iteration,
+// .find, .length all behave like the full list for slug/xp/badge lookups).
+const PROJECTS = PROJECTS_META || [];
+const getProjectStatus = (projectSlug, completedProjects = []) => {
+  if ((completedProjects || []).includes(projectSlug)) return 'completed';
+  return 'available';
+};
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
 const STARTING_COMPONENTS = [];

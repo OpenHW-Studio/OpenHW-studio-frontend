@@ -235,8 +235,36 @@ export const SerialTabBar = ({
   );
 };
 
-export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardColors, isRunning }) => {
-  const filtered = boardId === 'all' ? history : history.filter(e => e.boardId === boardId);
+export const SerialRow = React.memo(({ entry, boardColor }) => {
+  const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
+  const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
+  return (
+    <div className="flex items-start gap-2 px-3 py-0.5 text-[11px] font-mono border-b border-[var(--border)] hover:bg-white/[0.02] transition-colors">
+      <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: boardColor }} />
+        {entry.ts || ''}
+      </span>
+      <span className="inline-block text-[8px] font-bold rounded-[3px] px-1 py-[0px] shrink-0 mt-[2px] leading-tight" style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
+        {entry.dir?.toUpperCase() || 'RX'}
+      </span>
+      <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+        {entry.text}
+      </span>
+    </div>
+  );
+});
+
+// Perf: windowed serial list. History can hold 2000 entries but rendering all
+// of them on every 100ms flush is the #1 serial-monitor jank source. Render
+// only the latest 200 rows; older rows stay in history (pause/filter/clear
+// unaffected) and the count note tells the user what is hidden.
+const MAX_VISIBLE_ROWS = 200;
+
+export const SerialOutputPane = React.memo(({ boardId, history, outputRef, isPaused, boardColors, isRunning }) => {
+  const filtered = React.useMemo(
+    () => (boardId === 'all' ? history : history.filter(e => e.boardId === boardId)),
+    [history, boardId],
+  );
   const [frozen, setFrozen] = React.useState(filtered);
 
   React.useEffect(() => {
@@ -244,6 +272,8 @@ export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardC
   }, [filtered, isPaused, frozen.length]);
 
   const visibleHistory = isPaused ? frozen : filtered;
+  const hiddenCount = Math.max(0, visibleHistory.length - MAX_VISIBLE_ROWS);
+  const rows = hiddenCount > 0 ? visibleHistory.slice(-MAX_VISIBLE_ROWS) : visibleHistory;
 
   return (
     <div ref={outputRef} className="flex-1 overflow-y-auto py-1.5 flex flex-col panel-scroll" style={{ background: 'var(--bg)' }}>
@@ -253,29 +283,24 @@ export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardC
           {isRunning ? `Waiting for serial output from ${boardId}...` : 'Start simulation to see serial output.'}
         </div>
       ) : (
-        visibleHistory.map((entry, i) => {
-          const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
-          const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
-          const boardColor = boardColors[entry.boardId] || '#64748b';
-          return (
-            <div key={i} className="flex items-start gap-2 px-3 py-0.5 text-[11px] font-mono border-b border-[var(--border)] hover:bg-white/[0.02] transition-colors">
-              <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: boardColor }} />
-                {entry.ts || ''}
-              </span>
-              <span className="inline-block text-[8px] font-bold rounded-[3px] px-1 py-[0px] shrink-0 mt-[2px] leading-tight" style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
-                {entry.dir?.toUpperCase() || 'RX'}
-              </span>
-              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                {entry.text}
-              </span>
+        <>
+          {hiddenCount > 0 && (
+            <div style={{ color: 'var(--text4)', fontSize: 10, padding: '4px 12px', fontFamily: 'JetBrains Mono, monospace' }}>
+              … showing latest {rows.length} of {visibleHistory.length} lines
             </div>
-          );
-        })
+          )}
+          {rows.map((entry, i) => (
+            <SerialRow
+              key={entry.id ?? `${entry.boardId}-${entry.ts}-${visibleHistory.length - rows.length + i}`}
+              entry={entry}
+              boardColor={(boardColors || {})[entry.boardId] || '#64748b'}
+            />
+          ))}
+        </>
       )}
     </div>
   );
-};
+});
 
 export const BaudRateSelector = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = React.useState(false);
