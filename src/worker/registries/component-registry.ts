@@ -25,6 +25,9 @@ import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-d
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
 import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
+import { HC165Logic } from '@openhw/emulator/src/components/openhw-74hc165/logic';
+import { BiaxialStepperLogic } from '@openhw/emulator/src/components/openhw-biaxial-stepper/logic';
+import { Pushbutton6mmLogic } from '@openhw/emulator/src/components/openhw-6mm-pushbutton/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
 import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic';
 import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic';
@@ -130,6 +133,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-slide-switch': SlideSwitchLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'openhw-pushbutton': PushbuttonLogic,
+    'openhw-pushbutton-6mm': Pushbutton6mmLogic,
     'wokwi-power-supply': PowerSupplyLogic,
     'openhw-power-supply': PowerSupplyLogic,
     'wokwi-battery': BatteryLogic,
@@ -184,6 +188,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
     'openhw-74hc595': ShiftRegisterLogic,
+    'openhw-74hc165': HC165Logic,
     'wokwi-membrane-keypad': KeypadLogic,
     'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
@@ -277,6 +282,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-relay-module': RelayModuleLogic,
     'wokwi-stepper-motor': StepperMotorLogic,
     'openhw-stepper-motor': StepperMotorLogic,
+    'openhw-biaxial-stepper': BiaxialStepperLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,

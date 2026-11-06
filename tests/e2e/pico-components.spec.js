@@ -334,6 +334,71 @@ void setup(){
 void loop(){ Serial.println("SR595_TICK"); delay(1000); }
 `;
 
+// NLSF595: the latch keeps the last <=3 bytes of one CS window; the low
+// three bits drive B/G/R. 0x000004 lights R1 only.
+const NLS595_CODE = `#include <SPI.h>
+void setup(){
+  Serial.begin(9600);
+  Serial.println("NLS_RDY");
+  pinMode(17, OUTPUT);
+  digitalWrite(17, HIGH);
+  SPI.begin();
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(17, LOW);
+  SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  SPI.transfer(0x04);
+  digitalWrite(17, HIGH);
+  Serial.println("NLS_SET");
+}
+void loop(){ Serial.println("NLS_TICK"); delay(1000); }
+`;
+
+// L293D: the MCU drives enable (normal speed-control wiring), IN1 high
+// and IN2 low must drive OUT1 to the enable level and OUT2 to ground.
+const L293D_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("L293_RDY");
+  pinMode(16, OUTPUT); pinMode(17, OUTPUT); pinMode(18, OUTPUT);
+  digitalWrite(16, HIGH); digitalWrite(17, LOW); digitalWrite(18, HIGH);
+  Serial.println("L293_SET");
+}
+void loop(){ Serial.println("L293_TICK"); delay(500); }
+`;
+
+// 74HC165: d7 tied high, d0-d6 low; pulse PL low to load, then read the
+// byte out MSB-first on Q7 with 8 clock pulses.
+const HC165_CODE = `const int PIN_Q7 = 16;
+const int PIN_PL = 17;
+const int PIN_CP = 18;
+void setup(){
+  Serial.begin(9600);
+  Serial.println("HC_RDY");
+  pinMode(PIN_Q7, INPUT);
+  pinMode(PIN_PL, OUTPUT);
+  pinMode(PIN_CP, OUTPUT);
+  pinMode(26, OUTPUT); digitalWrite(26, HIGH);
+  digitalWrite(PIN_CP, LOW);
+  digitalWrite(PIN_PL, HIGH);
+  delay(60);
+  digitalWrite(PIN_PL, LOW);
+  delay(60);
+  digitalWrite(PIN_PL, HIGH);
+  delay(60);
+  int v = 0;
+  for (int i = 0; i < 8; i++) {
+    v = (v << 1) | (digitalRead(PIN_Q7) ? 1 : 0);
+    digitalWrite(PIN_CP, HIGH);
+    delay(60);
+    digitalWrite(PIN_CP, LOW);
+    delay(60);
+  }
+  Serial.print("HC:"); Serial.println(v);
+  Serial.println("HC_DONE");
+}
+void loop(){ Serial.println("HC_TICK"); delay(1000); }
+`;
+
 // ILI9341 over SPI0, raw command/data framing. A 16x16 RAMWR window is
 // enough to prove the model's pixel path without overrunning the mirror
 // ring (a full 240x320 frame is 153600 bytes). Each DC phase is separated
@@ -492,6 +557,51 @@ const CASES = [
     check: (v) => expect(Math.abs(Number(st(v, 'c1').angle || 0))).toBeGreaterThan(0.5),
   },
   {
+    // Outer gimbal coils on A1/B1; the inner pair is left floating, so a
+    // clean sweep must turn only the outer angle.
+    family: 'outputs', name: 'biaxial-stepper', type: 'openhw-biaxial-stepper',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:A1+' }, { from: `${b}:GP17`, to: 'c1:A1-' },
+      { from: `${b}:GP18`, to: 'c1:B1+' }, { from: `${b}:GP19`, to: 'c1:B1-' },
+    ],
+    code: STEPPER_CODE, needle: 'STEP_TICK', runMs: 20000,
+    check: (v) => {
+      const s = st(v, 'c1');
+      expect(Math.abs(Number(s.outerAngle || 0))).toBeGreaterThan(0.5);
+      expect(Number(s.innerAngle || 0)).toBe(0);
+      expect(Number(custom(v, 'c1').outerStepCount || 0)).toBeGreaterThan(0);
+    },
+  },
+  {
+    // Same tone path as the buzzer: the speaker's onPWM -> onPWMSignal
+    // synthesizes its audio chunk from the measured PWM channel.
+    family: 'outputs', name: '5w-speaker', type: 'openhw-5w-speaker',
+    wires: (b) => [{ from: `${b}:GP16`, to: 'c1:IN+' }, { from: `${b}:GND`, to: 'c1:IN-' }],
+    code: (boardKey) => (boardKey === 'pico2' ? BUZZER_PWM_CODE : BUZZER_CODE),
+    needle: 'BUZ_SET', runMs: 12000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(c.isPlaying).toBe('Yes');
+      expect(Math.abs(Number(st(v, 'c1').frequency) - 2000)).toBeLessThan(100);
+    },
+  },
+  {
+    // Half-bridge 1 only: EN tied high, IN1/IN2 driven, OUT1/OUT2 read.
+    family: 'outputs', name: 'l293d', type: 'openhw-l293d',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:IN1' }, { from: `${b}:GP17`, to: 'c1:IN2' },
+      { from: `${b}:GP18`, to: 'c1:EN1,2' },
+      { from: `${b}:3V3`, to: 'c1:VCC1' }, { from: `${b}:5V`, to: 'c1:VCC2' },
+      { from: `${b}:GND`, to: 'c1:GND1' }, { from: `${b}:GND`, to: 'c1:GND2' },
+    ],
+    code: L293D_CODE, needle: 'L293_SET', runMs: 15000,
+    check: (v) => {
+      const av = st(v, 'c1').analogVoltages || {};
+      expect(Number(av.OUT1)).toBeGreaterThan(2.5);
+      expect(Number(av.OUT2)).toBeLessThan(0.5);
+    },
+  },
+  {
     family: 'displays', name: 'oled', type: 'openhw-ssd1306-oled',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
@@ -641,6 +751,43 @@ const CASES = [
       // Closed switch (~1k to GND) must read LOW at the guest pin.
       for (const x of vals.slice(-3)) expect(x).toBe(0);
       expect(st(v, 'c1').pressed).toBe(true);
+    },
+  },
+  {
+    // Same MNA switch as the pushbutton (1A/2A 1k when pressed).
+    family: 'inputs', name: '6mm-pushbutton', type: 'openhw-pushbutton-6mm',
+    attrs: { pressed: true },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:1A' }, { from: `${b}:GND`, to: 'c1:2A' },
+    ],
+    code: BUTTON_CODE, needle: 'BTN:', runMs: 22000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/BTN:(\d)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      for (const x of vals.slice(-3)) expect(x).toBe(0);
+      expect(st(v, 'c1').pressed).toBe(true);
+    },
+  },
+  {
+    // Parallel-in/serial-out: the model latches d0-d7 when PL falls and
+    // shifts on CP rising; the guest clocks the loaded byte out on Q7.
+    family: 'inputs', name: '74hc165', type: 'openhw-74hc165',
+    wires: (b) => [
+      { from: `${b}:3V3`, to: 'c1:vcc' }, { from: `${b}:GND`, to: 'c1:gnd' },
+      { from: `${b}:GND`, to: 'c1:ce' },
+      { from: `${b}:GP26`, to: 'c1:d7' },
+      { from: `${b}:GND`, to: 'c1:d0' }, { from: `${b}:GND`, to: 'c1:d1' },
+      { from: `${b}:GND`, to: 'c1:d2' }, { from: `${b}:GND`, to: 'c1:d3' },
+      { from: `${b}:GND`, to: 'c1:d4' }, { from: `${b}:GND`, to: 'c1:d5' },
+      { from: `${b}:GND`, to: 'c1:d6' },
+      { from: `${b}:GP17`, to: 'c1:pl' }, { from: `${b}:GP18`, to: 'c1:cp' },
+      { from: `${b}:GP16`, to: 'c1:q7' },
+    ],
+    code: HC165_CODE, needle: 'HC_DONE', runMs: 22000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/HC:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(0);
+      expect(vals[vals.length - 1]).toBe(128);
     },
   },
   {
@@ -845,6 +992,23 @@ const CASES = [
       expect(Number(st(v, 'c1').storageReg)).toBe(0x81);
       // OE grounded: the latched byte drives q0..q7.
       expect(Number(st(v, 'c1').outputs)).toBe(0x81);
+    },
+  },
+  {
+    family: 'spi', name: 'nlsf595', type: 'openhw-nlsf595',
+    wires: (b) => [
+      { from: `${b}:GP19`, to: 'c1:MOSI' }, { from: `${b}:GP18`, to: 'c1:SCK' },
+      { from: `${b}:GP17`, to: 'c1:CS' }, { from: `${b}:3V3`, to: 'c1:VCC' },
+      { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: NLS595_CODE, needle: 'NLS_SET', runMs: 18000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(String(c.latchRegisterHex)).toBe('0x000004');
+      expect(c.rOutput).toBe('HIGH');
+      expect(c.gOutput).toBe('LOW');
+      expect(c.bOutput).toBe('LOW');
+      expect(Number(st(v, 'c1').analogVoltages?.R1)).toBeGreaterThan(2.5);
     },
   },
   {

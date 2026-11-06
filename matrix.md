@@ -360,16 +360,21 @@ readback 0 → 1 in a patched build, M0+/M33 unchanged).
 
 Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
 one component per cell, both boards, host-model state as the verdict):
-**outputs 8/8**, **displays 2/2** (SSD1306 OLED + LCD2004 over I2C0),
-**inputs 9/9** (potentiometer wiper at 50% → 2048; pushbutton held closed →
-LOW; LDR module → ~401; soil moisture 50% → 1.65 V; NTC 25 °C → 1.65 V;
-slide pot 25% → ~1024; joystick (0.25,0.75) → GP26/GP27 ~1024/~3071; slide
-switch → LOW; 4×4 keypad scan reports key 5 as `KP:1,0`), **SPI 4/4**
+**outputs 11/11** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
+stepper, biaxial-stepper — 1157 outer steps / 2082.6° while the inner gimbal
+stays 0; 5 W speaker tone path; L293D enable + IN1/IN2 → OUT1 5 V / OUT2 0 V),
+**displays 2/2** (SSD1306 OLED + LCD2004 over I2C0), **inputs 11/11**
+(potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; 6 mm
+pushbutton pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
+NTC 25 °C → 1.65 V; slide pot 25% → ~1024; joystick (0.25,0.75) →
+GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan reports key 5 as
+`KP:1,0`; 74HC165 loads 0x80 and clocks it back out MSB-first), **SPI 5/5**
 (MAX7219 frame
 12,1,10,8,11,7,1,126,2,48 → matrix[0]=0x7E; 74HC595 latches 0x81 into
-outputs; Nokia 5110 fills 100 % of its 84×48 framebuffer; ILI9341 accepts a
-256-pixel RAMWR window) and **I2C write-only 2/2** (PCA9685 and PCA9865:
-duty 50 % / full on from raw register writes). Every cell is green on BOTH
+outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
+84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
+write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
+writes). 31 component types, 62 green cells; every cell is green on BOTH
 boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:
@@ -427,6 +432,22 @@ backpack variants are proven, because the I2C mirror delivers bytes).
 Fix belongs on the runner/engine side — an edge-timed GPIO path (the
 per-tick IN-latch script cannot carry a sub-tick pulse) — not in the
 component models. Both cells are `blocked` in the sweep, not weakened.
+
+(l) **Three engine components had no `LOGIC_REGISTRY` entry** — the UI could
+place `openhw-pushbutton-6mm`, `openhw-74hc165` and
+`openhw-biaxial-stepper`, but the worker never instantiated their models
+(`liveOop` stayed `{}` and no telemetry was emitted). Registered in
+`src/worker/registries/component-registry.ts` on 2026-11-06.
+`openhw-hp4067` still has no logic class at all (UI-only module) and stays
+out of the lane until the engine lands one.
+
+(m) **Biaxial stepper dropped every step under per-pin dispatch** — its
+`processStepper` released the phase on any invalid coil mix, so a row change
+where one coil pin updated before its complement reset `currentPhase` to -1
+on every tick; the model counted 0 steps while the pins toggled 568 times.
+Fixed by releasing the phase only when both coils are unpowered (same rule as
+the proven stepper-motor model). Measured after: 1157 outer steps on Pico 1
+and 1175 on Pico 2, inner angle untouched.
 
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.
