@@ -1461,7 +1461,7 @@ const CASES = [
       + 'onEvent(rotate-cw/ccw) and nothing in the UI or E2E emits it.',
   },
   {
-    family: 'inputs', name: '6mm-pushbutton', type: 'openhw-6mm-pushbutton',
+    family: 'inputs', name: '6mm-pushbutton-4pin', type: 'openhw-6mm-pushbutton',
     blocked: 'event-only model (matrix (p)): press/release only via '
       + 'onEvent, no attrs or headless injection path.',
   },
@@ -1540,11 +1540,14 @@ const only = String(process.env.PICO_COMP_ONLY || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 const selected = CASES.filter((c) => (!wanted.length || wanted.includes(c.family))
   && (!only.length || only.includes(c.name)));
+// PICO_COMP_BOARD=pico2 finishes one board without re-running the other.
+const boardOnly = String(process.env.PICO_COMP_BOARD || '').trim();
+const boards = boardOnly ? BOARDS.filter((b) => b.key === boardOnly) : BOARDS;
 
 // Default mode (one worker): every cell still runs after a failure, so one
 // broken component never hides the rest of the sweep.
 
-for (const board of BOARDS) {
+for (const board of boards) {
   for (const c of selected) {
     test(`${board.key} ${c.name}`, async ({ page }) => {
       test.setTimeout(300000);

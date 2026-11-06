@@ -387,7 +387,9 @@ outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
 writes). 44 component types, 88 green cells; every cell is green on BOTH
-boards. Another 24 cells are `blocked`, each with a measured reason, so every
+boards (verified board-by-board on 2026-11-06 with `PICO_COMP_BOARD`;
+chunks stay under 15 minutes so a long headless run cannot take the app
+down). Another 24 cells are `blocked`, each with a measured reason, so every
 peripheral type in the catalog is accounted for: I2C master reads (j: mpu6050,
 bmp180, ds1307-rtc, adxl345, ili9341-touch), sub-tick GPIO strobes (k:
 hc-sr04, lcd2004/lcd1602 parallel, tm1637, ir-receiver), event-only inputs
