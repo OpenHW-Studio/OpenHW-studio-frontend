@@ -91,6 +91,55 @@ const NTC_MOD_CODE = `void setup(){ Serial.begin(9600); Serial.println("NTC_RDY"
 void loop(){ Serial.print("NTC:"); Serial.println(analogRead(26)); delay(200); }
 `;
 
+// NPN low-side switch: base GPIO high pulls the collector to ~0.2 V,
+// base low lets the model's pull-up sit at 5 V.
+const NPN_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("NPN_RDY");
+  pinMode(16, OUTPUT);
+  pinMode(17, INPUT);
+}
+void loop(){
+  digitalWrite(16, HIGH);
+  delay(300);
+  Serial.print("NPN:"); Serial.println(digitalRead(17));
+  digitalWrite(16, LOW);
+  delay(300);
+  Serial.print("NPN:"); Serial.println(digitalRead(17));
+  Serial.println("NPN_CYCLE");
+  delay(400);
+}
+`;
+
+// HX711: 24 clocks shift the sample MSB-first; the guest samples DT
+// after each clock has been visible to the model for a full tick.
+const HX711_CODE = `const int PIN_DT = 16;
+const int PIN_SCK = 17;
+void setup(){
+  Serial.begin(9600);
+  Serial.println("HX_RDY");
+  pinMode(PIN_DT, INPUT);
+  pinMode(PIN_SCK, OUTPUT);
+  digitalWrite(PIN_SCK, LOW);
+  delay(500);
+  unsigned long v = 0;
+  for (int i = 0; i < 24; i++) {
+    digitalWrite(PIN_SCK, HIGH);
+    delay(40);
+    v = (v << 1) | (digitalRead(PIN_DT) ? 1 : 0);
+    digitalWrite(PIN_SCK, LOW);
+    delay(40);
+  }
+  digitalWrite(PIN_SCK, HIGH);
+  delay(40);
+  digitalWrite(PIN_SCK, LOW);
+  delay(40);
+  Serial.print("HX:"); Serial.println(v);
+  Serial.println("HX_DONE");
+}
+void loop(){ Serial.println("HX_TICK"); delay(1000); }
+`;
+
 const STEPPER_CODE = 'int pins[4]={16,17,18,19};int seq[4][4]={{1,0,1,0},{0,1,1,0},{0,1,0,1},{1,0,0,1}};\nvoid setup(){Serial.begin(9600);Serial.println("STEP_RDY");for(int i=0;i<4;i++)pinMode(pins[i],OUTPUT);}\nvoid loop(){for(int s=0;s<4;s++){for(int i=0;i<4;i++)digitalWrite(pins[i],seq[s][i]);delay(20);}Serial.println("STEP_TICK");}\n';
 
 // ── displays ────────────────────────────────────────────────────────────
@@ -694,6 +743,20 @@ const CASES = [
     },
   },
   {
+    family: 'outputs', name: 'npn-transistor', type: 'openhw-npn-transistor',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:B' }, { from: `${b}:GP17`, to: 'c1:C' },
+      { from: `${b}:GND`, to: 'c1:E' },
+    ],
+    code: NPN_CODE, needle: 'NPN_CYCLE', runMs: 18000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/NPN:(\d)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(4);
+      expect(vals).toContain(1);
+      expect(vals).toContain(0);
+    },
+  },
+  {
     family: 'displays', name: 'oled', type: 'openhw-ssd1306-oled',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
@@ -973,6 +1036,43 @@ const CASES = [
       expect(last).toBeGreaterThan(2950);
       expect(last).toBeLessThan(3250);
       expect(String(custom(v, 'c1').temperature)).toBe('25.0 °C');
+    },
+  },
+  {
+    // 2.5 kg on the 5 kg cell -> raw 1050 (0x00041A), MSB-first.
+    family: 'inputs', name: 'hx711-5kg', type: 'openhw-hx711_5',
+    attrs: { load: 2.5 },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:DT' }, { from: `${b}:GP17`, to: 'c1:SCK' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: HX711_CODE, needle: 'HX_DONE', runMs: 26000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(Number(c.loadKg)).toBeCloseTo(2.5, 1);
+      expect(Number(c.rawValue)).toBe(1050);
+      const vals = [...String(v.serial || '').matchAll(/HX:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(0);
+      expect(vals[vals.length - 1]).toBe(1050);
+    },
+  },
+  {
+    // The app routes the 50 kg type through the same HX711 logic; the
+    // proportional scale still lands 2.5 kg on raw 1050.
+    family: 'inputs', name: 'hx711-50kg', type: 'openhw-hx711_50',
+    attrs: { load: 2.5 },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:DT' }, { from: `${b}:GP17`, to: 'c1:SCK' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: HX711_CODE, needle: 'HX_DONE', runMs: 26000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(Number(c.loadKg)).toBeCloseTo(2.5, 1);
+      expect(Number(c.rawValue)).toBe(1050);
+      const vals = [...String(v.serial || '').matchAll(/HX:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(0);
+      expect(vals[vals.length - 1]).toBe(1050);
     },
   },
   {

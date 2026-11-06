@@ -360,24 +360,27 @@ readback 0 → 1 in a patched build, M0+/M33 unchanged).
 
 Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
 one component per cell, both boards, host-model state as the verdict):
-**outputs 13/13** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
+**outputs 14/14** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
 stepper, biaxial-stepper — 1157 outer steps / 2082.6° while the inner gimbal
 stays 0; 5 W speaker tone path; L293D enable + IN1/IN2 → OUT1 5 V / OUT2 0 V;
 L298N-style motor driver ENA/IN1 → OUT1 5 V while IN2 keeps OUT2 at 0; A4988
 full-step indexer ends on phase 3 = 1A/2B high, 1B/2A low after three STEP
-edges), **displays 3/3** (SSD1306 OLED, LCD2004 and LCD1602 both over I2C0),
-**inputs 13/13** (potentiometer wiper at 50% → 2048; pushbutton held closed
-→ LOW; 6 mm pushbutton pressed → LOW; LDR module → ~401; soil moisture 50%
-→ 1.65 V; NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare
-photoresistor 500 lx → 2.44 V → ~3030; slide pot 25% → ~1024; joystick
-(0.25,0.75) → GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan
-reports key 5 as `KP:1,0`; 74HC165 loads 0x80 and clocks it back out
-MSB-first), **SPI 5/5** (MAX7219 frame
+edges; NPN low-side switch pulls the collector from 5 V to 0.2 V with the
+base high, and releases it to 5 V with the base low), **displays 3/3**
+(SSD1306 OLED, LCD2004 and LCD1602 both over I2C0), **inputs 15/15**
+(potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; 6 mm
+pushbutton pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
+NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare photoresistor
+500 lx → 2.44 V → ~3030; slide pot 25% → ~1024; joystick (0.25,0.75) →
+GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan reports key 5 as
+`KP:1,0`; 74HC165 loads 0x80 and clocks it back out MSB-first; HX711 5 kg
+and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read),
+**SPI 5/5** (MAX7219 frame
 12,1,10,8,11,7,1,126,2,48 → matrix[0]=0x7E; 74HC595 latches 0x81 into
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 36 component types, 72 green cells; every cell is green on BOTH
+writes). 39 component types, 78 green cells; every cell is green on BOTH
 boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:
@@ -451,6 +454,14 @@ on every tick; the model counted 0 steps while the pins toggled 568 times.
 Fixed by releasing the phase only when both coils are unpowered (same rule as
 the proven stepper-motor model). Measured after: 1157 outer steps on Pico 1
 and 1175 on Pico 2, inner angle untouched.
+
+(n) **`openhw-hx711_50` is routed to the 5 kg logic class** — the registry
+maps both `openhw-hx711_5` and `openhw-hx711_50` to `HX711Logic`
+(`openhw-hx711_5`), while `openhw-hx711_50/logic.ts` is an older skeleton
+(`HX711Logic_50`) that is never instantiated. The sweep therefore proves the
+50 kg cell against the app's actual behavior: 2.5 kg → raw 1050 on the 5 kg
+scale, not the 50 kg skeleton's 21000-count scale. Decide whether to wire the
+50 kg class and give it its own scale or remove the dead file.
 
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.
