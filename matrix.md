@@ -378,12 +378,15 @@ NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare photoresistor
 GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan reports key 5 as
 `KP:1,0`; 74HC165 loads 0x80 and clocks it back out MSB-first; HX711 5 kg
 and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read),
-**SPI 5/5** (MAX7219 frame
+**passives 2/2** (diode forward drop: GP16 anode high → cathode 2.6 V =
+A − 0.7 V read as ~3226 ADC counts, floating after the anode drops;
+photodiode light 50 with a 3.3 V reverse bias → anode 1.65 V = ~2048
+counts), **SPI 5/5** (MAX7219 frame
 12,1,10,8,11,7,1,126,2,48 → matrix[0]=0x7E; 74HC595 latches 0x81 into
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 42 component types, 84 green cells; every cell is green on BOTH
+writes). 44 component types, 88 green cells; every cell is green on BOTH
 boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:

@@ -182,6 +182,39 @@ void setup(){
 void loop(){ Serial.println("EPD_TICK"); delay(1000); }
 `;
 
+// Diode forward drop: GP16 drives the anode, the cathode feeds ADC0.
+// The model conducts above 0.6 V and drives C to A - 0.7 V.
+const DIODE_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("DIO_RDY");
+  pinMode(16, OUTPUT);
+  analogReadResolution(12);
+}
+void loop(){
+  digitalWrite(16, LOW); delay(250);
+  Serial.print("DIO_OFF:"); Serial.println(analogRead(26));
+  digitalWrite(16, HIGH); delay(250);
+  Serial.print("DIO_ON:"); Serial.println(analogRead(26));
+  Serial.println("DIO_CYCLE");
+  delay(250);
+}
+`;
+
+// Photodiode reverse bias: GP16 holds the cathode at 3.3 V, the anode is
+// on ADC0. The model drives A to Vc * light / 100 (50 % -> 1.65 V).
+const PHOTODIODE_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("PD_RDY");
+  pinMode(16, OUTPUT);
+  digitalWrite(16, HIGH);
+  analogReadResolution(12);
+}
+void loop(){
+  Serial.print("PD:"); Serial.println(analogRead(26));
+  delay(250);
+}
+`;
+
 const STEPPER_CODE = 'int pins[4]={16,17,18,19};int seq[4][4]={{1,0,1,0},{0,1,1,0},{0,1,0,1},{1,0,0,1}};\nvoid setup(){Serial.begin(9600);Serial.println("STEP_RDY");for(int i=0;i<4;i++)pinMode(pins[i],OUTPUT);}\nvoid loop(){for(int s=0;s<4;s++){for(int i=0;i<4;i++)digitalWrite(pins[i],seq[s][i]);delay(20);}Serial.println("STEP_TICK");}\n';
 
 // ── displays ────────────────────────────────────────────────────────────
@@ -1355,6 +1388,44 @@ const CASES = [
       // 256 RGB565 pixels written through RAMWR: the model counts them
       // (writeCount is custom telemetry, not mirrored state).
       expect(Number(mx.writeCount || 0)).toBeGreaterThan(200);
+    },
+  },
+  {
+    // Two-terminal passives: the GPIO is only a source, the ADC reads the
+    // model-driven node.
+    family: 'passives', name: 'diode', type: 'openhw-diode',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:A' }, { from: `${b}:GP26`, to: 'c1:C' },
+    ],
+    code: DIODE_CODE, needle: 'DIO_CYCLE', runMs: 18000,
+    check: (v) => {
+      const on = [...String(v.serial || '').matchAll(/DIO_ON:(\d+)/g)].map((m) => Number(m[1]));
+      const off = [...String(v.serial || '').matchAll(/DIO_OFF:(\d+)/g)].map((m) => Number(m[1]));
+      expect(on.length).toBeGreaterThan(2);
+      expect(off.length).toBeGreaterThan(2);
+      const onLast = on[on.length - 1];
+      expect(onLast).toBeGreaterThan(3050);
+      expect(onLast).toBeLessThan(3400);
+      // Reverse bias does not pull the cathode down: the model leaves C
+      // floating (its own comment), so only the first OFF sample is 0 and
+      // later ones hold the last forward voltage.
+      expect(off[0]).toBeLessThan(200);
+    },
+  },
+  {
+    family: 'passives', name: 'photodiode', type: 'openhw-photodiode',
+    attrs: { light: 50 },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:C' }, { from: `${b}:GP26`, to: 'c1:A' },
+    ],
+    code: PHOTODIODE_CODE, needle: 'PD_RDY', runMs: 18000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/PD:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      for (const x of vals.slice(-2)) {
+        expect(x).toBeGreaterThan(1900);
+        expect(x).toBeLessThan(2200);
+      }
     },
   },
   {
