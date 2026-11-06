@@ -366,8 +366,9 @@ stays 0; 5 W speaker tone path; L293D enable + IN1/IN2 → OUT1 5 V / OUT2 0 V;
 L298N-style motor driver ENA/IN1 → OUT1 5 V while IN2 keeps OUT2 at 0; A4988
 full-step indexer ends on phase 3 = 1A/2B high, 1B/2A low after three STEP
 edges; NPN low-side switch pulls the collector from 5 V to 0.2 V with the
-base high, and releases it to 5 V with the base low), **displays 3/3**
-(SSD1306 OLED, LCD2004 and LCD1602 both over I2C0), **inputs 15/15**
+base high, and releases it to 5 V with the base low), **displays 4/4**
+(SSD1306 OLED, LCD2004 and LCD1602 both over I2C0; ePaper 2.9" accepts the
+0x24 RAM-write command and 32 data bytes → `ramPointer` 32), **inputs 15/15**
 (potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; 6 mm
 pushbutton pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
 NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare photoresistor
@@ -380,7 +381,7 @@ and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read),
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 39 component types, 78 green cells; every cell is green on BOTH
+writes). 40 component types, 80 green cells; every cell is green on BOTH
 boards. Blocked:
 I2C sensor reads (j) and sub-tick GPIO strobes (k: HC-SR04, parallel
 HD44780). Findings:
@@ -462,6 +463,13 @@ maps both `openhw-hx711_5` and `openhw-hx711_50` to `HX711Logic`
 50 kg cell against the app's actual behavior: 2.5 kg → raw 1050 on the 5 kg
 scale, not the 50 kg skeleton's 21000-count scale. Decide whether to wire the
 50 kg class and give it its own scale or remove the dead file.
+
+(o) **Raw `SPI.transfer()` without `SPI.beginTransaction()` blocks the
+guest** — the ePaper cell first stalled inside the first transfer (serial
+stopped between the CS-low marker and the next line, `ramPointer` 0) until
+the sketch added `SPI.beginTransaction(SPISettings(4000000, MSBFIRST,
+SPI_MODE0))`, the same call the working ILI9341 cell already made. Worth
+documenting in the SPI recipe; no engine change needed.
 
 Camera is ABSENT (no DCMI silicon on RP2040/RP2350). Cells must stay RED
 until the engine lands — do not weaken them to HIGH-only.

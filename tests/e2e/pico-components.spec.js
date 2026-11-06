@@ -140,6 +140,42 @@ void setup(){
 void loop(){ Serial.println("HX_TICK"); delay(1000); }
 `;
 
+// ePaper 2.9": reset pulse, RAM-write command 0x24, then a 32-byte
+// window of 0x00. DC/CS changes are held for a full runner tick.
+const EPAPER_CODE = `#include <SPI.h>
+#define PIN_CS 17
+#define PIN_DC 16
+#define PIN_RST 20
+void cmd(uint8_t c){
+  digitalWrite(PIN_DC, LOW); digitalWrite(PIN_CS, LOW);
+  SPI.transfer(c);
+  delay(80); digitalWrite(PIN_CS, HIGH); delay(80);
+}
+void setup(){
+  Serial.begin(9600);
+  Serial.println("EPD_RDY");
+  pinMode(PIN_CS, OUTPUT); pinMode(PIN_DC, OUTPUT); pinMode(PIN_RST, OUTPUT);
+  digitalWrite(PIN_CS, HIGH); digitalWrite(PIN_RST, HIGH); delay(60);
+  Serial.println("EPD_PINS");
+  digitalWrite(PIN_RST, LOW); delay(120); digitalWrite(PIN_RST, HIGH); delay(200);
+  Serial.println("EPD_RST");
+  SPI.begin();
+  SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+  Serial.println("EPD_SPI");
+  digitalWrite(PIN_DC, LOW); digitalWrite(PIN_CS, LOW);
+  delay(80);
+  SPI.transfer(0x24);
+  delay(80); digitalWrite(PIN_CS, HIGH); delay(80);
+  Serial.println("EPD_CMD");
+  digitalWrite(PIN_DC, HIGH); digitalWrite(PIN_CS, LOW);
+  delay(80);
+  for (int i = 0; i < 32; i++) SPI.transfer(0x00);
+  delay(80); digitalWrite(PIN_CS, HIGH); delay(80);
+  Serial.println("EPD_DRAWN");
+}
+void loop(){ Serial.println("EPD_TICK"); delay(1000); }
+`;
+
 const STEPPER_CODE = 'int pins[4]={16,17,18,19};int seq[4][4]={{1,0,1,0},{0,1,1,0},{0,1,0,1},{1,0,0,1}};\nvoid setup(){Serial.begin(9600);Serial.println("STEP_RDY");for(int i=0;i<4;i++)pinMode(pins[i],OUTPUT);}\nvoid loop(){for(int s=0;s<4;s++){for(int i=0;i<4;i++)digitalWrite(pins[i],seq[s][i]);delay(20);}Serial.println("STEP_TICK");}\n';
 
 // ── displays ────────────────────────────────────────────────────────────
@@ -788,6 +824,27 @@ const CASES = [
   },
   {
     // Same PCF8574 backpack path as the LCD2004, 16x2 geometry.
+    family: 'displays', name: 'epaper-2.9', type: 'openhw-ePaperDisplay',
+    wires: (b) => [
+      { from: `${b}:GP18`, to: 'c1:CLK' }, { from: `${b}:GP19`, to: 'c1:DIN' },
+      { from: `${b}:GP17`, to: 'c1:CS' }, { from: `${b}:GP16`, to: 'c1:DC' },
+      { from: `${b}:GP20`, to: 'c1:RST' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: EPAPER_CODE, needle: 'EPD_DRAWN', runMs: 26000,
+    check: (v) => {
+      const c = custom(v, 'c1');
+      expect(String(c.powerStatus)).toBe('On');
+      expect(Number(c.ramPointer)).toBe(32);
+      const vram = st(v, 'c1').vram;
+      const bytes = vram && typeof vram === 'object' ? Object.values(vram) : [];
+      if (bytes.length >= 32) {
+        expect(Number(bytes[0])).toBe(0);
+        expect(Number(bytes[31])).toBe(0);
+      }
+    },
+  },
+  {
     family: 'displays', name: 'lcd1602-i2c', type: 'openhw-lcd1602-i2c',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
@@ -1332,6 +1389,7 @@ for (const board of BOARDS) {
       }), { forMs: c.runMs, needle: c.needle });
       expect(verdict.ok).toBe(true);
       console.log(`PICOCOMP ${board.key}/${c.name} pass=${verdict.pass} reasons=${JSON.stringify(verdict.reasons || [])} lines=${verdict.serialLines}`);
+      console.log(`PICOCOMP ${board.key}/${c.name} serial=${JSON.stringify(String(verdict.serial || '').slice(-240))}`);
       console.log(`PICOCOMP ${board.key}/${c.name} state=${JSON.stringify(st(verdict, 'c1')).slice(0, 300)}`);
       console.log(`PICOCOMP ${board.key}/${c.name} av=${JSON.stringify(st(verdict, 'c1').analogVoltages || {})} custom=${JSON.stringify(custom(verdict, 'c1')).slice(0, 300)}`);
       expect(verdict.pass).toBe(true);
