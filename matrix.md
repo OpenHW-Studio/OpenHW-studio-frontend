@@ -370,9 +370,9 @@ base high, and releases it to 5 V with the base low; NeoPixel matrix and
 ring both accept the PIO0 SM0 RX-mirrored 3-pixel GRB frame → 3 active
 pixels), **displays 4/4**
 (SSD1306 OLED, LCD2004 and LCD1602 both over I2C0; ePaper 2.9" accepts the
-0x24 RAM-write command and 32 data bytes → `ramPointer` 32), **inputs 15/15**
-(potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; 6 mm
-pushbutton pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
+0x24 RAM-write command and 32 data bytes → `ramPointer` 32), **inputs 16/16**
+(potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; both 6 mm
+pushbutton types pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
 NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare photoresistor
 500 lx → 2.44 V → ~3030; slide pot 25% → ~1024; joystick (0.25,0.75) →
 GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan reports key 5 as
@@ -386,15 +386,14 @@ counts), **SPI 5/5** (MAX7219 frame
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
 84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
 write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 44 component types, 88 green cells; every cell is green on BOTH
+writes). 45 component types, 90 green cells; every cell is green on BOTH
 boards (verified board-by-board on 2026-11-06 with `PICO_COMP_BOARD`;
 chunks stay under 15 minutes so a long headless run cannot take the app
-down). Another 25 cells are `blocked`, each with a measured reason, so every
+down). Another 24 cells are `blocked`, each with a measured reason, so every
 peripheral type in the catalog is accounted for: I2C master reads (j: mpu6050,
 bmp180, ds1307-rtc, adxl345, ili9341-touch), sub-tick GPIO strobes (k:
 hc-sr04, lcd2004/lcd1602 parallel, tm1637, ir-receiver), event-only inputs
-with no headless injection path (p: rotary-encoder, 6mm-pushbutton, ir-remote,
-ir-receiver), SPI master reads (s: sd-card, mfrc522, nrf24l01, cc1101),
+with no headless injection path (p: rotary-encoder, ir-remote, ir-receiver), SPI master reads (s: sd-card, mfrc522, nrf24l01, cc1101),
 I2S (t: inmp441, sph0645, max98357, pcm5102), 1-Wire (u: ds18b20), the 5 V
 relay coil (q: ks2e-m-dc5), the mux without a logic class (r: hp4067) and the
 STM32-LTDC-only panel (ltdc-display, no RP2040/RP2350 LTDC). No cell is
@@ -454,10 +453,11 @@ Fix belongs on the runner/engine side — an edge-timed GPIO path (the
 per-tick IN-latch script cannot carry a sub-tick pulse) — not in the
 component models. Both cells are `blocked` in the sweep, not weakened.
 
-(l) **Three engine components had no `LOGIC_REGISTRY` entry** — the UI could
-place `openhw-pushbutton-6mm`, `openhw-74hc165` and
-`openhw-biaxial-stepper`, but the worker never instantiated their models
-(`liveOop` stayed `{}` and no telemetry was emitted). Registered in
+(l) **Four engine components had no `LOGIC_REGISTRY` entry** — the UI could
+place `openhw-pushbutton-6mm`, `openhw-6mm-pushbutton` (the 4-pin variant,
+same `Pushbutton6mmLogic`), `openhw-74hc165` and `openhw-biaxial-stepper`, but
+the worker never instantiated their models (`liveOop` stayed `{}` and no
+telemetry was emitted). Registered in
 `src/worker/registries/component-registry.ts` on 2026-11-06.
 `openhw-hp4067` still has no logic class at all (UI-only module) and stays
 out of the lane until the engine lands one.
@@ -486,8 +486,7 @@ SPI_MODE0))`, the same call the working ILI9341 cell already made. Worth
 documenting in the SPI recipe; no engine change needed.
 
 (p) **Event-only input components have no headless injection path** —
-`openhw-rotary-encoder`, `openhw-6mm-pushbutton` (the 4-pin type, distinct
-from `openhw-pushbutton-6mm`), `openhw-ir-remote` and `openhw-ir-receiver`
+`openhw-rotary-encoder`, `openhw-ir-remote` and `openhw-ir-receiver`
 act only on `onEvent` (`rotate-cw/ccw`, `press/release`, `button_press`).
 `window.OpenHWE2E` exposes setup/run/stop only and nothing in the UI emits
 `rotate-cw`/`rotate-ccw` (repo grep: zero producers), so no headless cell can

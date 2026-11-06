@@ -1058,7 +1058,7 @@ const CASES = [
       const vals = [...String(v.serial || '').matchAll(/BTN:(\d)/g)].map((m) => Number(m[1]));
       expect(vals.length).toBeGreaterThan(3);
       for (const x of vals.slice(-3)) expect(x).toBe(0);
-      expect(st(v, 'c1').pressed).toBe(true);
+      expect(Boolean(st(v, 'c1').pressed)).toBe(true);
     },
   },
   {
@@ -1467,9 +1467,20 @@ const CASES = [
       + 'onEvent(rotate-cw/ccw) and nothing in the UI or E2E emits it.',
   },
   {
+    // 4-pin 6 mm switch: same Pushbutton6mmLogic as openhw-pushbutton-6mm;
+    // the attrs-driven `pressed` path closes 1A/1B and 2A/2B.
     family: 'inputs', name: '6mm-pushbutton-4pin', type: 'openhw-6mm-pushbutton',
-    blocked: 'event-only model (matrix (p)): press/release only via '
-      + 'onEvent, no attrs or headless injection path.',
+    attrs: { pressed: true },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:1A' }, { from: `${b}:GND`, to: 'c1:2A' },
+    ],
+    code: BUTTON_CODE, needle: 'BTN:', runMs: 22000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/BTN:(\d)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      for (const x of vals.slice(-3)) expect(x).toBe(0);
+      expect(st(v, 'c1').pressed).toBe(true);
+    },
   },
   {
     family: 'inputs', name: 'ir-receiver', type: 'openhw-ir-receiver',
