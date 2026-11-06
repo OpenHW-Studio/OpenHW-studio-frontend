@@ -80,6 +80,17 @@ void setup(){
 }
 void loop(){ Serial.println("BUZ_TICK"); delay(1000); }
 `;
+// Photoresistor module output: the model's p2 voltage is a 0-5 V
+// analog value derived from its lux attr (500 lx -> 2.44 V).
+const PHOTO_CODE = `void setup(){ Serial.begin(9600); Serial.println("PR_RDY"); analogReadResolution(12); }
+void loop(){ Serial.print("PR:"); Serial.println(analogRead(26)); delay(200); }
+`;
+
+// NTC module: 25 C puts OUT at half of its 5 V span (2.5 V).
+const NTC_MOD_CODE = `void setup(){ Serial.begin(9600); Serial.println("NTC_RDY"); analogReadResolution(12); }
+void loop(){ Serial.print("NTC:"); Serial.println(analogRead(26)); delay(200); }
+`;
+
 const STEPPER_CODE = 'int pins[4]={16,17,18,19};int seq[4][4]={{1,0,1,0},{0,1,1,0},{0,1,0,1},{1,0,0,1}};\nvoid setup(){Serial.begin(9600);Serial.println("STEP_RDY");for(int i=0;i<4;i++)pinMode(pins[i],OUTPUT);}\nvoid loop(){for(int s=0;s<4;s++){for(int i=0;i<4;i++)digitalWrite(pins[i],seq[s][i]);delay(20);}Serial.println("STEP_TICK");}\n';
 
 // ── displays ────────────────────────────────────────────────────────────
@@ -116,6 +127,21 @@ void setup(){
   Serial.println("LCD_SET");
 }
 void loop(){ Serial.println("LCD_TICK"); delay(1000); }
+`;
+
+const LCD1602_CODE = `#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+void setup(){
+  Serial.begin(9600);
+  Serial.println("LC2_RDY");
+  Wire.setSDA(4); Wire.setSCL(5);
+  lcd.init(); lcd.backlight();
+  lcd.setCursor(0, 0); lcd.print("OpenHW");
+  lcd.setCursor(0, 1); lcd.print("Pico");
+  Serial.println("LC2_SET");
+}
+void loop(){ Serial.println("LC2_TICK"); delay(1000); }
 `;
 
 // Parallel HD44780 (4-bit): RS GP15, E GP16, D4-D7 GP17-20.
@@ -366,6 +392,36 @@ const L293D_CODE = `void setup(){
 void loop(){ Serial.println("L293_TICK"); delay(500); }
 `;
 
+// L298N-style driver: ENA and IN1 driven high, IN2 low.
+const MOTORDRV_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("MD_RDY");
+  pinMode(16, OUTPUT); pinMode(17, OUTPUT); pinMode(18, OUTPUT);
+  digitalWrite(16, HIGH); digitalWrite(17, HIGH); digitalWrite(18, LOW);
+  Serial.println("MD_SET");
+}
+void loop(){ Serial.println("MD_TICK"); delay(500); }
+`;
+
+// A4988: ENABLE low, SLEEP/RESET high, DIR high, three STEP pulses ->
+// full-step phase 3 (1A and 2B high, 1B and 2A low).
+const A4988_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("A4988_RDY");
+  pinMode(16, OUTPUT); pinMode(17, OUTPUT);
+  pinMode(18, OUTPUT); pinMode(19, OUTPUT);
+  digitalWrite(16, LOW); digitalWrite(17, HIGH);
+  digitalWrite(18, HIGH); digitalWrite(19, HIGH);
+  delay(120);
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(16, HIGH); delay(80);
+    digitalWrite(16, LOW); delay(80);
+  }
+  Serial.println("A4988_STEPPED");
+}
+void loop(){ Serial.println("A4988_TICK"); delay(1000); }
+`;
+
 // 74HC165: d7 tied high, d0-d6 low; pulse PL low to load, then read the
 // byte out MSB-first on Q7 with 8 clock pulses.
 const HC165_CODE = `const int PIN_Q7 = 16;
@@ -602,6 +658,42 @@ const CASES = [
     },
   },
   {
+    // L298N-style dual bridge: ENA + IN1 high, IN2 low -> OUT1 on, OUT2 off.
+    family: 'outputs', name: 'motor-driver', type: 'openhw-motor-driver',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:ENA' }, { from: `${b}:GP17`, to: 'c1:IN1' },
+      { from: `${b}:GP18`, to: 'c1:IN2' }, { from: `${b}:GND`, to: 'c1:GND' },
+      { from: `${b}:5V`, to: 'c1:12V' },
+    ],
+    code: MOTORDRV_CODE, needle: 'MD_SET', runMs: 15000,
+    check: (v) => {
+      const av = st(v, 'c1').analogVoltages || {};
+      expect(Number(av.OUT1)).toBeGreaterThan(2.5);
+      expect(Number(av.OUT2)).toBeLessThan(0.5);
+      expect(st(v, 'c1').active).toBe(true);
+    },
+  },
+  {
+    // Full-step indexer: three STEP edges with DIR high end on phase 3.
+    family: 'outputs', name: 'a4988', type: 'openhw-a4988',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:STEP' }, { from: `${b}:GP17`, to: 'c1:DIR' },
+      { from: `${b}:GP18`, to: 'c1:SLEEP' }, { from: `${b}:GP19`, to: 'c1:RESET' },
+      { from: `${b}:GND`, to: 'c1:ENABLE' },
+      { from: `${b}:3V3`, to: 'c1:VDD' }, { from: `${b}:5V`, to: 'c1:VMOT' },
+      { from: `${b}:GND`, to: 'c1:GND_LOGIC' },
+    ],
+    code: A4988_CODE, needle: 'A4988_STEPPED', runMs: 18000,
+    check: (v) => {
+      const av = st(v, 'c1').analogVoltages || {};
+      expect(Number(av['1A'])).toBeGreaterThan(2.5);
+      expect(Number(av['1B'])).toBeLessThan(0.5);
+      expect(Number(av['2A'])).toBeLessThan(0.5);
+      expect(Number(av['2B'])).toBeGreaterThan(2.5);
+      expect(st(v, 'c1').active).toBe(true);
+    },
+  },
+  {
     family: 'displays', name: 'oled', type: 'openhw-ssd1306-oled',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
@@ -625,6 +717,20 @@ const CASES = [
       { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
     ],
     code: LCD2004_CODE, needle: 'LCD_SET', runMs: 22000,
+    check: (v) => {
+      const lines = (st(v, 'c1').lines || []).join(' ');
+      expect(lines).toContain('OpenHW');
+      expect(lines).toContain('Pico');
+    },
+  },
+  {
+    // Same PCF8574 backpack path as the LCD2004, 16x2 geometry.
+    family: 'displays', name: 'lcd1602-i2c', type: 'openhw-lcd1602-i2c',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: LCD1602_CODE, needle: 'LC2_SET', runMs: 22000,
     check: (v) => {
       const lines = (st(v, 'c1').lines || []).join(' ');
       expect(lines).toContain('OpenHW');
@@ -831,9 +937,42 @@ const CASES = [
     check: (v) => {
       const vals = [...String(v.serial || '').matchAll(/NTC:(\d+)/g)].map((m) => Number(m[1]));
       expect(vals.length).toBeGreaterThan(3);
-      // R25 = 10k against a 10k fixed resistor -> 1.65V -> mid-scale.
-      for (const x of vals.slice(-2)) expect(Math.abs(x - 2048)).toBeLessThan(350);
-      expect(Number(st(v, 'c1').temperature)).toBe(25);
+      for (const x of vals.slice(-3)) expect(Math.abs(x - 2048)).toBeLessThan(120);
+    },
+  },
+  {
+    // Bare photoresistor model: output voltage is its own lux curve.
+    family: 'inputs', name: 'photoresistor', type: 'openhw-photoresistor',
+    attrs: { lux: 500 },
+    wires: (b) => [
+      { from: `${b}:GP26`, to: 'c1:p2' }, { from: `${b}:GND`, to: 'c1:p1' },
+    ],
+    code: PHOTO_CODE, needle: 'PR_RDY', runMs: 18000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/PR:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      const last = vals[vals.length - 1];
+      expect(last).toBeGreaterThan(2900);
+      expect(last).toBeLessThan(3150);
+      expect(String(custom(v, 'c1').lux)).toBe('500 lx');
+    },
+  },
+  {
+    // Module-form NTC: 25 C -> half span = 2.5 V on OUT.
+    family: 'inputs', name: 'ntc-temperature-sensor', type: 'openhw-ntc-temperature-sensor',
+    attrs: { temperature: 25 },
+    wires: (b) => [
+      { from: `${b}:GP26`, to: 'c1:OUT' }, { from: `${b}:3V3`, to: 'c1:VCC' },
+      { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: NTC_MOD_CODE, needle: 'NTC_RDY', runMs: 18000,
+    check: (v) => {
+      const vals = [...String(v.serial || '').matchAll(/NTC:(\d+)/g)].map((m) => Number(m[1]));
+      expect(vals.length).toBeGreaterThan(3);
+      const last = vals[vals.length - 1];
+      expect(last).toBeGreaterThan(2950);
+      expect(last).toBeLessThan(3250);
+      expect(String(custom(v, 'c1').temperature)).toBe('25.0 °C');
     },
   },
   {
