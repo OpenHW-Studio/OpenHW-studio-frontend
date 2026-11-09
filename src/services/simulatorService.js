@@ -446,6 +446,16 @@ export async function fetchUsageAnalytics() {
     return response.data.stats || null;
 }
 
+/**
+ * Public (no-auth) analytics snapshot for the standalone /analytics page.
+ * Served by GET /api/public/analytics — already sanitized server-side
+ * (no IPs, session ids, coordinates, user agents, or per-session records).
+ */
+export async function fetchPublicAnalytics() {
+    const response = await axios.get(`${COMPILER_URL}/public/analytics`);
+    return response.data.stats || null;
+}
+
 export async function fetchAuditHistory() {
     const response = await axios.get(`${COMPILER_URL}/admin/audit-history`, getAdminAuthConfig());
     return response.data.logs || [];

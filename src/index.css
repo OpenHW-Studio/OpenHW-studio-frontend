@@ -3309,9 +3309,92 @@ body {
 }
 
 .student-profile-modal {
-  width: min(760px, 100%);
+  width: min(1040px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background: linear-gradient(180deg, #f3f6fb 0%, #eef2f7 100%);
   border-radius: 20px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* The generic .teacher-modal__content caps width at 460px — profile modals
+   carry a two-column editor and must be allowed the full 1040px. */
+.teacher-modal__content.student-profile-modal {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+/* Two-column editor body shared by all profile modals.
+   Left: avatar customizer (fixed, never squeezes the form).
+   Right: info fields (fluid, min-width 0 so inputs can't force overflow). */
+.student-profile-form__top-section {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  min-width: 0;
+}
+
+.student-profile-dicebear-builder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.student-profile-dicebear-builder .hardware-card,
+.student-profile-dicebear-builder .hardware-tabs-wrapper,
+.student-profile-dicebear-builder .hardware-grid-wrapper {
+  width: 100%;
+  max-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.student-profile-dicebear-builder .hardware-card {
+  margin-bottom: 12px;
+}
+
+.student-profile-dicebear-builder .hardware-tabs-wrapper {
+  margin-bottom: 10px;
+}
+
+.student-profile-dicebear-builder .hardware-grid-wrapper {
+  margin-bottom: 12px;
+}
+
+.student-profile-dicebear-builder .hardware-random-btn {
+  margin: 0 auto 4px auto;
+}
+
+.student-profile-dicebear-builder .hardware-grid {
+  max-width: none;
+}
+
+.student-profile-form .student-profile-form__grid {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.student-profile-form .student-profile-field {
+  min-width: 0;
+}
+
+.student-profile-form .student-profile-field input,
+.student-profile-form .student-profile-field textarea {
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .student-profile-form__top-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .student-profile-dicebear-builder {
+    max-width: 360px;
+  }
 }
 
 .student-profile-upload {

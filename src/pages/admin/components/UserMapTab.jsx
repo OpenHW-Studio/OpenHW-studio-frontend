@@ -15,7 +15,20 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const UserMapTab = ({ stats }) => {
+/**
+ * UserMapTab — admin "User Map" tab.
+ *
+ * Props:
+ *   stats       — full usage-analytics payload (GET /api/admin/usage-analytics)
+ *   hideMap     — when true, the Leaflet world-map card is removed (used by the
+ *                 public /analytics page). Hotspots + visitor table still work.
+ *   hideSensitive — when true (public page), hides everything that must never be
+ *                 shown publicly: full IP addresses (masked to first two octets),
+ *                 exact coordinates column, IP copy button, per-session table
+ *                 search placeholder mentions IPs, "Global Reach" total-recorded
+ *                 subtitle, and the Locate action.
+ */
+const UserMapTab = ({ stats, hideMap = false, hideSensitive = false }) => {
     const mapContainerRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const markersLayerRef = useRef(null);
@@ -24,6 +37,10 @@ const UserMapTab = ({ stats }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [copiedIp, setCopiedIp] = useState(null);
     const [loading, setLoading] = useState(!stats);
+
+    // Public page data has no visitorList and no live markers; the map canvas
+    // is removed via hideMap, so timeframe/search only apply when raw rows exist.
+    const hasVisitorList = Array.isArray(stats?.visitorList);
 
     const activeSessions   = stats?.activeSessions   || 0;
     const todayVisitors    = stats?.todayVisitors     ?? (stats?.activeSessions || 0);
@@ -40,7 +57,15 @@ const UserMapTab = ({ stats }) => {
     const formatIp = (ip) => {
         if (!ip) return '127.0.0.1';
         const trimmed = String(ip).trim();
-        return /^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[a-fA-F0-9:]+$/.test(trimmed) ? trimmed : '127.0.0.1';
+        const clean = /^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[a-fA-F0-9:]+$/.test(trimmed) ? trimmed : '127.0.0.1';
+        // Public mode: never expose full IPs — mask to first two octets.
+        if (hideSensitive) {
+            const v4 = clean.match(/^([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$/);
+            if (v4) return `${v4[1]}.${v4[2]}.••.••`;
+            // IPv6 / other: show only a short prefix.
+            return `${clean.slice(0, 4)}••••`;
+        }
+        return clean;
     };
 
     const formatLocation = (v) => {
@@ -64,6 +89,7 @@ const UserMapTab = ({ stats }) => {
     };
 
     const filteredVisitors = useMemo(() => {
+        if (!hasVisitorList) return [];
         const now = Date.now();
         return rawVisitors.filter(v => {
             const time = v.lastSeen ? new Date(v.lastSeen).getTime() : 0;
@@ -78,11 +104,11 @@ const UserMapTab = ({ stats }) => {
                 || String(v.country || '').toLowerCase().includes(q)
                 || String(v.locationStr || '').toLowerCase().includes(q);
         });
-    }, [rawVisitors, selectedTimeRange, searchQuery]);
+    }, [rawVisitors, selectedTimeRange, searchQuery, hasVisitorList]);
 
-    // Initialize Leaflet map
+    // Initialize Leaflet map (skipped when hideMap is true)
     useEffect(() => {
-        if (!mapContainerRef.current || mapInstanceRef.current) return;
+        if (hideMap || !mapContainerRef.current || mapInstanceRef.current) return;
 
         const map = L.map(mapContainerRef.current, {
             center: [20, 0], zoom: 2, minZoom: 1.5, maxZoom: 18,
@@ -111,9 +137,9 @@ const UserMapTab = ({ stats }) => {
         };
     }, []);
 
-    // Update map markers
+    // Update map markers (skipped when hideMap is true)
     useEffect(() => {
-        if (!markersLayerRef.current || !mapInstanceRef.current) return;
+        if (hideMap || !markersLayerRef.current || !mapInstanceRef.current) return;
         const markersLayer = markersLayerRef.current;
         markersLayer.clearLayers();
 
@@ -183,7 +209,7 @@ const UserMapTab = ({ stats }) => {
     }, [filteredVisitors]);
 
     const handleFlyToVisitor = (visitor) => {
-        if (!mapInstanceRef.current || visitor.lat == null) return;
+        if (hideMap || !mapInstanceRef.current || visitor.lat == null) return;
         mapInstanceRef.current.flyTo([Number(visitor.lat), Number(visitor.lng)], 7, { animate: true, duration: 1.5 });
         mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -204,14 +230,14 @@ const UserMapTab = ({ stats }) => {
         { label: '7-Day',       value: weekVisitors,    sub: 'Weekly active users',    color: 'indigo',  icon: Calendar },
         { label: '30-Day',      value: monthVisitors,   sub: 'Monthly total',          color: 'purple',  icon: TrendingUp },
         { label: 'Global Reach',value: topCountries.length > 0 ? `${topCountries.length}` : '—',
-            sub: `${allTimeVisitors} total recorded`, color: 'emerald', icon: Globe,
+            sub: hideSensitive ? 'Countries visiting' : `${allTimeVisitors} total recorded`, color: 'emerald', icon: Globe,
             unit: topCountries.length > 0 ? 'Countries' : '' },
     ];
 
     return (
         <div className="ad-space-y-6 ad-fade-in">
             {/* ── 1. STAT CARDS ────────────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+            <div className="ad-grid-5">
                 {STATS.map((s, i) => (
                     <div key={i} className={`ad-stat-card ${s.color === 'indigo' ? '' : s.color}`}
                         style={s.color === 'indigo' ? { borderColor: 'color-mix(in srgb, var(--ad-indigo) 30%, transparent)' } : {}}>
@@ -235,8 +261,14 @@ const UserMapTab = ({ stats }) => {
             </div>
 
             {/* ── 2. MAP + HOTSPOTS ─────────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 288px', gap: 16, alignItems: 'start' }}>
+            {/* When hideMap is true, the Leaflet canvas (MAP card) is removed and
+                hotspots take the full row width. Timeframe search still applies
+                to the hotspots + visitor table via filteredVisitors. */}
+            <div className={hideMap ? '' : 'umap-grid'} style={hideMap
+                ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }
+                : { display: 'grid', gridTemplateColumns: '1fr 288px', gap: 16, alignItems: 'start' }}>
                 {/* MAP */}
+                {!hideMap && (
                 <AdminCard className="p-0" style={{ overflow: 'hidden', minHeight: 500, display: 'flex', flexDirection: 'column' }}>
                     {/* Map header */}
                     <div className="ad-card-header" style={{ flexWrap: 'wrap', gap: 8 }}>
@@ -301,9 +333,38 @@ const UserMapTab = ({ stats }) => {
                         )}
                     </div>
                 </AdminCard>
+                )}
 
                 {/* HOTSPOTS */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* hideMap (admin reuse): timeframe filter moves out of the (removed) map header into its own row.
+                    Only shown when raw visitor rows exist — the public page has aggregates only, so no-op filters are hidden. */}
+                {hideMap && hasVisitorList && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ad-text-3)' }}>
+                            Timeframe
+                        </span>
+                        <div className="ad-segmented">
+                            {[
+                                { id: 'all', label: 'All' },
+                                { id: 'live', label: 'Live' },
+                                { id: '24h', label: '24h' },
+                                { id: '7d', label: '7d' },
+                                { id: '30d', label: '30d' },
+                            ].map(t => (
+                                <button
+                                    key={t.id}
+                                    className={`ad-segment-btn ${selectedTimeRange === t.id ? 'active' : ''}`}
+                                    onClick={() => setSelectedTimeRange(t.id)}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div className="uhot-grid" style={hideMap
+                    ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }
+                    : { display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* Countries */}
                     <AdminCard className="p-0">
                         <div className="ad-card-header">
@@ -360,6 +421,8 @@ const UserMapTab = ({ stats }) => {
             </div>
 
             {/* ── 3. VISITOR TABLE ─────────────────────────────────────────── */}
+            {/* Public mode: per-session/IP table is never rendered (no visitorList served). */}
+            {!hideSensitive && (
             <AdminCard className="p-0">
                 <div className="ad-card-header">
                     <div>
@@ -464,7 +527,7 @@ const UserMapTab = ({ stats }) => {
                                             <td>{v.firstSeen ? new Date(v.firstSeen).toLocaleDateString() : 'N/A'}</td>
                                             <td className="primary">{getRelativeTime(v.lastSeen)}</td>
                                             <td style={{ textAlign: 'right' }}>
-                                                {v.lat != null && v.lng != null ? (
+                                                {v.lat != null && v.lng != null && !hideMap ? (
                                                     <button
                                                         onClick={() => handleFlyToVisitor(v)}
                                                         className="ad-btn ad-btn-ghost"
@@ -499,6 +562,7 @@ const UserMapTab = ({ stats }) => {
                     </table>
                 </div>
             </AdminCard>
+            )}
         </div>
     );
 };

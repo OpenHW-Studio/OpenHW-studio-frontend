@@ -47,7 +47,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     isSerialSplit, setIsSerialSplit,
     serialSplitRatio, setSerialSplitRatio,
     serialBoardFilter2, setSerialBoardFilter2,
-    plotterTimeDiv, setPlotterTimeDiv
+    plotterTimeDiv, setPlotterTimeDiv,
+    demoEditorMode = 'code'
   } = props;
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
@@ -82,8 +83,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
     editor.addAction({
       id: 'openhw-toggle-explorer',
-      label: 'OpenHW: Toggle File Explorer',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE],
+      label: 'OpenHW: Toggle File Explorer Sidebar',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB],
       run: () => onToggleCodeExplorer?.()
     });
 
@@ -144,7 +145,13 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
   // Stable options — never depends on drag state so editor never remounts during drag
   const editorOptions = React.useMemo(() => {
-    const isReadOnly = Boolean(editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json' || (isActiveFileIno && hasBlocksInCanvas && !inoManualEditEnabled));
+    const isReadOnly = Boolean(
+      editingDisabled ||
+      !activeCodeFileId ||
+      activeCodeFileId === 'project/diagram.json' ||
+      (demoEditorMode === 'blocks') ||
+      (demoEditorMode !== 'code' && isActiveFileIno && hasBlocksInCanvas && !inoManualEditEnabled)
+    );
     return {
       readOnly: isReadOnly,
       domReadOnly: isReadOnly,
@@ -152,26 +159,26 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       fontFamily: "'JetBrains Mono', monospace",
       minimap: { enabled: false },
       automaticLayout: true,
-    scrollBeyondLastLine: false,
-    lineNumbers: 'on',
-    padding: { top: 14, bottom: 14 },
-    renderWhitespace: 'none',
-    tabSize: 2,
-    bracketPairColorization: { enabled: true },
-    guides: { indentation: true },
-    wordWrap: 'on',
-    folding: true,
-    lineDecorationsWidth: 10,
-    fixedOverflowWidgets: true,
-    scrollbar: {
-      vertical: 'auto',
-      horizontal: 'auto',
-      useShadows: false,
-      verticalHasArrows: false,
-      horizontalHasArrows: false,
-    }
-  };
-}, [editingDisabled, activeCodeFileId, isActiveFileIno, hasBlocksInCanvas, inoManualEditEnabled]);
+      scrollBeyondLastLine: false,
+      lineNumbers: 'on',
+      padding: { top: 14, bottom: 14 },
+      renderWhitespace: 'none',
+      tabSize: 2,
+      bracketPairColorization: { enabled: true },
+      guides: { indentation: true },
+      wordWrap: 'on',
+      folding: true,
+      lineDecorationsWidth: 10,
+      fixedOverflowWidgets: true,
+      scrollbar: {
+        vertical: 'auto',
+        horizontal: 'auto',
+        useShadows: false,
+        verticalHasArrows: false,
+        horizontalHasArrows: false,
+      }
+    };
+  }, [editingDisabled, activeCodeFileId, isActiveFileIno, hasBlocksInCanvas, inoManualEditEnabled, demoEditorMode]);
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
 
@@ -806,6 +813,29 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
             </div>
             {codeTab === 'code' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg)', position: 'relative' }}>
+                {demoEditorMode === 'blocks' && (
+                  <div style={{
+                    padding: '8px 14px',
+                    background: theme === 'light' ? 'rgba(2, 132, 199, 0.08)' : 'rgba(2, 132, 199, 0.14)',
+                    borderBottom: '1px solid rgba(2, 132, 199, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    gap: 10,
+                    flexShrink: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>🧩</span>
+                      <span><strong>Blocks Mode:</strong> Code is generated from blocks and is read-only. Switch to Blocks tab to make changes.</span>
+                    </div>
+                    <span style={{ fontSize: 10, color: '#38bdf8', background: 'rgba(2,132,199,0.2)', border: '1px solid rgba(2,132,199,0.35)', padding: '2px 8px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Read-Only
+                    </span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', minHeight: 0, flex: 1 }}>
                   {showCodeExplorer && (
                     <FileExplorerSidebar
@@ -1283,6 +1313,30 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
             )}
             {/* Block editor — always mounted to preserve workspace state, hidden via CSS when not active */}
             <div data-tour-step="blockly" style={{ display: codeTab === 'block' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
+              {demoEditorMode === 'code' && (
+                <div style={{
+                  padding: '8px 14px',
+                  background: theme === 'light' ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.14)',
+                  borderBottom: '1px solid rgba(234, 179, 8, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  color: 'var(--text)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  gap: 10,
+                  flexShrink: 0,
+                  zIndex: 10
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14 }}>💻</span>
+                    <span><strong>Code Mode:</strong> Editing is active in Code tab. Blocks are locked in view-only mode.</span>
+                  </div>
+                  <span style={{ fontSize: 10, color: '#fbbf24', background: 'rgba(234,179,8,0.2)', border: '1px solid rgba(234,179,8,0.35)', padding: '2px 8px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    View-Only
+                  </span>
+                </div>
+              )}
               {blocklyDisabled ? (
                 /* ── Block editor disabled placeholder ─────────────── */
                 <div style={{
@@ -1318,9 +1372,9 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 /* ── Block editor enabled — kept mounted to preserve state ── */
                 <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
                   <BlocklyEditor
-                    onExportCode={(generated) => { if (!editingDisabled) { if (setCode) setCode(generated); setCodeTab('code'); } }}
+                    onExportCode={(generated) => { if (!editingDisabled && demoEditorMode !== 'code') { if (setCode) setCode(generated); setCodeTab('code'); } }}
                     onChange={(generated) => {
-                      if (!editingDisabled) {
+                      if (!editingDisabled && demoEditorMode !== 'code') {
                         setBlocklyGeneratedCode(generated);
                         const isNonInoActive = activeFile && !String(activeFile.name || '').toLowerCase().endsWith('.ino');
                         if (!isNonInoActive && setCode) {
@@ -1330,13 +1384,14 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                       }
                     }}
                     xml={blocklyXml}
-                    onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
+                    onXmlChange={(nextXml) => { if (!editingDisabled && demoEditorMode !== 'code') setBlocklyXml(nextXml); }}
                     useBlocklyCode={useBlocklyCode}
-                    onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
+                    onToggleUseBlocklyCode={() => { if (!editingDisabled && demoEditorMode !== 'code') setUseBlocklyCode(!useBlocklyCode); }}
                     visible={codeTab === 'block'}
                     boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
                     isMobile={false}
                     isManualChangeDetected={isManualChangeDetected}
+                    readOnly={demoEditorMode === 'code'}
                   />
                 </React.Suspense>
               )}
@@ -1620,6 +1675,7 @@ const RightPanelBase = React.forwardRef((props, ref) => {
     plotterPaused, setPlotterPaused, plotDataRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
     showConnectionsPanel, wires, updateWireColor, deleteWire,
     boardComponentMap, onToggleBoardFirmwareSource,
+    demoEditorMode,
     editingDisabled,
     editingDisabledMessage,
     boardLineEndings, setBoardLineEndings,
@@ -1649,6 +1705,7 @@ const RightPanelBase = React.forwardRef((props, ref) => {
         selected, setSelected, theme, projectName,
         validationErrors, showValidation, setShowValidation,
         healthScore, applyFix,
+        demoEditorMode,
         codeTab, setCodeTab, code, setCode,
         blocklyXml, setBlocklyXml,
         blocklyGeneratedCode, setBlocklyGeneratedCode,

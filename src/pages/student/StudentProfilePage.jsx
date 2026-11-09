@@ -716,10 +716,10 @@ export default function StudentProfilePage() {
             </header>
 
             <form className="student-profile-form" onSubmit={handleSubmit}>
-              <div className="student-profile-form__top-section" style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "32px", alignItems: "start" }}>
+              <div className="student-profile-form__top-section">
                 {/* Left: Dicebear builder */}
-                <div className="student-profile-dicebear-builder" style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div className="hardware-card" style={{ margin: "0 auto 12px auto" }}>
+                <div className="student-profile-dicebear-builder">
+                  <div className="hardware-card">
                     <div className="hardware-card__header">
                       <span>LIVE PROFILE PREVIEW</span>
                       <span className="hardware-card__signal">
@@ -745,7 +745,7 @@ export default function StudentProfilePage() {
                     </div>
                   </div>
 
-                  <div className="hardware-tabs-wrapper" style={{ margin: "0 auto 10px auto", width: "100%" }}>
+                  <div className="hardware-tabs-wrapper">
                     <button
                       type="button"
                       onClick={prevStyle}
@@ -790,7 +790,7 @@ export default function StudentProfilePage() {
                     </button>
                   </div>
 
-                  <div className="hardware-grid-wrapper" style={{ margin: "0 auto 12px auto", width: "100%" }}>
+                  <div className="hardware-grid-wrapper">
                     <button
                       type="button"
                       onClick={prevPage}
@@ -835,7 +835,6 @@ export default function StudentProfilePage() {
                     type="button"
                     onClick={handleRandomize}
                     className="hardware-random-btn"
-                    style={{ margin: "0 auto 4px auto", display: "flex" }}
                   >
                     <Shuffle className="w-3.5 h-3.5" />
                     [ RANDOMIZE AVATAR ]
@@ -843,7 +842,7 @@ export default function StudentProfilePage() {
                 </div>
 
                 {/* Right: Info fields */}
-                <div className="student-profile-form__grid" style={{ marginTop: 0 }}>
+                <div className="student-profile-form__grid">
                   <label className="student-profile-field">
                     <span>Full Name</span>
                     <input name="name" value={form.name} onChange={handleChange} placeholder="Enter your full name" />
@@ -874,7 +873,7 @@ export default function StudentProfilePage() {
                     <input value="Undergraduate Student" disabled className="student-profile-field__disabled" />
                   </div>
 
-                  <label className="student-profile-field student-profile-field--full" style={{ gridColumn: "1 / -1" }}>
+                  <label className="student-profile-field student-profile-field--full">
                     <span>Academic Biography</span>
                     <textarea name="bio" rows="4" value={form.bio} onChange={handleChange} placeholder="Tell your teacher and classmates about yourself" style={{ minHeight: "90px" }} />
                   </label>

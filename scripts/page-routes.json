@@ -134,6 +134,13 @@
       "priority": "high"
     },
     {
+      "path": "/analytics",
+      "name": "Platform Analytics",
+      "description": "Standalone analytics page (admin-gated, map excluded)",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
       "path": "/admin",
       "name": "Admin Landing",
       "description": "Admin landing page",
