@@ -30,8 +30,37 @@
   }
 }
 
-:root {
-  /* Dark Mode (Default) */
+:root,
+[data-theme="light"],
+.light-mode {
+  /* Light Mode (Site-wide Default) */
+  --bg: #f8fafc;
+  --bg2: #f1f5f9;
+  --bg3: #e2e8f0;
+  --canvas-bg: #e2e8f0;
+  --border: #cbd5e1;
+  --border2: #94a3b8;
+  --line: #cbd5e1;
+  --text: #0f172a;
+  --text2: #475569;
+  --text3: #64748b;
+  --accent: #0284c7;
+  --accent-rgb: 2, 132, 199;
+  --accent2: #0369a1;
+  --green: #059669;
+  --orange: #ea580c;
+  --red: #dc2626;
+  --purple: #7c3aed;
+  --card: #ffffff;
+  --card2: #f8fafc;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --glow: 0 0 20px rgba(2, 132, 199, 0.15);
+}
+
+[data-theme="dark"] {
+  /* Dark Mode Overrides */
   --bg: #070b14;
   --bg2: #0d1525;
   --bg3: #111827;
@@ -55,31 +84,6 @@
   --radius-lg: 16px;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   --glow: 0 0 20px rgba(0, 212, 255, 0.15);
-}
-
-[data-theme="light"] {
-  /* Light Mode Overrides */
-  --bg: #f8fafc;
-  --bg2: #e6e7eb;
-  --bg3: #dfe0e5;
-  --canvas-bg: #e2e8f0;
-  --border: #cbd5e1;
-  --border2: #94a3b8;
-  --line: #cbd5e1;
-  --text: #0f172a;
-  --text2: #475569;
-  --text3: #64748b;
-  --accent: #0284c7;
-  --accent-rgb: 2, 132, 199;
-  --accent2: #0369a1;
-  --green: #059669;
-  --orange: #ea580c;
-  --red: #dc2626;
-  --purple: #7c3aed;
-  --card: #f1f1f1;
-  --card2: #e6e7eb;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-  --glow: 0 0 20px rgba(2, 132, 199, 0.15);
 }
 
 html {
@@ -299,9 +303,43 @@ body {
   background: rgba(0, 212, 255, 0.08);
 }
 
-/* ─── HERO ────────────────────────────────────────────────────────────────── */
+/* ─── HERO & LANDING ──────────────────────────────────────────────────────── */
+/* Base landing layout — no color pins here so the global [data-theme] on <html> can win */
 .landing {
   min-height: 100vh;
+}
+
+/* Landing dark theme — applied when <html data-theme="dark"> (set by LandingPage on mount or toggle) */
+html[data-theme="dark"] .landing {
+  background-color: #070b14;
+  color: #e8edf5;
+  --bg: #070b14;
+  --bg2: #0d1525;
+  --bg3: #111827;
+  --canvas-bg: #0a0e1a;
+  --border: #1e2d47;
+  --border2: #243350;
+  --line: #1e2d47;
+  --text: #e8edf5;
+  --text2: #8fa3be;
+  --text3: #4d6380;
+  --accent: #00d4ff;
+  --accent-rgb: 0, 212, 255;
+  --accent2: #0099cc;
+  --green: #00e676;
+  --orange: #ff9100;
+  --red: #ff4444;
+  --purple: #a855f7;
+  --card: #0f1c2e;
+  --card2: #142035;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --glow: 0 0 20px rgba(0, 212, 255, 0.15);
+}
+
+/* Landing light theme — applied when <html data-theme="light"> (toggled by user) */
+html[data-theme="light"] .landing {
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 .hero {

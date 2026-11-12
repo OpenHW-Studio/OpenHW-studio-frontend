@@ -34,12 +34,12 @@ export default function CertificateVerifyPage() {
 
   // Watch data-theme attribute
   const [theme, setTheme] = useState(
-    () => document.documentElement.getAttribute('data-theme') || 'dark'
+    () => document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light'
   );
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+      setTheme(document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
     });
     observer.observe(document.documentElement, {
       attributes: true,

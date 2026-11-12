@@ -725,8 +725,20 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "dark",
+    () => localStorage.getItem("theme") || document.documentElement.getAttribute("data-theme") || "light",
   );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);

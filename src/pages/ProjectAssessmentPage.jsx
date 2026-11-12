@@ -435,14 +435,26 @@ export default function ProjectAssessmentPage() {
 
   // Light/Dark mode state
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('assessment_theme')
-    return saved !== 'light'
+    const saved = localStorage.getItem('assessment_theme') || localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme')
+    return saved === 'dark'
   })
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const cur = document.documentElement.getAttribute('data-theme')
+      if (cur) setIsDarkMode(cur === 'dark')
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
 
   const toggleTheme = () => {
     setIsDarkMode(prev => {
       const next = !prev
-      localStorage.setItem('assessment_theme', next ? 'dark' : 'light')
+      const mode = next ? 'dark' : 'light'
+      localStorage.setItem('assessment_theme', mode)
+      localStorage.setItem('theme', mode)
+      document.documentElement.setAttribute('data-theme', mode)
       return next
     })
   }

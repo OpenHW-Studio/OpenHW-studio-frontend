@@ -94,9 +94,9 @@ export function ChromeUIProvider({ children }) {
   // Theme (chrome-level setting, not hot)
   const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem('theme') || 'dark';
+      return localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light';
     } catch (e) {
-      return 'dark';
+      return 'light';
     }
   });
 
@@ -105,6 +105,7 @@ export function ChromeUIProvider({ children }) {
       const newTheme = prev === 'dark' ? 'light' : 'dark';
       try {
         localStorage.setItem('theme', newTheme);
+        document.documentElement.setAttribute('data-theme', newTheme);
       } catch (e) {
         console.error('Failed to save theme', e);
       }

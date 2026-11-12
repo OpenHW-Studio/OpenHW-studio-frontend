@@ -131,11 +131,12 @@ const PUBLIC_NAV_CSS = `
     align-items: center;
     padding: 0 40px;
     height: 70px;
-    background: rgba(7, 11, 20, 0.82);
+    background: rgba(248, 250, 252, 0.88);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 2px 32px rgba(0, 0, 0, 0.22);
+    border-bottom: 1px solid rgba(203, 213, 225, 0.75);
+    box-shadow: 0 2px 24px rgba(0, 0, 0, 0.07);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
   }
 
   /* Spacer that pushes page content below the fixed bar */
@@ -146,12 +147,11 @@ const PUBLIC_NAV_CSS = `
     display: block;
   }
 
-  /* Light mode override */
-  [data-theme="light"] .public-navbar,
-  .light-mode .public-navbar {
-    background: rgba(248, 250, 252, 0.88);
-    border-bottom: 1px solid rgba(203, 213, 225, 0.75);
-    box-shadow: 0 2px 24px rgba(0, 0, 0, 0.07);
+  /* Dark mode override — only when html has data-theme="dark" */
+  html[data-theme="dark"] .public-navbar {
+    background: rgba(7, 11, 20, 0.82);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 32px rgba(0, 0, 0, 0.22);
   }
 
   /* ── Brand ─────────────────────────────────────────────────────── */
@@ -234,27 +234,25 @@ const PUBLIC_NAV_CSS = `
 
   .public-navbar__link:hover {
     color: var(--text);
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.08);
-  }
-
-  [data-theme="light"] .public-navbar__link:hover,
-  .light-mode .public-navbar__link:hover {
     background: rgba(0, 0, 0, 0.05);
     border-color: rgba(0, 0, 0, 0.07);
   }
 
-  .public-navbar__link--active {
-    color: var(--accent, #00d4ff);
-    background: rgba(0, 212, 255, 0.08);
-    border-color: rgba(0, 212, 255, 0.22);
+  [data-theme="dark"] .public-navbar__link:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
   }
 
-  [data-theme="light"] .public-navbar__link--active,
-  .light-mode .public-navbar__link--active {
+  .public-navbar__link--active {
     background: rgba(14, 165, 233, 0.09);
     border-color: rgba(14, 165, 233, 0.3);
     color: #0ea5e9;
+  }
+
+  [data-theme="dark"] .public-navbar__link--active {
+    color: var(--accent, #00d4ff);
+    background: rgba(0, 212, 255, 0.08);
+    border-color: rgba(0, 212, 255, 0.22);
   }
 
   /* ── Right Actions ──────────────────────────────────────────────── */
@@ -265,12 +263,11 @@ const PUBLIC_NAV_CSS = `
     flex-shrink: 0;
     margin-left: 16px;
     padding-left: 16px;
-    border-left: 1px solid rgba(255, 255, 255, 0.09);
+    border-left: 1px solid rgba(0, 0, 0, 0.1);
   }
 
-  [data-theme="light"] .public-navbar__actions,
-  .light-mode .public-navbar__actions {
-    border-left-color: rgba(0, 0, 0, 0.1);
+  [data-theme="dark"] .public-navbar__actions {
+    border-left-color: rgba(255, 255, 255, 0.09);
   }
 
   .public-navbar__cta {
@@ -288,13 +285,12 @@ const PUBLIC_NAV_CSS = `
     display: inline-block;
     width: 1px;
     height: 20px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.15);
     flex-shrink: 0;
   }
 
-  [data-theme="light"] .public-navbar__divider,
-  .light-mode .public-navbar__divider {
-    background: rgba(0, 0, 0, 0.15);
+  [data-theme="dark"] .public-navbar__divider {
+    background: rgba(255, 255, 255, 0.15);
   }
 
   /* ── Scoped button overrides — identical on every page ──────────── */
@@ -328,35 +324,31 @@ const PUBLIC_NAV_CSS = `
     box-shadow: 0 0 18px rgba(0, 212, 255, 0.35);
   }
 
-  /* Ghost: frosted-glass style (matching About Us .about-top-btn) */
+  /* Ghost: frosted-glass style */
   .public-navbar .btn-ghost {
-    background: rgba(255, 255, 255, 0.06);
-    color: #d5dae6;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-  }
-  .public-navbar .btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.13);
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.24);
-  }
-
-  /* Light mode overrides for ghost */
-  [data-theme="light"] .public-navbar .btn-ghost,
-  .light-mode .public-navbar .btn-ghost {
     background: rgba(0, 0, 0, 0.04);
     color: #374151;
     border: 1px solid rgba(0, 0, 0, 0.12);
   }
-  [data-theme="light"] .public-navbar .btn-ghost:hover,
-  .light-mode .public-navbar .btn-ghost:hover {
+  .public-navbar .btn-ghost:hover {
     background: rgba(0, 0, 0, 0.09);
     color: #111827;
     border-color: rgba(0, 0, 0, 0.2);
   }
 
-  /* Light mode primary */
-  [data-theme="light"] .public-navbar .btn-primary,
-  .light-mode .public-navbar .btn-primary {
+  /* Dark mode overrides for ghost */
+  [data-theme="dark"] .public-navbar .btn-ghost {
+    background: rgba(255, 255, 255, 0.06);
+    color: #d5dae6;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  [data-theme="dark"] .public-navbar .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.13);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
+  .public-navbar .btn-primary {
     color: #fff;
     box-shadow: none;
   }

@@ -23,8 +23,8 @@ export default function GuidedSimulatorPage() {
   const { xp = 0, coins = 0 } = useGamification?.() || {}
 
   // ── Read initial theme from the document (set by LandingPage or any other page) ──
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
-  const colors = THEMES[theme]
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light')
+  const colors = THEMES[theme] || THEMES.light || THEMES.dark
   const projectColor = location.state?.projectColor || '#22c55e'
 
   const toggleTheme = () => {
@@ -32,6 +32,7 @@ export default function GuidedSimulatorPage() {
     setTheme(next)
     // Keep document in sync so every page sees the same choice
     document.documentElement.setAttribute('data-theme', next)
+    localStorage.setItem('theme', next)
   }
 
   const simParams = new URLSearchParams()

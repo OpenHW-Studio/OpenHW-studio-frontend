@@ -79,12 +79,14 @@ export default function AdminPage() {
     const [isSearchingLibs, setIsSearchingLibs] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [theme, setTheme] = useState(() => localStorage.getItem('admin_theme') || 'dark');
+    const [theme, setTheme] = useState(() => localStorage.getItem('admin_theme') || localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light');
     const restoreInputRef = useRef(null);
 
     const handleToggleTheme = (newTheme) => {
         setTheme(newTheme);
         localStorage.setItem('admin_theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        document.documentElement.setAttribute('data-theme', newTheme);
     };
 
     const lastToggleTime = useRef(0);
