@@ -1,7 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
-import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr }) => {
@@ -45,6 +44,29 @@ const ReactiveFallbackComponentUI = React.memo(({ comp, getComponentStateAttrs, 
 
 ReactiveFallbackComponentUI.displayName = 'ReactiveFallbackComponentUI';
 
+// Preview wire while drawing. Subscribes DIRECTLY to the mousePos store in
+// SimulatorPage (ref + listener set, no React state), so ~60Hz cursor moves
+// during wire-pulling re-render ONLY this <path> — never the canvas tree,
+// never the 15k-line page component.
+const WirePreviewPath = React.memo(({ wireStart, multiRoutePath, subscribeMousePos, getMousePosSnapshot, mousePosRef }) => {
+  useSyncExternalStore(subscribeMousePos, getMousePosSnapshot);
+  if (!wireStart) return null;
+  const mousePos = mousePosRef.current;
+  return (
+    <path
+      d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+      stroke="var(--orange)"
+      strokeWidth={2}
+      strokeDasharray="6 4"
+      fill="none"
+      strokeLinecap="round"
+      opacity={0.8}
+    />
+  );
+});
+
+WirePreviewPath.displayName = 'WirePreviewPath';
+
 function CanvasSceneLayerBase({
   innerCanvasRef,
   canvasOffset,
@@ -68,8 +90,10 @@ function CanvasSceneLayerBase({
   autofixPlan,
   getPinPosWithGhosts,
   wireStart,
-  mousePos,
   multiRoutePath,
+  subscribeMousePos,
+  getMousePosSnapshot,
+  mousePosRef,
   svgRef,
   isRunning,
   isComponentDragging,
@@ -333,18 +357,15 @@ function CanvasSceneLayerBase({
           );
         })}
 
-        {/* Preview wire while drawing */}
-        {wireStart && (
-          <path
-            d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-            stroke="var(--orange)"
-            strokeWidth={2}
-            strokeDasharray="6 4"
-            fill="none"
-            strokeLinecap="round"
-            opacity={0.8}
-          />
-        )}
+        {/* Preview wire while drawing — self-subscribed to the mousePos
+            store, so cursor moves never touch the canvas tree. */}
+        <WirePreviewPath
+          wireStart={wireStart}
+          multiRoutePath={multiRoutePath}
+          subscribeMousePos={subscribeMousePos}
+          getMousePosSnapshot={getMousePosSnapshot}
+          mousePosRef={mousePosRef}
+        />
 
 
       </svg>
@@ -741,12 +762,7 @@ function CanvasSceneLayerBase({
         );
       })()}
       
-      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
-      <NetworkComponentOverlay 
-        components={components} 
-        isRunning={isRunning} 
-        updateComponentAttr={updateComponentAttr} 
-      />
+      {/* Network overlay removed with the Network Worker (pending WiFi/IP reimplementation). */}
     </div>
     </>
   );

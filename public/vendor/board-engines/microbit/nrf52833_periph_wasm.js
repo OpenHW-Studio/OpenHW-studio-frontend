@@ -1,0 +1,2892 @@
+/* @ts-self-types="./nrf52833_periph_wasm.d.ts" */
+
+export class WasmCpu {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmCpuFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmcpu_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    fault_len() {
+        const ret = wasm.wasmcpu_fault_len(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    fault_op1() {
+        const ret = wasm.wasmcpu_fault_op1(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    fault_op2() {
+        const ret = wasm.wasmcpu_fault_op2(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    fault_pc() {
+        const ret = wasm.wasmcpu_fault_pc(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_basepri() {
+        const ret = wasm.wasmcpu_get_basepri(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_control() {
+        const ret = wasm.wasmcpu_get_control(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_faultmask() {
+        const ret = wasm.wasmcpu_get_faultmask(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_fpscr() {
+        const ret = wasm.wasmcpu_get_fpscr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_ipsr() {
+        const ret = wasm.wasmcpu_get_ipsr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_pc() {
+        const ret = wasm.wasmcpu_get_pc(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_primask() {
+        const ret = wasm.wasmcpu_get_primask(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    get_regs() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wasmcpu_get_regs(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU32FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 4, 4);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get_sp() {
+        const ret = wasm.wasmcpu_get_sp(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    get_sregs() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wasmcpu_get_sregs(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU32FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 4, 4);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get_xpsr() {
+        const ret = wasm.wasmcpu_get_xpsr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {Uint8Array} data
+     * @param {number} base
+     */
+    load_firmware(data, base) {
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmcpu_load_firmware(this.__wbg_ptr, ptr0, len0, base);
+    }
+    /**
+     * @returns {number}
+     */
+    mem_fault() {
+        const ret = wasm.wasmcpu_mem_fault(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} addr
+     * @param {number} len
+     * @returns {Uint8Array}
+     */
+    mem_read(addr, len) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wasmcpu_mem_read(retptr, this.__wbg_ptr, addr, len);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {number} addr
+     * @param {Uint8Array} data
+     */
+    mem_write(addr, data) {
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmcpu_mem_write(this.__wbg_ptr, addr, ptr0, len0);
+    }
+    /**
+     * @param {number} sp
+     * @param {number} pc
+     * @param {number} flash_size
+     * @param {number} ram_size
+     */
+    constructor(sp, pc, flash_size, ram_size) {
+        const ret = wasm.wasmcpu_new(sp, pc, flash_size, ram_size);
+        this.__wbg_ptr = ret;
+        WasmCpuFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} addr
+     * @returns {number}
+     */
+    read32(addr) {
+        const ret = wasm.wasmcpu_read32(this.__wbg_ptr, addr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} addr
+     * @returns {number}
+     */
+    read8(addr) {
+        const ret = wasm.wasmcpu_read8(this.__wbg_ptr, addr);
+        return ret;
+    }
+    /**
+     * @param {number} sp
+     * @param {number} pc
+     */
+    reset_cpu(sp, pc) {
+        wasm.wasmcpu_reset_cpu(this.__wbg_ptr, sp, pc);
+    }
+    /**
+     * @param {boolean} v
+     */
+    set_deliver_irqs(v) {
+        wasm.wasmcpu_set_deliver_irqs(this.__wbg_ptr, v);
+    }
+    /**
+     * @param {number} v
+     */
+    set_fpscr(v) {
+        wasm.wasmcpu_set_fpscr(this.__wbg_ptr, v);
+    }
+    /**
+     * @param {number} i
+     * @param {number} v
+     */
+    set_sreg(i, v) {
+        wasm.wasmcpu_set_sreg(this.__wbg_ptr, i, v);
+    }
+    /**
+     * @returns {boolean}
+     */
+    sleeping() {
+        const ret = wasm.wasmcpu_sleeping(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * External-master SPI exchange with our SPIS slave (MISO bytes out).
+     * @param {number} base
+     * @param {Uint8Array} mosi
+     * @returns {Uint8Array}
+     */
+    spis_exchange(base, mosi) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passArray8ToWasm0(mosi, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.wasmcpu_spis_exchange(retptr, this.__wbg_ptr, base, ptr0, len0);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v2 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 1, 1);
+            return v2;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {number} budget
+     * @returns {number}
+     */
+    step(budget) {
+        const ret = wasm.wasmcpu_step(this.__wbg_ptr, budget);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    take_trace() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wasmcpu_take_trace(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU32FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 4, 4);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    trace_start() {
+        wasm.wasmcpu_trace_start(this.__wbg_ptr);
+    }
+    trace_stop() {
+        wasm.wasmcpu_trace_stop(this.__wbg_ptr);
+    }
+    /**
+     * External-master I2C read from our TWIS slave (ORC-padded).
+     * @param {number} base
+     * @param {number} addr
+     * @param {number} len
+     * @returns {Uint8Array}
+     */
+    twis_master_read(base, addr, len) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wasmcpu_twis_master_read(retptr, this.__wbg_ptr, base, addr, len);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * External-master I2C write to our TWIS slave at `base`/`addr7`.
+     * Returns bytes accepted (0 on NACK/overflow; see error events).
+     * @param {number} base
+     * @param {number} addr
+     * @param {Uint8Array} data
+     * @returns {number}
+     */
+    twis_master_write(base, addr, data) {
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmcpu_twis_master_write(this.__wbg_ptr, base, addr, ptr0, len0);
+        return ret >>> 0;
+    }
+    wake() {
+        wasm.wasmcpu_wake(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} addr
+     * @param {number} v
+     */
+    write32(addr, v) {
+        wasm.wasmcpu_write32(this.__wbg_ptr, addr, v);
+    }
+    /**
+     * @param {number} addr
+     * @param {number} v
+     */
+    write8(addr, v) {
+        wasm.wasmcpu_write8(this.__wbg_ptr, addr, v);
+    }
+}
+if (Symbol.dispose) WasmCpu.prototype[Symbol.dispose] = WasmCpu.prototype.free;
+
+/**
+ * @param {boolean} resolved
+ */
+export function aar_complete(resolved) {
+    wasm.aar_complete(resolved);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function aar_take_job() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.aar_take_job(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Directed-advertising peer address (6 LE bytes; valid when directed).
+ * @returns {Uint8Array}
+ */
+export function ble_adv_peer_addr() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_adv_peer_addr(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Advertising state: [active, directed, filter_policy, whitelist_addrs].
+ * Armed by ADV_START validation, cleared by ADV_STOP / reset.
+ * @returns {Uint8Array}
+ */
+export function ble_adv_state() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_adv_state(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {number}
+ */
+export function ble_batt_level() {
+    const ret = wasm.ble_batt_level();
+    return ret;
+}
+
+/**
+ * Bond store: does the store hold keys for this 6B peer address with
+ * this 10B master_id (silicon re-encrypt gate)? The bridge consults
+ * this before answering SEC_INFO_REPLY: hit = reply with stored keys
+ * + ENCRYPT; miss = all-NULL reply.
+ * @param {Uint8Array} peer
+ * @param {Uint8Array} master_id
+ * @returns {boolean}
+ */
+export function ble_bond_has_keys(peer, master_id) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(master_id, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_bond_has_keys(ptr0, len0, ptr1, len1);
+    return ret !== 0;
+}
+
+/**
+ * Bond store: read back bonded keys (LTK[16] IRK[16] CSRK[16] MID[10]
+ * = 52 bytes, empty when no bond). Bridge answers SEC_INFO_REPLY
+ * from this instead of failing.
+ * @param {Uint8Array} peer
+ * @returns {Uint8Array}
+ */
+export function ble_bond_read_keys(peer) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.ble_bond_read_keys(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Complete an attribute-info discovery: handles[i], uuids[i].
+ * Posts ATTR_INFO_RSP (16-bit format).
+ * @param {number} conn
+ * @param {Uint16Array} handles
+ * @param {Uint16Array} uuids
+ */
+export function ble_complete_attr_info_disc(conn, handles, uuids) {
+    const ptr0 = passArray16ToWasm0(handles, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(uuids, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.ble_complete_attr_info_disc(conn, ptr0, len0, ptr1, len1);
+}
+
+/**
+ * Complete a characteristic discovery: uuids[i] (0xFFFF = 128-bit),
+ * props[i] (S132 u8 bitfield), decls[i], values[i]. Posts CHAR_DISC_RSP.
+ * @param {number} conn
+ * @param {Uint16Array} uuids
+ * @param {Uint8Array} props
+ * @param {Uint16Array} decls
+ * @param {Uint16Array} values
+ */
+export function ble_complete_char_disc(conn, uuids, props, decls, values) {
+    const ptr0 = passArray16ToWasm0(uuids, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(props, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray16ToWasm0(decls, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray16ToWasm0(values, wasm.__wbindgen_export2);
+    const len3 = WASM_VECTOR_LEN;
+    wasm.ble_complete_char_disc(conn, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+}
+
+/**
+ * Conn-param update completion: posts CONN_PARAM_UPDATE on the link.
+ * @param {number} conn
+ */
+export function ble_complete_conn_param_update(conn) {
+    wasm.ble_complete_conn_param_update(conn);
+}
+
+/**
+ * Complete a descriptor discovery: handles[i], uuids[i].
+ * Posts DESC_DISC_RSP.
+ * @param {number} conn
+ * @param {Uint16Array} handles
+ * @param {Uint16Array} uuids
+ */
+export function ble_complete_desc_disc(conn, handles, uuids) {
+    const ptr0 = passArray16ToWasm0(handles, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(uuids, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.ble_complete_desc_disc(conn, ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @param {Uint8Array} peer
+ */
+export function ble_complete_gap_connect(peer) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_gap_connect(ptr0, len0);
+}
+
+/**
+ * Complete a GAP connect: driver connected over air; returns the
+ * assigned connection handle (INVALID when the table is full).
+ * @param {Uint8Array} peer
+ * @returns {number}
+ */
+export function ble_complete_gap_connect_ret(peer) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_complete_gap_connect_ret(ptr0, len0);
+    return ret;
+}
+
+/**
+ * Complete a GAP disconnect: posts DISCONNECTED with the HCI reason.
+ * @param {number} conn
+ * @param {number} reason
+ */
+export function ble_complete_gap_disconnect(conn, reason) {
+    wasm.ble_complete_gap_disconnect(conn, reason);
+}
+
+/**
+ * Complete a peer notification/indication: posts HVX.
+ * @param {number} conn
+ * @param {number} handle
+ * @param {number} hvx_type
+ * @param {Uint8Array} data
+ */
+export function ble_complete_gattc_hvx(conn, handle, hvx_type, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_gattc_hvx(conn, handle, hvx_type, ptr0, len0);
+}
+
+/**
+ * @param {number} conn
+ * @param {number} handle
+ * @param {number} offset
+ * @param {Uint8Array} data
+ */
+export function ble_complete_gattc_read(conn, handle, offset, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_gattc_read(conn, handle, offset, ptr0, len0);
+}
+
+/**
+ * Complete a GATTC write with the over-air WRITE_RSP proof.
+ * @param {number} conn
+ * @param {number} handle
+ * @param {number} op
+ * @param {Uint8Array} data
+ */
+export function ble_complete_gattc_write(conn, handle, op, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_gattc_write(conn, handle, op, ptr0, len0);
+}
+
+/**
+ * Complete a GATTS HVX emission: posts HVC confirm.
+ * @param {number} conn
+ * @param {number} handle
+ */
+export function ble_complete_hvx(conn, handle) {
+    wasm.ble_complete_hvx(conn, handle);
+}
+
+/**
+ * Complete an L2CAP TX: posts the RX echo on (conn, cid).
+ * @param {number} conn
+ * @param {number} cid
+ * @param {Uint8Array} data
+ */
+export function ble_complete_l2cap_rx(conn, cid, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_l2cap_rx(conn, cid, ptr0, len0);
+}
+
+/**
+ * Complete a pairing handshake the driver ran over air: posts
+ * AUTH_STATUS (success) + CONN_SEC_UPDATE, marks link bonded.
+ * @param {number} conn
+ * @param {boolean} bonded
+ */
+export function ble_complete_pairing(conn, bonded) {
+    wasm.ble_complete_pairing(conn, bonded);
+}
+
+/**
+ * Peripheral-role accept: a peer answered our advertisement; brings
+ * the link up with PERIPH role and posts CONNECTED. Returns handle.
+ * @param {Uint8Array} peer
+ * @returns {number}
+ */
+export function ble_complete_peripheral_connect(peer) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_complete_peripheral_connect(ptr0, len0);
+    return ret;
+}
+
+/**
+ * Complete a primary-service discovery with parallel arrays:
+ * uuids[i] (0xFFFF = 128-bit, listed without number), starts[i],
+ * ends[i]. Posts PRIM_DISC_RSP.
+ * @param {number} conn
+ * @param {Uint16Array} uuids
+ * @param {Uint16Array} starts
+ * @param {Uint16Array} ends
+ */
+export function ble_complete_prim_disc(conn, uuids, starts, ends) {
+    const ptr0 = passArray16ToWasm0(uuids, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(starts, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray16ToWasm0(ends, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    wasm.ble_complete_prim_disc(conn, ptr0, len0, ptr1, len1, ptr2, len2);
+}
+
+/**
+ * Complete a relationship discovery: parallel arrays handles[i],
+ * uuids[i] (0xFFFF = 128-bit), starts[i], ends[i]. Posts REL_DISC_RSP.
+ * @param {number} conn
+ * @param {Uint16Array} handles
+ * @param {Uint16Array} uuids
+ * @param {Uint16Array} starts
+ * @param {Uint16Array} ends
+ */
+export function ble_complete_rel_disc(conn, handles, uuids, starts, ends) {
+    const ptr0 = passArray16ToWasm0(handles, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(uuids, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray16ToWasm0(starts, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray16ToWasm0(ends, wasm.__wbindgen_export2);
+    const len3 = WASM_VECTOR_LEN;
+    wasm.ble_complete_rel_disc(conn, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+}
+
+/**
+ * Complete an RSSI sample: posts RSSI_CHANGED.
+ * @param {number} conn
+ * @param {number} rssi
+ */
+export function ble_complete_rssi(conn, rssi) {
+    wasm.ble_complete_rssi(conn, rssi);
+}
+
+/**
+ * Complete a Service Changed indication: the peer confirmed the
+ * 0x2A05 indication over air; posts SC_CONFIRM on the link.
+ * @param {number} conn
+ */
+export function ble_complete_service_changed(conn) {
+    wasm.ble_complete_service_changed(conn);
+}
+
+/**
+ * TX-flow refill: driver moved one packet over air; refills one TX
+ * token on the link and posts TX_COMPLETE with the free count.
+ * @param {number} conn
+ */
+export function ble_complete_tx_flow(conn) {
+    wasm.ble_complete_tx_flow(conn);
+}
+
+/**
+ * Complete a read-by-UUID: parallel handles[i] + flat values with
+ * per-pair lengths lens[i] (ragged pads to the longest on the wire).
+ * Posts UUID_READ_RSP.
+ * @param {number} conn
+ * @param {Uint16Array} handles
+ * @param {Uint8Array} flat
+ * @param {Uint16Array} lens
+ */
+export function ble_complete_uuid_read(conn, handles, flat, lens) {
+    const ptr0 = passArray16ToWasm0(handles, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(flat, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray16ToWasm0(lens, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    wasm.ble_complete_uuid_read(conn, ptr0, len0, ptr1, len1, ptr2, len2);
+}
+
+/**
+ * Complete a multi-read: concatenated values. Posts VALS_READ_RSP.
+ * @param {number} conn
+ * @param {Uint8Array} data
+ */
+export function ble_complete_vals_read(conn, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_complete_vals_read(conn, ptr0, len0);
+}
+
+/**
+ * Live connection handles (each u16 one link). Empty = no links.
+ * @returns {Uint16Array}
+ */
+export function ble_conn_handles() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_conn_handles(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU16FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 2, 2);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Connection security: [sec_mode, key_size] for the link
+ * (mode 0x11 open, 0x21 encrypted-after-pairing).
+ * @param {number} conn
+ * @returns {Uint8Array}
+ */
+export function ble_conn_sec(conn) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_conn_sec(retptr, conn);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Explicit unbond: the next SEC_INFO_REQUEST for the peer MISSES.
+ * @param {Uint8Array} peer
+ * @returns {boolean}
+ */
+export function ble_delete_bond(peer) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_delete_bond(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * @returns {boolean}
+ */
+export function ble_enabled() {
+    const ret = wasm.ble_enabled();
+    return ret !== 0;
+}
+
+/**
+ * Fail a pairing handshake: posts AUTH_STATUS with the S132 status
+ * (e.g. 0x85 PAIRING_NOT_SUPP); link stays up, unencrypted.
+ * @param {number} conn
+ * @param {number} status
+ */
+export function ble_fail_pairing(conn, status) {
+    wasm.ble_fail_pairing(conn, status);
+}
+
+/**
+ * SMP toolbox (Core Spec Vol 3, Part H, 2.2.5–2.2.9): the pairing
+ * crypto the SoftDevice leaves to firmware/host. All inputs/outputs
+ * are SMP protocol order (little-endian).
+ *
+ * P-256 ECDH shared secret: our BE private scalar + peer LE point
+ * (X ++ Y) -> DHKey LE, or empty when the point is off-curve
+ * (silicon fails the procedure; the reply SVC refuses INVALID_PARAM).
+ * @param {Uint8Array} own_priv_be
+ * @param {Uint8Array} peer_x_le
+ * @param {Uint8Array} peer_y_le
+ * @returns {Uint8Array}
+ */
+export function ble_lesc_dhkey(own_priv_be, peer_x_le, peer_y_le) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(own_priv_be, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(peer_x_le, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(peer_y_le, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        wasm.ble_lesc_dhkey(retptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v4 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v4;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Our P-256 public key (SMP LE order X ++ Y, 64 bytes) from our BE
+ * private scalar. Empty on a bad scalar (never for RNG-fed scalars).
+ * @param {Uint8Array} own_priv_be
+ * @returns {Uint8Array}
+ */
+export function ble_lesc_public_key(own_priv_be) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(own_priv_be, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.ble_lesc_public_key(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {Uint8Array} peer
+ * @param {number} rssi
+ * @param {boolean} scan_rsp
+ * @param {Uint8Array} data
+ */
+export function ble_post_adv_report(peer, rssi, scan_rsp, data) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.ble_post_adv_report(ptr0, len0, rssi, scan_rsp, ptr1, len1);
+}
+
+/**
+ * Post an AUTH_KEY_REQUEST: the driver needs a key of `key_type`
+ * (0 none, 1 passkey, 2 OOB); firmware answers AUTH_KEY_REPLY.
+ * Returns false outside an accepted handshake.
+ * @param {number} conn
+ * @param {number} key_type
+ * @returns {boolean}
+ */
+export function ble_post_auth_key_request(conn, key_type) {
+    const ret = wasm.ble_post_auth_key_request(conn, key_type);
+    return ret !== 0;
+}
+
+/**
+ * Post a peer CONN_PARAM_UPDATE_REQUEST (firmware answers with the
+ * CONN_PARAM_UPDATE request SVC).
+ * @param {number} conn
+ * @returns {boolean}
+ */
+export function ble_post_conn_param_update_request(conn) {
+    const ret = wasm.ble_post_conn_param_update_request(conn);
+    return ret !== 0;
+}
+
+/**
+ * Post a GAP TIMEOUT (src 0 adv, 1 sec-req, 2 scan, 3 conn).
+ * @param {number} conn
+ * @param {number} src
+ * @returns {boolean}
+ */
+export function ble_post_gap_timeout(conn, src) {
+    const ret = wasm.ble_post_gap_timeout(conn, src);
+    return ret !== 0;
+}
+
+/**
+ * Post a GATTC TIMEOUT (ATT protocol).
+ * @param {number} conn
+ * @returns {boolean}
+ */
+export function ble_post_gattc_timeout(conn) {
+    const ret = wasm.ble_post_gattc_timeout(conn);
+    return ret !== 0;
+}
+
+/**
+ * Post a GATTS TIMEOUT (ATT protocol).
+ * @param {number} conn
+ * @returns {boolean}
+ */
+export function ble_post_gatts_timeout(conn) {
+    const ret = wasm.ble_post_gatts_timeout(conn);
+    return ret !== 0;
+}
+
+/**
+ * Post a peer write to our table: conn handle, attr handle,
+ * uuid16 (0xFFFF = 128-bit/vendor), op (1 = write request), bytes.
+ * @param {number} conn
+ * @param {number} handle
+ * @param {number} uuid16
+ * @param {number} op
+ * @param {Uint8Array} data
+ */
+export function ble_post_gatts_write(conn, handle, uuid16, op, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.ble_post_gatts_write(conn, handle, uuid16, op, ptr0, len0);
+}
+
+/**
+ * Post a peer KEYPRESS_NOTIFY (type 0..=4). Returns false with no link.
+ * @param {number} conn
+ * @param {number} kp_not
+ * @returns {boolean}
+ */
+export function ble_post_keypress(conn, kp_not) {
+    const ret = wasm.ble_post_keypress(conn, kp_not);
+    return ret !== 0;
+}
+
+/**
+ * Post an LESC_DHKEY_REQUEST (firmware answers LESC_DHKEY_REPLY;
+ * OOB via LESC_OOB_DATA_SET when oobd_req). Returns false outside an
+ * accepted handshake.
+ * @param {number} conn
+ * @param {boolean} oobd_req
+ * @returns {boolean}
+ */
+export function ble_post_lesc_dhkey_request(conn, oobd_req) {
+    const ret = wasm.ble_post_lesc_dhkey_request(conn, oobd_req);
+    return ret !== 0;
+}
+
+/**
+ * Post a PASSKEY_DISPLAY: the driver shows this 6-digit ASCII passkey
+ * (firmware answers AUTH_KEY_REPLY when match_request).
+ * @param {number} conn
+ * @param {Uint8Array} passkey
+ * @param {boolean} match_request
+ * @returns {boolean}
+ */
+export function ble_post_passkey_display(conn, passkey, match_request) {
+    const ptr0 = passArray8ToWasm0(passkey, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_post_passkey_display(conn, ptr0, len0, match_request);
+    return ret !== 0;
+}
+
+/**
+ * Post a GATTS RW_AUTHORIZE_REQUEST (firmware answers RW_AUTHORIZE_REPLY).
+ * @param {number} conn
+ * @param {number} auth_type
+ * @param {number} handle
+ * @param {number} offset
+ * @param {number} op
+ * @param {Uint8Array} data
+ * @returns {boolean}
+ */
+export function ble_post_rw_authorize_request(conn, auth_type, handle, offset, op, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_post_rw_authorize_request(conn, auth_type, handle, offset, op, ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * Post a GATTS SC_CONFIRM (header only, no reply path).
+ * @param {number} conn
+ * @returns {boolean}
+ */
+export function ble_post_sc_confirm(conn) {
+    const ret = wasm.ble_post_sc_confirm(conn);
+    return ret !== 0;
+}
+
+/**
+ * Post a SCAN_REQ_REPORT (a scanner hit our advertisement).
+ * @param {Uint8Array} peer
+ * @param {number} rssi
+ * @returns {boolean}
+ */
+export function ble_post_scan_req_report(peer, rssi) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_post_scan_req_report(ptr0, len0, rssi);
+    return ret !== 0;
+}
+
+/**
+ * Post a peer-initiated SEC_INFO_REQUEST: the peer asks to re-encrypt
+ * (peer_addr 7B type+6, master_id 10B ediv+rand[8], req bits: bit0
+ * enc_info, bit1 id_info, bit2 sign_info). Firmware answers
+ * SEC_INFO_REPLY, then ENCRYPT. Returns false when the link cannot
+ * take a request.
+ * @param {number} conn
+ * @param {Uint8Array} peer_addr
+ * @param {Uint8Array} master_id
+ * @param {number} req
+ * @returns {boolean}
+ */
+export function ble_post_sec_info_request(conn, peer_addr, master_id, req) {
+    const ptr0 = passArray8ToWasm0(peer_addr, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(master_id, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_post_sec_info_request(conn, ptr0, len0, ptr1, len1, req);
+    return ret !== 0;
+}
+
+/**
+ * Post a peer-initiated SEC_PARAMS_REQUEST: the peer started SMP
+ * with these ble_gap_sec_params_t wire bytes (flags, min/max key
+ * size, kdist_own, kdist_peer); firmware answers SEC_PARAMS_REPLY.
+ * Returns false when the link cannot take a request.
+ * @param {number} conn
+ * @param {Uint8Array} peer_params
+ * @returns {boolean}
+ */
+export function ble_post_sec_params_request(conn, peer_params) {
+    const ptr0 = passArray8ToWasm0(peer_params, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_post_sec_params_request(conn, ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * Post a peer SEC_REQUEST (firmware answers AUTHENTICATE).
+ * @param {number} conn
+ * @param {boolean} bond
+ * @param {boolean} mitm
+ * @param {boolean} lesc
+ * @param {boolean} keypress
+ * @returns {boolean}
+ */
+export function ble_post_sec_request(conn, bond, mitm, lesc, keypress) {
+    const ret = wasm.ble_post_sec_request(conn, bond, mitm, lesc, keypress);
+    return ret !== 0;
+}
+
+/**
+ * Post a GATTS SYS_ATTR_MISSING (firmware answers SYS_ATTR_SET).
+ * @param {number} conn
+ * @returns {boolean}
+ */
+export function ble_post_sys_attr_missing(conn) {
+    const ret = wasm.ble_post_sys_attr_missing(conn);
+    return ret !== 0;
+}
+
+/**
+ * Post a USER_MEM_RELEASE (informational, no reply path).
+ * @param {number} conn
+ * @param {number} mem_type
+ * @returns {boolean}
+ */
+export function ble_post_user_mem_release(conn, mem_type) {
+    const ret = wasm.ble_post_user_mem_release(conn, mem_type);
+    return ret !== 0;
+}
+
+/**
+ * Post a USER_MEM_REQUEST (firmware answers USER_MEM_REPLY).
+ * @param {number} conn
+ * @param {number} mem_type
+ * @returns {boolean}
+ */
+export function ble_post_user_mem_request(conn, mem_type) {
+    const ret = wasm.ble_post_user_mem_request(conn, mem_type);
+    return ret !== 0;
+}
+
+/**
+ * @returns {number}
+ */
+export function ble_queue_len() {
+    const ret = wasm.ble_queue_len();
+    return ret >>> 0;
+}
+
+/**
+ * f4 confirm value (LE 16B): peer/local public X coords (LE 32B
+ * each), random (LE 16B), Z byte.
+ * @param {Uint8Array} u_le
+ * @param {Uint8Array} v_le
+ * @param {Uint8Array} x_le
+ * @param {number} z
+ * @returns {Uint8Array}
+ */
+export function ble_smp_f4(u_le, v_le, x_le, z) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(u_le, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(v_le, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(x_le, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        wasm.ble_smp_f4(retptr, ptr0, len0, ptr1, len1, ptr2, len2, z);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v4 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v4;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * f5 key generation: DHKey (LE 32B), nonces (LE 16B), addrs (LE 7B)
+ * -> MacKey ++ LTK (LE 16B each, 32 bytes).
+ * @param {Uint8Array} w_le
+ * @param {Uint8Array} n1_le
+ * @param {Uint8Array} n2_le
+ * @param {Uint8Array} a1_le
+ * @param {Uint8Array} a2_le
+ * @returns {Uint8Array}
+ */
+export function ble_smp_f5(w_le, n1_le, n2_le, a1_le, a2_le) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(w_le, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(n1_le, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(n2_le, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(a1_le, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray8ToWasm0(a2_le, wasm.__wbindgen_export2);
+        const len4 = WASM_VECTOR_LEN;
+        wasm.ble_smp_f5(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v6 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v6;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * f6 DHKey-check (LE 16B): MacKey (LE 16B), nonces (LE 16B),
+ * r (LE 16B), IOcap (3B), addrs (LE 7B).
+ * @param {Uint8Array} w_le
+ * @param {Uint8Array} n1_le
+ * @param {Uint8Array} n2_le
+ * @param {Uint8Array} r_le
+ * @param {Uint8Array} iocap
+ * @param {Uint8Array} a1_le
+ * @param {Uint8Array} a2_le
+ * @returns {Uint8Array}
+ */
+export function ble_smp_f6(w_le, n1_le, n2_le, r_le, iocap, a1_le, a2_le) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(w_le, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(n1_le, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(n2_le, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(r_le, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray8ToWasm0(iocap, wasm.__wbindgen_export2);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passArray8ToWasm0(a1_le, wasm.__wbindgen_export2);
+        const len5 = WASM_VECTOR_LEN;
+        const ptr6 = passArray8ToWasm0(a2_le, wasm.__wbindgen_export2);
+        const len6 = WASM_VECTOR_LEN;
+        wasm.ble_smp_f6(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v8 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v8;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * g2 numeric comparison: public X coords (LE 32B), nonces (LE 16B)
+ * -> u32 (firmware shows % 1000000, 6 digits).
+ * @param {Uint8Array} u_le
+ * @param {Uint8Array} v_le
+ * @param {Uint8Array} x_le
+ * @param {Uint8Array} y_le
+ * @returns {number}
+ */
+export function ble_smp_g2(u_le, v_le, x_le, y_le) {
+    const ptr0 = passArray8ToWasm0(u_le, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(v_le, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(x_le, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(y_le, wasm.__wbindgen_export2);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.ble_smp_g2(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+    return ret >>> 0;
+}
+
+/**
+ * Bond store: driver-side insert (bridge confirmed air keys when
+ * firmware passed NULL keysets).
+ * @param {Uint8Array} peer
+ * @param {Uint8Array} ltk
+ * @param {Uint8Array} irk
+ * @param {Uint8Array} csrk
+ * @param {Uint8Array} master_id
+ */
+export function ble_store_bond(peer, ltk, irk, csrk, master_id) {
+    const ptr0 = passArray8ToWasm0(peer, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(ltk, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(irk, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(csrk, wasm.__wbindgen_export2);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray8ToWasm0(master_id, wasm.__wbindgen_export2);
+    const len4 = WASM_VECTOR_LEN;
+    wasm.ble_store_bond(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+}
+
+/**
+ * Bytes staged alongside the last take_job (WRITE/HVX payloads only;
+ * the SVC copies firmware bytes at call time so the driver read is
+ * stable). Drained once per job; empty when the job carries no bytes.
+ * @returns {Uint8Array}
+ */
+export function ble_take_data() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_take_data(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function ble_take_job() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ble_take_job(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * GAP TX power level in dBm, as stored by TX_POWER_SET (debug/export).
+ * Default 0 (silicon reset); only the S132-legal set is ever stored.
+ * @returns {number}
+ */
+export function ble_tx_power_dbm() {
+    const ret = wasm.ble_tx_power_dbm();
+    return ret;
+}
+
+/**
+ * @param {boolean} mic_ok
+ */
+export function ccm_complete(mic_ok) {
+    wasm.ccm_complete(mic_ok);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function ccm_take_job() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ccm_take_job(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Drive the COMP external reference level in mV (REFSEL ARef path).
+ * @param {number} mv
+ */
+export function comp_set_aref_mv(mv) {
+    wasm.comp_set_aref_mv(mv);
+}
+
+/**
+ * @param {number} mv
+ */
+export function comp_set_input_mv(mv) {
+    wasm.comp_set_input_mv(mv);
+}
+
+export function ecb_complete() {
+    wasm.ecb_complete();
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function ecb_take_job() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.ecb_take_job(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {number}
+ */
+export function get_next_pending_interrupt() {
+    const ret = wasm.get_next_pending_interrupt();
+    return ret;
+}
+
+/**
+ * Collect UART output since last call.
+ * @returns {string}
+ */
+export function get_uart_output() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.get_uart_output(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred1_0 = r0;
+        deferred1_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * Direction bit: true = firmware configured the pin as output
+ * (PIN_CNF.DIR source of truth, kept in sync by the model).
+ * OpenHW matrix/buttons render needs this: an OUT latch toggling on
+ * an input pin must stay dark (see the bench frame loop).
+ * @param {number} port
+ * @param {number} pin
+ * @returns {boolean}
+ */
+export function gpio_read_dir(port, pin) {
+    const ret = wasm.gpio_read_dir(port, pin);
+    return ret !== 0;
+}
+
+/**
+ * @param {number} port
+ * @param {number} pin
+ * @returns {boolean}
+ */
+export function gpio_read_input(port, pin) {
+    const ret = wasm.gpio_read_input(port, pin);
+    return ret !== 0;
+}
+
+/**
+ * @param {number} port
+ * @param {number} pin
+ * @returns {boolean}
+ */
+export function gpio_read_output(port, pin) {
+    const ret = wasm.gpio_read_output(port, pin);
+    return ret !== 0;
+}
+
+/**
+ * Drive a raw input level. Buttons are active-low: released = true
+ * (idle pull-up default), pressed = false. JS button layer maps to this.
+ * NFC antenna pins (P0.09/P0.10 with UICR.NFCPINS PROTECT=1, the reset
+ * state) ignore levels — silicon routes them to the NFCT front-end.
+ * @param {number} port
+ * @param {number} pin
+ * @param {boolean} value
+ */
+export function gpio_set_input(port, pin, value) {
+    wasm.gpio_set_input(port, pin, value);
+}
+
+/**
+ * @returns {boolean}
+ */
+export function has_pending_interrupt() {
+    const ret = wasm.has_pending_interrupt();
+    return ret !== 0;
+}
+
+/**
+ * @param {string} peripheral
+ * @param {Uint8Array} bytes
+ */
+export function i2c_push_rx(peripheral, bytes) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.i2c_push_rx(ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @param {string} peripheral
+ * @param {number} address
+ */
+export function i2c_register_slave(peripheral, address) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.i2c_register_slave(ptr0, len0, address);
+}
+
+/**
+ * @param {string} peripheral
+ * @returns {Uint32Array}
+ */
+export function i2c_take_events(peripheral) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.i2c_take_events(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+export function i2s_complete_rx() {
+    wasm.i2s_complete_rx();
+}
+
+/**
+ * @param {Uint8Array} bytes
+ */
+export function i2s_complete_tx(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.i2s_complete_tx(ptr0, len0);
+}
+
+/**
+ * @returns {Uint8Array}
+ */
+export function i2s_take_capture() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.i2s_take_capture(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function i2s_take_rx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.i2s_take_rx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function i2s_take_tx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.i2s_take_tx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Initialize the emulator with the nRF52833 hardcoded peripheral map.
+ */
+export function init() {
+    wasm.init();
+}
+
+/**
+ * Initialize the emulator from an SVD XML string (e.g., nrf52833.svd).
+ * @param {string} svd_xml
+ */
+export function init_svd(svd_xml) {
+    const ptr0 = passStringToWasm0(svd_xml, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.init_svd(ptr0, len0);
+}
+
+/**
+ * True when firmware requested a reboot (AIRCR SYSRESETREQ / WDT).
+ * The JS driver must then reset the CPU from the vector table
+ * (MicroPython does this twice during boot).
+ * @returns {boolean}
+ */
+export function is_watchdog_reset_requested() {
+    const ret = wasm.is_watchdog_reset_requested();
+    return ret !== 0;
+}
+
+/**
+ * 5x5 LED matrix state for an OpenHW matrix component: 25 bytes,
+ * row-major, 1 = lit. Two firmware designs share these pins, told apart
+ * by how the columns are driven (same rule the bench frame loop uses).
+ * Rows: P0.21/P0.22/P0.15/P0.24/P0.19. Cols: P0.28/P0.11/P0.31/P1.05/P0.30.
+ * Direct-GPIO bit-bang (both sides GPIO-output): lit <=> row OUT==0 &&
+ * col OUT==1 with both pins configured output.
+ * CODAL NRF52LEDMatrix (columns GPIOTE-task-driven, DIR stays input by
+ * design; rows GPIO-selected HIGH): lit <=> row OUT==1 (output) && the
+ * column's task channel has OUTINIT clear (per-frame brightness latch
+ * written by the render path). The task-bound design wins when any
+ * matrix column has a task-mode GPIOTE channel; otherwise the GPIO rule.
+ * @returns {Uint8Array}
+ */
+export function matrix_state() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.matrix_state(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * MMIO trace controls (P134 forensics; also exported so JS harnesses
+ * can capture the firmware's UARTE register sequence around a stall).
+ */
+export function mmio_trace_start() {
+    wasm.mmio_trace_start();
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function mmio_trace_take() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.mmio_trace_take(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {number} amount
+ */
+export function nfct_complete_rx(amount) {
+    wasm.nfct_complete_rx(amount);
+}
+
+export function nfct_complete_tx() {
+    wasm.nfct_complete_tx();
+}
+
+/**
+ * @param {boolean} present
+ */
+export function nfct_field_present(present) {
+    wasm.nfct_field_present(present);
+}
+
+/**
+ * Host-inject an NFC modulation collision (two tags answering at once).
+ */
+export function nfct_inject_collision() {
+    wasm.nfct_inject_collision();
+}
+
+/**
+ * Host-inject an NFC RX frame error (corrupt air): FRAMESTATUS.RX flags
+ * (bit0 CRCERROR, bit2 PARITYSTATUS, bit3 OVERRUN) + EVENTS_RXERROR.
+ * @param {number} flags
+ */
+export function nfct_inject_rxerror(flags) {
+    wasm.nfct_inject_rxerror(flags);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function nfct_take_rx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.nfct_take_rx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function nfct_take_tx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.nfct_take_tx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+export function nvmc_complete_erase() {
+    wasm.nvmc_complete_erase();
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function nvmc_take_erase() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.nvmc_take_erase(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+export function pdm_complete_sample() {
+    wasm.pdm_complete_sample();
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function pdm_take_sample() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.pdm_take_sample(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {number} addr
+ * @param {number} width
+ * @returns {number}
+ */
+export function periph_read(addr, width) {
+    const ret = wasm.periph_read(addr, width);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} addr
+ * @param {number} width
+ * @param {number} value
+ */
+export function periph_write(addr, width, value) {
+    wasm.periph_write(addr, width, value);
+}
+
+/**
+ * Publish a WFI/WFE sleep edge (SLEEPENTER latch).
+ */
+export function power_notify_sleep_enter() {
+    wasm.power_notify_sleep_enter();
+}
+
+/**
+ * Publish the WFI/WFE wake edge (SLEEPEXIT latch).
+ */
+export function power_notify_sleep_exit() {
+    wasm.power_notify_sleep_exit();
+}
+
+/**
+ * Drive the power-fail warning (supply vs POFCON threshold).
+ * @param {boolean} present
+ */
+export function power_pof_warn(present) {
+    wasm.power_pof_warn(present);
+}
+
+/**
+ * Take an armed System OFF request (firmware wrote SYSTEMOFF=1).
+ * @returns {boolean}
+ */
+export function power_take_systemoff() {
+    const ret = wasm.power_take_systemoff();
+    return ret !== 0;
+}
+
+/**
+ * @param {number} instance
+ * @returns {number}
+ */
+export function pwm_get_duty(instance) {
+    const ret = wasm.pwm_get_duty(instance);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} instance
+ * @returns {number}
+ */
+export function pwm_get_freq_hz(instance) {
+    const ret = wasm.pwm_get_freq_hz(instance);
+    return ret >>> 0;
+}
+
+/**
+ * Feed one SEQ compare word (OUT channel 0) observed by the host pump
+ * from guest RAM at SEQ.PTR — the waveform bytes stay driver-side, so
+ * duty needs this driver-fed latch (same style as take/complete pairs).
+ * @param {number} instance
+ * @param {number} compare
+ */
+export function pwm_observe_seq_word(instance, compare) {
+    wasm.pwm_observe_seq_word(instance, compare);
+}
+
+/**
+ * @param {number} dir
+ */
+export function qdec_step(dir) {
+    wasm.qdec_step(dir);
+}
+
+/**
+ * @param {number} ptr
+ * @param {number} len_code
+ */
+export function qspi_complete_erase(ptr, len_code) {
+    wasm.qspi_complete_erase(ptr, len_code);
+}
+
+export function qspi_complete_read() {
+    wasm.qspi_complete_read();
+}
+
+/**
+ * @param {number} dst
+ * @param {Uint8Array} data
+ */
+export function qspi_complete_write(dst, data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.qspi_complete_write(dst, ptr0, len0);
+}
+
+/**
+ * @param {string} name
+ * @param {Uint8Array} data
+ */
+export function qspi_register_flash(name, data) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.qspi_register_flash(ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function qspi_take_erase() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.qspi_take_erase(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function qspi_take_read() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.qspi_take_read(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function qspi_take_write() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.qspi_take_write(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Log-power add of an ambient floor onto a packet level (both dBm).
+ * Pure function sharing the ED/CCA/RX-stamp number with the model.
+ * @param {number} packet_dbm
+ * @param {number} ambient_dbm
+ * @returns {number}
+ */
+export function radio_add_interference_dbm(packet_dbm, ambient_dbm) {
+    const ret = wasm.radio_add_interference_dbm(packet_dbm, ambient_dbm);
+    return ret;
+}
+
+/**
+ * Link-budget air level: TX dBm minus path loss, clamped [-127, 0].
+ * Pure function so JS air and the model agree on one honest number.
+ * @param {number} tx_code
+ * @param {number} path_loss_db
+ * @returns {number}
+ */
+export function radio_air_rssi_dbm(tx_code, path_loss_db) {
+    const ret = wasm.radio_air_rssi_dbm(tx_code, path_loss_db);
+    return ret;
+}
+
+/**
+ * Clear the ambient floor (quiet air again).
+ */
+export function radio_clear_interference() {
+    wasm.radio_clear_interference();
+}
+
+/**
+ * Complete DFE sampling with `amount` IQ samples at DFEPACKET.PTR.
+ * @param {number} amount
+ */
+export function radio_complete_dfe(amount) {
+    wasm.radio_complete_dfe(amount);
+}
+
+export function radio_complete_rx() {
+    wasm.radio_complete_rx();
+}
+
+/**
+ * Complete RX with an explicit path loss (dB) for this packet's RSSI
+ * stamp. Driver-side air calls this when it knows the range; the
+ * plain complete_rx() keeps the queued/default loss.
+ * @param {number} path_loss_db
+ */
+export function radio_complete_rx_with_path_loss(path_loss_db) {
+    wasm.radio_complete_rx_with_path_loss(path_loss_db);
+}
+
+export function radio_complete_tx() {
+    wasm.radio_complete_tx();
+}
+
+/**
+ * CRC over body with the RADIO engine shape (len 1..3, poly, init).
+ * Pure function: the same wire algorithm the RX completion runs.
+ * @param {Uint8Array} body
+ * @param {number} poly
+ * @param {number} init
+ * @param {number} len
+ * @returns {number}
+ */
+export function radio_crc32(body, poly, init, len) {
+    const ptr0 = passArray8ToWasm0(body, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.radio_crc32(ptr0, len0, poly, init, len);
+    return ret >>> 0;
+}
+
+/**
+ * @param {Uint8Array} bytes
+ */
+export function radio_inject_corrupt(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.radio_inject_corrupt(ptr0, len0);
+}
+
+/**
+ * Host-inject CTEPRESENT (CTE follows the packet, DFE active).
+ */
+export function radio_inject_ctepresent() {
+    wasm.radio_inject_ctepresent();
+}
+
+/**
+ * Host-inject RATEBOOST (Ble_LR125Kbit CI switches the link to LR500).
+ */
+export function radio_inject_rateboost() {
+    wasm.radio_inject_rateboost();
+}
+
+/**
+ * @param {Uint8Array} bytes
+ */
+export function radio_inject_rx(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.radio_inject_rx(ptr0, len0);
+}
+
+/**
+ * Plain inject with a path-loss in dB (same RSSI stamp, no address byte).
+ * @param {Uint8Array} bytes
+ * @param {number} path_loss_db
+ */
+export function radio_inject_rx_lossy(bytes, path_loss_db) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.radio_inject_rx_lossy(ptr0, len0, path_loss_db);
+}
+
+/**
+ * Inject a received packet addressed to a DAB/DAP entry (air peer).
+ * Convenience over inject_rx for the two-instance bridge: the first
+ * byte is the device-address byte the match unit checks (DEVMATCH
+ * when it equals a programmed, listened DAB entry).
+ * @param {number} dab_idx
+ * @param {Uint8Array} bytes
+ */
+export function radio_inject_rx_to(dab_idx, bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.radio_inject_rx_to(dab_idx, ptr0, len0);
+}
+
+/**
+ * Addressed inject with a path-loss in dB (air range model): the RX
+ * completion stamps TXPOWER-minus-loss into the RSSI latch, so a
+ * firmware RSSISTART after RX reads this packet's level like silicon.
+ * @param {number} dab_idx
+ * @param {Uint8Array} bytes
+ * @param {number} path_loss_db
+ */
+export function radio_inject_rx_to_lossy(dab_idx, bytes, path_loss_db) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.radio_inject_rx_to_lossy(dab_idx, ptr0, len0, path_loss_db);
+}
+
+/**
+ * Host-inject SYNC (preamble sync word received).
+ */
+export function radio_inject_sync() {
+    wasm.radio_inject_sync();
+}
+
+/**
+ * Set the 802.15.4 energy-detect sample level in dBm (negative).
+ * Reported via EDSAMPLE on the next EDSTART; defaults to RSSI level.
+ * @param {number} dbm
+ */
+export function radio_set_ed_dbm(dbm) {
+    wasm.radio_set_ed_dbm(dbm);
+}
+
+/**
+ * Ambient RF floor in dBm (negative) for the interference model:
+ * ED/CCA add it in log-power and RX completions heat toward it.
+ * @param {number} dbm
+ */
+export function radio_set_interference_dbm(dbm) {
+    wasm.radio_set_interference_dbm(dbm);
+}
+
+/**
+ * @param {number} dbm
+ */
+export function radio_set_rssi_dbm(dbm) {
+    wasm.radio_set_rssi_dbm(dbm);
+}
+
+/**
+ * Take a staged DFE IQ-sample transfer [ptr, maxcnt]; empty when idle.
+ * @returns {Uint32Array}
+ */
+export function radio_take_dfe_sample() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.radio_take_dfe_sample(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function radio_take_rx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.radio_take_rx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function radio_take_tx() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.radio_take_tx(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * nRF52 TXPOWER code (SVD 0x50C) as signed dBm (+8..0, -4..-40).
+ * Pure function for the driver link-budget (shared with the model).
+ * @param {number} code
+ * @returns {number}
+ */
+export function radio_txpower_dbm(code) {
+    const ret = wasm.radio_txpower_dbm(code);
+    return ret;
+}
+
+/**
+ * Whiten (de-whiten — same operation) bytes in place with the nRF
+ * 7-bit LFSR + DATAWHITEIV seed. Pure function for driver-side air.
+ * @param {Uint8Array} bytes
+ * @param {number} iv
+ * @returns {Uint8Array}
+ */
+export function radio_whiten(bytes, iv) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.radio_whiten(retptr, ptr0, len0, iv);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Clear all process-lifetime globals so a NEW emulator instance starts clean.
+ */
+export function reset_state() {
+    wasm.reset_state();
+}
+
+/**
+ * @param {number} ch
+ * @param {number} value
+ */
+export function saadc_check_limits(ch, value) {
+    wasm.saadc_check_limits(ch, value);
+}
+
+/**
+ * @param {number} amount
+ */
+export function saadc_complete_result(amount) {
+    wasm.saadc_complete_result(amount);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function saadc_take_result() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.saadc_take_result(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * SoC event queue length (sd_evt phase 1: flash completions while the
+ * SD is enabled). Debug/pump path; firmware drains via SVC 82.
+ * @returns {number}
+ */
+export function sd_evt_queue_len() {
+    const ret = wasm.sd_evt_queue_len();
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} irq
+ */
+export function set_intr_pending(irq) {
+    wasm.set_intr_pending(irq);
+}
+
+/**
+ * @param {string} peripheral
+ * @param {Uint8Array} bytes
+ */
+export function spi_push_miso(peripheral, bytes) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.spi_push_miso(ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @param {string} peripheral
+ * @returns {Uint32Array}
+ */
+export function spi_take_events(peripheral) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.spi_take_events(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {string} peripheral
+ * @param {string | null} [cs]
+ * @param {string | null} [dc]
+ */
+export function spi_tap(peripheral, cs, dc) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    var ptr1 = isLikeNone(cs) ? 0 : passStringToWasm0(cs, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    var len1 = WASM_VECTOR_LEN;
+    var ptr2 = isLikeNone(dc) ? 0 : passStringToWasm0(dc, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    var len2 = WASM_VECTOR_LEN;
+    wasm.spi_tap(ptr0, len0, ptr1, len1, ptr2, len2);
+}
+
+/**
+ * @param {number} c
+ */
+export function temp_set_celsius(c) {
+    wasm.temp_set_celsius(c);
+}
+
+export function tick() {
+    wasm.tick();
+}
+
+/**
+ * @param {number} delta
+ */
+export function tick_n(delta) {
+    wasm.tick_n(delta);
+}
+
+export function tick_peripherals() {
+    wasm.tick_peripherals();
+}
+
+/**
+ * @param {string} peripheral
+ * @param {number} amount
+ */
+export function twim_complete_rxdma(peripheral, amount) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.twim_complete_rxdma(ptr0, len0, amount);
+}
+
+/**
+ * @param {string} peripheral
+ * @param {Uint8Array} data
+ */
+export function twim_complete_txdma(peripheral, data) {
+    const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.twim_complete_txdma(ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @param {string} peripheral
+ * @returns {Uint32Array}
+ */
+export function twim_take_rxdma(peripheral) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.twim_take_rxdma(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {string} peripheral
+ * @returns {Uint32Array}
+ */
+export function twim_take_txdma(peripheral) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(peripheral, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.twim_take_txdma(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Inject a received byte into the UARTE peripheral at the given base address.
+ * @param {number} addr
+ * @param {number} byte
+ * @returns {boolean}
+ */
+export function uart_rx_byte(addr, byte) {
+    const ret = wasm.uart_rx_byte(addr, byte);
+    return ret !== 0;
+}
+
+/**
+ * @param {number} amount
+ */
+export function uarte_complete_rxdma(amount) {
+    wasm.uarte_complete_rxdma(amount);
+}
+
+/**
+ * @param {Uint8Array} bytes
+ */
+export function uarte_complete_txdma(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.uarte_complete_txdma(ptr0, len0);
+}
+
+/**
+ * Drive the UARTE CTS pin level (board flow-control edge): asserting
+ * latches CTS, deasserting latches NCTS.
+ * @param {boolean} asserted
+ */
+export function uarte_cts_asserted(asserted) {
+    wasm.uarte_cts_asserted(asserted);
+}
+
+/**
+ * Latch UARTE line-error bits (bit1 parity, bit2 framing, bit3 break).
+ * @param {number} bits
+ */
+export function uarte_rx_error(bits) {
+    wasm.uarte_rx_error(bits);
+}
+
+/**
+ * Latch a UARTE receiver timeout (bridge-driven): EVENTS_RXTO.
+ */
+export function uarte_rx_timeout() {
+    wasm.uarte_rx_timeout();
+}
+
+/**
+ * Take a staged UARTE RX transfer [ptr, maxcnt]; driver writes bytes to
+ * guest RAM at ptr, then calls uarte_complete_rxdma(amount).
+ * @returns {Uint32Array}
+ */
+export function uarte_take_rxdma() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.uarte_take_rxdma(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function uarte_take_txdma() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.uarte_take_txdma(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @param {number} ep
+ * @param {Uint8Array} bytes
+ */
+export function usbd_complete_epin(ep, bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.usbd_complete_epin(ep, ptr0, len0);
+}
+
+/**
+ * @param {number} ep
+ * @param {number} amount
+ */
+export function usbd_complete_epout(ep, amount) {
+    wasm.usbd_complete_epout(ep, amount);
+}
+
+/**
+ * Complete ISOIN with the on-air bytes.
+ * @param {Uint8Array} data
+ */
+export function usbd_complete_isoin(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.usbd_complete_isoin(ptr0, len0);
+}
+
+/**
+ * Complete ISOOUT with the received byte count.
+ * @param {number} amount
+ */
+export function usbd_complete_isoout(amount) {
+    wasm.usbd_complete_isoout(amount);
+}
+
+/**
+ * @param {Uint8Array} bytes
+ */
+export function usbd_inject_setup(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.usbd_inject_setup(ptr0, len0);
+}
+
+export function usbd_signal_reset() {
+    wasm.usbd_signal_reset();
+}
+
+/**
+ * Host-side SOF injection (1 ms USB frame): EVENTS_SOF + FRAMECNTR.
+ */
+export function usbd_signal_sof() {
+    wasm.usbd_signal_sof();
+}
+
+/**
+ * Host-side USB event injection (suspend/resume/wakeup-ready cause bits).
+ * @param {number} cause
+ */
+export function usbd_signal_usbevent(cause) {
+    wasm.usbd_signal_usbevent(cause);
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function usbd_take_epin() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.usbd_take_epin(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * @returns {Uint32Array}
+ */
+export function usbd_take_epout() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.usbd_take_epout(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Take a staged ISOIN transfer [ptr, maxcnt]; empty when idle.
+ * @returns {Uint32Array}
+ */
+export function usbd_take_isoin() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.usbd_take_isoin(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Take a staged ISOOUT transfer [ptr, maxcnt]; empty when idle.
+ * @returns {Uint32Array}
+ */
+export function usbd_take_isoout() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.usbd_take_isoout(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU32FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Publish the debugger-halt state for the WDT HALT gate.
+ * @param {boolean} halted
+ */
+export function wdt_set_debug_halt(halted) {
+    wasm.wdt_set_debug_halt(halted);
+}
+
+/**
+ * Publish the CPU-sleep state for the WDT SLEEP gate.
+ * @param {boolean} sleeping
+ */
+export function wdt_set_sleeping(sleeping) {
+    wasm.wdt_set_sleeping(sleeping);
+}
+function __wbg_get_imports() {
+    const import0 = {
+        __proto__: null,
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
+            let deferred0_0;
+            let deferred0_1;
+            try {
+                deferred0_0 = arg0;
+                deferred0_1 = arg1;
+                console.error(getStringFromWasm0(arg0, arg1));
+            } finally {
+                wasm.__wbindgen_export(deferred0_0, deferred0_1, 1);
+            }
+        },
+        __wbg_new_227d7c05414eb861: function() {
+            const ret = new Error();
+            return addHeapObject(ret);
+        },
+        __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {
+            const ret = getObject(arg1).stack;
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbindgen_object_drop_ref: function(arg0) {
+            takeObject(arg0);
+        },
+    };
+    return {
+        __proto__: null,
+        "./nrf52833_periph_wasm_bg.js": import0,
+    };
+}
+
+const WasmCpuFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmcpu_free(ptr, 1));
+
+function addHeapObject(obj) {
+    if (heap_next === heap.length) heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+
+    heap[idx] = obj;
+    return idx;
+}
+
+function dropObject(idx) {
+    if (idx < 1028) return;
+    heap[idx] = heap_next;
+    heap_next = idx;
+}
+
+function getArrayU16FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
+}
+
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
+let cachedDataViewMemory0 = null;
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
+}
+
+function getStringFromWasm0(ptr, len) {
+    return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint16ArrayMemory0 = null;
+function getUint16ArrayMemory0() {
+    if (cachedUint16ArrayMemory0 === null || cachedUint16ArrayMemory0.byteLength === 0) {
+        cachedUint16ArrayMemory0 = new Uint16Array(wasm.memory.buffer);
+    }
+    return cachedUint16ArrayMemory0;
+}
+
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
+}
+
+let cachedUint8ArrayMemory0 = null;
+function getUint8ArrayMemory0() {
+    if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
+        cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
+    }
+    return cachedUint8ArrayMemory0;
+}
+
+function getObject(idx) { return heap[idx]; }
+
+let heap = new Array(1024).fill(undefined);
+heap.push(undefined, null, true, false);
+
+let heap_next = heap.length;
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
+}
+
+function passArray16ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 2, 2) >>> 0;
+    getUint16ArrayMemory0().set(arg, ptr / 2);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passStringToWasm0(arg, malloc, realloc) {
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = cachedTextEncoder.encodeInto(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
+function takeObject(idx) {
+    const ret = getObject(idx);
+    dropObject(idx);
+    return ret;
+}
+
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
+function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
+    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+}
+
+const cachedTextEncoder = new TextEncoder();
+
+if (!('encodeInto' in cachedTextEncoder)) {
+    cachedTextEncoder.encodeInto = function (arg, view) {
+        const buf = cachedTextEncoder.encode(arg);
+        view.set(buf);
+        return {
+            read: arg.length,
+            written: buf.length
+        };
+    };
+}
+
+let WASM_VECTOR_LEN = 0;
+
+let wasmModule, wasmInstance, wasm;
+function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
+    wasm = instance.exports;
+    wasmModule = module;
+    cachedDataViewMemory0 = null;
+    cachedUint16ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
+    cachedUint8ArrayMemory0 = null;
+    return wasm;
+}
+
+async function __wbg_load(module, imports) {
+    if (typeof Response === 'function' && module instanceof Response) {
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                return await WebAssembly.instantiateStreaming(module, imports);
+            } catch (e) {
+                const validResponse = module.ok && expectedResponseType(module.type);
+
+                if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+
+                } else { throw e; }
+            }
+        }
+
+        const bytes = await module.arrayBuffer();
+        return await WebAssembly.instantiate(bytes, imports);
+    } else {
+        const instance = await WebAssembly.instantiate(module, imports);
+
+        if (instance instanceof WebAssembly.Instance) {
+            return { instance, module };
+        } else {
+            return instance;
+        }
+    }
+
+    function expectedResponseType(type) {
+        switch (type) {
+            case 'basic': case 'cors': case 'default': return true;
+        }
+        return false;
+    }
+}
+
+function initSync(module) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module !== undefined) {
+        if (Object.getPrototypeOf(module) === Object.prototype) {
+            ({module} = module)
+        } else {
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+        }
+    }
+
+    const imports = __wbg_get_imports();
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    return __wbg_finalize_init(instance, module);
+}
+
+async function __wbg_init(module_or_path) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module_or_path !== undefined) {
+        if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
+            ({module_or_path} = module_or_path)
+        } else {
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+        }
+    }
+
+    if (module_or_path === undefined) {
+        module_or_path = new URL('nrf52833_periph_wasm_bg.wasm', import.meta.url);
+    }
+    const imports = __wbg_get_imports();
+
+    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+        module_or_path = fetch(module_or_path);
+    }
+
+    const { instance, module } = await __wbg_load(await module_or_path, imports);
+
+    return __wbg_finalize_init(instance, module);
+}
+
+export { initSync, __wbg_init as default };

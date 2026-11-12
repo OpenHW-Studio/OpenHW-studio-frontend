@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getTelemetryParamsForComponent } from '../utils/telemetryRegistry.js';
+import { telemetrySamplePolicy, shouldEmitTelemetrySample } from '../../../worker/registries/component-registry.ts';
 
 function extractParamValue(key, comp, telemetryData, state, activeMetrics, activeCustom) {
   let val = comp[key];
@@ -9,6 +10,12 @@ function extractParamValue(key, comp, telemetryData, state, activeMetrics, activ
   if (val === undefined) val = activeMetrics?.[key];
   if (val === undefined) val = telemetryData?.metrics?.[key];
   if (val === undefined) val = activeCustom?.[key];
+  // Custom telemetry rides inside metrics.custom (getUniversalMetrics) —
+  // surface it as a last-resort source so per-component params (LCD text,
+  // display fill, buzzing state, mic amplitude) render instead of N/A.
+  // Additive fallback only; never overrides richer sources above.
+  if (val === undefined) val = activeMetrics?.custom?.[key];
+  if (val === undefined) val = telemetryData?.metrics?.custom?.[key];
 
   if (val === undefined && String(key).startsWith('deepSilicon')) {
     const deepObj = comp.deepSilicon || telemetryData?.deepSilicon;
@@ -143,6 +150,7 @@ export function initGlobalTelemetry(managerInstance) {
   if (typeof window === 'undefined') return;
   window.OpenHWTelemetry = {
     getLatestTelemetry: () => managerInstance?.getLatestTelemetry?.() || [],
+    clearLatestTelemetry: () => managerInstance?.clearLatestTelemetry?.(),
     setTelemetryEnabled: (enabled, mode) => managerInstance?.setTelemetryEnabled?.(enabled, mode),
     getSelectedComponents: () => managerInstance?.getSelectedComponents?.() || [],
     setSelectedComponents: (ids) => managerInstance?.setSelectedComponents?.(ids),
@@ -165,32 +173,95 @@ export function useTelemetryManager({
 }) {
   const lastLogTimeRef = useRef(Date.now());
   const latestTelemetryCacheRef = useRef([]);
+  // Selection signature for the multi-board merge below: a changed
+  // selection resets the cache instead of merging stale ids.
+  const telemetryFilterKeyRef = useRef(null);
   const [telemetryWatchedParamsMap, setTelemetryWatchedParamsMap] = useState({});
 
+  // T3 pre-read filter (§12.3): ring-backed numeric snapshot per selected
+  // component, refreshed from the SAB telemetry ring. postMessage payloads
+  // still carry full state (fallback); the ring lets formatting run WITHOUT
+  // touching unselected components' objects. Stays lazy (250ms throttle).
+  const telemetryRingCursorRef = useRef(0);
   const handleTelemetryStateMessage = useCallback((msg) => {
     if (isBooting) return;
-    if (!componentTelemetryEnabled || !msg || !Array.isArray(msg.components)) return;
+    // E2E contract hardening: the mount-once e2e closure + dev remounts can
+    // leave React state (enabled/selection) stale while the run proceeds —
+    // observed as whole-run empty telemetry beside healthy liveOop/serial.
+    // The run() global is written fresh every run; prefer it when present.
+    // Plain UI operation never sets it, so interactive behavior is unchanged.
+    let e2eSel = null;
+    let e2eEnabled = null;
+    try {
+      const g = (typeof window !== 'undefined' && window.__openhwE2ETelemetry) || null;
+      if (g && typeof g === 'object') {
+        if (Array.isArray(g.selected)) e2eSel = g.selected;
+        if (typeof g.enabled === 'boolean') e2eEnabled = g.enabled;
+      }
+    } catch { /* ignore */ }
+    const enabledNow = e2eEnabled !== null ? e2eEnabled : componentTelemetryEnabled;
+    const selectedNow = e2eSel !== null ? e2eSel : selectedTelemetryComponentIds;
+    if (!enabledNow || !msg || !Array.isArray(msg.components)) return;
 
-    const safeSpeed = Number.isFinite(Number(simulationSpeed)) && Number(simulationSpeed) > 0 ? Number(simulationSpeed) : 1.0;
-    const baseInterval = Number.isFinite(Number(telemetrySampleInterval)) ? Number(telemetrySampleInterval) : 250;
-    const intervalMs = Math.max(50, baseInterval / safeSpeed);
+    // Sampling policy (plan §5.5): identical throttle semantics as before —
+    // default 250 ms window scaled by speed, 50 ms floor, Delta never
+    // throttles — now owned by the shared policy helper, not inline math.
+    const policy = telemetrySamplePolicy(telemetryMode, telemetrySampleInterval, simulationSpeed);
     const now = Date.now();
 
     // In Delta mode, we must never throttle delta events, otherwise mutations occurring between sample intervals are permanently lost!
-    if (telemetryMode !== 'delta' && now - lastLogTimeRef.current < intervalMs) return; 
+    if (!shouldEmitTelemetrySample(lastLogTimeRef.current, now, policy)) return;
     lastLogTimeRef.current = now;
 
-    // Upstream O(1) filtering by selected component IDs
-    const filterSet = Array.isArray(selectedTelemetryComponentIds)
-      ? new Set(selectedTelemetryComponentIds)
+    // Upstream O(1) filtering by selected component IDs (e2e-hardened
+    // selection above so remount-stale React state cannot blank a run).
+    const filterSet = Array.isArray(selectedNow)
+      ? new Set(selectedNow)
       : new Set();
+
+    // T3: pre-read — pull ONLY selected slots' newest ring records BEFORE
+    // formatting, so unselected components cost zero string/object work.
+    // Records keyed by slot; offsets map lives on window (START postamble).
+    let ringBySlot = null;
+    try {
+      const sab = typeof window !== "undefined" ? window.__sabBuffer || null : null;
+      const offsets = (typeof window !== "undefined" ? window.__sabOffsets : null) || {};
+      if (sab && Object.keys(offsets).length) {
+        import("../utils/sabReader.js").then((mod) => {
+          try {
+            const res = mod.readTelemetryRing(sab, telemetryRingCursorRef.current, 128);
+            if (res && Array.isArray(res.records)) {
+              telemetryRingCursorRef.current = res.head;
+              const latest = {};
+              for (const r of res.records) latest[r.compSlot] = r;
+              try {
+                if (typeof window !== "undefined") window.__sabTelemetryLatest = latest;
+              } catch { /* ignore */ }
+            }
+          } catch { /* ring read never breaks telemetry */ }
+        }).catch(() => {});
+        ringBySlot = (typeof window !== "undefined" ? window.__sabTelemetryLatest : null) || null;
+      }
+    } catch { ringBySlot = null; }
 
     const processed = [];
     msg.components.forEach((comp) => {
       if (!comp || !comp.id) return;
       if (!filterSet.has(comp.id)) return;
 
-      const formatted = formatTelemetryEntry(comp, telemetryMode, telemetryWatchedParamsMap);
+      // Attach newest ring numerics for this component (if any) so
+      // formatTelemetryEntry can render WITHOUT re-scanning full state.
+      let compForFormat = comp;
+      try {
+        const offsets = (typeof window !== "undefined" ? window.__sabOffsets : null) || {};
+        const slot = offsets[comp.id];
+        const rec = ringBySlot && Number.isFinite(Number(slot)) ? ringBySlot[Number(slot)] : null;
+        if (rec) {
+          compForFormat = { ...comp, _ringV0: rec.v0, _ringV1: rec.v1, _ringCycles: rec.cycles };
+        }
+      } catch { compForFormat = comp; }
+
+      const formatted = formatTelemetryEntry(compForFormat, telemetryMode, telemetryWatchedParamsMap);
       processed.push(formatted);
 
       // Append to console
@@ -204,7 +275,30 @@ export function useTelemetryManager({
       }
     });
 
-    latestTelemetryCacheRef.current = processed;
+    // Multi-board merge (not replace): each board runner emits its own
+    // state stream, and last-writer-wins across boards flaps components
+    // in and out of the verdict (observed: oled2 missing at read time
+    // while its runner was healthy). Merge by component id; a changed
+    // selection set resets instead of merging stale ids.
+    try {
+      const filterKey = Array.isArray(selectedNow)
+        ? [...selectedNow].sort().join(',') : '';
+      if (telemetryFilterKeyRef.current !== filterKey) {
+        telemetryFilterKeyRef.current = filterKey;
+        latestTelemetryCacheRef.current = processed;
+      } else {
+        const merged = {};
+        for (const e of (latestTelemetryCacheRef.current || [])) {
+          if (e && e.id) merged[e.id] = e;
+        }
+        for (const e of processed) {
+          if (e && e.id) merged[e.id] = e;
+        }
+        latestTelemetryCacheRef.current = Object.values(merged);
+      }
+    } catch {
+      latestTelemetryCacheRef.current = processed;
+    }
   }, [componentTelemetryEnabled, simulationSpeed, telemetrySampleInterval, selectedTelemetryComponentIds, telemetryMode, appendConsoleEntry, telemetryWatchedParamsMap, isBooting]);
 
   const setTelemetryEnabledCb = useCallback((enabled, modeOverride) => {
@@ -272,6 +366,10 @@ export function useTelemetryManager({
 
   // Update instance refs
   managerInstance.getLatestTelemetry = () => latestTelemetryCacheRef.current;
+  managerInstance.clearLatestTelemetry = () => {
+    latestTelemetryCacheRef.current = [];
+    telemetryFilterKeyRef.current = null;
+  };
   managerInstance.setTelemetryEnabled = setTelemetryEnabledCb;
   managerInstance.getSelectedComponents = () => selectedTelemetryComponentIds;
   managerInstance.setSelectedComponents = setSelectedTelemetryComponentIds;

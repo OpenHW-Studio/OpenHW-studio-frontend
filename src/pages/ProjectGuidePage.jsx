@@ -93,8 +93,9 @@ export default function ProjectGuidePage() {
   const boardColors = { [BOARD_ID]: '#1a5276' };
 
   const serialHistory = useMemo(() =>
-    serialEntries.map(e => ({
+    serialEntries.map((e, i) => ({
       ...e,
+      id: e.id ?? `guide-${i}`,
       ts: '',
       boardId: BOARD_ID,
       source: 'simulation',

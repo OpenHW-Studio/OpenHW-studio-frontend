@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import JSZip from 'jszip';
-import * as Babel from '@babel/standalone';
+// Perf (bundle-split): jszip + babel/standalone (~3MB) load on demand via
+// getJSZip()/getBabel — admin transpile checks and ZIP imports are
+// click-gated, never needed at route paint.
+import { getBabel } from '../simulationpage/utils/exportUtils.js';
+import { getJSZip } from '../simulationpage/utils/exportUtils.js';
 import './admin.css';
 
 import {
@@ -265,8 +268,9 @@ export default function AdminPage() {
         }
     };
 
-    const handlePreviewComponent = (comp) => {
+    const handlePreviewComponent = async (comp) => {
         addLog(`Running transpile check on ${comp.id}...`);
+        const Babel = await getBabel();
         const results = [];
         const tryTranspile = (src, filename, preset) => {
             if (!src) return { file: filename, ok: false, lines: 0, error: 'No source code found.' };
@@ -289,6 +293,7 @@ export default function AdminPage() {
 
     const handleDownloadZIP = async (comp) => {
         try {
+            const JSZip = await getJSZip();
             const zip = new JSZip();
             const folder = zip.folder(comp.id);
             folder.file('manifest.json', JSON.stringify(comp.manifest, null, 2));
@@ -397,6 +402,7 @@ export default function AdminPage() {
         if (!file) return;
         addLog(`Restoring components from ${file.name}...`);
         try {
+            const JSZip = await getJSZip();
             const zip = new JSZip();
             const loadedZip = await zip.loadAsync(file);
             const manifestPaths = [];

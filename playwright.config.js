@@ -15,7 +15,18 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Fake media devices: getUserMedia(audio/video) resolves without
+        // real hardware prompts (mic + ESP32-CAM live tests). No effect on
+        // tests that never call getUserMedia.
+        launchOptions: {
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+          ],
+        },
+      },
     },
   ],
 

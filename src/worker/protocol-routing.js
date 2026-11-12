@@ -1,12 +1,26 @@
 import {
-  PICO_SOFTSERIAL_PINS,
-  PICO_UART_SOURCE_PINS,
   UNO_SOFTSERIAL_PINS,
   UNO_UART_PINS,
+  PICO_UART_PINS,
+  PICO_SOFTSERIAL_PINS,
+  ESP32_UART_PINS,
+  ESP32_SOFTSERIAL_PINS,
+  STM32F1_UART_PINS,
+  STM32F4_UART_PINS,
+  RETRO_UART_PINS,
 } from './board-profiles';
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+  const s = String(type || '');
+  // (Historical note: openhw-esp32-cam used to be excluded here because it
+  // spawned an esp32-emu engine that died on "Unknown chip", taking the real
+  // board's run down with it. The Esp32Runner now boots the esp32-cam board
+  // preset (chipType stays 'ESP32'), so the cam board routes normally.)
+  // ATtiny85 has no dedicated core/CPU in the sim; it runs Uno-compiled
+  // firmware on AVRRunner (documented attiny-path). It IS a programmable
+  // board for run routing — without this the run falls back to a ghost
+  // Uno id whose nets never touch the attiny pins.
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|mega|nano|attiny|microbit|nrf52)/i.test(s);
 }
 
 export function endpointAliases(endpoint) {
@@ -31,74 +45,32 @@ function withAliases(boardId, pins) {
   return Array.from(new Set(out));
 }
 
-function normalizeUartSource(source) {
-  const s = String(source || 'uart0').toLowerCase();
-  if (s === 'uart1' || s === 'serial1' || s === '1') return 'uart1';
-  if (s === 'usb' || s === 'cdc' || s === 'serialusb') return 'usb';
-  return 'uart0';
-}
-
 export function getUartSources(boardType) {
+  // STM32F4 exposes usart1-6 (+7/8 on F407); the runner bridges uart0→usart1
+  // today, so advertise uart0+uart1 and let routing resolve wired pairs.
   const t = String(boardType || '').toLowerCase();
-  if (t.includes('rp2040') || t.includes('pico')) {
-    return ['uart0', 'uart1'];
-  }
+  if (t.includes('stm32')) return ['uart0', 'uart1'];
+  if (t.includes('esp32')) return ['uart0'];
   return ['uart0'];
 }
 
 export function getUartPinCandidates(boardType, source = 'uart0') {
+  void source;
   const t = String(boardType || '').toLowerCase();
-
-  if (t.includes('esp32')) {
-    return {
-      tx: ['TX', 'TX0', 'U0TXD', 'GPIO1', '1', 'D1'],
-      rx: ['RX', 'RX0', 'U0RXD', 'GPIO3', '3', 'D3', '0', 'D0'],
-    };
-  }
-
-  if (t.includes('rp2040') || t.includes('pico')) {
-    const selectedSource = normalizeUartSource(source);
-    if (selectedSource === 'uart1') return PICO_UART_SOURCE_PINS.uart1;
-    if (selectedSource === 'usb') {
-      // USB CDC is not tied to board pin endpoints, so use UART0 pins as a
-      // conservative compatibility fallback for wiring checks.
-      return PICO_UART_SOURCE_PINS.uart0;
-    }
-    return PICO_UART_SOURCE_PINS.uart0;
-  }
-
+  if (t.includes('esp32')) return ESP32_UART_PINS;
   if (t.includes('stm32')) {
-    return {
-      tx: ['TX', 'TX1', 'PA9', '1', 'D1'],
-      rx: ['RX', 'RX1', 'PA10', '0', 'D0'],
-    };
+    if (t.includes('f4') || t.includes('407') || t.includes('discovery')) return STM32F4_UART_PINS;
+    return STM32F1_UART_PINS;
   }
-
+  if (t.includes('rp2040') || t.includes('pico')) return PICO_UART_PINS;
+  if (t.includes('8086') || t.includes('8088') || t.includes('8085') || t.includes('8051') || t.includes('6502') || t.includes('z80') || t.includes('rv32') || t.includes('retro')) return RETRO_UART_PINS;
   return UNO_UART_PINS;
 }
 
 export function getSoftwareSerialPinCandidates(boardType) {
   const t = String(boardType || '').toLowerCase();
-
-  if (t.includes('esp32')) {
-    // Common SoftwareSerial example defaults in simulator projects.
-    return {
-      tx: ['17', 'D17', 'GPIO17'],
-      rx: ['16', 'D16', 'GPIO16'],
-    };
-  }
-
-  if (t.includes('rp2040') || t.includes('pico')) {
-    return PICO_SOFTSERIAL_PINS;
-  }
-
-  if (t.includes('stm32')) {
-    return {
-      tx: ['10', 'D10', 'PB10'],
-      rx: ['11', 'D11', 'PB11'],
-    };
-  }
-
+  if (t.includes('esp32')) return ESP32_SOFTSERIAL_PINS;
+  if (t.includes('rp2040') || t.includes('pico')) return PICO_SOFTSERIAL_PINS;
   // Arduino UNO / default: SoftwareSerial(11,10) => RX=11, TX=10
   return UNO_SOFTSERIAL_PINS;
 }

@@ -34,7 +34,6 @@ export default function SerialMonitorView(props) {
     serialPlotLabelsRef,
     theme,
     serialBoardKinds,
-    serialBoardSourceModes,
     serialSendTarget,
     setSerialSendTarget,
     showSendTargetMenu,

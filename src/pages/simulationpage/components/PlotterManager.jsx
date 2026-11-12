@@ -4,6 +4,62 @@ import PlotterCanvas from '../PlotterCanvas';
 
 const PLOTTER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
 
+// Keep in sync with getTrackHeight in PlotterCanvas.jsx (100px pin lane / 160px serial lane).
+const getPlotTrackHeight = (pinId) => {
+  if (!pinId) return 100;
+  const isAnalog = typeof pinId === 'string' && pinId.startsWith('A');
+  const isLogic = !isNaN(parseInt(pinId));
+  return (isAnalog || isLogic) ? 100 : 160;
+};
+
+// Perf: per-channel sidebar badge. The old code read plotDataRef.current[last]
+// DURING render, so every parent re-render (10x/s from serial flushes) did up
+// to 12 channel lookups inline. This memo badge subscribes to a 500ms tick and
+// only re-renders its own <span> when the formatted value actually changes.
+const ChannelBadge = React.memo(({ plotDataRef, chan }) => {
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 500);
+    return () => clearInterval(id);
+  }, []);
+  void tick;
+  let liveVal = null;
+  const data = plotDataRef?.current;
+  if (data && data.length > 0) {
+    const lastPt = data[data.length - 1];
+    if (lastPt) {
+      const isAnalog = typeof chan.pinId === 'string' && chan.pinId.startsWith('A');
+      const isLogic = !isNaN(parseInt(chan.pinId));
+      if (isAnalog) {
+        const pinIdx = parseInt(chan.pinId.slice(1));
+        const rawAnalog = lastPt.analog?.[pinIdx];
+        if (rawAnalog !== undefined) liveVal = (rawAnalog * 5 / 1023).toFixed(2) + 'V';
+      } else if (isLogic) {
+        const logicVal = lastPt.pins?.[chan.pinId];
+        if (logicVal !== undefined) liveVal = logicVal ? 'HIGH' : 'LOW';
+      } else {
+        const sVal = lastPt.serialVars?.[chan.pinId];
+        if (sVal !== undefined && typeof sVal === 'number') liveVal = sVal.toFixed(2);
+      }
+    }
+  }
+  if (liveVal === null) return null;
+  return (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 700,
+      color: 'var(--text1)',
+      fontFamily: 'JetBrains Mono, monospace',
+      background: 'var(--bg3)',
+      padding: '1px 4px',
+      borderRadius: 3,
+      marginTop: 1
+    }}>
+      {liveVal}
+    </span>
+  );
+});
+
 export const PlotterToolbar = ({ onAddChannel, isPaused, onTogglePause, onClear, timeDiv, setTimeDiv }) => {
   return (
     <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center', background: 'var(--bg2)', flexShrink: 0 }}>
@@ -76,7 +132,7 @@ export const PlotterToolbar = ({ onAddChannel, isPaused, onTogglePause, onClear,
   );
 };
 
-export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardColors, selectedPins, setSelectedPins, onClose, plotDataRef, serialPlotLabelsRef }) => {
+export const AddChannelPanel = React.memo(({ boardOptions, boardLabels, boardKinds, boardColors, selectedPins, setSelectedPins, onClose, plotDataRef, serialPlotLabelsRef }) => {
   const boards = (boardOptions || []).filter(id => id !== 'all');
   const [selectedBoardId, setSelectedBoardId] = React.useState(boards[0] || null);
 
@@ -102,16 +158,18 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
   };
 
   const panelRef = React.useRef(null);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
 
   React.useEffect(() => {
     const handleClickOutside = (e) => {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('mousedown', handleClickOutside, true);
     return () => document.removeEventListener('mousedown', handleClickOutside, true);
-  }, [onClose]);
+  }, []);
 
   React.useEffect(() => {
     checkScroll();
@@ -126,37 +184,24 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
   const activeKind = boardKinds[activeBoardId] || 'arduino_uno';
   const basePins = activeKind === 'rp2040' ? PICO_BASE_PINS : UNO_BASE_PINS;
   
-  const [serialVars, setSerialVars] = React.useState([]);
-  React.useEffect(() => {
-    const foundVars = new Set();
+  // Perf: snapshot serial-var buttons once per panel open (not on every
+  // parent re-render). The old effect re-ran setSerialVars on every
+  // PlotterManager render (10x/s from serial flushes) — each setState on an
+  // open panel re-renders the whole channel grid under the user's cursor.
+  // Board switches re-mount the button list via key={activeBoardId} below.
+  const [serialVars] = React.useState(() => collectSerialVars(
+    serialPlotLabelsRef, plotDataRef, activeBoardId, boards.length,
+  ));
 
-    // 1. Include labels parsed directly by serial plotter
-    if (serialPlotLabelsRef?.current && Array.isArray(serialPlotLabelsRef.current)) {
-      serialPlotLabelsRef.current.forEach(lbl => {
-        if (lbl) foundVars.add(lbl);
-      });
-    }
-
-    // 2. Include labels stored in recent plotData frames
-    if (plotDataRef?.current) {
-      const data = plotDataRef.current;
-      const limit = Math.max(0, data.length - 200);
-      for (let i = data.length - 1; i >= limit; i--) {
-        const pt = data[i];
-        if (pt.serialVars && (pt.boardId === activeBoardId || boards.length === 1 || pt.boardId === 'default')) {
-          Object.keys(pt.serialVars).forEach(k => foundVars.add(k));
-        }
-      }
-    }
-
-    setSerialVars(Array.from(foundVars));
-  }, [activeBoardId, plotDataRef, serialPlotLabelsRef, boards.length]);
-
-  const activePins = [...basePins, ...serialVars];
+  const activePins = React.useMemo(
+    () => [...basePins, ...serialVars],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedBoardId, serialVars],
+  );
   const activeBoardColor = boardColors[activeBoardId] || 'var(--accent)';
 
   return (
-    <div ref={panelRef} style={{
+    <div ref={panelRef} data-tour-id="add-channel-panel" style={{
       position: 'absolute', top: 42, left: 12, right: 12,
       maxHeight: 'calc(100% - 60px)',
       background: 'var(--bg1)',
@@ -176,7 +221,7 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}><path d="M12 20v-6M6 20V10M18 20V4" /></svg>
           <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text1)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Add Channel</span>
         </div>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }} className="hover:text-[var(--red)] transition-colors">✕</button>
+        <button title="Close channel picker" onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }} className="hover:text-[var(--red)] transition-colors">✕</button>
       </div>
 
       <div style={{
@@ -308,15 +353,38 @@ export const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardCo
       `}</style>
     </div>
   );
-};
+});
+
+// Perf: snapshot serial-var channel buttons once per panel mount. Reads
+// serialPlotLabelsRef + the last 200 plot frames a single time instead of on
+// every parent re-render (serial flushes re-render PlotterManager 10x/s).
+function collectSerialVars(serialPlotLabelsRef, plotDataRef, activeBoardId, boardCount) {
+  const foundVars = new Set();
+  if (serialPlotLabelsRef?.current && Array.isArray(serialPlotLabelsRef.current)) {
+    serialPlotLabelsRef.current.forEach(lbl => {
+      if (lbl) foundVars.add(lbl);
+    });
+  }
+  if (plotDataRef?.current) {
+    const data = plotDataRef.current;
+    const limit = Math.max(0, data.length - 200);
+    for (let i = data.length - 1; i >= limit; i--) {
+      const pt = data[i];
+      if (pt.serialVars && (pt.boardId === activeBoardId || boardCount === 1 || pt.boardId === 'default')) {
+        Object.keys(pt.serialVars).forEach(k => foundVars.add(k));
+      }
+    }
+  }
+  return Array.from(foundVars);
+}
 
 export const PlotterManager = ({
   showAddChannel, setShowAddChannel,
   plotterPaused, setPlotterPaused,
-  plotDataRef, selectedPlotPins, setSelectedPlotPins,
+  plotDataRef, plotBoundsRef, selectedPlotPins, setSelectedPlotPins,
   plotterTimeDiv, setPlotterTimeDiv,
   serialBoardOptions, serialBoardLabels, serialBoardKinds,
-  boardColors, theme, isRunning,
+  boardColors, theme, isRunning, isVisible = true,
   serialPlotLabelsRef
 }) => {
   return (
@@ -325,7 +393,12 @@ export const PlotterManager = ({
         onAddChannel={() => setShowAddChannel(!showAddChannel)}
         isPaused={plotterPaused}
         onTogglePause={() => setPlotterPaused(!plotterPaused)}
-        onClear={() => { if (plotDataRef.current) plotDataRef.current = []; }}
+        onClear={() => {
+          if (plotDataRef.current) plotDataRef.current = [];
+          // Perf: reset sticky ingest bounds too, or a cleared plot keeps the
+          // old Y range forever (bounds only expand at ingest).
+          if (plotBoundsRef?.current) plotBoundsRef.current.clear();
+        }}
         timeDiv={plotterTimeDiv}
         setTimeDiv={setPlotterTimeDiv}
       />
@@ -359,36 +432,9 @@ export const PlotterManager = ({
               {selectedPlotPins.map((rawChan, i) => {
                 const chan = typeof rawChan === 'string' ? { boardId: 'default', pinId: rawChan } : rawChan;
                 if (!chan || !chan.pinId) return null;
-                const isAnalog = typeof chan.pinId === 'string' && chan.pinId.startsWith('A');
-                const isLogic = !isNaN(parseInt(chan.pinId));
-                const trackHeight = (isAnalog || isLogic) ? 100 : 160;
+                const trackHeight = getPlotTrackHeight(chan.pinId);
                 const color = PLOTTER_COLORS[i % PLOTTER_COLORS.length];
                 const boardLabel = serialBoardLabels[chan.boardId] || chan.boardId || 'default';
-
-                // Extract latest value for live sidebar badge display
-                let liveVal = null;
-                if (plotDataRef?.current && plotDataRef.current.length > 0) {
-                  const lastPt = plotDataRef.current[plotDataRef.current.length - 1];
-                  if (lastPt) {
-                    if (isAnalog) {
-                      const pinIdx = parseInt(chan.pinId.slice(1));
-                      const rawAnalog = lastPt.analog?.[pinIdx];
-                      if (rawAnalog !== undefined) {
-                        liveVal = (rawAnalog * 5 / 1023).toFixed(2) + 'V';
-                      }
-                    } else if (isLogic) {
-                      const logicVal = lastPt.pins?.[chan.pinId];
-                      if (logicVal !== undefined) {
-                        liveVal = logicVal ? 'HIGH' : 'LOW';
-                      }
-                    } else {
-                      const sVal = lastPt.serialVars?.[chan.pinId];
-                      if (sVal !== undefined && typeof sVal === 'number') {
-                        liveVal = sVal.toFixed(2);
-                      }
-                    }
-                  }
-                }
 
                 return (
                   <div key={`${chan.boardId}:${chan.pinId}`} style={{
@@ -423,20 +469,7 @@ export const PlotterManager = ({
                     >
                       {chan.pinId}
                     </span>
-                    {liveVal !== null && (
-                      <span style={{ 
-                        fontSize: 10, 
-                        fontWeight: 700, 
-                        color: 'var(--text1)', 
-                        fontFamily: 'JetBrains Mono, monospace',
-                        background: 'var(--bg3)',
-                        padding: '1px 4px',
-                        borderRadius: 3,
-                        marginTop: 1
-                      }}>
-                        {liveVal}
-                      </span>
-                    )}
+                    <ChannelBadge plotDataRef={plotDataRef} chan={chan} />
                     <button
                       onClick={() => setSelectedPlotPins(prev => prev.filter(p => p.boardId !== chan.boardId || p.pinId !== chan.pinId))}
                       style={{ background: 'transparent', border: 'none', color: 'var(--text4)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
@@ -453,11 +486,13 @@ export const PlotterManager = ({
 
           <PlotterCanvas
             plotDataRef={plotDataRef}
+            plotBoundsRef={plotBoundsRef}
             selectedPlotPins={selectedPlotPins}
             plotterPaused={plotterPaused}
             plotterTimeDiv={plotterTimeDiv}
             theme={theme}
             isRunning={isRunning}
+            isVisible={isVisible}
           />
         </div>
       </div>

@@ -2,6 +2,7 @@ import React from 'react';
 
 export const GROUP_ICON_SVG = {
   Boards: (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="18" x2="8" y2="22"/><line x1="16" y1="18" x2="16" y2="22"/><line x1="2" y1="8" x2="6" y2="8"/><line x1="2" y1="16" x2="6" y2="16"/><line x1="18" y1="8" x2="22" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2"/></svg>,
+  'Board Variants': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" strokeDasharray="3 2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="18" x2="8" y2="22"/><line x1="16" y1="18" x2="16" y2="22"/><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2"/></svg>,
   Outputs: (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5"/><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5"/></svg>,
   Inputs: (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2"/><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="4" y1="18" x2="6" y2="18"/><line x1="18" y1="18" x2="20" y2="18"/></svg>,
   Passives: (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12"/><rect x="6" y="8" width="12" height="8" rx="1"/><line x1="18" y1="12" x2="22" y2="12"/></svg>,
@@ -15,6 +16,7 @@ export const GROUP_ICON_SVG = {
 
 export const GROUP_COLORS = {
   Boards: '#6366f1',
+  'Board Variants': '#818cf8',
   Outputs: '#22c55e',
   Inputs: '#3b82f6',
   Passives: '#f59e0b',
