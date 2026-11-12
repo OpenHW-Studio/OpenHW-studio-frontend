@@ -110,25 +110,11 @@ jobs:
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: OpenHW-studio-frontend
-        run: |
-          PW_BIN="./node_modules/.bin/playwright"
-          if [ ! -x "$PW_BIN" ]; then
-            PW_BIN="npx --yes playwright@1.60.0"
-          fi
-          if ! $PW_BIN install chromium; then
-            echo "Playwright browser install failed with restored cache; clearing ~/.cache/ms-playwright and retrying..."
-            rm -rf ~/.cache/ms-playwright
-            $PW_BIN install chromium
-          fi
+        run: npx playwright install chromium
 
       - name: Install Playwright dependencies
         working-directory: OpenHW-studio-frontend
-        run: |
-          if [ -x "./node_modules/.bin/playwright" ]; then
-            ./node_modules/.bin/playwright install-deps chromium
-          else
-            npx --yes playwright@1.60.0 install-deps chromium
-          fi
+        run: npx playwright install-deps chromium
 
       # 3. Setup and Boot the Backend
       - name: Setup Backend Environment
@@ -149,9 +135,9 @@ jobs:
         working-directory: openhw-studio-backend
         run: npm start &
         
-      # Wait for backend to be fully ready (increased from sleep 10 for cold CI runners)
+      # Wait a few seconds to ensure backend is fully up
       - name: Wait for backend
-        run: npx --yes wait-on http://localhost:5000/api/maintenance-status --timeout 60000 || sleep 20
+        run: sleep 10
 
       - name: Run page validation tests
         working-directory: OpenHW-studio-frontend

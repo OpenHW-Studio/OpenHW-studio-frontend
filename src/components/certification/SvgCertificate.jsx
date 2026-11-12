@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef } from 'react';
-import QRCode from 'qrcode';
+import { generateQrDataUrl } from './qrCodeGenerator';
 import { CERTIFICATE_LOGOS } from './logoDataUrls';
 
 /**
@@ -39,17 +39,17 @@ const SvgCertificate = forwardRef(function SvgCertificate({
 
   // Generate crisp QR code on mount / URL change
   useEffect(() => {
-    QRCode.toDataURL(liveVerificationUrl, {
-      width: 180,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: {
+    try {
+      const url = generateQrDataUrl(liveVerificationUrl, {
+        width: 180,
+        margin: 1,
         dark: '#000000',
         light: '#ffffff'
-      }
-    })
-      .then(url => setQrCodeDataUrl(url))
-      .catch(err => console.error('QR code generation error:', err));
+      });
+      setQrCodeDataUrl(url);
+    } catch (err) {
+      console.error('QR code generation error:', err);
+    }
   }, [liveVerificationUrl]);
 
   return (
