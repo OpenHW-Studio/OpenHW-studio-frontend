@@ -4,6 +4,7 @@ import { LEVELS, isComponentUnlocked } from '../services/gamification/Gamificati
 import { PROJECTS, getProjectStatus } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
 import { fetchUserGamificationState, saveUserGamificationState } from '../services/gamification/unlockService';
+import { isArduinoJourneyComplete, getArduinoCertificationProgress, ALL_ARDUINO_CERT_SLUGS } from '../services/certification/certificateService';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
 const STARTING_COMPONENTS = [];
@@ -53,6 +54,8 @@ const DEFAULT_CONTEXT = {
   currentLevelData: null,
   nextLevel: null,
   xpProgress: 0,
+  isArduinoCertified: false,
+  arduinoCertProgress: { total: 22, completedCount: 0, remainingCount: 22, percentage: 0, isComplete: false },
   trackComponentPlaced: () => {},
   trackWireDrawn: () => {},
   trackSimulationRun: () => {},
@@ -266,6 +269,66 @@ export function GamificationProvider({ children }) {
     
     return () => debouncedSave.cancel();
   }, [state, user, storageKey]);
+
+  // ── DEV TEST CONSOLE COMMANDS ───────────────────────────────────────────────
+  useEffect(() => {
+    // Command 1: Max out all 21 Arduino islands so user only needs to complete the last one
+    window.unlockAllArduinoExceptLast = () => {
+      const allExceptLast = ALL_ARDUINO_CERT_SLUGS.slice(0, 21);
+      const lastOne = ALL_ARDUINO_CERT_SLUGS[21];
+      console.log('⚡ [DEV] Unlocking 21/22 Arduino islands! Remaining last node:', lastOne);
+      setState(prev => {
+        const merged = Array.from(new Set([...(prev.completedProjects || []), ...allExceptLast])).filter(s => s !== lastOne);
+        const nextState = {
+          ...prev,
+          xp: Math.max(prev.xp, 3500),
+          currentLevel: 5,
+          coins: Math.max(prev.coins || 0, 1200),
+          gems: Math.max(prev.gems || 0, 80),
+          completedProjects: merged,
+        };
+        setTimeout(() => saveImmediately(nextState, user), 0);
+        return nextState;
+      });
+      console.log('✅ Progress updated: 21/22 Arduino nodes completed. Go complete the last node ("mpu6050-tilt") to unlock certification!');
+      return `Done! 21/22 nodes completed. Last remaining node to complete: ${lastOne}`;
+    };
+
+    // Command 2: Max out all 22 Arduino islands directly to immediately see the certified state
+    window.unlockAllArduino = () => {
+      console.log('⚡ [DEV] Unlocking all 22/22 Arduino islands!');
+      setState(prev => {
+        const merged = Array.from(new Set([...(prev.completedProjects || []), ...ALL_ARDUINO_CERT_SLUGS]));
+        const nextState = {
+          ...prev,
+          xp: Math.max(prev.xp, 4500),
+          currentLevel: 5,
+          coins: Math.max(prev.coins || 0, 1500),
+          gems: Math.max(prev.gems || 0, 100),
+          completedProjects: merged,
+        };
+        setTimeout(() => saveImmediately(nextState, user), 0);
+        return nextState;
+      });
+      console.log('🏅 22/22 Complete! Arduino Certification is now fully unlocked.');
+      return 'Done! All 22 Arduino nodes completed. Certification unlocked!';
+    };
+
+    // Inform developer in console
+    console.log('%c[OpenHW Studio Dev]%c Type %cunlockAllArduinoExceptLast()%c to max out all except the final certification level, or %cunlockAllArduino()%c to unlock certification directly.',
+      'background:#2563eb;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold',
+      'color:#94a3b8',
+      'color:#f59e0b;font-weight:bold;font-family:monospace',
+      'color:#94a3b8',
+      'color:#10b981;font-weight:bold;font-family:monospace',
+      'color:#94a3b8'
+    );
+
+    return () => {
+      delete window.unlockAllArduinoExceptLast;
+      delete window.unlockAllArduino;
+    };
+  }, [saveImmediately, user]);
 
   const [notifications, setNotifications] = useState([]);
 
@@ -514,9 +577,8 @@ const trackComponentPlaced = useCallback(() => {
     ? Math.min(100, Math.round(((state.xp - (currentLevelData?.xpRequired ?? 0)) / (xpForNext - (currentLevelData?.xpRequired ?? 0)) * 100)))
     : 100;
 
-   // #region agent log
-   // fetch('http://127.0.0.1:7475/ingest/244e948d-2e16-4c5d-a186-216f4f0cf7f3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b31e6e'},body:JSON.stringify({sessionId:'b31e6e',location:'GamificationContext.jsx:xpProgress',message:'xpProgress computed',data:{xpProgress,xpForNext,xp:state.xp,currentLevel:state.currentLevel},timestamp:Date.now(),hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
-   // #endregion
+  const isArduinoCertified = isArduinoJourneyComplete(state.completedProjects || []);
+  const arduinoCertProgress = getArduinoCertificationProgress(state.completedProjects || []);
 
   return (
     <GamificationContext.Provider value={{
@@ -536,6 +598,8 @@ const trackComponentPlaced = useCallback(() => {
       currentLevelData,
       nextLevel,
       xpProgress,
+      isArduinoCertified,
+      arduinoCertProgress,
       // Actions
       awardXP,
       completeProject,

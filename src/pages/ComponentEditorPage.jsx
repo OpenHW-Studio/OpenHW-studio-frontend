@@ -1445,10 +1445,12 @@ export default function ComponentEditorPage() {
   const navigate = useNavigate()
 
   // ── Theme ─────────────────────────────────────────────────────────────────
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light')
   const toggleTheme = () => {
     const nt = theme === 'dark' ? 'light' : 'dark'
-    setTheme(nt); document.documentElement.setAttribute('data-theme', nt)
+    setTheme(nt)
+    document.documentElement.setAttribute('data-theme', nt)
+    localStorage.setItem('theme', nt)
   }
 
   // ── Step 1 ────────────────────────────────────────────────────────────────
@@ -1517,11 +1519,11 @@ export default function ComponentEditorPage() {
   const [s2EditorFont, setS2EditorFont] = useState(13)
   const [s6EditorHeight, setS6EditorHeight] = useState(480)
   const [s7EditorHeight, setS7EditorHeight] = useState(500)
-  const [globalTheme, setGlobalTheme] = useState(document.documentElement.getAttribute('data-theme') || 'dark');
+  const [globalTheme, setGlobalTheme] = useState(document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setGlobalTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+      setGlobalTheme(document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => observer.disconnect();

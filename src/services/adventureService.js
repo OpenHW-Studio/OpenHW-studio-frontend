@@ -74,7 +74,130 @@ export const getAdventureContent = async (classId) => {
   return { resolved, raw: response };
 };
 
-export const getAdventureProjectContent = async (classId, projectSlug) => {
+import { fetchAdventureMapById } from "./adventureMapService";
+import { generate3EvaluationTasks } from "../utils/circuitCriteriaUtils";
+
+export const getCustomMapProjectContent = async (mapId, projectSlug) => {
+  if (!mapId) return null;
+  try {
+    const res = await fetchAdventureMapById(mapId);
+    const map = res?.map;
+    if (!map) return null;
+
+    let foundMission = null;
+    let foundIsland = null;
+    let foundWorld = null;
+
+    if (Array.isArray(map.worlds)) {
+      for (const w of map.worlds) {
+        for (const isl of (w.islands || [])) {
+          const islSlug = isl.slug || isl.missions?.[0]?.slug;
+          if (islSlug === projectSlug) {
+            foundIsland = isl;
+            foundMission = isl.missions?.[0];
+            foundWorld = w;
+            break;
+          }
+          for (const m of (isl.missions || [])) {
+            if (m.slug === projectSlug || m.id === projectSlug) {
+              foundIsland = isl;
+              foundMission = m;
+              foundWorld = w;
+              break;
+            }
+          }
+          if (foundMission) break;
+        }
+        if (foundMission) break;
+      }
+    }
+
+    if (!foundMission && Array.isArray(map.islands)) {
+      for (const isl of map.islands) {
+        if (isl.slug === projectSlug || isl.missions?.[0]?.slug === projectSlug) {
+          foundIsland = isl;
+          foundMission = isl.missions?.[0];
+          break;
+        }
+        for (const m of (isl.missions || [])) {
+          if (m.slug === projectSlug || m.id === projectSlug) {
+            foundIsland = isl;
+            foundMission = m;
+            break;
+          }
+        }
+        if (foundMission) break;
+      }
+    }
+
+    if (!foundMission) return null;
+
+    const theoryCards = [];
+    if (foundMission.theory?.title || foundMission.theory?.contentMarkdown) {
+      theoryCards.push({
+        id: 1,
+        front: foundMission.theory.title || 'Theory & Concepts',
+        title: foundMission.theory.title || 'Theory & Concepts',
+        content: foundMission.theory.contentMarkdown || '',
+        keyTakeaways: foundMission.theory.keyTakeaways || [],
+        back: (foundMission.theory.keyTakeaways || []).join('\n• ')
+      });
+    }
+
+    // 3 Tasks for the Project Assessment: Components, Wiring, Code
+    let assessmentTasks = foundMission.projectMission?.tasks;
+    if (!Array.isArray(assessmentTasks) || assessmentTasks.length !== 3) {
+      const sol = foundMission.projectMission?.solutionCircuit;
+      const ec = foundMission.evaluationCriteria || {};
+      assessmentTasks = generate3EvaluationTasks({
+        components: sol?.components || (ec.components?.required || []).map(r => ({ type: r.type, count: r.count })),
+        connections: sol?.wires || ec.wiringAccuracy?.requiredConnections || [],
+        code: sol?.code || foundMission.starterCode || foundMission.guideSample?.starterCode || '',
+        prompt: foundMission.projectMission?.prompt || foundMission.description || ''
+      });
+    }
+
+    return {
+      slug: foundMission.slug || projectSlug,
+      id: foundMission.id,
+      title: foundMission.title || foundIsland?.name || 'Project Lab',
+      subtitle: foundMission.subtitle || foundIsland?.theme || '',
+      description: foundMission.description || foundMission.projectMission?.prompt || '',
+      color: foundIsland?.color || foundWorld?.color || '#2563eb',
+      xpReward: foundMission.xpReward || 100,
+      board: map.board || 'Arduino Uno',
+      theory: theoryCards,
+      quizQuestions: foundMission.quizQuestions || [],
+      components: foundMission.componentsToUnlock || [],
+      assessment: {
+        title: foundMission.projectMission?.title || 'Final Project Assessment',
+        prompt: foundMission.projectMission?.prompt || '',
+        evaluationCriteria: foundMission.evaluationCriteria || {},
+        guidedSteps: assessmentTasks,
+        tasks: assessmentTasks
+      },
+      guidedSteps: assessmentTasks,
+      evaluationCriteria: foundMission.evaluationCriteria || {},
+      guideSample: foundMission.guideSample || {},
+      projectMission: {
+        ...(foundMission.projectMission || {}),
+        tasks: assessmentTasks
+      },
+      rawMission: foundMission
+    };
+  } catch (err) {
+    console.error('Failed to load custom map project content:', err);
+    return null;
+  }
+};
+
+export const getAdventureProjectContent = async (classId, projectSlug, mapId) => {
+  if (mapId) {
+    const customProject = await getCustomMapProjectContent(mapId, projectSlug);
+    if (customProject) {
+      return { project: customProject, resolved: null, raw: null };
+    }
+  }
   const { resolved, raw } = await getAdventureContent(classId);
   return {
     project: getProjectContentBySlug(resolved, projectSlug),

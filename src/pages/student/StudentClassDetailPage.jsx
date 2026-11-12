@@ -15,7 +15,9 @@ import {
   Users,
   Activity,
   Megaphone,
-  MoreVertical
+  MoreVertical,
+  Compass,
+  Sparkles
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
@@ -37,6 +39,7 @@ import { ClassDetailSkeleton } from '../../components/common/ClassroomSkeletons.
 import { pickAttachments, pickLinks } from '../../components/teacher/class-detail/helpers.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
+import { fetchAdventureMaps } from '../../services/adventureMapService.js'
 
 const tabs = [
   { key: 'stream', label: 'Stream' },
@@ -77,6 +80,7 @@ export default function StudentClassDetailPage() {
   const [students, setStudents] = useState([])
   const [assignments, setAssignments] = useState([])
   const [notices, setNotices] = useState([])
+  const [classroomMaps, setClassroomMaps] = useState([])
   const [peopleSearch, setPeopleSearch] = useState('')
   const [activeAssignmentId, setActiveAssignmentId] = useState(null)
   const [submissionState, setSubmissionState] = useState({
@@ -119,16 +123,18 @@ export default function StudentClassDetailPage() {
         )
 
         const list = []
-        details.forEach(({ classroomName, classId, assignments: aRows, notices: nRows }) => {
+        details.forEach(({ classroomName, classId: detailClassId, assignments: aRows, notices: nRows }) => {
           nRows.forEach((notice) => {
+            const isAdventure = (notice.title || "").includes("Adventure");
             list.push({
               id: `notice-${notice._id}`,
-              type: "announcement",
+              type: isAdventure ? "adventure" : "announcement",
               classroomName,
+              classId: detailClassId,
               title: notice.title || "Class notice",
               body: notice.message,
               date: new Date(notice.createdAt),
-              link: `/student/classes/${classId}`
+              link: `/student/classes/${detailClassId}`
             })
           })
 
@@ -137,10 +143,11 @@ export default function StudentClassDetailPage() {
               id: `assignment-${assignment._id}`,
               type: "assignment",
               classroomName,
+              classId: detailClassId,
               title: assignment.title || "Assignment",
               body: assignment.description || "New assignment available.",
               date: new Date(assignment.createdAt || assignment.dueDate),
-              link: `/student/classes/${classId}`
+              link: `/student/classes/${detailClassId}`
             })
           })
         })
@@ -255,15 +262,17 @@ export default function StudentClassDetailPage() {
       const classData = await getClassroomById(classId)
       setClassroom(classData)
 
-      const [assignmentRows, noticeRows, studentRows] = await Promise.all([
+      const [assignmentRows, noticeRows, studentRows, mapData] = await Promise.all([
         getClassAssignments(classId),
         getClassroomNotices(classId),
-        getClassroomStudents(classId)
+        getClassroomStudents(classId),
+        fetchAdventureMaps({ classroomId: classId }).catch(() => ({ maps: [] }))
       ])
 
       setAssignments(assignmentRows)
       setNotices(noticeRows)
       setStudents(studentRows)
+      setClassroomMaps(mapData?.maps || [])
     } catch (detailError) {
       setError(detailError.message || 'Failed to load class details')
     } finally {
@@ -611,7 +620,11 @@ export default function StudentClassDetailPage() {
                       <div
                         key={n.id}
                         onClick={() => {
-                          navigate(n.link);
+                          if (String(n.classId) === String(classId) && n.type === "adventure") {
+                            setActiveTab("adventure");
+                          } else {
+                            navigate(n.link);
+                          }
                           setShowNotifications(false);
                         }}
                         style={{
@@ -629,14 +642,20 @@ export default function StudentClassDetailPage() {
                           width: "32px",
                           height: "32px",
                           borderRadius: "50%",
-                          background: n.type === "announcement" ? "#eff6ff" : "#fef2f2",
-                          color: n.type === "announcement" ? "#2563eb" : "#ef4444",
+                          background: n.type === "adventure" ? "rgba(99, 102, 241, 0.12)" : n.type === "announcement" ? "#eff6ff" : "#fef2f2",
+                          color: n.type === "adventure" ? "#6366f1" : n.type === "announcement" ? "#2563eb" : "#ef4444",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0
                         }}>
-                          {n.type === "announcement" ? <Megaphone className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
+                          {n.type === "adventure" ? (
+                            <Compass className="w-4 h-4" />
+                          ) : n.type === "announcement" ? (
+                            <Megaphone className="w-4 h-4" />
+                          ) : (
+                            <ClipboardList className="w-4 h-4" />
+                          )}
                         </div>
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
@@ -1056,24 +1075,116 @@ export default function StudentClassDetailPage() {
                       <h3>Class Adventure</h3>
                       <small>Open the class-specific learning path</small>
                     </div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=arduino`)}
-                        className="teacher-assignment-modal__resource-pill"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-                      >
-                        🔵 Arduino Uno Map
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=esp32`)}
-                        className="teacher-assignment-modal__resource-pill"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, borderColor: '#e74c3c', color: '#e74c3c' }}
-                      >
-                        📡 ESP32 Map
-                      </button>
-                    </div>
+
+                    {/* Teacher Assigned / Created Classroom Adventure Maps */}
+                    {classroomMaps.length > 0 ? (
+                      <div style={{ marginTop: 16 }}>
+                        <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text, #0f172a)', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          🎓 Teacher's Classroom Adventure Worlds
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+                          {classroomMaps.map((map) => {
+                            const boardName = map.boardArchitecture?.board || map.board || 'Embedded';
+                            const badgeColor = map.boardArchitecture?.badgeColor || map.badgeColor || '#6366f1';
+                            const totalWorlds = map.worlds?.length || 1;
+                            const totalIslands = map.worlds?.reduce((acc, w) => acc + (w.islands?.length || 0), 0) || map.totalIslands || 1;
+                            const totalXP = map.worlds?.reduce((acc, w) => acc + (w.islands?.reduce((iAcc, isl) => iAcc + (isl.xpReward || 0), 0) || 0), 0) || 0;
+
+                            return (
+                              <div
+                                key={map._id || map.slug}
+                                style={{
+                                  padding: '18px',
+                                  borderRadius: '16px',
+                                  border: '1.5px solid rgba(99, 102, 241, 0.25)',
+                                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(59, 130, 246, 0.04))',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '10px',
+                                  boxShadow: '0 4px 14px rgba(0,0,0,0.03)'
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{
+                                    fontSize: '10px',
+                                    fontWeight: '800',
+                                    color: badgeColor,
+                                    backgroundColor: `${badgeColor}15`,
+                                    border: `1px solid ${badgeColor}33`,
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    textTransform: 'uppercase'
+                                  }}>
+                                    {boardName}
+                                  </span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text3, #64748b)', fontWeight: 600 }}>
+                                    {totalWorlds} Worlds • {totalIslands} Missions {totalXP > 0 ? `• ${totalXP} XP` : ''}
+                                  </span>
+                                </div>
+                                <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text, #0f172a)' }}>
+                                  {map.title}
+                                </h4>
+                                {(map.tagline || map.description) && (
+                                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text2, #475569)', lineHeight: 1.4 }}>
+                                    {map.tagline || map.description}
+                                  </p>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/adventure?mapId=${map._id || map.slug}&classId=${encodeURIComponent(classId)}&returnUrl=${encodeURIComponent(`/student/classes/${classId}`)}`)}
+                                  style={{
+                                    marginTop: '6px',
+                                    padding: '10px 16px',
+                                    borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
+                                    color: '#ffffff',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)'
+                                  }}
+                                >
+                                  🚀 Play Classroom Adventure
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '48px 24px',
+                        borderRadius: '16px',
+                        border: '1.5px dashed var(--border, #cbd5e1)',
+                        backgroundColor: 'var(--bg2, rgba(255,255,255,0.02))',
+                        marginTop: '16px'
+                      }}>
+                        <div style={{
+                          width: '56px',
+                          height: '56px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          margin: '0 auto 14px'
+                        }}>
+                          <Compass size={28} color="#6366f1" />
+                        </div>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 800, color: 'var(--text, #0f172a)' }}>
+                          No Adventure Maps Assigned Yet
+                        </h4>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text2, #64748b)', maxWidth: '420px', marginInline: 'auto', lineHeight: 1.5 }}>
+                          Your teacher has not assigned or created any adventure maps for this classroom yet. Once an adventure map is assigned, it will appear here for you to play!
+                        </p>
+                      </div>
+                    )}
                   </section>
                 )}
               </section>

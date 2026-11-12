@@ -11,6 +11,7 @@ import {
 } from '../services/adventureService'
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, ArrowRight, ShieldAlert, Sparkles, Check, X, Award, Sun, Moon, HelpCircle, FileText, LogOut } from 'lucide-react'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
 
 // Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
 const ALL_ARDUINO_SLUGS = [
@@ -30,12 +31,16 @@ export default function ProjectQuizPage() {
     logout()
     navigate('/')
   }
-  const classId = new URLSearchParams(location.search).get('classId')
-  // Determine which journey this project belongs to for the back-navigation
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { awardXP } = useGamification()
 
@@ -49,7 +54,7 @@ export default function ProjectQuizPage() {
     const load = async () => {
       if (!baseProject) setLoadingContent(true)
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         if (!baseProject) {
           setCustomProject(toProjectDisplayMeta(projectContent))
@@ -70,7 +75,7 @@ export default function ProjectQuizPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingContent && !baseProject
@@ -89,14 +94,26 @@ export default function ProjectQuizPage() {
 
   // Light/Dark mode state
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('quiz_theme')
-    return saved !== 'light'
+    const saved = localStorage.getItem('quiz_theme') || localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme')
+    return saved === 'dark'
   })
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const cur = document.documentElement.getAttribute('data-theme')
+      if (cur) setIsDarkMode(cur === 'dark')
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
 
   const toggleTheme = () => {
     setIsDarkMode(prev => {
       const next = !prev
-      localStorage.setItem('quiz_theme', next ? 'dark' : 'light')
+      const mode = next ? 'dark' : 'light'
+      localStorage.setItem('quiz_theme', mode)
+      localStorage.setItem('theme', mode)
+      document.documentElement.setAttribute('data-theme', mode)
       return next
     })
   }

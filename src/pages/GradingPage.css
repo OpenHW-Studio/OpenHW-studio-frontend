@@ -2,7 +2,7 @@
     padding: 40px;
     max-width: 1200px;
     margin: 0 auto;
-    color: #f8fafc;
+    color: var(--text);
 }
 
 .grading-page header {
@@ -26,8 +26,8 @@
 }
 
 .drop-zone {
-    background: #0f172a;
-    border: 2px dashed rgba(255, 255, 255, 0.1);
+    background: var(--card);
+    border: 2px dashed var(--border);
     border-radius: 20px;
     padding: 60px 20px;
     text-align: center;
@@ -57,10 +57,10 @@
 }
 
 .options-card {
-    background: #0f172a;
+    background: var(--card);
     padding: 30px;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
     margin-bottom: 40px;
 }
 
@@ -254,7 +254,8 @@
 
 .stat-box {
     flex: 1;
-    background: #070b14;
+    background: var(--bg2);
+    border: 1px solid var(--border);
     padding: 30px;
     border-radius: 16px;
     text-align: center;
@@ -389,9 +390,9 @@
 }
 
 .report-tabs button {
-    background: #070b14;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #94a3b8;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--text2);
     padding: 10px 20px;
     border-radius: 10px;
     cursor: pointer;
@@ -427,7 +428,7 @@
 
 .timeline-diff-view {
     margin-top: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
     border-radius: 16px;
     overflow: hidden;
 }
@@ -435,11 +436,12 @@
 .diff-header {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    background: #070b14;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
     padding: 15px;
     font-weight: 700;
     font-size: 0.9rem;
-    color: #94a3b8;
+    color: var(--text2);
     text-transform: uppercase;
 }
 

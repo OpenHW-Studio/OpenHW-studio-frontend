@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Plus, Settings, Bell, GraduationCap, Folder, Layers,
   FileText, HelpCircle, FolderKanban, ArrowLeft,
@@ -13,6 +13,13 @@ import TeacherEditClassModal from "../../components/teacher/class-detail/Teacher
 import TeacherAssignmentSubmissionsModal from "../../components/teacher/class-detail/TeacherAssignmentSubmissionsModal.jsx";
 import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
 import ProjectBankModal from "../../components/teacher/class-detail/ProjectBankModal.jsx";
+import AdventureCreatorModal from "../../components/adventure/AdventureCreatorModal.jsx";
+import AssignPublicMapModal from "../../components/teacher/class-detail/AssignPublicMapModal.jsx";
+import {
+  fetchAdventureMaps,
+  deleteAdventureMap,
+  unassignAdventureMapFromClassroom,
+} from "../../services/adventureMapService.js";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -109,6 +116,13 @@ export default function TeacherClassDetailPage() {
   const [showProjectBankModal, setShowProjectBankModal] = useState(false);
   const [projectBankWorldId, setProjectBankWorldId] = useState(null);
   const [importingBankProject, setImportingBankProject] = useState(false);
+
+  const [classroomMaps, setClassroomMaps] = useState([]);
+  const [loadingClassroomMaps, setLoadingClassroomMaps] = useState(false);
+  const [isAdventureCreatorOpen, setIsAdventureCreatorOpen] = useState(false);
+  const [editingAdventureMap, setEditingAdventureMap] = useState(null);
+  const [isAssignMapModalOpen, setIsAssignMapModalOpen] = useState(false);
+  const [assignModalTab, setAssignModalTab] = useState("public");
 
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
@@ -252,6 +266,57 @@ export default function TeacherClassDetailPage() {
       cancelled = true;
     };
   }, [activeTab, classId, classroom]);
+
+  const loadClassroomMaps = useCallback(async () => {
+    if (!classId) return;
+    setLoadingClassroomMaps(true);
+    try {
+      const res = await fetchAdventureMaps({ classroomId: classId });
+      setClassroomMaps(res?.maps || []);
+    } catch (err) {
+      console.error("Failed to load classroom adventure maps:", err);
+    } finally {
+      setLoadingClassroomMaps(false);
+    }
+  }, [classId]);
+
+  useEffect(() => {
+    if (classId) {
+      loadClassroomMaps();
+    }
+  }, [classId, loadClassroomMaps]);
+
+  const handleOpenCreateMap = () => {
+    setEditingAdventureMap(null);
+    setIsAdventureCreatorOpen(true);
+  };
+
+  const handleEditMap = (map) => {
+    setEditingAdventureMap(map);
+    setIsAdventureCreatorOpen(true);
+  };
+
+  const handleDeleteMap = async (map) => {
+    if (!window.confirm(`Are you sure you want to delete "${map.title}"? This cannot be undone.`)) return;
+    try {
+      await deleteAdventureMap(map._id);
+      setInfo("Adventure map deleted successfully.");
+      loadClassroomMaps();
+    } catch (err) {
+      setError(err.message || "Failed to delete adventure map.");
+    }
+  };
+
+  const handleUnassignMap = async (map) => {
+    if (!window.confirm(`Unassign "${map.title}" from this classroom? Students will no longer see this map.`)) return;
+    try {
+      await unassignAdventureMapFromClassroom(classId, map._id);
+      setInfo(`Unassigned "${map.title}" from classroom.`);
+      loadClassroomMaps();
+    } catch (err) {
+      setError(err.message || "Failed to unassign adventure map.");
+    }
+  };
 
   useEffect(() => {
     if (!showComposer) return undefined;
@@ -1097,20 +1162,19 @@ export default function TeacherClassDetailPage() {
                 markStats={markStats}
                 adventureContent={adventureContent}
                 studentAdventureProgress={studentAdventureProgress}
-                onAdventureContentChange={handleAdventureContentChange}
-                onAddWorld={handleAddWorld}
-                onMoveWorld={handleMoveWorld}
-                onDeleteWorld={handleDeleteWorld}
-                onAddProject={handleAddProject}
-                onMoveProject={handleMoveProject}
-                onDeleteProject={handleDeleteProject}
-                onSaveAdventureConfig={handleSaveAdventureConfig}
-                savingAdventureConfig={savingAdventureConfig}
+                classroomMaps={classroomMaps}
+                loadingClassroomMaps={loadingClassroomMaps}
+                onOpenCreateMap={handleOpenCreateMap}
+                onOpenAssignModal={(tab = "public") => {
+                  setAssignModalTab(tab);
+                  setIsAssignMapModalOpen(true);
+                }}
+                onEditMap={handleEditMap}
+                onDeleteMap={handleDeleteMap}
+                onUnassignMap={handleUnassignMap}
                 onOpenClassAdventure={() =>
                   navigate(`/adventure?classId=${encodeURIComponent(classId)}`)
                 }
-                onOpenProjectEditor={handleOpenProjectEditor}
-                onOpenProjectBank={handleOpenProjectBank}
               />
 
               <TeacherClassSidebar
@@ -1218,6 +1282,43 @@ export default function TeacherClassDetailPage() {
             setSubmissionsState({ loading: false, error: "", data: null });
           }}
           onPreviewFile={setPreviewFile}
+        />
+      ) : null}
+
+      {isAdventureCreatorOpen ? (
+        <AdventureCreatorModal
+          isOpen={isAdventureCreatorOpen}
+          onClose={() => {
+            setIsAdventureCreatorOpen(false);
+            setEditingAdventureMap(null);
+          }}
+          editingMap={editingAdventureMap}
+          defaultClassroomId={classId}
+          lockClassroom={true}
+          onSaveSuccess={() => {
+            setIsAdventureCreatorOpen(false);
+            setEditingAdventureMap(null);
+            loadClassroomMaps();
+            setInfo("Class adventure map saved successfully!");
+          }}
+        />
+      ) : null}
+
+      {isAssignMapModalOpen ? (
+        <AssignPublicMapModal
+          isOpen={isAssignMapModalOpen}
+          initialTab={assignModalTab}
+          onClose={() => setIsAssignMapModalOpen(false)}
+          classId={classId}
+          classroomName={classroom?.name}
+          assignedMapIds={classroomMaps.map((m) => m._id)}
+          onMapAssigned={() => {
+            loadClassroomMaps();
+          }}
+          onCreateNewMap={() => {
+            setIsAssignMapModalOpen(false);
+            handleOpenCreateMap();
+          }}
         />
       ) : null}
     </div>

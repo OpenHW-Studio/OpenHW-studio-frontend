@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useGamification } from "../../context/GamificationContext.jsx";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
@@ -51,10 +51,19 @@ import {
   Bluetooth,
   Tv,
   Trash2,
-  Lock
+  Lock,
+  Sparkles,
+  Award,
+  Globe,
+  PlusCircle,
+  Search,
+  Edit3,
+  Loader2
 } from "lucide-react";
 import PROJECT_DATA from "../../services/guidedProjects.json";
 import { listProjects, deleteProject, formatProjectDate } from "../../services/projectStore.js";
+import AdventureCreatorModal from "../../components/adventure/AdventureCreatorModal.jsx";
+import { fetchAdventureMaps, fetchAdventureMapById, deleteAdventureMap } from "../../services/adventureMapService.js";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
@@ -139,6 +148,12 @@ export default function StudentDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ── Role Capabilities ────────────────────────────────────────────────────────
+  // Students can ONLY play gamification, not create.
+  // Teachers and normal users (role: 'user') can both play and create.
+  const canCreateAdventure = user?.role === 'teacher' || user?.role === 'user' || user?.role === 'admin';
+  const isTeacher = user?.role === 'teacher';
+
   const {
     currentLevel,
     currentLevelData,
@@ -164,8 +179,87 @@ export default function StudentDashboard() {
   const [showGuidedProjects, setShowGuidedProjects] = useState(false);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState("classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || "classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Adventure Maps Marketplace State
+  const [adventureMaps, setAdventureMaps] = useState([]);
+  const [adventureTab, setAdventureTab] = useState("all"); // "all" | "official" | "community" | "my-worlds"
+  const [adventureBoardFilter, setAdventureBoardFilter] = useState("all");
+  const [adventureSearch, setAdventureSearch] = useState("");
+  const [loadingAdventures, setLoadingAdventures] = useState(false);
+  const [isCreatorModalOpen, setIsCreatorModalOpen] = useState(false);
+  const [editingMapData, setEditingMapData] = useState(null);
+  const [loadingEditId, setLoadingEditId] = useState(null);
+  const [deletingMapId, setDeletingMapId] = useState(null);
+
+  const loadAdventureMaps = async () => {
+    try {
+      setLoadingAdventures(true);
+      const data = await fetchAdventureMaps({
+        tab: adventureTab,
+        board: adventureBoardFilter !== "all" ? adventureBoardFilter : undefined,
+        search: adventureSearch.trim() || undefined,
+      });
+      let maps = data.maps || [];
+      if (adventureTab === 'my-worlds' && user) {
+        maps = maps.filter(m => String(m.creatorId) === String(user._id || user.id));
+      }
+      setAdventureMaps(maps);
+    } catch (err) {
+      console.error("Failed to load adventure maps:", err);
+    } finally {
+      setLoadingAdventures(false);
+    }
+  };
+
+  const handleEditAdventureMap = async (map) => {
+    try {
+      setLoadingEditId(map._id || map.id || map.slug);
+      const fullData = await fetchAdventureMapById(map._id || map.slug);
+      setEditingMapData(fullData.map || fullData);
+      setIsCreatorModalOpen(true);
+    } catch (err) {
+      console.error("Failed to load map details for editing:", err);
+      setEditingMapData(map);
+      setIsCreatorModalOpen(true);
+    } finally {
+      setLoadingEditId(null);
+    }
+  };
+
+  const handleDeleteAdventureMap = async (map) => {
+    const title = map.title || 'this adventure map';
+    if (!window.confirm(`Are you sure you want to permanently delete "${title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingMapId(map._id || map.id);
+      await deleteAdventureMap(map._id || map.id);
+      setAdventureMaps(prev => prev.filter(m => (m._id || m.id) !== (map._id || map.id)));
+      setInfo(`Adventure Map "${title}" deleted successfully.`);
+    } catch (err) {
+      console.error("Failed to delete adventure map:", err);
+      alert(err.message || "Failed to delete adventure map");
+    } finally {
+      setDeletingMapId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "adventure-map") {
+      loadAdventureMaps();
+    }
+  }, [activeTab, adventureTab, adventureBoardFilter]);
 
   // Guided Projects inline workspace states
   const [guidedDifficulty, setGuidedDifficulty] = useState("BEGINNER");
@@ -1259,138 +1353,338 @@ export default function StudentDashboard() {
             `}</style>
 
             <section className="student-db-rosters" style={{ width: '100%' }}>
-              <header className="student-db-rosters__header" style={{ justifyContent: 'center', textAlign: 'center', display: 'block', width: '100%', borderBottom: 'none', marginBottom: '20px' }}>
-                <div className="student-db-rosters__title-area" style={{ margin: '0 auto' }}>
+              <header className="student-db-rosters__header" style={{ justifyContent: 'space-between', alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: '16px', borderBottom: 'none', marginBottom: '24px' }}>
+                <div className="student-db-rosters__title-area" style={{ textAlign: 'left' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '900', letterSpacing: '0.12em', color: 'var(--text)', textTransform: 'uppercase', marginBottom: '6px' }}>Hardware Ecosystem</h2>
-                  <p style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>Select Hardware Campaign</p>
+                  <p style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>Select or Create Hardware Campaigns</p>
                 </div>
+
+                {/* Primary Creator Action Button — only shown to creators (teacher/user/admin) */}
+                {canCreateAdventure && (
+                  <button
+                    onClick={() => {
+                      setEditingMapData(null);
+                      setIsCreatorModalOpen(true);
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '10px 18px', borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      color: '#fff', fontSize: '12px', fontWeight: '800',
+                      cursor: 'pointer', boxShadow: '0 4px 16px rgba(99,102,241,0.35)',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    <Sparkles size={16} /> Create Your Own Adventure Map
+                  </button>
+                )}
               </header>
 
-              {/* Campaign selector grid */}
+              {/* Filters & Tabs Bar */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                flexWrap: 'wrap', gap: '12px', marginBottom: '24px',
+                padding: '12px 16px', borderRadius: '14px',
+                backgroundColor: 'var(--bg2, rgba(255,255,255,0.03))',
+                border: '1px solid var(--border)'
+              }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {[
+                    { id: 'all', label: 'All Expeditions' },
+                    { id: 'official', label: 'Official Core' },
+                    { id: 'community', label: 'Community Worlds' },
+                    { id: 'my-worlds', label: 'My Worlds' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setAdventureTab(t.id)}
+                      style={{
+                        padding: '6px 12px', borderRadius: '8px', border: 'none',
+                        background: adventureTab === t.id ? 'var(--text)' : 'transparent',
+                        color: adventureTab === t.id ? 'var(--bg)' : 'var(--text2)',
+                        fontSize: '11px', fontWeight: '800', cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <select
+                    value={adventureBoardFilter}
+                    onChange={(e) => setAdventureBoardFilter(e.target.value)}
+                    style={{
+                      padding: '6px 10px', borderRadius: '8px',
+                      backgroundColor: 'var(--bg3, rgba(255,255,255,0.06))',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)', fontSize: '11px', fontWeight: '700', outline: 'none'
+                    }}
+                  >
+                    <option value="all">All Boards</option>
+                    <option value="arduino-uno">Arduino Uno</option>
+                    <option value="esp32">ESP32</option>
+                    <option value="raspberry-pi-pico">Raspberry Pi Pico</option>
+                    <option value="stm32">STM32</option>
+                  </select>
+
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="Search maps..."
+                      value={adventureSearch}
+                      onChange={(e) => setAdventureSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') loadAdventureMaps(); }}
+                      style={{
+                        padding: '6px 10px 6px 28px', borderRadius: '8px',
+                        backgroundColor: 'var(--bg3, rgba(255,255,255,0.06))',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text)', fontSize: '11px', outline: 'none', width: '140px'
+                      }}
+                    />
+                    <Search size={13} style={{ position: 'absolute', left: '8px', top: '8px', color: 'var(--text3)' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Campaign Grid */}
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(285px, 1fr))',
                 gap: '24px',
-                maxWidth: '900px',
+                maxWidth: '1000px',
                 margin: '0 auto',
                 width: '100%',
                 padding: '10px 0'
               }}>
-                {/* CARD 1: Arduino Uno */}
-                <div className="campaign-card">
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <span style={{
-                      fontSize: '9px',
-                      fontWeight: '800',
-                      color: '#10b981',
-                      backgroundColor: 'rgba(16,185,129,0.08)',
-                      border: '1px solid rgba(16,185,129,0.2)',
-                      borderRadius: '6px',
-                      padding: '3px 8px',
-                    }}>[ CAMPAIGN: ACTIVE ]</span>
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: AVR-01</span>
-                  </div>
-                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                    <Cpu size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
-                  </div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Arduino Uno</h3>
-                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>8-BIT AVR RISC</p>
-                  <button
-                    className="card-btn-blue"
-                    onClick={() => navigate("/adventure?journey=arduino")}
+                {/* Interactive Card: CREATE YOUR OWN WORLD — only for creators */}
+                {canCreateAdventure && (
+                  <div
+                    onClick={() => {
+                      setEditingMapData(null);
+                      setIsCreatorModalOpen(true);
+                    }}
+                    className="campaign-card"
+                    style={{
+                      borderStyle: 'dashed', borderWidth: '2px', borderColor: 'rgba(99,102,241,0.4)',
+                      backgroundColor: 'rgba(99,102,241,0.03)', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      minHeight: '280px', transition: 'all 0.2s ease'
+                    }}
                   >
-                    Enter World
-                  </button>
-                </div>
-
-                {/* CARD 2: Raspberry Pi Pico */}
-                <div className="campaign-card">
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <span style={{
-                      fontSize: '9px',
-                      fontWeight: '800',
-                      color: '#2563eb',
-                      backgroundColor: 'rgba(37,99,235,0.08)',
-                      border: '1px solid rgba(37,99,235,0.2)',
-                      borderRadius: '6px',
-                      padding: '3px 8px',
-                    }}>[ CAMPAIGN: UNLOCKED ]</span>
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: ARM-M0</span>
-                  </div>
-                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                    <Layers size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
-                  </div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>Raspberry Pi Pico</h3>
-                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>DUAL-CORE ARM CORTEX-M0+</p>
-                  <button
-                    className="card-btn-light-blue"
-                    onClick={() => setInfo("Raspberry Pi Pico campaign is coming soon!")}
-                  >
-                    Enter World
-                  </button>
-                </div>
-
-                {/* CARD 3: ESP32 */}
-                <div className="campaign-card">
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <span style={{
-                      fontSize: '9px',
-                      fontWeight: '800',
-                      color: '#f59e0b',
-                      backgroundColor: 'rgba(245,158,11,0.08)',
-                      border: '1px solid rgba(245,158,11,0.2)',
-                      borderRadius: '6px',
-                      padding: '3px 8px',
-                    }}>[ SYNC REQUIRED ]</span>
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: XT-D32</span>
-                  </div>
-                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                    <Wifi size={56} style={{ color: 'var(--text2)', opacity: 0.8 }} />
-                  </div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0' }}>ESP32</h3>
-                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT XTENSA DUAL-CORE</p>
-                  <button
-                    className="card-btn-outline"
-                    onClick={() => navigate("/adventure?journey=esp32")}
-                  >
-                    Enter World
-                  </button>
-                </div>
-
-                {/* CARD 4: STM32 */}
-                <div className="campaign-card" style={{ overflow: 'hidden' }}>
-                  {/* Lock Overlay */}
-                  <div className="locked-overlay">
-                    <div className="locked-badge">
-                      <Lock size={12} style={{ marginRight: 6 }} />
-                      EXPERT TIER LOCKED
+                    <div style={{
+                      width: '64px', height: '64px', borderRadius: '50%',
+                      background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px'
+                    }}>
+                      <Plus size={28} color="#818cf8" />
                     </div>
-                  </div>
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 6px 0', textAlign: 'center' }}>
+                      Create Your Own Adventure Map
+                    </h3>
+                    <p style={{ fontSize: '11px', color: 'var(--text2)', textAlign: 'center', maxWidth: '210px', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                      Craft islands, code challenges, wiring criteria & custom certifications.
+                    </p>
                     <span style={{
-                      fontSize: '9px',
-                      fontWeight: '800',
-                      color: 'var(--text3)',
-                      backgroundColor: 'var(--bg3)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      padding: '3px 8px',
-                    }}>[ EXPERT TIER LOCKED ]</span>
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>ID: ARM-M4</span>
+                      fontSize: '10px', fontWeight: '800', color: '#818cf8',
+                      textTransform: 'uppercase', letterSpacing: '0.06em'
+                    }}>
+                      + Launch Studio
+                    </span>
                   </div>
-                  <div style={{ width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                    <Cpu size={56} style={{ color: 'var(--text3)', opacity: 0.4 }} />
+                )}
+
+                {/* Empty State for My Worlds when none exist */}
+                {adventureTab === 'my-worlds' && adventureMaps.length === 0 && (
+                  <div style={{
+                    gridColumn: '1 / -1',
+                    textAlign: 'center',
+                    padding: '36px 20px',
+                    backgroundColor: 'var(--bg2, rgba(255,255,255,0.03))',
+                    border: '1px dashed var(--border)',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '10px'
+                  }}>
+                    <Globe size={36} color="var(--text3)" />
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--text)' }}>
+                      No Custom Worlds Yet
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text2)', maxWidth: '340px', lineHeight: 1.4 }}>
+                      You haven't created any adventure maps yet. Click "Create Your Own Adventure Map" above to build your first world!
+                    </p>
                   </div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text3)', margin: '0 0 4px 0' }}>STM32</h3>
-                  <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text3)', letterSpacing: '0.04em', margin: '0 0 20px 0', fontFamily: 'monospace' }}>32-BIT ARM CORTEX-M4</p>
-                  <button
-                    className="card-btn-outline"
-                    style={{ color: 'var(--text3)', borderColor: 'var(--border)', cursor: 'not-allowed' }}
-                    disabled
-                  >
-                    LOCKED
-                  </button>
-                </div>
+                )}
+
+                {/* Render Loaded Adventure Maps */}
+                {adventureMaps.map((map) => {
+                  const isArduino = map.board === 'arduino-uno' || map.slug === 'arduino';
+                  const isEsp32 = map.board === 'esp32' || map.slug === 'esp32';
+                  const isPico = map.board === 'raspberry-pi-pico';
+
+                  const isOwner = user && (String(map.creatorId) === String(user._id || user.id));
+                  // canManage: user must both own the map AND have creator role (not a student)
+                  const canManage = isOwner && canCreateAdventure;
+
+                  const isClassroomScoped = map.scope === 'classroom' || Boolean(map.classroomId);
+                  const badgeTag = map.isOfficial
+                    ? '[ CAMPAIGN: ACTIVE ]'
+                    : isClassroomScoped
+                      ? '[ 🎓 CLASSROOM ]'
+                      : (isOwner ? '[ MY WORLD ]' : '[ COMMUNITY WORLD ]');
+                  const badgeColor = map.badgeColor || (map.isOfficial ? '#10b981' : isClassroomScoped ? '#8b5cf6' : (isOwner ? '#818cf8' : '#6366f1'));
+
+                  const isBusyEditing = loadingEditId === (map._id || map.id || map.slug);
+                  const isBusyDeleting = deletingMapId === (map._id || map.id);
+
+                  return (
+                    <div key={map._id || map.slug} className="campaign-card">
+                      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: '800',
+                          color: badgeColor,
+                          backgroundColor: `${badgeColor}15`,
+                          border: `1px solid ${badgeColor}33`,
+                          borderRadius: '6px',
+                          padding: '3px 8px',
+                        }}>
+                          {badgeTag}
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text3)', fontFamily: 'monospace' }}>
+                          ID: {map.campaignCode || 'COMM-01'}
+                        </span>
+                      </div>
+
+                      <div style={{ width: '90px', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+                        {isArduino ? (
+                          <Cpu size={52} style={{ color: 'var(--text2)', opacity: 0.85 }} />
+                        ) : isEsp32 ? (
+                          <Wifi size={52} style={{ color: 'var(--text2)', opacity: 0.85 }} />
+                        ) : isPico ? (
+                          <Layers size={52} style={{ color: 'var(--text2)', opacity: 0.85 }} />
+                        ) : (
+                          <Sparkles size={52} style={{ color: '#818cf8', opacity: 0.85 }} />
+                        )}
+                      </div>
+
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text)', margin: '0 0 4px 0', textAlign: 'center' }}>
+                        {map.title}
+                      </h3>
+                      <p style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text2)', letterSpacing: '0.04em', margin: '0 0 10px 0', fontFamily: 'monospace', textAlign: 'center' }}>
+                        {map.chipArchitecture || 'EMBEDDED ARCHITECTURE'}
+                      </p>
+
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: '600' }}>
+                          🏝️ {map.totalIslands || 1} Islands
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: '600' }}>
+                          🎯 {map.totalMissions || 1} Missions
+                        </span>
+                        {map.hasCertificate && (
+                          <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                            <Award size={11} /> Certified
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: 'auto' }}>
+                        <button
+                          className="card-btn-blue"
+                          style={{ flex: 1 }}
+                          onClick={() => {
+                            if (map.isOfficial && map.slug === 'arduino') {
+                              navigate("/adventure?journey=arduino");
+                            } else if (map.isOfficial && map.slug === 'esp32') {
+                              navigate("/adventure?journey=esp32");
+                            } else {
+                              navigate(`/adventure?mapId=${map.slug || map._id}`);
+                            }
+                          }}
+                        >
+                          Enter World
+                        </button>
+                        {canManage && !map.isOfficial && (
+                          <>
+                            <button
+                              type="button"
+                              title="Edit Adventure Map"
+                              disabled={isBusyEditing || isBusyDeleting}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditAdventureMap(map);
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '0 12px',
+                                minWidth: '38px',
+                                height: '38px',
+                                borderRadius: '12px',
+                                border: '1px solid var(--border)',
+                                backgroundColor: 'var(--bg3, rgba(255,255,255,0.06))',
+                                color: 'var(--text)',
+                                cursor: isBusyEditing ? 'wait' : 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'var(--hover, rgba(99,102,241,0.15))';
+                                e.currentTarget.style.borderColor = '#6366f1';
+                                e.currentTarget.style.color = '#6366f1';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'var(--bg3, rgba(255,255,255,0.06))';
+                                e.currentTarget.style.borderColor = 'var(--border)';
+                                e.currentTarget.style.color = 'var(--text)';
+                              }}
+                            >
+                              {isBusyEditing ? <Loader2 size={15} className="animate-spin" /> : <Edit3 size={15} />}
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete Adventure Map"
+                              disabled={isBusyDeleting || isBusyEditing}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteAdventureMap(map);
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '0 12px',
+                                minWidth: '38px',
+                                height: '38px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                color: '#ef4444',
+                                cursor: isBusyDeleting ? 'wait' : 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                                e.currentTarget.style.borderColor = '#ef4444';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
+                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                              }}
+                            >
+                              {isBusyDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Status Info Footer */}
@@ -1518,6 +1812,25 @@ export default function StudentDashboard() {
         <div className="teacher-toast" role="status">
           {info}
         </div>
+      )}
+
+      {/* Adventure Creator Studio Modal — only mounted for creators */}
+      {canCreateAdventure && (
+        <AdventureCreatorModal
+          isOpen={isCreatorModalOpen}
+          onClose={() => {
+            setIsCreatorModalOpen(false);
+            setEditingMapData(null);
+          }}
+          onCreated={(map) => {
+            setInfo(editingMapData ? `World "${map.title}" updated successfully!` : `World "${map.title}" published!`);
+            setEditingMapData(null);
+            loadAdventureMaps();
+          }}
+          editingMap={editingMapData}
+          classrooms={isTeacher ? classrooms : []}
+          isTeacher={isTeacher}
+        />
       )}
     </div>
   );
