@@ -1,4 +1,4 @@
-import { BaseComponent } from '@openhw/emulator';
+import { BaseComponent, HD44780Controller } from '@openhw/emulator';
 // Micro:bit v2 board shell: edge-connector pins only (the nRF52833 core
 // is driven by MicrobitRunner; this shell carries pin state for wiring
 // + board telemetry like matrixLit). No package changes needed.
@@ -6,6 +6,97 @@ export class MicrobitBoardLogic extends BaseComponent {
     constructor(id: string, manifest: any) {
         super(id, manifest);
         this.state = { matrixLit: 0, ...this.state };
+    }
+}
+
+// Parallel HD44780 LCD 20x4 logic (no backpack)
+export class Lcd2004ParallelLogic extends BaseComponent {
+    private hd44780: HD44780Controller;
+    private pinStates: Record<string, boolean> = {
+        rs: false, rw: false, e: false,
+        d0: false, d1: false, d2: false, d3: false,
+        d4: false, d5: false, d6: false, d7: false,
+        a: true, k: false
+    };
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.hd44780 = new HD44780Controller(4, 20);
+        this.state = { ...this.hd44780.getState() };
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean, _cpuCycles: number): void {
+        const pin = pinId.toLowerCase();
+        const wasHigh = this.pinStates[pin];
+        this.pinStates[pin] = isHigh;
+
+        if (pin === 'a') {
+            if (this.hd44780.backlight !== isHigh) {
+                this.hd44780.backlight = isHigh;
+                this.hd44780.stateChanged = true;
+            }
+        }
+
+        if (pin === 'e' && wasHigh && !isHigh) {
+            this.hd44780.feedParallelNibble(
+                this.pinStates.rs,
+                this.pinStates.d4,
+                this.pinStates.d5,
+                this.pinStates.d6,
+                this.pinStates.d7,
+            );
+        }
+
+        if (this.hd44780.stateChanged) {
+            this.setState({ ...this.hd44780.getState() });
+            this.hd44780.clearChanged();
+        }
+    }
+
+    update(cpuCycles: number, wires: any, allComponents: any) {}
+
+    onCustomTelemetry() {
+        const textContent = this.hd44780.getLines().map(l => l.trimEnd()).join('\n').trimEnd();
+        this.setCustomTelemetry({
+            textContent: textContent || '<empty>',
+            backlight: this.hd44780.getBacklight(),
+            lineCount: 4,
+            charsPerLine: 20,
+        });
+    }
+
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
+export class LtdcDisplayLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { fbW: 0, fbH: 0, litPixels: 0, ...this.state };
+    }
+    onRgbFrame(w: number, h: number, px: number[]) {
+        let lit = 0;
+        for (let i = 0; i < px.length; i++) {
+            if ((px[i] & 0x00ffffff) !== 0) lit++;
+        }
+        this.setState({ fbW: w, fbH: h, litPixels: lit });
+    }
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
+export class UsbDeviceLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { enumState: 'disconnected', rxCount: 0, lastEcho: '', ...this.state };
+    }
+    onUsbState(link: string, rx: number, echo: string) {
+        this.setState({ enumState: link, rxCount: rx, lastEcho: echo });
+    }
+    getSyncState() {
+        return { ...this.state };
     }
 }
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
@@ -50,7 +141,6 @@ import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic';
 import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
 import { Lcd1602I2CLogic } from '@openhw/emulator/src/components/openhw-lcd1602-i2c/logic';
-import { Lcd2004ParallelLogic } from '@openhw/emulator/src/components/openhw-lcd2004/logic';
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
@@ -69,8 +159,6 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
-import { LtdcDisplayLogic } from '@openhw/emulator/src/components/openhw-ltdc-display/logic';
-import { UsbDeviceLogic } from '@openhw/emulator/src/components/openhw-usb-device/logic';
 import { ILI9341TouchLogic } from '@openhw/emulator/src/components/openhw-ili9341-touch/logic';
 import { EPaperLogic } from '@openhw/emulator/src/components/openhw-ePaperDisplay/logic';
 import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
@@ -84,7 +172,6 @@ import { Logic as Sph0645Logic } from '@openhw/emulator/src/components/openhw-sp
 import { Logic as Max98357Logic } from '@openhw/emulator/src/components/openhw-max98357/logic';
 import { Logic as Pcm5102Logic } from '@openhw/emulator/src/components/openhw-pcm5102/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
-import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
 import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
@@ -302,7 +389,6 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ds18b20': DS18B20Logic,
     'wokwi-ir-receiver': IRReceiverLogic,
     'openhw-ir-receiver': IRReceiverLogic,
-    'openhw-ir-remote': IRRemoteLogic,
     'openhw-ir-remote': IRRemoteLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,

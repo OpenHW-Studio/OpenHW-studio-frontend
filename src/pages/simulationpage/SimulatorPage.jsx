@@ -311,8 +311,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const isLiveStudent = liveMeetingMode && !isLiveTeacher;
   const canvasOnly = assessmentParams.get("canvas-only") === "1";
   const readOnly = assessmentParams.get("readonly") === "1";
+  const isExampleProject = useMemo(() => {
+    return Boolean(projectName) || location.pathname.includes("/demo");
+  }, [projectName, location.pathname]);
+
   const editorModeParam = useMemo(() => {
-    const fromQuery = assessmentParams.get("editorMode") || assessmentParams.get("mode");
+    // Only apply editor mode locking to example projects from the landing page, NOT normal simulator pages
+    if (!isExampleProject) {
+      return null;
+    }
+    const fromQuery = assessmentParams.get("editorMode");
     if (fromQuery === "blocks" || fromQuery === "block") return "blocks";
     if (fromQuery === "code") return "code";
     if (location.state?.editorMode === "blocks") return "blocks";
@@ -320,7 +328,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     const fromStorage = localStorage.getItem("openhw_demo_editor_mode");
     if (fromStorage === "blocks") return "blocks";
     return "code";
-  }, [assessmentParams, location.state]);
+  }, [isExampleProject, assessmentParams, location.state]);
 
   // -- Gamification --
   const {
@@ -603,6 +611,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   });
 
   useEffect(() => {
+    if (!editorModeParam) return;
     if (editorModeParam === "blocks") {
       setCodeTab("block");
       setBlocklyDisabled(false);
@@ -1112,6 +1121,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
     return kinds;
+  }, [components]);
+
+  const serialBoardSourceModes = useMemo(() => {
+    const modes = {};
+    components.forEach((c) => {
+      modes[c.id] = c.attrs?.env || 'native';
+    });
+    return modes;
   }, [components]);
 
   const serialBoardMap = useMemo(() => {
@@ -2712,7 +2729,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
         }
 
-        const expectedMainName = getDefaultMainFileName(kind, bc.id, {});
+        const expectedMainName = getDefaultMainFileName(kind, bc.id, { env: bc.attrs?.env });
         const expectedMainPath = `${basePath}/${expectedMainName}`;
         const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
         if (
@@ -5667,6 +5684,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 serialBoardOptions={serialBoardOptions}
                 serialBoardLabels={serialBoardLabels}
                 serialBoardKinds={serialBoardKinds}
+                serialBoardSourceModes={serialBoardSourceModes}
+                updateComponentAttr={updateComponentAttr}
                 serialBaudRate={serialBaudRate}
                 setSerialBaudRate={updateGlobalBaudRate}
                 serialBaudOptions={serialBaudOptions}

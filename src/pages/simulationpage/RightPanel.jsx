@@ -82,6 +82,7 @@ const CodeTabPanel = React.memo(function CodeTabPanel(props) {
     code,
     setCode,
     boardComponentMap,
+    updateComponentAttr,
     onToggleBoardFirmwareSource,
     fileMenu,
     onRenameCodeFile,
@@ -104,7 +105,7 @@ const CodeTabPanel = React.memo(function CodeTabPanel(props) {
     serialBoardKinds,
     serialBoardSourceModes,
     isManualChangeDetected,
-    demoEditorMode = 'code',
+    demoEditorMode = null,
   } = props;
   return (
 
@@ -430,6 +431,91 @@ const CodeTabPanel = React.memo(function CodeTabPanel(props) {
                           </div>
                         );
                       })()}
+                      {(() => {
+                        if (!activeFile || !boardComponentMap) return null;
+                        const pathParts = activeFile.path.split('/');
+                        if (pathParts.length < 3 || pathParts[0] !== 'project') return null;
+
+                        const boardId = pathParts[1];
+                        const boardComp = boardComponentMap.get(boardId);
+                        if (!boardComp) return null;
+
+                        const kind = serialBoardKinds?.[boardId] || '';
+                        const isPythonCapable = /(esp32|rp2040|pico)/i.test(kind) || /(esp32|rp2040|pico)/i.test(boardComp.type);
+                        if (!isPythonCapable) return null;
+
+                        const currentEnv = String(boardComp.attrs?.env || 'native').toLowerCase();
+                        const isMicroPython = currentEnv === 'micropython' || currentEnv === 'py';
+
+                        return (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '4px 14px',
+                            fontSize: '11px',
+                            background: theme === 'light' ? '#f1f5f9' : '#0b1320',
+                            borderBottom: theme === 'light' ? '1px solid #e2e8f0' : '1px solid #1a273b',
+                            color: 'var(--text2)',
+                            gap: 8,
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text)' }}>Board Target:</span>
+                              <span style={{ opacity: 0.8, fontFamily: 'monospace' }}>{boardComp.type}</span>
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: '10px', opacity: 0.7, marginRight: 2 }}>Runtime:</span>
+                              <div style={{ display: 'inline-flex', borderRadius: 4, padding: 2, background: theme === 'light' ? '#e2e8f0' : '#142033', border: '1px solid var(--border)', gap: 2 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (updateComponentAttr) updateComponentAttr(boardId, 'env', 'native');
+                                  }}
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: '10px',
+                                    fontWeight: !isMicroPython ? 700 : 400,
+                                    borderRadius: 3,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    background: !isMicroPython ? 'var(--accent)' : 'transparent',
+                                    color: !isMicroPython ? '#fff' : 'var(--text3)',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  title="Run with Arduino C++ compiler"
+                                >
+                                  C++ (Arduino)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (updateComponentAttr) updateComponentAttr(boardId, 'env', 'micropython');
+                                    const pyPath = `project/${boardId}/main.py`;
+                                    const hasPy = (projectFiles || []).some(f => f.id === pyPath);
+                                    if (!hasPy && onCreateCodeFile) {
+                                      onCreateCodeFile('main.py', true, `project/${boardId}`);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: '10px',
+                                    fontWeight: isMicroPython ? 700 : 400,
+                                    borderRadius: 3,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    background: isMicroPython ? '#10b981' : 'transparent',
+                                    color: isMicroPython ? '#fff' : 'var(--text3)',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  title="Run with MicroPython (Python) runtime"
+                                >
+                                  Python (MicroPython)
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <RightPanelEditor
                         theme={theme}
                         editorLanguage={editorLanguage}
@@ -555,43 +641,67 @@ const CodeTabPanel = React.memo(function CodeTabPanel(props) {
                         {folderMenu.boardId}
                       </div>
 
-                      {[
-                        {
-                          label: 'Add new file',
-                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
-                          action: () => {
-                            const boardKind = serialBoardKinds?.[folderMenu.boardId] || 'arduino_uno';
-                            const sourceMode = serialBoardSourceModes?.[folderMenu.boardId] || 'native';
-                            const suggestedName = boardKind === 'rp2040'
-                              ? (sourceMode === 'micropython' ? 'main.py' : `${folderMenu.boardId}.ino`)
-                              : `${folderMenu.boardId}.ino`;
-                            const name = window.prompt('New file name:', suggestedName);
-                            if (name) onCreateCodeFile(name, true, `project/${folderMenu.boardId}`);
-                          }
-                        },
-                        {
-                          label: 'Upload new file',
-                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>,
-                          action: () => {
-                            if (onUploadCodeFile) onUploadCodeFile(`project/${folderMenu.boardId}`);
-                          }
-                        },
-                      ].map((item) => (
-                        <button
-                          key={item.label}
-                          className="canvas-menu-item"
-                          onClick={() => {
-                            item.action();
-                            setFolderMenu(null);
-                          }}
-                          style={{
-                            color: item.color || 'var(--text2)',
-                          }}
-                        >
-                          {item.icon}
-                          {item.label}
-                        </button>
-                      ))}
+                      {(() => {
+                        const boardKind = serialBoardKinds?.[folderMenu.boardId] || 'arduino_uno';
+                        const sourceMode = serialBoardSourceModes?.[folderMenu.boardId] || 'native';
+                        const isPythonCapable = /(rp2040|esp32|pico)/i.test(boardKind) || /(rp2040|esp32|pico)/i.test(folderMenu.boardId);
+                        const suggestedName = isPythonCapable
+                          ? (sourceMode === 'micropython' ? 'main.py' : `${folderMenu.boardId}.ino`)
+                          : `${folderMenu.boardId}.ino`;
+
+                        const items = [
+                          {
+                            label: 'Add new file...',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
+                            action: () => {
+                              const name = window.prompt('New file name:', suggestedName);
+                              if (name) onCreateCodeFile(name, true, `project/${folderMenu.boardId}`);
+                            }
+                          },
+                          ...(isPythonCapable ? [
+                            {
+                              label: 'New Python file (main.py)',
+                              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
+                              action: () => {
+                                onCreateCodeFile('main.py', true, `project/${folderMenu.boardId}`);
+                                if (updateComponentAttr) updateComponentAttr(folderMenu.boardId, 'env', 'micropython');
+                              }
+                            },
+                            {
+                              label: `New C++ sketch (${folderMenu.boardId}.ino)`,
+                              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>,
+                              action: () => {
+                                onCreateCodeFile(`${folderMenu.boardId}.ino`, true, `project/${folderMenu.boardId}`);
+                                if (updateComponentAttr) updateComponentAttr(folderMenu.boardId, 'env', 'native');
+                              }
+                            }
+                          ] : []),
+                          {
+                            label: 'Upload new file',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>,
+                            action: () => {
+                              if (onUploadCodeFile) onUploadCodeFile(`project/${folderMenu.boardId}`);
+                            }
+                          },
+                        ];
+
+                        return items.map((item) => (
+                          <button
+                            key={item.label}
+                            className="canvas-menu-item"
+                            onClick={() => {
+                              item.action();
+                              setFolderMenu(null);
+                            }}
+                            style={{
+                              color: item.color || 'var(--text2)',
+                            }}
+                          >
+                            {item.icon}
+                            {item.label}
+                          </button>
+                        ));
+                      })()}
                     </div>
                   );
                 })()}
@@ -947,8 +1057,8 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     showConnectionsPanel, wires, updateWireColor, deleteWire,
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
-    boardComponentMap, onToggleBoardFirmwareSource,
-    demoEditorMode = 'code',
+    boardComponentMap, updateComponentAttr, onToggleBoardFirmwareSource,
+    demoEditorMode = null,
     theme,
     projectName,
     editingDisabled = false,
@@ -1813,6 +1923,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 code={code}
                 setCode={setCode}
                 boardComponentMap={boardComponentMap}
+                updateComponentAttr={updateComponentAttr}
                 onToggleBoardFirmwareSource={onToggleBoardFirmwareSource}
                 fileMenu={fileMenu}
                 onRenameCodeFile={onRenameCodeFile}
@@ -2045,7 +2156,7 @@ const RightPanelBase = React.forwardRef((props, ref) => {
     plotterPaused, setPlotterPaused, plotDataRef, plotBoundsRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
     isPlotterVisible,
     showConnectionsPanel, wires, updateWireColor, deleteWire,
-    boardComponentMap, onToggleBoardFirmwareSource,
+    boardComponentMap, updateComponentAttr, onToggleBoardFirmwareSource,
     demoEditorMode,
     editingDisabled,
     editingDisabledMessage,
@@ -2095,7 +2206,7 @@ const RightPanelBase = React.forwardRef((props, ref) => {
     plotterPaused, setPlotterPaused, plotDataRef, plotBoundsRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
     isPlotterVisible,
     showConnectionsPanel, wires, updateWireColor, deleteWire,
-        boardComponentMap, onToggleBoardFirmwareSource,
+        boardComponentMap, updateComponentAttr, onToggleBoardFirmwareSource,
         editingDisabled,
         editingDisabledMessage,
         boardLineEndings, setBoardLineEndings,

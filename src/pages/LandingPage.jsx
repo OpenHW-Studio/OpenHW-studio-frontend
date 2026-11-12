@@ -351,8 +351,8 @@ export default function LandingPage() {
 
           <span style={{ fontSize: "12px", color: "var(--text3, #64748b)", fontWeight: 500 }}>
             {editorMode === "blocks"
-              ? "🧩 Blocks mode: Edit visually with blocks (Code editor is locked in read-only)"
-              : "💻 Code mode: Edit directly in code editor (Blocks are locked in view-only)"}
+              ? "🧩 Example projects will open in Blocks mode (Code editor locked in read-only)"
+              : "💻 Example projects will open in Code mode (Blocks locked in view-only)"}
           </span>
         </div>
 
