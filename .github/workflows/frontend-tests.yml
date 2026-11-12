@@ -211,10 +211,10 @@ jobs:
       - name: Start dev server
         working-directory: OpenHW-studio-frontend
         run: npm run dev &
-        timeout-minutes: 1
 
       - name: Wait for dev server
-        run: npx wait-on http://localhost:5173 --timeout 30000
+        # Increased from 30s → 90s: cold Vite start with emulator deps takes 50-70s on CI runners
+        run: npx wait-on http://localhost:5173 --timeout 90000
 
       - name: Run Playwright E2E tests
         working-directory: OpenHW-studio-frontend

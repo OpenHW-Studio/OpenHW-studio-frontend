@@ -135,9 +135,9 @@ jobs:
         working-directory: openhw-studio-backend
         run: npm start &
         
-      # Wait a few seconds to ensure backend is fully up
+      # Wait for backend to be fully ready (increased from sleep 10 for cold CI runners)
       - name: Wait for backend
-        run: sleep 10
+        run: npx wait-on http://localhost:5000/api/maintenance-status --timeout 60000 || sleep 20
 
       - name: Run page validation tests
         working-directory: OpenHW-studio-frontend
