@@ -436,7 +436,7 @@ export default function AboutUsNewPage() {
     return (
       document.documentElement.getAttribute("data-theme") ||
       localStorage.getItem("theme") ||
-      "dark"
+      "light"
     );
   });
 

@@ -125,10 +125,11 @@ function scanFile(
   maxHits = 4,
   contextLines = 2
 ): CodeSuspect[] {
-  if (!fs.existsSync(filePath)) return [];
-  const lines = fs.readFileSync(filePath, 'utf8').split('\n');
-  const suspects: CodeSuspect[] = [];
-  const seenLines = new Set<number>();
+  try {
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return [];
+    const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+    const suspects: CodeSuspect[] = [];
+    const seenLines = new Set<number>();
 
   // Build whole-word regex patterns for each keyword
   const patterns = keywords.map(kw => ({
@@ -166,7 +167,10 @@ function scanFile(
       reason: `Keyword match: "${matched.kw}"`,
     });
   }
-  return suspects;
+    return suspects;
+  } catch {
+    return [];
+  }
 }
 
 // Physical path of the emulator source (npm file: link)

@@ -10,6 +10,7 @@ import {
 } from '../services/adventureService'
 import { useAuth } from '../context/AuthContext'
 import { BookOpen, Sparkles, ArrowRight, ArrowLeft, Trophy, CheckCircle, ShieldAlert, Award, Sun, Moon, FileText, LogOut } from 'lucide-react'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
 
 // Slugs that belong to the Arduino journey (mirrors AdventureMapPage)
 const ALL_ARDUINO_SLUGS = [
@@ -29,11 +30,16 @@ export default function ProjectTheoryPage() {
     logout()
     navigate('/')
   }
-  const classId = new URLSearchParams(location.search).get('classId')
-  const journey = ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32'
-  const mapPath = classId
-    ? `/adventure?journey=${journey}&classId=${encodeURIComponent(classId)}`
-    : `/adventure?journey=${journey}`
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
   const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { awardXP } = useGamification()
@@ -53,7 +59,7 @@ export default function ProjectTheoryPage() {
     setLoadingCustom(true)
     const load = async () => {
       try {
-        const { project: classProject } = await getAdventureProjectContent(classId, projectName)
+        const { project: classProject } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         setCustomProject(toProjectDisplayMeta(classProject))
       } catch (err) {
@@ -65,7 +71,7 @@ export default function ProjectTheoryPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingCustom && !baseProject
@@ -77,14 +83,26 @@ export default function ProjectTheoryPage() {
 
   // Light/Dark mode state
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theory_theme')
-    return saved !== 'light'
+    const saved = localStorage.getItem('theory_theme') || localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme')
+    return saved === 'dark'
   })
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const cur = document.documentElement.getAttribute('data-theme')
+      if (cur) setIsDarkMode(cur === 'dark')
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
 
   const toggleTheme = () => {
     setIsDarkMode(prev => {
       const next = !prev
-      localStorage.setItem('theory_theme', next ? 'dark' : 'light')
+      const mode = next ? 'dark' : 'light'
+      localStorage.setItem('theory_theme', mode)
+      localStorage.setItem('theme', mode)
+      document.documentElement.setAttribute('data-theme', mode)
       return next
     })
   }
@@ -93,7 +111,7 @@ export default function ProjectTheoryPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         setClassTheoryCards(Array.isArray(projectContent?.theory) && projectContent.theory.length ? projectContent.theory : null)
       } catch {
@@ -102,7 +120,7 @@ export default function ProjectTheoryPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName])
+  }, [classId, projectName, mapId])
 
   const flashcards = (classTheoryCards && classTheoryCards.length > 0)
     ? classTheoryCards
@@ -407,9 +425,23 @@ export default function ProjectTheoryPage() {
               position: 'absolute', inset: 24, borderRadius: 24,
               border: isDarkMode ? '1px dashed rgba(255,255,255,0.1)' : '1px dashed rgba(15, 23, 42, 0.1)',
             }} />
-            <div style={{ fontSize: 110, zIndex: 2, filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.15))' }}>
-              {card.emoji || '💡'}
-            </div>
+            {(card.image || (card.emoji && (card.emoji.startsWith('/') || card.emoji.endsWith('.png')))) ? (
+              <img
+                src={card.image || card.emoji}
+                alt={card.front || 'Component'}
+                style={{
+                  width: '65%',
+                  height: '65%',
+                  objectFit: 'contain',
+                  zIndex: 2,
+                  filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.2))',
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: 110, zIndex: 2, filter: 'drop-shadow(0 16px 24px rgba(0,0,0,0.15))' }}>
+                {card.emoji || '💡'}
+              </div>
+            )}
 
             <div style={{
               position: 'absolute', bottom: 24,

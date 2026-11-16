@@ -17,12 +17,14 @@ export default function GuidedSimulatorPage() {
   const { projectName = '' } = useParams()
   const [searchParams] = useSearchParams()
   const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journey = searchParams.get('journey')
   const location = useLocation()
   const { xp = 0, coins = 0 } = useGamification?.() || {}
 
   // ── Read initial theme from the document (set by LandingPage or any other page) ──
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
-  const colors = THEMES[theme]
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light')
+  const colors = THEMES[theme] || THEMES.light || THEMES.dark
   const projectColor = location.state?.projectColor || '#22c55e'
 
   const toggleTheme = () => {
@@ -30,11 +32,24 @@ export default function GuidedSimulatorPage() {
     setTheme(next)
     // Keep document in sync so every page sees the same choice
     document.documentElement.setAttribute('data-theme', next)
+    localStorage.setItem('theme', next)
   }
 
-  const simUrl = classId
-    ? `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}&classId=${encodeURIComponent(classId)}`
-    : `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+  const simParams = new URLSearchParams()
+  simParams.set('guided', '1')
+  simParams.set('mode', 'assessment')
+  simParams.set('project', projectName)
+  if (classId) simParams.set('classId', classId)
+  if (mapId) simParams.set('mapId', mapId)
+  if (journey) simParams.set('journey', journey)
+  const simUrl = `/simulator?${simParams.toString()}`
+
+  const backParams = new URLSearchParams()
+  if (classId) backParams.set('classId', classId)
+  if (mapId) backParams.set('mapId', mapId)
+  if (journey) backParams.set('journey', journey)
+  const backQs = backParams.toString() ? `?${backParams.toString()}` : ''
+
   const projectTitle = projectName.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
   return (
@@ -51,7 +66,7 @@ export default function GuidedSimulatorPage() {
       }}>
 
         <button
-          onClick={() => navigate(classId ? `/${projectName}/assessment?classId=${encodeURIComponent(classId)}` : `/${projectName}/assessment`, { state: { projectColor } })}
+          onClick={() => navigate(`/${projectName}/assessment${backQs}`, { state: { projectColor, returnTo: location.state?.returnTo } })}
           style={{
             background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
             border: `1px solid ${colors.borderAlt}`,

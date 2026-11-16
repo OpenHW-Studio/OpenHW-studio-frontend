@@ -191,6 +191,9 @@ export default function UserProfilePage() {
               <button onClick={() => navigate("/user/dashboard?tab=modules")} className="student-db-sidebar__link">
                 <Layers className="w-4 h-4" /> Modules
               </button>
+              <button onClick={() => navigate("/user/dashboard?tab=adventure-map")} className="student-db-sidebar__link">
+                <Activity className="w-4 h-4" /> Adventure map
+              </button>
             </nav>
           </div>
 

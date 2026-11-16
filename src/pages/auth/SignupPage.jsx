@@ -15,8 +15,11 @@ import {
   Shuffle,
   ChevronLeft,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles,
+  Check
 } from "lucide-react";
+import ThemeToggleSlider from "../../components/ThemeToggleSlider.jsx";
 
 // Presets for the Avatar Builder
 const STYLE_PRESETS = [
@@ -36,7 +39,8 @@ const SEEDS = [
 
 // Helper for vibrant DiceBear avatars served same-origin via backend proxy
 export function getDiceBearAvatarUrl(style = "bottts", seed = "alpha") {
-  return `/api/avatar?style=${encodeURIComponent(style)}&seed=${encodeURIComponent(seed)}`;
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+  return `${apiBase}/avatar?style=${encodeURIComponent(style)}&seed=${encodeURIComponent(seed)}`;
 }
 
 export default function SignupPage() {
@@ -336,164 +340,127 @@ export default function SignupPage() {
         
         {/* Left Panel: Avatar Customizer & Live Preview */}
         <section className="auth-hardware-showcase">
-          <div className="hardware-card">
-            <div className="hardware-card__header">
-              <span>LIVE PROFILE PREVIEW</span>
-              <span className="hardware-card__signal">
-                <Signal className="w-3.5 h-3.5 animate-pulse" />
-                <span>ONLINE</span>
-              </span>
-            </div>
-            
-            <div className="hardware-card__preview-area">
-              <img
-                src={getDiceBearAvatarUrl(avatarStyle, avatarSeed)}
-                alt="Profile Preview"
-                className="hardware-card__avatar"
-              />
-              <div className="hardware-card__chip-icon">
-                <Cpu className="w-4 h-4 text-orange-600 animate-pulse" />
+          <div className="avatar-studio-card">
+            {/* Studio Header */}
+            <div className="avatar-studio-header">
+              <div className="avatar-studio-badge">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>AVATAR STUDIO</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <ThemeToggleSlider size="sm" />
+                <div className="avatar-studio-status">
+                  <span className="avatar-pulse-dot"></span>
+                  <span>ONLINE</span>
+                </div>
               </div>
             </div>
-            
-            <div className="hardware-card__footer">
-              <span>ID: PENDING_GEN</span>
-              <span>V.1.0.4</span>
-            </div>
-          </div>
 
-          {/* Interactive Tabs Slider */}
-          <div className="hardware-tabs-wrapper">
-            <button
-              type="button"
-              onClick={prevStyle}
-              className="hardware-slider-btn"
-              title="Previous Style"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            
-            <div className="hardware-tabs-slider">
-              {/* Adjacent Left Tab */}
+            {/* Avatar Preview Canvas */}
+            <div className="avatar-preview-canvas">
+              <div className="avatar-preview-halo"></div>
+              <img
+                src={getDiceBearAvatarUrl(avatarStyle, avatarSeed)}
+                alt="Profile Avatar"
+                className="avatar-preview-img"
+              />
               <button
                 type="button"
-                onClick={prevStyle}
-                className="hardware-tab-slide is-adjacent"
+                onClick={handleRandomize}
+                className="avatar-quick-randomize-btn"
+                title="Surprise me (Randomize style & avatar)"
               >
-                {STYLE_PRESETS[getAdjacentIndex(-1)].label.toUpperCase()}
-              </button>
-
-              {/* Active Tab */}
-              <button
-                type="button"
-                className="hardware-tab-slide is-active"
-              >
-                {STYLE_PRESETS[styleIndex].label.toUpperCase()}
-              </button>
-
-              {/* Adjacent Right Tab */}
-              <button
-                type="button"
-                onClick={nextStyle}
-                className="hardware-tab-slide is-adjacent"
-              >
-                {STYLE_PRESETS[getAdjacentIndex(1)].label.toUpperCase()}
+                <Shuffle className="w-4 h-4 text-slate-700 dark:text-slate-200" />
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={nextStyle}
-              className="hardware-slider-btn"
-              title="Next Style"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            {/* Selected Style Indicator */}
+            <div className="avatar-style-selector-label">
+              <span>AVATAR THEME</span>
+              <span className="avatar-style-current">{STYLE_PRESETS[styleIndex]?.label}</span>
+            </div>
 
-          {/* Customizer Option Grid with Arrows */}
-          <div className="hardware-grid-wrapper">
-            <button
-              type="button"
-              onClick={prevPage}
-              className="hardware-slider-btn"
-              title="Previous Page"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="hardware-grid">
-              {currentPageSeeds.map((seed) => (
+            {/* Style Pills Carousel */}
+            <div className="avatar-style-pills">
+              {STYLE_PRESETS.map((style, idx) => (
                 <button
-                  key={seed}
+                  key={style.id}
                   type="button"
-                  onClick={() => setAvatarSeed(seed)}
-                  className={`hardware-grid-item ${avatarSeed === seed ? "is-selected" : ""}`}
-                  title={`Seed: ${seed}`}
+                  onClick={() => {
+                    setStyleIndex(idx);
+                    setAvatarStyle(style.id);
+                    setAvatarPage(0);
+                    setAvatarSeed(SEEDS[0]);
+                  }}
+                  className={`avatar-style-pill ${styleIndex === idx ? "is-active" : ""}`}
                 >
-                  <img
-                    src={getDiceBearAvatarUrl(avatarStyle, seed, 40)}
-                    alt={seed}
-                    className="w-10 h-10 object-contain"
-                  />
+                  {style.label}
                 </button>
               ))}
             </div>
 
+            {/* Seeds Grid Header & Pagination */}
+            <div className="avatar-grid-header">
+              <span className="avatar-grid-title">SELECT LOOK</span>
+              <div className="avatar-page-controls">
+                <button
+                  type="button"
+                  onClick={prevPage}
+                  className="avatar-page-btn"
+                  title="Previous variations"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="avatar-page-indicator">{avatarPage + 1} / 3</span>
+                <button
+                  type="button"
+                  onClick={nextPage}
+                  className="avatar-page-btn"
+                  title="Next variations"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Avatar Selection Grid */}
+            <div className="avatar-selection-grid">
+              {currentPageSeeds.map((seed) => {
+                const isSelected = avatarSeed === seed;
+                return (
+                  <button
+                    key={seed}
+                    type="button"
+                    onClick={() => setAvatarSeed(seed)}
+                    className={`avatar-grid-card ${isSelected ? "is-selected" : ""}`}
+                    title={`Variant: ${seed}`}
+                  >
+                    <img
+                      src={getDiceBearAvatarUrl(avatarStyle, seed)}
+                      alt={seed}
+                      className="avatar-grid-card-img"
+                      loading="lazy"
+                    />
+                    {isSelected && (
+                      <span className="avatar-check-badge">
+                        <Check className="w-2.5 h-2.5 text-white" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Randomize Action Bar */}
             <button
               type="button"
-              onClick={nextPage}
-              className="hardware-slider-btn"
-              title="Next Page"
+              onClick={handleRandomize}
+              className="avatar-random-btn"
             >
-              <ChevronRight className="w-4 h-4" />
+              <Shuffle className="w-4 h-4" />
+              <span>Randomize Avatar</span>
             </button>
           </div>
-
-          {/* Randomize Button */}
-          <button
-            type="button"
-            onClick={handleRandomize}
-            className="hardware-random-btn"
-          >
-            <Shuffle className="w-3.5 h-3.5" />
-            [ RANDOMIZE AVATAR ]
-          </button>
-
-          {/* Diagnostic Telemetry Display */}
-          <div 
-            style={{
-              width: "100%",
-              maxWidth: "320px",
-              background: "rgba(30, 41, 59, 0.9)",
-              border: "1px solid #475569",
-              borderRadius: "8px",
-              padding: "12px",
-              fontSize: "11px",
-              color: "#38bdf8",
-              fontFamily: "monospace",
-              display: "flex",
-              flexDirection: "column",
-              gap: "4px"
-            }}
-          >
-            <div className="flex justify-between border-b border-slate-700 pb-1.5 mb-1.5 text-slate-300">
-              <span className="font-bold flex items-center gap-1"><Activity className="w-3.5 h-3.5 text-emerald-400" />AVATAR MODULE DIAGNOSTIC</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">[BASE_STYLE]</span>
-              <span className="text-emerald-400 font-bold uppercase">{avatarStyle}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">[SEED_VAL]</span>
-              <span>{avatarSeed}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">[ACTIVE_PAGE]</span>
-              <span className="text-amber-400">PAGE {avatarPage + 1} / 3</span>
-            </div>
-          </div>
-
         </section>
 
         {/* Right Panel: Signup Form */}

@@ -11,6 +11,16 @@ import {
 } from '../services/adventureService'
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, ArrowRight, ShieldAlert, Sparkles, Check, Lock, Sun, Moon, Gift, FileText, LogOut } from 'lucide-react'
+import { getAdventureReturnUrl } from '../utils/navigationUtils'
+
+const ALL_ARDUINO_SLUGS = [
+  'led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr',
+  'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor',
+  'dc-motor',
+  'push-button', 'ultrasonic-sensor', 'dht11-sensor', 'lcd-display',
+  'relay-control', 'oled-graphics', 'neopixel-effects', 'keypad-lock',
+  'rotary-menu', 'seven-segment-clock', 'stepper-motor', 'mpu6050-tilt',
+]
 
 export default function ProjectComponentUnlockPage() {
   const { projectName } = useParams()
@@ -21,8 +31,17 @@ export default function ProjectComponentUnlockPage() {
     logout()
     navigate('/')
   }
-  const classId = new URLSearchParams(location.search).get('classId')
-  const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
+  const searchParams = new URLSearchParams(location.search)
+  const classId = searchParams.get('classId')
+  const mapId = searchParams.get('mapId')
+  const journeyParam = searchParams.get('journey')
+  const journey = journeyParam || (ALL_ARDUINO_SLUGS.includes(projectName) ? 'arduino' : 'esp32')
+  const mapPath = getAdventureReturnUrl({
+    location,
+    searchParams,
+    fallbackJourney: journey,
+  })
+  const goBackToMap = () => navigate(mapPath, { state: { openProject: projectName } })
   const { unlockComponentTypes } = useGamification()
 
   const baseProject = PROJECTS.find(p => p.slug === projectName)
@@ -36,7 +55,7 @@ export default function ProjectComponentUnlockPage() {
     const load = async () => {
       if (!baseProject) setLoadingContent(true)
       try {
-        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName, mapId)
         if (cancelled) return
         if (!baseProject) {
           setCustomProject(toProjectDisplayMeta(projectContent))
@@ -44,7 +63,7 @@ export default function ProjectComponentUnlockPage() {
         setClassRewardComponents(
           Array.isArray(projectContent?.rewardComponents) && projectContent.rewardComponents.length
             ? projectContent.rewardComponents
-            : null,
+            : (Array.isArray(projectContent?.components) && projectContent.components.length ? projectContent.components : null),
         )
       } catch (err) {
         if (cancelled) return
@@ -57,7 +76,7 @@ export default function ProjectComponentUnlockPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName, baseProject])
+  }, [classId, projectName, baseProject, mapId])
 
   const project = baseProject || customProject
   const loading = loadingContent && !baseProject
@@ -71,14 +90,26 @@ export default function ProjectComponentUnlockPage() {
 
   // Light/Dark mode state
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('unlock_theme')
-    return saved !== 'light'
+    const saved = localStorage.getItem('unlock_theme') || localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme')
+    return saved === 'dark'
   })
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const cur = document.documentElement.getAttribute('data-theme')
+      if (cur) setIsDarkMode(cur === 'dark')
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
 
   const toggleTheme = () => {
     setIsDarkMode(prev => {
       const next = !prev
-      localStorage.setItem('unlock_theme', next ? 'dark' : 'light')
+      const mode = next ? 'dark' : 'light'
+      localStorage.setItem('unlock_theme', mode)
+      localStorage.setItem('theme', mode)
+      document.documentElement.setAttribute('data-theme', mode)
       return next
     })
   }
@@ -166,7 +197,7 @@ export default function ProjectComponentUnlockPage() {
         <ShieldAlert size={64} color="#f43f5e" style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Vault Locked</div>
         <div style={{ color: '#94a3b8', marginBottom: 24 }}>We couldn't load the reward information for: {projectName}</div>
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           padding: '12px 24px', borderRadius: 14, border: 'none', background: color, color: '#fff', fontWeight: 800, cursor: 'pointer'
         }}>
           Return to World Map
@@ -230,7 +261,7 @@ export default function ProjectComponentUnlockPage() {
           ))}
         </div>
 
-        <button onClick={() => navigate(mapPath)} style={{
+        <button onClick={goBackToMap} style={{
           background: 'linear-gradient(135deg, #10b981, #059669)',
           color: '#fff', fontWeight: 900, fontSize: 14,
           padding: '16px 36px', borderRadius: 20, border: 'none',
@@ -310,7 +341,7 @@ export default function ProjectComponentUnlockPage() {
         transition: 'background 0.3s ease, border-bottom 0.3s ease',
       }}>
         <button
-          onClick={() => navigate(mapPath)}
+          onClick={goBackToMap}
           style={{
             background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.05)',
             border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(15, 23, 42, 0.1)',
@@ -567,7 +598,7 @@ export default function ProjectComponentUnlockPage() {
               </button>
             ) : (
               <button
-                onClick={() => navigate(mapPath)}
+                onClick={goBackToMap}
                 style={{
                   width: '100%',
                   padding: '14px 0', borderRadius: 16, border: 'none',

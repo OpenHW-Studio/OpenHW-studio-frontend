@@ -1,14 +1,15 @@
-import { useState, useMemo, startTransition } from "react";
+import { useState, useEffect, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import PublicNavbar from "../components/PublicNavbar.jsx";
 import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
 import GUIDED_JSON from "../services/guidedProjects.json";
+import {
+  EXAMPLES_BASE_URL,
+  getDemoCircuitUrl,
+} from "../services/exampleLoaderService.js";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
-
-const EXAMPLES_BASE_URL =
-  import.meta.env.VITE_EXAMPLES_BASE_URL || '/api/examples';
 
 // JSON slug → URL slug for projects where they differ
 const JSON_SLUG_TO_URL = {
@@ -67,10 +68,7 @@ const CIRCUIT_IMAGE_MAP = {
 
 // Resolve circuit image URL for a given slug
 function getCircuitImageUrl(slug, baseUrl) {
-  const entry = CIRCUIT_IMAGE_MAP[slug];
-  if (entry) return `${baseUrl}/${entry.folder}/${entry.file}`;
-  // fallback: try slug/circuit.png directly
-  return `${baseUrl}/${slug}/circuit.png`;
+  return getDemoCircuitUrl(slug, baseUrl);
 }
 
 const PREFERRED_SLUGS = [
@@ -90,8 +88,19 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "dark",
+    () => localStorage.getItem("theme") || document.documentElement.getAttribute("data-theme") || "light",
   );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
   const [editorMode, setEditorMode] = useState(
     () => localStorage.getItem("openhw_demo_editor_mode") || "code"
   );
@@ -139,6 +148,32 @@ export default function LandingPage() {
     else if (role === "student") handleNavigate("/student/dashboard");
     else handleNavigate("/user/dashboard");
   };
+
+  useEffect(() => {
+    // Landing page always starts dark. Set data-theme="dark" on <html> so the
+    // CSS selector `html[data-theme="dark"] .landing` applies dark vars.
+    // We only do this if the user hasn't explicitly chosen light via the toggle.
+    const prevTheme = document.documentElement.getAttribute("data-theme");
+    const prevBg = document.body.style.backgroundColor;
+    const savedTheme = localStorage.getItem("theme");
+
+    if (savedTheme !== "light") {
+      document.documentElement.setAttribute("data-theme", "dark");
+      setTheme("dark");
+      document.body.style.backgroundColor = "#070b14";
+    }
+
+    return () => {
+      // Restore to light (site default) when navigating away from landing
+      const currentSavedTheme = localStorage.getItem("theme");
+      if (currentSavedTheme) {
+        document.documentElement.setAttribute("data-theme", currentSavedTheme);
+      } else {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+      document.body.style.backgroundColor = prevBg;
+    };
+  }, []);
 
   return (
     <div className="landing">

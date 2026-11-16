@@ -52,6 +52,9 @@ import ProjectsGallery from "./pages/ProjectsGallery.jsx";
 import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
+const AdventureCreatorPage = React.lazy(
+  () => import("./pages/adventure/AdventureCreatorPage.jsx")
+);
 const ProjectGuidePage = React.lazy(
   () => import("./pages/ProjectGuidePage.jsx"),
 );
@@ -71,6 +74,8 @@ import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 const ComponentStatusPage = React.lazy(() => import("./pages/ComponentStatusPage.jsx"));
 const BugTrackerPage = React.lazy(() => import("./pages/BugTrackerPage.jsx"));
 const FeedbackReviewsPage = React.lazy(() => import("./pages/FeedbackReviewsPage.jsx"));
+const CertificateVerifyPage = React.lazy(() => import("./pages/CertificateVerifyPage.jsx"));
+const CertificationsPage = React.lazy(() => import("./pages/CertificationsPage.jsx"));
 import VisitorTracker from "./components/VisitorTracker.jsx";
 import BetaBanner from "./components/BetaBanner.jsx";
 import VersionWatcher from "./components/VersionWatcher.jsx";
@@ -200,7 +205,15 @@ function ThemeToggleButton() {
     location.pathname.includes('/demo') ||
     location.pathname.includes('/guided');
 
-  if (isSimulator || hasNavbarToggle) return null;
+  const isAuthPage =
+    location.pathname.startsWith('/classroom/sign') ||
+    location.pathname === '/login' ||
+    location.pathname === '/signup' ||
+    location.pathname === '/user/signup' ||
+    location.pathname === '/forgot-password' ||
+    location.pathname.startsWith('/reset-password');
+
+  if (isSimulator || hasNavbarToggle || isAuthPage) return null;
 
   return (
     <div
@@ -285,6 +298,11 @@ export default function App() {
                   />
                   <Route path="/select-role" element={<RoleSelectPage />} />
 
+                  {/* Public Certificate Verification & Showcase Routes */}
+                  <Route path="/certificate/:certId" element={<CertificateVerifyPage />} />
+                  <Route path="/verify/:certId" element={<CertificateVerifyPage />} />
+                  <Route path="/certifications" element={<CertificationsPage />} />
+
                   <Route path="/login-success" element={<AuthSuccess />} />
 
                   <Route path="/projects" element={<ProjectsGallery />} />
@@ -296,6 +314,8 @@ export default function App() {
                   <Route path="/alignment-lab" element={<ComponentLab />} />
 
                   <Route path="/adventure" element={<AdventureMapPage />} />
+                  <Route path="/adventure/create" element={<AdventureCreatorPage />} />
+                  <Route path="/adventure/edit/:mapId" element={<AdventureCreatorPage />} />
                   <Route path="/grade" element={<GradingPage />} />
 
                   {/* Guest accessible simulator */}
@@ -472,6 +492,14 @@ export default function App() {
                       </ProtectedRoute>
                     }
                   />
+                  <Route
+                    path="/student/certifications"
+                    element={
+                      <ProtectedRoute allowedRole="student">
+                        <CertificationsPage />
+                      </ProtectedRoute>
+                    }
+                  />
 
                   {/* Protected: Teacher */}
                   <Route
@@ -479,6 +507,14 @@ export default function App() {
                     element={
                       <ProtectedRoute allowedRole="teacher">
                         <TeacherDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/teacher/adventure-creator"
+                    element={
+                      <ProtectedRoute allowedRole="teacher">
+                        <AdventureCreatorPage />
                       </ProtectedRoute>
                     }
                   />
