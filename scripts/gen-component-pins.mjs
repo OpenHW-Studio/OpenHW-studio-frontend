@@ -24,8 +24,13 @@ function loadManifests() {
     try {
       const m = JSON.parse(fs.readFileSync(mp, 'utf8'));
       if (!m.type) continue;
-      const ids = (m.pins || []).map((p) => (typeof p === 'string' ? p : p?.id)).filter(Boolean).map(String);
-      out.set(m.type, ids);
+      const pins = (m.pins || []).map((p) => {
+        const id = typeof p === 'string' ? p : p?.id;
+        if (!id) return null;
+        const type = typeof p === 'object' && p && typeof p.type === 'string' ? p.type : null;
+        return { id: String(id), type };
+      }).filter(Boolean);
+      out.set(m.type, pins);
     } catch { /* skip unreadable */ }
   }
   return out;
@@ -37,7 +42,7 @@ function parseTable(src) {
   // as types; the runtime values live in the second literal, which opens
   // right after the `}[]> = {` line. Anchor there — the naive first-brace
   // parse used to swallow the type as the block and no-op.
-  const valuesAnchor = src.indexOf('}[]> = {');
+  const valuesAnchor = src.indexOf('string; type?: string }>> = {');
   let brace;
   if (valuesAnchor >= 0) {
     brace = src.indexOf('{', valuesAnchor);
@@ -125,9 +130,9 @@ for (const e of entries) {
   }
 }
 const generated = [];
-for (const [type, ids] of [...manifests.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+for (const [type, pinsDef] of [...manifests.entries()].sort(([a], [b]) => a.localeCompare(b))) {
   if (seen.has(type)) continue;
-  const pins = ids.map((id) => `{ id: '${id}' }`).join(', ');
+  const pins = pinsDef.map((p) => p.type ? `{ id: '${p.id}', type: '${p.type}' }` : `{ id: '${p.id}' }`).join(', ');
   lines.push(`    '${type}': [${pins}],`);
   generated.push(type);
   seen.add(type);

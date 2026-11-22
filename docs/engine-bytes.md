@@ -126,7 +126,7 @@ npx playwright test tests/e2e/<engine>-*.spec.js --workers=1
 | engine | owner folder | pinned bytes (repo) | owner bytes TODAY | verdict |
 |---|---|---|---|---|
 | `stm32f1-emu` | `~/Documents/stm32 emu blue pill/pkg` | glue `43c24f16` + wasm `d1e69c28` + facade `091a0746`/`f2cff22c` | glue `43c24f16` + wasm **`641abe52`** + facade `091a0746`/`f2cff22c` | **MISMATCHED PAIR** — the owner rebuilt the wasm only |
-| `pico-emu` | `~/Documents/rp2350/Pico-emu/web` | glue `c3b784f0` + wasm `0c74dffe` | glue `c3b784f0` + wasm `0c74dffe` | **SAME** |
+| `pico-emu` | `~/Documents/rp2350/Pico-emu/web` | glue `c59a1fe2` + wasm `5d494ac4` | glue `c59a1fe2` + wasm `5d494ac4` | **SAME** |
 | `esp32-emu` | `~/Documents/esp32 emu/dist/sab` | proxy `3c5c1866` + worker `4afe24dd` | **no `dist/` at all** | **NOT BUILT** |
 | `esp32` engine wasm | `~/Documents/esp32 emu/src/engine/esp-xtensa` | wasm `d6d17d79` (+ ROM `445981c7`) | wasm `d1c08b41` (ROM `445981c7`) | **DIFFERENT** — the repo copy carries the OpenHW patches on purpose |
 | `stm32f4-emu` | `~/Documents/stm32 F4/site` | glue `19a96301` + wasm `9455e31c` + facade `9631b8db`/`1f36d0ed`/`abd3334f` | glue `2574b1e2` + wasm `578ce844` + facade `9f9d7338`/`1f36d0ed`/`abd3334f` | **DIFFERENT** — glue + wasm + `emulator.js` moved together (a consistent rebuild) |

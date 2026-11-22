@@ -34,12 +34,16 @@ Never in CI — CI must build from the committed snapshot.
 ## Provenance (measured 2026-10-20)
 
 Copied **verbatim** from the engine owner's checkout
-`/home/danish1075/Documents/rp2350/Pico-emu/web/` (same files, same md5):
+`/home/danish1075/Documents/rp2350/Pico-emu/web/` (same files, same md5; build of 2026-11-08 — adds the
+HC-SR04 IT-ordering fix (an exception taken between `it_check_skip` consuming an IT slot and the
+follower executing used to corrupt predication and drop a return value), plus effective-pad
+edge recording: the edge ring now fires on OE transitions too, so a guest pinMode(OUTPUT) on a
+pin whose pad sat LOW produces the LOW edge component models watch (e-Paper DC/CS/RST):
 
 | file | md5 | role |
 |---|---|---|
-| `picoemu.wasm.js` | `c3b784f0a59b151bc698329300a0611e` | emscripten glue (imports the wasm) |
-| `picoemu.wasm.wasm` | `0c74dffe5f5458a9062e4f7a13197781` | engine wasm (CPU + peripherals) |
+| `picoemu.wasm.js` | `c59a1fe233b19def453009a260baf7f6` | emscripten glue (imports the wasm) |
+| `picoemu.wasm.wasm` | `5d494ac47c9a87cd2b33e404b8ea6f41` | engine wasm (CPU + peripherals) |
 
 The same two files were already committed in this repo under
 `public/vendor/board-engines/pico-emu/picoemu.wasm.js` (glue, md5 equal) and

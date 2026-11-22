@@ -41,14 +41,17 @@ export default defineConfig(({ mode }) => {
   // the OpenHW patches and stay in sync (see each README's refresh
   // recipe).
   //
-  // OPT-OUT for engine development: `OPENHW_ENGINE_FROM=owner npm run dev`
-  // points the Pico/ESP32 aliases back at the owner's live folders
-  // (they carry the newest engine work). NEVER in CI — CI must build
-  // from the committed snapshot.
-  const engineFromOwner = process.env.OPENHW_ENGINE_FROM === 'owner';
+  // Engine sourcing: the owner's live folders carry the newest engine work
+  // (I2C/SPI mirror fixes), so when they exist they are the DEFAULT in this
+  // working tree. `OPENHW_ENGINE_FROM=snapshot` forces the committed engine
+  // bytes (CI/container behavior, where the owner folders do not exist).
+  // `OPENHW_ENGINE_FROM=owner` still forces the folders explicitly.
   const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
   const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
   const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
+  const engineSource = process.env.OPENHW_ENGINE_FROM;
+  const engineFromOwner = engineSource === 'owner'
+    || (engineSource !== 'snapshot' && fs.existsSync(picoFolder));
   // Engine bytes committed in THIS repo (dev + build + deploy + runtime
   // fallback all resolve the same files) — see the alias block below.
   const f1EngineDir = path.resolve(__dirname, 'src/engines/stm32f1-emu');
@@ -154,6 +157,10 @@ export default defineConfig(({ mode }) => {
     ],
     define: {
       __APP_BUILD_TIME__: JSON.stringify(Date.now()),
+      // Engine-development switch: runner picks the owner folder's matched
+      // glue+wasm for the I2C/SPI/ADC fork path instead of the vendored
+      // fork snapshot (which would otherwise hide new engine exports).
+      __OPENHW_ENGINE_FROM_OWNER__: JSON.stringify(engineFromOwner),
     },
     worker: {
       format: 'es',

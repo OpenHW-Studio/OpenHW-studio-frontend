@@ -155,7 +155,6 @@ const ENGINES = [
             pinned: 'src/engines/pico-emu/picoemu.wasm.js',
             copies: [
               'public/vendor/board-engines/pico-emu/picoemu.wasm.js',
-              'src/worker/engines/pico-emu-fork/picoemu.wasm.js',
             ],
             owner: 'picoemu.wasm.js',
           },

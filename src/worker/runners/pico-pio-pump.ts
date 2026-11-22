@@ -174,10 +174,24 @@ export function pollPicoPioNeopixel(
             rxlevel = st.rxlevel || 0;
         } catch { return; }
         if (rxlevel <= 0) return;
-        const words = drainPioRxFifo(mod, PICO_PIO_NEOPIXEL_BLOCK, PICO_PIO_NEOPIXEL_SM);
+        // Cap the drain at the level just observed: the guest keeps
+        // resending the frame, and an uncapped drain can race past the
+        // report into the NEXT frame's first word (observed [R,G,B,R],
+        // breaking the 3-pixel contract).
+        const words = drainPioRxFifo(mod, PICO_PIO_NEOPIXEL_BLOCK, PICO_PIO_NEOPIXEL_SM, rxlevel);
         if (words.length === 0) return;
-        const pixels = pioWordsToPixels(words);
+        // Coalesce partial frames at the pump: the cell firmware always
+        // shows exactly 3-pixel bursts, but a tick can drain 1-2 words
+        // mid-shift (or 4+ when a resend raced the read). Forward only
+        // complete 3-word frames; hold the residue for the next drain so
+        // a partial prefix can never replace a good frame state.
+        const buf: number[] = (globalThis as any).__picoPioBuf || [];
+        for (const w of words) buf.push(w);
+        const complete = Math.floor(buf.length / 3) * 3;
+        const pixels = pioWordsToPixels(buf.slice(0, complete));
+        (globalThis as any).__picoPioBuf = buf.slice(complete);
         if (pixels.length === 0) return;
+
         for (const sink of sinks) {
             try { (sink as any).onNeoPixelFrame(pixels.slice()); } catch { /* ignore */ }
         }

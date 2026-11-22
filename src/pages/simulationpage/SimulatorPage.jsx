@@ -4407,7 +4407,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           return { ok: false, error: String(err?.message || err) };
         }
       },
-      async run({ forMs = 8000, selectTelemetry = [], serialNeedle = null, telemetryMode: mode = "detail" } = {}) {
+      async run({ forMs = 8000, selectTelemetry = [], serialNeedle = null, telemetryMode: mode = "detail", events = [] } = {}) {
         // Stop any previous run FIRST and snapshot serial length AFTER the
         // stop settles — otherwise a prior run's leftover serial rows leak
         // into this verdict (serialHistory is append-only; stop() does not
@@ -4453,6 +4453,24 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           const liveRun = window.__openhwRunRef?.current;
           if (typeof liveRun === "function") await liveRun({});
           else await handleRun({});
+          // Scripted component interactions (headless cells): the UI's
+          // onInteract path posts INTERACT to the worker, which calls
+          // inst.onEvent(event). Arm them once the run is up; afterMs is
+          // relative to this point (compile+START already done).
+          const scriptedEvents = Array.isArray(events) ? events : [];
+          for (const ev of scriptedEvents) {
+            if (!ev || !ev.compId || !ev.event) continue;
+            const after = Math.max(0, Number(ev.afterMs) || 0);
+            setTimeout(() => {
+              try {
+                workerRef.current?.postMessage({
+                  type: "INTERACT",
+                  compId: String(ev.compId),
+                  event: ev.event,
+                });
+              } catch { /* one event never breaks the run */ }
+            }, after);
+          }
           await sleep(2500);
           try { setComponentTelemetryEnabled(true); } catch { /* ignore */ }
           if (mode) { try { setTelemetryMode(mode); } catch { /* ignore */ }

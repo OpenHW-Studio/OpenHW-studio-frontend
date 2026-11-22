@@ -6,7 +6,10 @@ reason**. The reason is either a **cell** (a spec file + the serial needle
 or telemetry it asserts) or a **file:line** in the engine source. A cell with
 no source is not a claim, it is a guess.
 
-- **Last updated: 2026-10-22** — every section survey-verified, then
+- **Last updated: 2026-11-06** — component lane: Pico/Pico 2 I2C sensor reads
+  (MPU6050, BMP180, DS1307, ADXL345, FT6206 touch) and the HP4067 mux are now
+  green on both boards (engine jsmirror read maps + additive SDD attach).
+- **Prior audit 2026-10-22** — every section survey-verified, then
   **audited cell by cell** (lane/matrix-complete audit): the AVR,
   micro:bit and Retro tables were re-swept against the specs that actually
   exist in `tests/e2e/`, the connectivity extras were re-sourced, the
@@ -92,7 +95,7 @@ folder is *information*, not a failure.
 | engine (families) | owner folder | pinned path (repo) | pinned md5 | owner folder md5 **today** | verdict |
 |---|---|---|---|---|---|
 | STM32F1 | `~/Documents/stm32 emu blue pill/pkg` | `src/engines/stm32f1-emu/pkg/{stm32_bluepill_wasm.js, stm32_bluepill_wasm_bg.wasm, emulator.js, stm32f1.js}` | `43c24f16` + `d1e69c28` + `091a0746` + `f2cff22c` | `43c24f16` + **`641abe52`** + `091a0746` + `f2cff22c` | **MISMATCHED PAIR** — the owner rebuilt the wasm only; do **not** copy out of that folder |
-| Pico / Pico 2 | `~/Documents/rp2350/Pico-emu/web` | `src/engines/pico-emu/{picoemu.wasm.js, picoemu.wasm.wasm}` | `c3b784f0` + `0c74dffe` | `c3b784f0` + `0c74dffe` | **SAME** — one matched pair |
+| Pico / Pico 2 | `~/Documents/rp2350/Pico-emu/web` | `src/engines/pico-emu/{picoemu.wasm.js, picoemu.wasm.wasm}` | `c59a1fe2` + `5d494ac4` | `c59a1fe2` + `5d494ac4` | **SAME** — one matched pair |
 | Pico OpenHW fork | — (we build it) | `public/wasm/picoemu-fork.wasm.wasm` | `863559a3` | — | **N/A** — repo-only, deliberately not the owner bytes |
 | ESP32 / ESP32-CAM | `~/Documents/esp32 emu/dist/sab` | `src/engines/esp32-emu/dist/sab/{worker-proxy.js, worker-entry.js}` | `3c5c1866` + `4afe24dd` | **no `dist/` at all** | **NOT BUILT** — the owner deleted the build output; the repo snapshot is the only thing that runs |
 | ESP32 engine wasm + ROM | `~/Documents/esp32 emu/src/engine/esp-xtensa` | `public/wasm/esp_engine_wasm.wasm` + `public/firmware/esp32-v3-rom.bin` | `d6d17d79` + `445981c7` | `d1c08b41` + `445981c7` | **DIFFERENT** — the repo copy carries the OpenHW patches on purpose |
@@ -303,12 +306,12 @@ sweep), known-gaps (the 8051 HIGH-float gap is asserted there, not silently).
 
 ## Pico (survey-verified 2026-10-09; W/ETH share the base die)
 
-**Engine bytes:** repo-pinned `src/engines/pico-emu/` — glue `c3b784f0` + wasm `0c74dffe`, **ONE matched pair**, byte-equal to the owner's `rp2350/Pico-emu/web` build of 2026-10-08. The OpenHW I2C fork is a separate wasm on purpose (`public/wasm/picoemu-fork.wasm.wasm`, `863559a3`). Owner folder verdict 2026-10-20: **SAME**. Refresh recipe: `src/engines/pico-emu/README.md`.
+**Engine bytes:** repo-pinned `src/engines/pico-emu/` — glue `c59a1fe2` + wasm `5d494ac4`, **ONE matched pair**, byte-equal to the owner's `rp2350/Pico-emu/web` build of 2026-11-08 (jsmirror read maps + implicit START + additive SDD attach + HC-SR04 IT-ordering fix + effective-pad edge recording on OE transitions for the e-Paper class of silent-pad components). The retired `picoemu-fork` snapshot is no longer imported; every Pico run loads this pair. Dev uses the owner folder when it exists, while CI/build use this committed snapshot. Refresh recipe: `src/engines/pico-emu/README.md`.
 
 | Board | UART | I2C | SPI | ADC | PWM | PIO | DMA | MicroPython | DAC | USB-DEV | 1-Wire | I2S | CAN-2.0 | CAN-FD | RTC | GPIO-in | EEPROM | SD | IR | Camera | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| openhw-pico (+W/+ETH) | FULL (cell pico-uart-sweep, needle `PICOSWEEP_TICK` — the host read the guest's USART bytes on all six Pico variants: pico / pico-w / pico-eth / pico-2 / pico-2-w / pico-2-eth) | FULL (OLED+LCD — cell pico-i2c, needles `PICO_OLED_READY` + `PICO_LCD_READY2` — the host's SSD1306 and LCD2004 models received the frames; **sensor/storage READS are blocked** — see (j), the mirror answers every master read with 0xFF) | FULL (MAX7219+595 — cell pico-spi, needle `PICO_SPI_DRAWN` (the host's MAX7219 model); the 74HC595 cell pico-595 → `PSR_LATCHED`) | FULL (cell pico-adc, needle `PICOADC_VAL:` — the host's pot value reached the guest exactly) | FULL (cell pico-pwm, needle `PICOPWM_SET` + the host's LED model telemetry) | FULL (WS2812 3px — cell pico-pio, needle `PICO_PIO_TICK` + the host's NeoPixel telemetry activePixels:3 / totalPixels:3 / liveOop [16711680, 65280, 255] = R,G,B) | FULL (64B exact — cell pico-dma, needle `DMA_CMP:` — 64 B mem-to-mem, byte-exact) | FULL (I2C — cell pico-mp-i2c, needle `MP_TICK` — the MicroPython image's I2C transaction reached the host's OLED model) | ABSENT (no DAC peripheral in the RP2040 die) | FULL 2026-10-20 (USB CDC loopback: host byte "P" → CDC OUT → guest echo "USBCDC_ECHO:P"; `openhw-usb-device` sink enumState=active rxCount=3 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works: the runner reaches `gpio_set_input_pin` through the engine's devtools script path, patches/pico-in-latch-inject.md delivers the clean export) | NONE (engine-side: the PIO-based path needs a BCLK/LRC/DIN observe tap the engine does not expose) | ABSENT (no CAN silicon) | ABSENT (no CAN controller in the RP2040 — CAN is external MCP2518-type silicon) | ABSENT (no RTC silicon) | FULL 2026-10-20 (cell pico-gpio-in: `PICO_IN_LEVEL:0:1` — the guest reads GP13 LOW (GND-wired) and GP14 HIGH (3V3-wired); the LOW half is the stuck-at-1 discriminator) | FULL 2026-10-20 (PICO_EE_RB:ABCD + PICO_NVS_RB:1234 — flash-emul readback; cell pico-periph) | NONE (engine-side, MEASURED at runtime 2026-10-20: the ARM path never reports CS to the SPI device, so the SD model's `cs_active` stays 0 and every response is 0xFF — 60 MOSI bytes seen by the engine's SPI mirror, 0 CS events; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (RP2040/RP2350 have no DCMI) | FULL (OLED/LCD/MAX7219 — OLED+LCD: cell pico-i2c → `PICO_OLED_READY` / `PICO_LCD_READY2`; MAX7219: cell pico-spi → `PICO_SPI_DRAWN`; all three observed on the host's device models. 2026-11-05 sweep adds Nokia 5110 (fill 100%) and ILI9341 (256-pixel RAMWR)) |
-| openhw-pico-2 (+W/+ETH, M33) | FULL (cell pico-uart-sweep, needle `PICOSWEEP_TICK` — the same six-variant sweep covers openhw-pico-2 and its W/ETH variants) | FULL (OLED — cell pico2, needle `PICO2_OLED_READY` — the host's SSD1306 model received the frame; the MicroPython I2C cell pico2-mp-i2c → `MP2_TICK`; **sensor/storage READS are blocked** — see (j), the mirror answers every master read with 0xFF) | FULL (cell pico2-spi, needle `P2SPI_DRAWN` — the host's MAX7219 model showed the digits) | FULL (cell pico2-adc, needle `P2ADC_VAL:` — the host's pot value reached the guest exactly) | FULL (cell pico2-pwm, needle `P2PWM_SET` + the host's LED model telemetry) | FULL 2026-10-20 (PICO2_PIO_SHOWN; neopixel telemetry activePixels:3 totalPixels:3, liveOop pixels [16711680, 65280, 255] = R,G,B — cell pico2-pio-dma) | FULL 2026-10-20 (PICO2_DMA_CMP:PASS CK:80 — 64 B mem-to-mem, byte-exact — cell pico2-pio-dma) | FULL (I2C — cell pico2-mp-i2c, needle `MP2_TICK` — the MicroPython image's I2C transaction reached the host's OLED model) | ABSENT (no DAC peripheral in the RP2350 die) | FULL 2026-10-20 (USB CDC loopback: USBCDC_ECHO:P; sink enumState=active rxCount=1 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works, patches/pico-in-latch-inject.md) | NONE (engine-side: PIO-based path needs an observe tap) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no RTC silicon in the RP2350 — the chip only stamps a timestamp) | FULL 2026-10-20 (cell pico-gpio-in: `PICO2_IN_LEVEL:0:1` — GP13 LOW / GP14 HIGH observed by the guest) | FULL 2026-10-20 (PICO2_EE_RB:ABCD + PICO2_NVS_RB:1234 — flash-emul readback; cell pico2-periph) | NONE (engine-side, MEASURED at runtime 2026-10-20: no SPI CS edge on the ARM path → the SD model answers 0xFF forever; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (no DCMI) | FULL (OLED — cell pico2, needle `PICO2_OLED_READY` + the host's SSD1306 model; the SPI display is pico2-spi → `P2SPI_DRAWN`; 2026-11-05 sweep adds Nokia 5110 (fill 100%) and ILI9341 (256-pixel RAMWR)) |
+| openhw-pico (+W/+ETH) | FULL (cell pico-uart-sweep, needle `PICOSWEEP_TICK` — the host read the guest's USART bytes on all six Pico variants: pico / pico-w / pico-eth / pico-2 / pico-2-w / pico-2-eth) | FULL (OLED+LCD — cell pico-i2c, needles `PICO_OLED_READY` + `PICO_LCD_READY2` — the host's SSD1306 and LCD2004 models received the frames; **sensor READS are green (2026-11-06)**: cells i2c/mpu6050, bmp180, ds1307-rtc, adxl345, ili9341-touch on both boards — the engine's jsmirror now serves each model's register image through `picoemu_jsmirror_set_map`; storage reads remain blocked by CS — see (b)) | FULL (MAX7219+595 — cell pico-spi, needle `PICO_SPI_DRAWN` (the host's MAX7219 model); the 74HC595 cell pico-595 → `PSR_LATCHED`) | FULL (cell pico-adc, needle `PICOADC_VAL:` — the host's pot value reached the guest exactly) | FULL (cell pico-pwm, needle `PICOPWM_SET` + the host's LED model telemetry) | FULL (WS2812 3px — cell pico-pio, needle `PICO_PIO_TICK` + the host's NeoPixel telemetry activePixels:3 / totalPixels:3 / liveOop [16711680, 65280, 255] = R,G,B) | FULL (64B exact — cell pico-dma, needle `DMA_CMP:` — 64 B mem-to-mem, byte-exact) | FULL (I2C — cell pico-mp-i2c, needle `MP_TICK` — the MicroPython image's I2C transaction reached the host's OLED model) | ABSENT (no DAC peripheral in the RP2040 die) | FULL 2026-10-20 (USB CDC loopback: host byte "P" → CDC OUT → guest echo "USBCDC_ECHO:P"; `openhw-usb-device` sink enumState=active rxCount=3 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works: the runner reaches `gpio_set_input_pin` through the engine's devtools script path, patches/pico-in-latch-inject.md delivers the clean export) | NONE (engine-side: the PIO-based path needs a BCLK/LRC/DIN observe tap the engine does not expose) | ABSENT (no CAN silicon) | ABSENT (no CAN controller in the RP2040 — CAN is external MCP2518-type silicon) | ABSENT (no RTC silicon) | FULL 2026-10-20 (cell pico-gpio-in: `PICO_IN_LEVEL:0:1` — the guest reads GP13 LOW (GND-wired) and GP14 HIGH (3V3-wired); the LOW half is the stuck-at-1 discriminator) | FULL 2026-10-20 (PICO_EE_RB:ABCD + PICO_NVS_RB:1234 — flash-emul readback; cell pico-periph) | NONE (engine-side, MEASURED at runtime 2026-10-20: the ARM path never reports CS to the SPI device, so the SD model's `cs_active` stays 0 and every response is 0xFF — 60 MOSI bytes seen by the engine's SPI mirror, 0 CS events; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (RP2040/RP2350 have no DCMI) | FULL (OLED/LCD/MAX7219 — OLED+LCD: cell pico-i2c → `PICO_OLED_READY` / `PICO_LCD_READY2`; MAX7219: cell pico-spi → `PICO_SPI_DRAWN`; all three observed on the host's device models. 2026-11-05 sweep adds Nokia 5110 (fill 100%) and ILI9341 (256-pixel RAMWR)) |
+| openhw-pico-2 (+W/+ETH, M33) | FULL (cell pico-uart-sweep, needle `PICOSWEEP_TICK` — the same six-variant sweep covers openhw-pico-2 and its W/ETH variants) | FULL (OLED — cell pico2, needle `PICO2_OLED_READY` — the host's SSD1306 model received the frame; the MicroPython I2C cell pico2-mp-i2c → `MP2_TICK`; **sensor READS are green (2026-11-06)**: the same five I2C cells pass on Pico 2 (MPU6050, BMP180, DS1307, ADXL345, FT6206 touch) through the engine's jsmirror register image; storage reads remain blocked — see (b)) | FULL (cell pico2-spi, needle `P2SPI_DRAWN` — the host's MAX7219 model showed the digits) | FULL (cell pico2-adc, needle `P2ADC_VAL:` — the host's pot value reached the guest exactly) | FULL (cell pico2-pwm, needle `P2PWM_SET` + the host's LED model telemetry) | FULL 2026-10-20 (PICO2_PIO_SHOWN; neopixel telemetry activePixels:3 totalPixels:3, liveOop pixels [16711680, 65280, 255] = R,G,B — cell pico2-pio-dma) | FULL 2026-10-20 (PICO2_DMA_CMP:PASS CK:80 — 64 B mem-to-mem, byte-exact — cell pico2-pio-dma) | FULL (I2C — cell pico2-mp-i2c, needle `MP2_TICK` — the MicroPython image's I2C transaction reached the host's OLED model) | ABSENT (no DAC peripheral in the RP2350 die) | FULL 2026-10-20 (USB CDC loopback: USBCDC_ECHO:P; sink enumState=active rxCount=1 — cell pico-usb) | NONE (no cell yet — the IN-latch inject now works, patches/pico-in-latch-inject.md) | NONE (engine-side: PIO-based path needs an observe tap) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no RTC silicon in the RP2350 — the chip only stamps a timestamp) | FULL 2026-10-20 (cell pico-gpio-in: `PICO2_IN_LEVEL:0:1` — GP13 LOW / GP14 HIGH observed by the guest) | FULL 2026-10-20 (PICO2_EE_RB:ABCD + PICO2_NVS_RB:1234 — flash-emul readback; cell pico2-periph) | NONE (engine-side, MEASURED at runtime 2026-10-20: no SPI CS edge on the ARM path → the SD model answers 0xFF forever; patch patches/pico-sd-cs-watch.patch delivered and verified) | NONE (no cell yet — same IN-latch route now available) | ABSENT (no DCMI) | FULL (OLED — cell pico2, needle `PICO2_OLED_READY` + the host's SSD1306 model; the SPI display is pico2-spi → `P2SPI_DRAWN`; 2026-11-05 sweep adds Nokia 5110 (fill 100%) and ILI9341 (256-pixel RAMWR)) |
 | openhw-pico-2 (RV32) | FULL 2026-10-20 (cell pico2-rv32-arduino: a REAL arduino-pico RISC-V sketch (`rp2040:rp2040:rpipico2:arch=riscv`, the backend compiles it) boots on the Hazard3 arch and prints `RV32_UART:OK` — the old "Arduino RV32 blocked upstream" was stale; the toolchain is NOT blocked: arduino-cli core rp2040:rp2040 6.0.0 ships the RISC-V menu + toolchain `rp2040:pqt-gcc-riscv 5.0.0-9576866`, so the sketch compiles locally too) — RE-MEASURED 2026-10-22 headless: the guest's UART0 bytes reach the host (patches/probe-pico2-rv32.mjs) | NONE (no cell yet: the arduino-pico RISC-V port compiles `Wire`, but the headless probe measured `RVPROBE:I2C:4` (Wire.endTransmission() = 4, no ACK) with no device attached — the I2C column needs a real I2C device in the e2e harness; NOT closable headlessly) | NONE (engine-side, MEASURED 2026-10-22 headless: the SPI DATA path works on the RV32 — the engine's own SPI mirror saw the MOSI byte `5a` — but the engine never reports CS to the SPI device (`spi_device_cs()` is called only from the ETH paths, src/rp2350_rv/rv_membus.c:451/459/480/488), so a CS'd device never sees the chip-select; and the guest cannot even toggle CS because the RV32 GPIO-out is dead (see the GPIO-in cell). Two engine asks: patches/pico-rp2350-sio-gpio-map.patch (delivered + VERIFIED) and an RV32 CS watch) | PARTIAL 2026-10-20 (the guest's analogRead tracks the injected pot voltage — `RV32_ADC:512:102` for a 50%/10% pair, i.e. the 5:1 ratio holds — but the RV32 path returns the 12-bit code >> 2, so the absolute value is 4× low vs the ARM path; engine-side, file:line in HANDOVER-LANE-pico-cov2.md) — RE-MEASURED 2026-10-22 headless with the same numbers (patches/probe-pico2-rv32.mjs, adc_set ch0=2048/ch1=410) | NONE (engine-side: `analogWrite()` crashes the RV32 guest — the PC jumps into SRAM (0x20000686) and the guest stops; no PWM readback. The RV32 SIO map fix (patches/pico-rp2350-sio-gpio-map.patch) changes the GPIO register map, not the PWM slice — the crash is still open) | ABSENT (the RP2350 has PIO silicon, but the engine's RV32 core exposes no port/PIO model to a RISC-V guest — the same engine gap as the GPIO row) | NONE (the arduino-pico RISC-V port has no DMA API — `dma_channel_transfer_size` does not exist for that core, so the DMA column needs the engine's fixed RV32 image) | ABSENT (no MicroPython runtime on the Hazard3/RV32 path in this repo — the row runs an Arduino RISC-V sketch or the fixed proof image, not a MicroPython build) | ABSENT (no DAC peripheral in the RP2350 die) | NONE (no cell on the RV32 path — the USB CDC cell pico-usb covers the ARM cores (M0+ and M33) only; the engine's RV32 core has no USB device model) | ABSENT (no GPIO model) | ABSENT (the Pico engine has no I2S peripheral and no PIO observe tap — engine-side, the same gap as the ARM rows) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no CAN controller in the RP2350 — CAN is external MCP2518-type silicon) | ABSENT (no RTC silicon in the RP2350 — the chip only stamps a timestamp) | NONE (engine-side on the repo bytes, MEASURED 2026-10-22 headless: the RV32 GPIO-OUT is dead — `digitalWrite(15,HIGH)` leaves the engine's OUT latch at 0 and the guest reads 0 back, because RP2350 INTERLEAVES the SIO GPIO registers (silicon OUT_SET=0x18/OUT_CLR=0x20/OE=0x30/OE_SET=0x38) while the engine implements the RP2040 map for both chips (include/gpio.h:30-39); the M33 escapes it (the pico-sdk drives the ARM GPIO coprocessor, engine src/thumb32.c:1564) but the RISC-V core has none (pico-sdk gpio_coproc.h:11-14 "#error ... not available on RISC-V"), so every RV32 GPIO write lands on the wrong register. PATCH patches/pico-rp2350-sio-gpio-map.patch DELIVERED + VERIFIED in a patched build: the guest readback 0 → 1 and the engine OUT latch 0x0 → 0x28000, with the M0+/M33 byte-identical before/after) | ABSENT (the flash-emul EEPROM/NVS backend is reached through the ARM flash path — the engine's RV32 core has no flash model, so there is nothing a RV32 guest could read back) | NONE (engine-side: the SD model answers only while the SPI device's `cs_active` is set, and the RV32 path reports CS only for the ETH boards (src/rp2350_rv/rv_membus.c:451/459); the guest could not toggle CS at all while the RV32 GPIO-out was dead (patch patches/pico-rp2350-sio-gpio-map.patch delivered + verified) — the SD column still needs an RV32 CS watch) | ABSENT (the IR path needs the IN-latch inject and the PIO observe tap — engine-side, the same gap as the ARM rows) | ABSENT (no DCMI silicon on the RP2040/RP2350) | NONE (no cell on the RV32 path — the OLED/MAX7219 cells pico-i2c / pico2 / pico2-spi run on the ARM cores only; the engine's RV32 core has no port model, so a display bus cannot be driven) |
 
 Specs: pico-uart-sweep, pico-i2c, pico-spi, pico-595, pico-adc, pico-pwm,
@@ -358,9 +361,9 @@ chips, and the RISC-V core has no GPIO coprocessor — patch
 `patches/pico-rp2350-sio-gpio-map.patch` delivered + VERIFIED (the guest
 readback 0 → 1 in a patched build, M0+/M33 unchanged).
 
-Component-compatibility lane 2026-11-05 (`tests/e2e/pico-components.spec.js`,
+Component-compatibility lane 2026-11-22 (`tests/e2e/pico-components.spec.js`,
 one component per cell, both boards, host-model state as the verdict):
-**outputs 16/16** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
+**outputs 17/17** (LED, RGB LED, 7-segment, motor, relay, servo, buzzer,
 stepper, biaxial-stepper — 1157 outer steps / 2082.6° while the inner gimbal
 stays 0; 5 W speaker tone path; L293D enable + IN1/IN2 → OUT1 5 V / OUT2 0 V;
 L298N-style motor driver ENA/IN1 → OUT1 5 V while IN2 keeps OUT2 at 0; A4988
@@ -368,36 +371,38 @@ full-step indexer ends on phase 3 = 1A/2B high, 1B/2A low after three STEP
 edges; NPN low-side switch pulls the collector from 5 V to 0.2 V with the
 base high, and releases it to 5 V with the base low; NeoPixel matrix and
 ring both accept the PIO0 SM0 RX-mirrored 3-pixel GRB frame → 3 active
-pixels), **displays 4/4**
+pixels), **displays 7/7**
 (SSD1306 OLED, LCD2004 and LCD1602 both over I2C0; ePaper 2.9" accepts the
-0x24 RAM-write command and 32 data bytes → `ramPointer` 32), **inputs 16/16**
+0x24 RAM-write command and 32 data bytes → `ramPointer` 32; LCD2004/LCD1602
+parallel decode the RS/E/D4–D7 strobes; TM1637 bit-bang digits reach 0x3f,
+0x06, 0x5b, 0x4f), **inputs 22/22**
 (potentiometer wiper at 50% → 2048; pushbutton held closed → LOW; both 6 mm
 pushbutton types pressed → LOW; LDR module → ~401; soil moisture 50% → 1.65 V;
 NTC 25 °C → 1.65 V; NTC module 25 °C → 2.5 V → ~3100; bare photoresistor
 500 lx → 2.44 V → ~3030; slide pot 25% → ~1024; joystick (0.25,0.75) →
 GP26/GP27 ~1024/~3071; slide switch → LOW; 4×4 keypad scan reports key 5 as
 `KP:1,0`; 74HC165 loads 0x80 and clocks it back out MSB-first; HX711 5 kg
-and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read),
+and 50 kg at 2.5 kg both report raw 1050 over a 24-clock read; HC-SR04 ECHO
+measures 5800 µs for 100 cm; IR NEC decodes 0xE0E040BF; DS18B20 SKIP-ROM
+scratchpad read prints TEMP:25.00; HP4067, rotary encoder and keypad),
 **passives 2/2** (diode forward drop: GP16 anode high → cathode 2.6 V =
 A − 0.7 V read as ~3226 ADC counts, floating after the anode drops;
 photodiode light 50 with a 3.3 V reverse bias → anode 1.65 V = ~2048
 counts), **SPI 5/5** (MAX7219 frame
 12,1,10,8,11,7,1,126,2,48 → matrix[0]=0x7E; 74HC595 latches 0x81 into
 outputs; NLSF595 latches 0x000004 → R1 high; Nokia 5110 fills 100 % of its
-84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C
-write-only 2/2** (PCA9685 and PCA9865: duty 50 % / full on from raw register
-writes). 45 component types, 90 green cells; every cell is green on BOTH
-boards (verified board-by-board on 2026-11-06 with `PICO_COMP_BOARD`;
+84×48 framebuffer; ILI9341 accepts a 256-pixel RAMWR window) and **I2C 7/7** (PCA9685 and PCA9865: duty 50 % / full on from raw register
+writes; MPU6050 `MPU_ACC:0,0,16384`; BMP180 `BMP_ID:55` / `BMP_UT:36760`;
+DS1307 `RTC:12:… D1/1/2024`; ADXL345 `ADXL_ID:E5` / `ADXL_XYZ:0,0,256` with
+POWER_CTL=8; FT6206 touch `TS_ID:11` / `TS_TD:0`). 60 component types,
+120 green cells; every cell is green on BOTH
+boards (verified board-by-board on 2026-11-22 with `PICO_COMP_BOARD`;
 chunks stay under 15 minutes so a long headless run cannot take the app
-down). Another 24 cells are `blocked`, each with a measured reason, so every
-peripheral type in the catalog is accounted for: I2C master reads (j: mpu6050,
-bmp180, ds1307-rtc, adxl345, ili9341-touch), sub-tick GPIO strobes (k:
-hc-sr04, lcd2004/lcd1602 parallel, tm1637, ir-receiver), event-only inputs
-with no headless injection path (p: rotary-encoder, ir-remote, ir-receiver), SPI master reads (s: sd-card, mfrc522, nrf24l01, cc1101),
-I2S (t: inmp441, sph0645, max98357, pcm5102), 1-Wire (u: ds18b20), the 5 V
-relay coil (q: ks2e-m-dc5), the mux without a logic class (r: hp4067) and the
-STM32-LTDC-only panel (ltdc-display, no RP2040/RP2350 LTDC). No cell is
-weakened to make it green. Findings:
+down). Another 9 cells are `blocked`, each with a measured reason, so every
+peripheral type in the catalog is accounted for: SPI master reads
+(s: sd-card, mfrc522, nrf24l01, cc1101), I2S (t: inmp441, sph0645,
+max98357, pcm5102) and the STM32-LTDC-only panel
+(ltdc-display, no RP2040/RP2350 LTDC). No cell is weakened to make it green. Findings:
 (g) **M33 FPU is not emulated** (`include/rp2350_arm/m33_cpu.h`: "FPU
 (optional, not yet implemented)"). Measured on Pico 2: `ADD=0.00 MULT=0.00
 DIV=0.00` and `(float)i=0.00`, while compile-time-folded constants stay
@@ -424,19 +429,22 @@ Pico fell back to the AVR 16MHz window (1.6M steps) while one Pico tick is
 buzzing. It now uses the runner-agnostic `_boardCyclesPerUs` service
 (125/150MHz), preserving the AVR path exactly.
 
-(j) **Pico I2C master reads cannot be answered by a device model** (engine
-gap, blocks the whole I2C-sensor and I2C-storage lane): the SDD mirror's
-read callback `jsmirror_i2c_read` in `src/sdd_jsmirror.c` is hardcoded to
-return `0xFF` and the engine exports no I2C read-inject — the only inject
-on the surface is `picoemu_spimirror_inject`, for SPI. Writes DO reach the
-models (proved by the SSD1306 OLED and LCD2004 cells: 95k I2C bytes decoded,
-`state.lastReadMode` stays false), but every master read is a synthetic
-0xFF. Measured with raw `Wire` sketches on both boards: MPU6050 returns
-`MPU_ACC:65535,65535,65535` (expects `0,0,16384` at 1g) and BMP180 returns
-`BMP_ID:FF` (expects `0x55`) with `BMP_UT:65535` (expects ~36760 at 25 C).
-The cells `i2c/mpu6050` and `i2c/bmp180` carry a `blocked` reason and skip in
-`tests/e2e/pico-components.spec.js`; promote them as soon as the engine
-lands a read queue (mirror of the F1 `i2c1.injectRx` path).
+(j) **Pico I2C master reads — RESOLVED 2026-11-06** (engine + runner):
+the SDD jsmirror now tracks a real register pointer per transfer and serves
+reads from a per-address 256-byte image that the runner refreshes every tick
+(`picoemu_jsmirror_set_map`, fed by each model's `onI2CReadRequest(0, 256)`),
+instead of the old hardcoded `0xFF`. Two more engine fixes were required:
+write-only DW transactions now emit an implicit START (the SDK sets RESTART
+only for repeated starts, so the first register-pointer write was invisible
+to JS models — ADXL345 POWER_CTL stayed 0), and the SDD registry gained
+`picoemu_sdd_reset` + `picoemu_sdd_add_keep` so the I2C and SPI mirrors
+coexist (the legacy `picoemu_sdd_add` reset the registry on every call, so
+attaching SPI after I2C detached the FT6206 at 0x38). Proven with raw-Wire
+cells on BOTH boards: MPU6050 `MPU_ACC:0,0,16384`; BMP180 `BMP_ID:55` +
+`BMP_UT:36760`; DS1307 `RTC:12:… D1/1/2024`; ADXL345 `ADXL_ID:E5` +
+`ADXL_XYZ:0,0,256` (POWER_CTL=8); FT6206 touch `TS_ID:11` + `TS_TD:0`.
+The five cells are promoted (no `blocked` reason) in
+`tests/e2e/pico-components.spec.js`.
 
 (k) **GPIO strobes shorter than one runner tick do not cross the model
 boundary** (blocks HC-SR04, the parallel HD44780 displays, DHT/IR
@@ -459,8 +467,6 @@ same `Pushbutton6mmLogic`), `openhw-74hc165` and `openhw-biaxial-stepper`, but
 the worker never instantiated their models (`liveOop` stayed `{}` and no
 telemetry was emitted). Registered in
 `src/worker/registries/component-registry.ts` on 2026-11-06.
-`openhw-hp4067` still has no logic class at all (UI-only module) and stays
-out of the lane until the engine lands one.
 
 (m) **Biaxial stepper dropped every step under per-pin dispatch** — its
 `processStepper` released the phase on any invalid coil mix, so a row change
@@ -500,9 +506,12 @@ switches only when the coil differential exceeds 3.5 V; a GPIO tops out at
 external transistor has no 5 V rail to switch. Blocked until the runner
 models a powered 5 V rail.
 
-(r) **`openhw-hp4067` is UI-only** — manifest + UI module, no logic class and
-no `LOGIC_REGISTRY` entry, so the worker never instantiates it (`liveOop`
-stays `{}`). The cell stays blocked until the engine lands a mux model.
+(r) **`openhw-hp4067` mux — RESOLVED 2026-11-06**: the part had a manifest +
+UI module but no logic class or `LOGIC_REGISTRY` entry, so the worker never
+instantiated it. `openhw-hp4067/logic.ts` now models the passive 16-channel
+switch (S0-S3 select, EN active LOW, selected channel voltage on SIG) and the
+cell is green on both boards: channel 0 wired to GP16 HIGH reads 4095,
+channel 1 wired to GP17 LOW reads 0, `activeChannel=1`, `enabled=true`.
 
 (s) **SPI master reads cannot be answered in time** — full-duplex devices
 need MISO during the same tick the guest clocks the byte. The engine has
@@ -511,7 +520,8 @@ synchronously inside the engine step while the runner drains the mirror only
 afterwards (`drainSPIMirror` also discards `exchange()`'s return), so every
 read latches 0xFF. Write-only SPI is fully proven (MAX7219, 74HC595, NLSF595,
 Nokia 5110, ILI9341, ePaper). Blocks `sd-card`, `mfrc522`, `nrf24l01`,
-`cc1101` and `ili9341-touch` (the last also needs I2C reads).
+`cc1101`. (The FT6206 touch half of `ili9341-touch` is green through the
+I2C mirror; only the TFT's SPI read path would need this.)
 
 (t) **No PIO I2S observation tap** — `inmp441`, `sph0645`, `max98357` and
 `pcm5102` speak I2S over BCLK/LRC/DIN; the runner's PIO pump only drains
@@ -651,7 +661,7 @@ Connectivity extras not in the main tables:
 
 | Feature | Status |
 |---|---|
-| Pico-W CYW43 WiFi traffic | FULL 2026-10-15 — Arduino join + gateway DHCP (STATUS=3 IP=192.168.4.2) via unified gateway :5030; the runner enables CYW43 + the WS pump in pico-runner.ts. Cell: `pico-wifi-gateway` ("Pico W joins AP + DHCP via gateway"). **Engine bytes are repo-pinned** (`src/engines/pico-emu/`, md5 glue `c3b784f0` + wasm `0c74dffe`) since 2026-10-20 — the old "engine from owner folder (vite alias)" note is stale (an owner-folder alias is a hard build failure in CI). |
+| Pico-W CYW43 WiFi traffic | FULL 2026-10-15 — Arduino join + gateway DHCP (STATUS=3 IP=192.168.4.2) via unified gateway :5030; the runner enables CYW43 + the WS pump in pico-runner.ts. Cell: `pico-wifi-gateway` ("Pico W joins AP + DHCP via gateway"). **Engine bytes are repo-pinned** (`src/engines/pico-emu/`, md5 glue `c59a1fe2` + wasm `5d494ac4`) since 2026-11-08 — the old "engine from owner folder (vite alias)" note is stale (an owner-folder alias is a hard build failure in CI). |
 | Pico-W LAN (2-board TCP) | FULL 2026-10-20 — STA+STA same room, TCP echo both directions observed (SRV-RX/SRV-ECHOED/CLI-RX). Cell: `pico-wifi-lan`. The v4 DNS is green + asserted here too (`CLI-DNS:1:104.20.23.154`): the static-IP client had NO resolver (no DHCP lease) — it now calls `WiFi.setDNS(192.168.4.1)` (gateway resolver), and the **lease** path is proven separately in `pico-wifi-dns` (see the DNS row). |
 | Pico-W v4 DNS (gateway resolver) | FULL 2026-10-20 — **both** resolver paths are proven, and the old "needs the gateway patch on branch `lane/net-dns` (not yet on main)" note was **STALE**. (a) *explicit*: `WiFi.hostByName("example.com")` with the guest's resolver pointed at the gateway — cell `tests/e2e/pico-wifi-dns.spec.js` → `DNS-LINK=3`, `DNS-IP=192.168.4.2`, `DNS-SERVER=192.168.4.1`, `DNS-SERVER2=192.168.4.1`, `DNS-RC=1`, `DNS-RESOLVED=104.20.23.154`. (b) **lease path** (the guest does NOT call `WiFi.setDNS()`): the same spec's second case takes the resolver from the DHCP lease → `DNS-LINK=3`, `DNS-IP=192.168.4.2`, `DNS-SERVER=192.168.4.1` (the resolver the lease carried), `DNS-RC=1`, `DNS-RESOLVED=172.66.147.243` → **2/2 green**, re-run live on 2026-10-20 with the opt-in guard removed. The gateway that advertises it is `openhw-unified-gateway` **main** @ `3f8814b` "DHCP: advertise the gateway resolver (192.168.4.1) as the lease DNS server" (`dhcp.go`: the lease now advertises 192.168.4.1 FIRST and keeps 8.8.8.8 as the secondary fallback) — `git branch --contains 3f8814b` → `main`; the running binary carries it (its DHCP log line is `Offering %s (dns %v)`). The spec's lease case is **no longer opt-in** (the `test.skip(!process.env.DHCP_DNS, …)` guard is gone). Resolver = the gateway's own DNS on 192.168.4.1:53 (gVisor VN DNS, answers through the host resolver) — it lives in the guest's own L2 domain, so no host egress is needed. Packet trace: guest→192.168.4.1:53 → `A 104.20.23.154 A 172.66.147.243`. |
 | Pico-W HTTP client | FULL 2026-10-15 — Arduino HTTPClient GET via gateway NAT (10.150.211.85→host :8092): 200 + body exact. Cell: `pico-http-gateway`. |
@@ -737,9 +747,9 @@ Connectivity extras not in the main tables:
   Fix (the F1 pattern, applied to every engine): the bytes are now committed
   in this repo and the aliases point at them, so dev, `npm run build` and
   the runtime `/vendor/board-engines/…` fallback all read the SAME files:
-  - `src/engines/pico-emu/` — glue `picoemu.wasm.js` (md5 c3b784f0) + wasm
-    `picoemu.wasm.wasm` (md5 0c74dffe), a MATCHED pair, byte-equal to the
-    owner's `rp2350/Pico-emu/web` build of 2026-10-08.
+  - `src/engines/pico-emu/` — glue `picoemu.wasm.js` (md5 c59a1fe2) + wasm
+    `picoemu.wasm.wasm` (md5 5d494ac4), a MATCHED pair, byte-equal to the
+    owner's `rp2350/Pico-emu/web` build of 2026-11-06.
   - `src/engines/esp32-emu/dist/sab/` — `worker-proxy.js` (md5 3c5c1866) +
     `worker-entry.js` (md5 4afe24dd), byte-equal to the runtime-fallback
     mirror, i.e. the OpenHW-patched bytes (node:crypto MD5 stub, inline

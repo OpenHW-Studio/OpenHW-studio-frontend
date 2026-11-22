@@ -313,26 +313,63 @@ export class PicoRunner extends ArmRunnerBase {
         void this.boot(this.isPico2 ? 'openhw-pico-2' : 'openhw-pico');
     }
 
+    /** Resolve the 7-bit I2C address a model answers on (same chain as attach). */
+    private i2cAddrOf(inst: any): number | null {
+        try {
+            const id = String(inst?.id || '');
+            const attrs = this.compAttrById.get(id) || {};
+            const cands = [
+                inst?.i2cAddr, inst?.i2cAddress, inst?.address,
+                typeof inst?.getI2CAddress === 'function' ? inst.getI2CAddress() : NaN,
+                attrs?.address, attrs?.i2cAddress, attrs?.addr,
+            ];
+            for (const c of cands) {
+                const v = Number(c);
+                if (Number.isFinite(v)) return v & 0x7f;
+            }
+        } catch { /* resolution never breaks the tick */ }
+        return null;
+    }
+
     /** Generic I2C slave addresses owned by this board (no per-type code). */
     private i2cSlaveAddresses(): number[] {
         const out = new Set<number>();
         try {
             for (const inst of this.instances.values()) {
                 if (typeof (inst as any)?.onI2CStart !== 'function') continue;
-                const id = String((inst as any)?.id || '');
-                const attrs = this.compAttrById.get(id) || {};
-                const cands = [
-                    (inst as any)?.i2cAddr,
-                    typeof (inst as any)?.getI2CAddress === 'function' ? (inst as any).getI2CAddress() : NaN,
-                    attrs?.address, attrs?.i2cAddress, attrs?.addr,
-                ];
-                for (const c of cands) {
-                    const v = Number(c);
-                    if (Number.isFinite(v)) { out.add(v & 0x7f); break; }
-                }
+                const addr = this.i2cAddrOf(inst);
+                if (addr !== null) out.add(addr);
             }
         } catch { /* address scan never breaks the tick */ }
         return [...out];
+    }
+
+    /** Refresh each model's register image in the engine I2C mirror so a
+     *  guest master read sees values written by the previous tick. */
+    private pushI2CReadMaps(): void {
+        if (!this.mirrorAttached || !this.mod) return;
+        try {
+            const mod = this.mod;
+            const setFn = mod?._picoemu_jsmirror_set_map;
+            if (typeof setFn !== 'function') return;
+            const seen = new Set<number>();
+            for (const inst of this.instances.values()) {
+                if (typeof (inst as any)?.onI2CReadRequest !== 'function') continue;
+                const addr = this.i2cAddrOf(inst);
+                if (addr === null || seen.has(addr)) continue;
+                seen.add(addr);
+                let map: any = [];
+                try { map = (inst as any).onI2CReadRequest(0, 256) || []; } catch { map = []; }
+                if (!Array.isArray(map) || map.length === 0) continue;
+                const n = Math.min(256, map.length);
+                const ptr = mod._malloc(256);
+                try {
+                    mod.HEAPU8.fill(0xff, ptr, ptr + 256);
+                    for (let i = 0; i < n; i++) mod.HEAPU8[ptr + i] = Number(map[i]) & 0xff;
+                    setFn(addr, ptr, 256);
+                } finally { mod._free(ptr); }
+            }
+        } catch { /* map push never breaks the tick */ }
     }
 
     /** Attach one mirror call batching every owned address (single call — registry resets per call). */
@@ -340,7 +377,8 @@ export class PicoRunner extends ArmRunnerBase {
         if (!this.wantI2CBridge || this.mirrorAttached) return;
         try {
             const mod = this.mod;
-            const addFn = mod?._picoemu_sdd_add;
+            const addFn = typeof mod?._picoemu_sdd_add_keep === 'function'
+                ? mod._picoemu_sdd_add_keep : mod?._picoemu_sdd_add;
             if (typeof addFn !== 'function') return;
             const addrs = this.i2cSlaveAddresses();
             if (addrs.length === 0) return;
@@ -461,7 +499,8 @@ export class PicoRunner extends ArmRunnerBase {
         if (!this.wantSPIBridge || this.spiMirrorAttached) return;
         try {
             const mod = this.mod;
-            const addFn = mod?._picoemu_sdd_add;
+            const addFn = typeof mod?._picoemu_sdd_add_keep === 'function'
+                ? mod._picoemu_sdd_add_keep : mod?._picoemu_sdd_add;
             if (typeof addFn !== 'function') return;
             for (const bus of [0]) {
                 try {
@@ -952,13 +991,12 @@ export class PicoRunner extends ArmRunnerBase {
                 // Engine loader: bundler first (node_modules, works in
                 // vitest + vite build), public/vendor fallback at runtime
                 // (workers serving the built app resolve /vendor/...).
-                // Engine variant: I2C runs load the fork core (jsmirror SDD;
-                // see vendor/pico-emu-fork/README.md). Every other Pico run
-                // loads stock 1.0.3 byte-identically to before — the fork
-                // never touches non-I2C behavior.
-                const useFork = self.wantI2CBridge || self.wantSPIBridge || self.wantADC || self.wantPWM;
+                // ONE engine for every Pico run: the rebuilt first-party
+                // pico-emu (rp2350/Pico-emu) with jsmirror + spimirror
+                // exports. The retired pico-emu-fork snapshot is no longer
+                // imported (it lacks jsmirror_set_map → I2C reads 0xFF).
                 const engineMod: any = await importEngine(
-                    useFork ? '../engines/pico-emu-fork/picoemu.wasm.js' : 'pico-emu/picoemu.wasm.js',
+                    'pico-emu/picoemu.wasm.js',
                     '/vendor/board-engines/pico-emu/picoemu.wasm.js',
                 );
                 const PicoemuModule = engineMod?.default;
@@ -966,14 +1004,10 @@ export class PicoRunner extends ArmRunnerBase {
                     console.warn('[PicoRunner] engine unavailable (test env?) — idle.');
                     return;
                 }
-                const wasmUrl = useFork
-                    ? '/wasm/picoemu-fork.wasm.wasm'
-                    // Stock runs: the MATCHED folder pair (glue + its own
-                    // wasm from owner `rp2350/Pico-emu`, via ?url above).
-                    // Never mix folder glue with npm/first-party wasm —
-                    // mismatched builds misbind exports (proven 2026-10-14
-                    // by the glue×wasm pairing matrix).
-                    : picoFolderWasmUrl;
+                // MATCHED pair: glue + its own wasm from ONE build
+                // (owner `rp2350/Pico-emu` via ?url). Never mix builds —
+                // mismatched exports misbind (proven 2026-10-14).
+                const wasmUrl = picoFolderWasmUrl;
                 let wasmBinary: ArrayBuffer | undefined;
                 try {
                     const r = await fetch(wasmUrl);
@@ -1029,6 +1063,16 @@ export class PicoRunner extends ArmRunnerBase {
                 // tickMHz attr — the engine honors it for guest timing
                 // (timers/SysTick/PWM divide by cycles_per_us).
                 self.applyPicoClock();
+                // One clean slate per boot, then additive attaches: the
+                // legacy sdd_add resets its registry on every call, which
+                // detached earlier I2C mirrors when SPI was also wired.
+                try {
+                    if (typeof self.mod._picoemu_sdd_reset === 'function') {
+                        self.mod._picoemu_sdd_reset();
+                        self.mirrorAttached = false;
+                        self.spiMirrorAttached = false;
+                    }
+                } catch { /* reset never breaks boot */ }
                 // I2C mirror attach (post-init, pre-firmware): one call for
                 // every owned slave address (see attachI2CMirrors).
                 try { self.attachI2CMirrors(); } catch { /* attach never breaks boot */ }
@@ -1068,73 +1112,113 @@ export class PicoRunner extends ArmRunnerBase {
                     // _picoemu_is_halted gates stepping; engine idles.
                 }
             },
+            /** Fine-slice + edge replay only for sub-tick pulse/OneWire
+             *  models. Coarse cells keep HEAD's single-step/instruction
+             *  domain: the guest then advances at the pace their per-tick
+             *  input pumps expect (fine stepping made its sim run 2.2x
+             *  faster per tick and starved those pumps). */
+            needsFineEdgeReplay(): boolean {
+                try {
+                    for (const inst of self.instances.values()) {
+                        if (typeof (inst as any).onPulseReceived === 'function'
+                            || typeof (inst as any).onOneWireReset === 'function'
+                            || typeof (inst as any).onOnewireReset === 'function'
+                            // TM1637 is a bit-bang display: its CLK/DIO
+                            // frames fit inside one coarse tick and are
+                            // only observable through the edge ring.
+                            || /tm1637/i.test(String((inst as any).type || ''))
+                            // Parallel HD44780 LCDs decode GPIO strobes
+                            // (RS/E/D4-D7) that collapse in a coarse tick.
+                            || /^openhw-lcd(1602|2004)$/i.test(String((inst as any).type || ''))) return true;
+                    }
+                } catch { /* no instances yet */ }
+                return false;
+            },
             stepBudget(budget: number): number {
                 if (!self.mod) return 0;
+                // Refresh sensor register images BEFORE stepping so a
+                // master read inside this budget sees last tick's writes.
+                try { self.pushI2CReadMaps(); } catch { /* map push never breaks tick */ }
+                const fine = this.needsFineEdgeReplay();
                 try {
-                    const s = Number(self.mod._picoemu_step(Math.max(1, Math.floor(budget)))) || 0;
-                    // NOTE: no per-tick publishGpio here — the base
-                    // pollGpioBidirectional() runs right after stepBudget and
-                    // owns ALL output publishing (via sampleGpioOut below),
-                    // so edges fire once with dispatchOptionalProtocols.
-                    // After MicroPython REPL is up, inject the user script.
-                    // Prompt-driven + paced: 16 chars/tick (a blind 1KB blast
-                    // overruns UART RX and wedges the core in an RX storm).
-                    // New attempt only while the previous queue fully drained
-                    // AND produced no output (a retype mid-drain interleaves
-                    // with the in-flight script — observed live as
-                    // overlapping fragments wedging both attempts).
-                    if (self.isMicroPython && self.pyScript.trim() && self.pyPromptSeen
-                        && self.pyInjectAttempts < 3 && !self.pyOutputSeen
-                        && self.pyQueuePos >= self.pyQueue.length
-                        && (performance.now() - self.pyLastInjectAt > 3000 || self.pyLastInjectAt === 0)) {
-                        self.startPythonInject();
-                        self.pyInjectAttempts++;
-                        self.pyLastInjectAt = performance.now();
+                    if (!fine) {
+                        const sc = Number(self.mod._picoemu_step(Math.max(1, Math.floor(budget)))) || 0;
+                        this.runTickPostamble();
+                        return sc;
                     }
-                    // Pump the paced queue every tick until drained.
-                    if (self.pyQueuePos < self.pyQueue.length) {
-                        try {
-                            const chunk = self.pyQueue.slice(self.pyQueuePos, self.pyQueuePos + 16);
-                            for (const ch of chunk) {
-                                self.mod._picoemu_write_uart(ch.charCodeAt(0) & 0xff);
+                    // Fine path: scheduling domain is RETIRED CYCLES (what
+                    // guest micros() and component callbacks use), not the
+                    // instruction count _picoemu_step consumes (~2.2x off).
+                    const cyclesFn = self.mod._picoemu_cycle_count;
+                    const cycleNow = () => {
+                        try { return Number(cyclesFn?.call(self.mod)) || 0; } catch { return 0; }
+                    };
+                    const startCycles = cycleNow();
+                    const baseSched = self.simCycleCount;
+                    let remaining = Math.max(1, Math.floor(budget));
+                    let spentInstr = 0;
+                    let spentCycles = 0;
+                    let cpi = 2.8;
+                    let guard = 0;
+                    try { self.drainDueAt(baseSched); } catch { /* ignore */ }
+                    while (remaining > 0 && guard++ < 10000) {
+                        let slice = Math.min(remaining, 512);
+                        const next = self.nextScheduledTarget();
+                        if (next !== null) {
+                            const deltaCycles = Math.floor(next - (baseSched + spentCycles));
+                            if (deltaCycles <= 0) {
+                                try { self.drainDueAt(baseSched + spentCycles); } catch { /* ignore */ }
+                                continue;
                             }
-                            self.pyQueuePos += chunk.length;
-                        } catch { /* pump never breaks tick */ }
+                            slice = Math.max(1, Math.min(slice, Math.ceil(deltaCycles / cpi)));
+                        }
+                        const ran = Number(self.mod._picoemu_step(slice)) || 0;
+                        remaining -= slice;
+                        spentInstr += ran > 0 ? ran : slice;
+                        const cy = cycleNow();
+                        spentCycles = Math.max(0, cy - startCycles);
+                        if (spentInstr >= 4096) cpi = Math.min(8, Math.max(1, spentCycles / spentInstr));
+                        self.schedCursor = spentCycles;
+                        try { self.drainDueAt(baseSched + spentCycles); } catch { /* ignore */ }
+                        try { self.drainSPIMirror(); } catch { /* drain never breaks tick */ }
+                        try { self.replayGpioEdges(); } catch { /* never break tick */ }
+                        if (ran <= 0) break;
                     }
-                    try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
-                    // Gateway TX pump: guest ETH frames → gateway WS.
-                    try { self.pumpNetLink(); } catch { /* pump never breaks tick */ }
-                    // I2C mirror drain: polled transaction ring → models.
-                    try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
-                    // SPI mirror drain: polled MOSI ring → bridge → models.
-                    try { self.drainSPIMirror(); } catch { /* drain never breaks tick */ }
-                    // ADC inject + PWM observe: human-speed signals — every
-                    // 4th tick is identical in steady state (pots/static
-                    // duty converge; see slowPollTick). WDT/PIO/I2C/SPI
-                    // stay every-tick (latency-sensitive or already
-                    // pending-guarded).
-                    self.slowPollTick = (self.slowPollTick + 1) & 0xffff;
-                    if ((self.slowPollTick & 3) === 0) {
-                        // ADC inject: pot wipers drive RP2040 ADC0-2 (GP26-28).
-                        try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
-                    }
-                    // PWM every tick: consumers have a 100ms silence window
-                    // (PWMProtocol `_lastEdgeCycle`), so a 4-tick (~66ms)
-                    // cadence let a steady tone flip back to silent between
-                    // samples — the buzzer model oscillated instead of
-                    // settling. Eight wasm reads/tick are cheap.
-                    try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
-                    // Watchdog countdown: unfed WDT reboots (no engine tick).
-                    try { self.pollPicoWDT(); } catch { /* drain never breaks tick */ }
-                    // PIO WS2812 mirror: PIO0 SM0 RX words → NeoPixel frames.
-                    try { pollPicoPioNeopixel(self.mod, self.instances); } catch { /* drain never breaks tick */ }
-                    // USB CDC observation (usbCdc mode): enumeration state.
-                    try { self.pollPicoUsb(); } catch { /* drain never breaks tick */ }
-                    // Net leveling: model-driven pins (shift-register
-                    // outputs etc.) fan out across component-only nets.
-                    try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* never breaks tick */ }
-                    return s;
+                    self.schedCursor = 0;
+                    this.runTickPostamble();
+                    return Math.max(1, Math.floor(spentCycles));
                 } catch { return 0; }
+            },
+            /** Shared per-tick polls (identical for coarse and fine paths). */
+            runTickPostamble(): void {
+                // After MicroPython REPL is up, inject the user script.
+                if (self.isMicroPython && self.pyScript.trim() && self.pyPromptSeen
+                    && self.pyInjectAttempts < 3 && !self.pyOutputSeen
+                    && self.pyQueuePos >= self.pyQueue.length
+                    && (performance.now() - self.pyLastInjectAt > 3000 || self.pyLastInjectAt === 0)) {
+                    self.startPythonInject();
+                    self.pyInjectAttempts++;
+                }
+                if (self.pyQueuePos < self.pyQueue.length) {
+                    try {
+                        const chunk = self.pyQueue.slice(self.pyQueuePos, self.pyQueuePos + 16);
+                        for (const ch of chunk) self.mod._picoemu_write_uart(ch.charCodeAt(0) & 0xff);
+                        self.pyQueuePos += chunk.length;
+                    } catch { /* pump never breaks tick */ }
+                }
+                try { self.pollGpio(); } catch { /* LED mirror never breaks tick */ }
+                try { self.pumpNetLink(); } catch { /* pump never breaks tick */ }
+                try { self.drainI2CMirror(); } catch { /* drain never breaks tick */ }
+                try { self.drainSPIMirror(); } catch { /* drain never breaks tick */ }
+                self.slowPollTick = (self.slowPollTick + 1) & 0xffff;
+                if ((self.slowPollTick & 3) === 0) {
+                    try { self.drivePicoADC(); } catch { /* drain never breaks tick */ }
+                }
+                try { self.pollPicoPWM(); } catch { /* drain never breaks tick */ }
+                try { self.pollPicoWDT(); } catch { /* drain never breaks tick */ }
+                try { pollPicoPioNeopixel(self.mod, self.instances); } catch { /* never breaks tick */ }
+                try { self.pollPicoUsb(); } catch { /* drain never breaks tick */ }
+                try { levelPassiveNets(self.boardId, (self as any).pinToNet, self.instances as any); } catch { /* ignore */ }
             },
             drainUartOut(): number[] {
                 if (!self.mod) return [];
@@ -1237,6 +1321,27 @@ export class PicoRunner extends ArmRunnerBase {
                     }
                     return { level: (out >> n) & 1, driving: true };
                 } catch { return null; }
+            },
+            popGpioEdges(): Array<{ pin: number; high: boolean; cycle: number }> {
+                const out: Array<{ pin: number; high: boolean; cycle: number }> = [];
+                try {
+                    const m = self.mod;
+                    const pop = m?._picoemu_gpio_edge_pop;
+                    if (typeof pop !== 'function') return out;
+                    const maskFn = m._picoemu_gpio_edge_mask;
+                    const highFn = m._picoemu_gpio_edge_high;
+                    const cycleFn = m._picoemu_gpio_edge_cycle;
+                    let guard = 0;
+                    while (guard++ < 20000 && pop()) {
+                        const mask = Number(maskFn()) >>> 0;
+                        const high = Number(highFn()) >>> 0;
+                        const cycle = Number(cycleFn()) || 0;
+                        for (let b = 0; b < 32; b++) {
+                            if ((mask >>> b) & 1) out.push({ pin: b, high: ((high >>> b) & 1) === 1, cycle });
+                        }
+                    }
+                } catch { /* edge replay never breaks the tick */ }
+                return out;
             },
             setGpioInput(pinId: string, high: boolean): void {
                 try {

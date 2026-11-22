@@ -37,6 +37,50 @@ const RELAY_CODE = 'void setup(){Serial.begin(9600);Serial.println("RELAY_RDY");
 // instruction, so a sketch sitting in delay() never advances the state
 // machine (see matrix.md "PIO timing"). 50Hz / 1472us = 90 degrees, which is
 // exactly what the component model wants. Integer clock math only.
+// Raw NEC decoder on the receiver's active-LOW OUT: polls the pin and
+// measures the 9 ms/4.5 ms leader plus 32 LSB-first data bits with micros().
+// No IR library, so the proof is the guest's own timing and decode rather
+// than the model's telemetry. Prints IR_LEAD:<low>,<high> then IR_HEX:<word>.
+const IR_NEC_CODE = `
+const int IR_PIN = 16;
+uint32_t lastUs = 0, markUs = 0, code = 0, leadLo = 0, leadHi = 0;
+int lastLevel = 1, phase = 0, bits = 0, edges = 0;
+bool done = false;
+void setup(){ Serial.begin(9600); Serial.println("IRD_RDY"); pinMode(IR_PIN, INPUT); }
+void loop(){
+  int l = digitalRead(IR_PIN);
+  uint32_t now = micros();
+  if (l != lastLevel) {
+    uint32_t dur = now - lastUs;
+    edges++;
+    if (l == 0) {
+      if (phase == 1) {
+        leadLo = markUs; leadHi = dur;
+        if (markUs > 6000 && markUs < 13000 && dur > 2500 && dur < 7000) { phase = 2; bits = 0; code = 0; }
+        else phase = 0;
+      } else if (phase == 2) {
+        if (dur > 1000) code |= (1UL << bits);
+        bits++;
+        if (bits >= 32) {
+          Serial.print("IR_LEAD:"); Serial.print(leadLo); Serial.print(","); Serial.println(leadHi);
+          Serial.print("IR_HEX:"); Serial.println(code, HEX);
+          Serial.print("IR_EDGES:"); Serial.println(edges);
+          phase = 3; done = true;
+        }
+      }
+    } else {
+      markUs = dur;
+      if (phase == 0 && dur > 6000 && dur < 13000) phase = 1;
+    }
+    lastUs = now; lastLevel = l;
+  }
+  if (!done && edges > 2 && l == 1 && (now - lastUs) > 50000) {
+    Serial.print("IR_LEAD:"); Serial.print(leadLo ? leadLo : markUs); Serial.print(","); Serial.println(leadHi);
+    Serial.print("IR_EDGES:"); Serial.println(edges);
+    done = true; phase = 0;
+  }
+}
+`;
 const SERVO_PWM_CODE = `#include <hardware/pwm.h>
 #include <hardware/clocks.h>
 void setup(){
@@ -337,6 +381,103 @@ void loop(){
 }
 `;
 
+// DS1307 RTC: model register image is BCD seconds/minutes/hours/date/
+// month/year. Reading it proves the clock model is live, not just that the
+// address ACKs.
+const DS1307_CODE = `#include <Wire.h>
+uint8_t bcd(uint8_t v){ return (v >> 4) * 10 + (v & 0x0F); }
+void setup(){
+  Serial.begin(9600);
+  Serial.println("RTC_RDY");
+  Wire.setSDA(4); Wire.setSCL(5); Wire.begin();
+}
+void loop(){
+  Wire.beginTransmission(0x68); Wire.write(0x00); Wire.endTransmission(false);
+  Wire.requestFrom(0x68, 7);
+  int s = bcd(Wire.read()), m = bcd(Wire.read()), h = bcd(Wire.read());
+  int dow = Wire.read();
+  int d = bcd(Wire.read()), mo = bcd(Wire.read()), y = bcd(Wire.read());
+  Serial.print("RTC:"); Serial.print(h); Serial.print(":");
+  Serial.print(m); Serial.print(":");
+  Serial.print(s); Serial.print(" D");
+  Serial.print(d); Serial.print("/"); Serial.print(mo);
+  Serial.print("/20"); Serial.println(y);
+  delay(1000);
+}
+`;
+
+// ADXL345: DEVID (0xE5) then DATAX/Y/Z after POWER_CTL measure. Default
+// attitude is +1g on Z = 256 LSB in full-resolution mode, little-endian.
+const ADXL345_CODE = `#include <Wire.h>
+void setup(){
+  Serial.begin(9600);
+  Serial.println("ADXL_RDY");
+  Wire.setSDA(4); Wire.setSCL(5); Wire.begin();
+  Wire.beginTransmission(0x53); Wire.write(0x2D); Wire.write(0x08); Wire.endTransmission();
+  delay(100);
+}
+void loop(){
+  Wire.beginTransmission(0x53); Wire.write(0x00); Wire.endTransmission(false);
+  Wire.requestFrom(0x53, 1);
+  int id = Wire.read();
+  Wire.beginTransmission(0x53); Wire.write(0x32); Wire.endTransmission(false);
+  Wire.requestFrom(0x53, 6);
+  int x = Wire.read() | (Wire.read() << 8);
+  int y = Wire.read() | (Wire.read() << 8);
+  int z = Wire.read() | (Wire.read() << 8);
+  Serial.print("ADXL_ID:"); Serial.println(id, HEX);
+  Serial.print("ADXL_XYZ:"); Serial.print(x); Serial.print(",");
+  Serial.print(y); Serial.print(","); Serial.println(z);
+  delay(500);
+}
+`;
+
+// ILI9341 + FT6206 touch: only the I2C half here (the SPI TFT write path
+// is already proven by openhw-ili9341). Chip ID + TD_STATUS exercise a
+// multi-register master read.
+const ILI9341_TOUCH_CODE = `#include <Wire.h>
+void setup(){
+  Serial.begin(9600);
+  Serial.println("TS_RDY");
+  Wire.setSDA(4); Wire.setSCL(5); Wire.begin();
+}
+void loop(){
+  Wire.beginTransmission(0x38); Wire.write(0xA8); Wire.endTransmission(false);
+  Wire.requestFrom(0x38, 1);
+  int id = Wire.read();
+  Wire.beginTransmission(0x38); Wire.write(0x02); Wire.endTransmission(false);
+  Wire.requestFrom(0x38, 1);
+  int td = Wire.read();
+  Serial.print("TS_ID:"); Serial.println(id, HEX);
+  Serial.print("TS_TD:"); Serial.println(td);
+  delay(500);
+}
+`;
+
+// HP4067 mux: C0 driven by GP16 HIGH (3V3), C1 by GP17 LOW; S0 selects.
+// SIG lands on GP26, so the ADC must follow the selected channel.
+const HP4067_CODE = `void setup(){
+  Serial.begin(9600);
+  Serial.println("MUX_RDY");
+  analogReadResolution(12);
+  pinMode(14, OUTPUT); pinMode(15, OUTPUT);
+  pinMode(16, OUTPUT); pinMode(17, OUTPUT);
+  digitalWrite(15, LOW); digitalWrite(16, HIGH); digitalWrite(17, LOW);
+  delay(300);
+}
+void loop(){
+  digitalWrite(14, LOW);
+  delay(250);
+  int a = analogRead(26);
+  digitalWrite(14, HIGH);
+  delay(250);
+  int b = analogRead(26);
+  Serial.print("MUX_A:"); Serial.println(a);
+  Serial.print("MUX_B:"); Serial.println(b);
+  delay(500);
+}
+`;
+
 // ── inputs ──────────────────────────────────────────────────────────────
 const POT_CODE = `void setup(){
   Serial.begin(9600);
@@ -375,13 +516,18 @@ void loop(){ Serial.print("JOY:"); Serial.print(analogRead(26)); Serial.print(",
 const SLIDESW_CODE = `void setup(){ Serial.begin(9600); Serial.println("SSW_RDY"); pinMode(16, INPUT); }
 void loop(){ Serial.print("SSW:"); Serial.println(digitalRead(16)); delay(200); }
 `;
-const HCSR04_CODE = `void setup(){ Serial.begin(9600); Serial.println("SR_RDY"); pinMode(15, OUTPUT); pinMode(16, INPUT); }
+const HCSR04_CODE = `static void md(uint32_t us){uint32_t t0=micros();while((micros()-t0)<us){}}
+void setup(){ Serial.begin(9600); Serial.println("SR_RDY"); pinMode(15, OUTPUT); pinMode(16, INPUT); }
 void loop(){
-  digitalWrite(15, LOW); delayMicroseconds(2);
-  digitalWrite(15, HIGH); delayMicroseconds(10);
+  digitalWrite(15, LOW); md(2);
+  digitalWrite(15, HIGH); md(10);
   digitalWrite(15, LOW);
-  unsigned long d = pulseIn(16, HIGH, 30000);
-  Serial.print("SR:"); Serial.println(d);
+  uint32_t t0 = micros();
+  while (digitalRead(16) == LOW && (micros() - t0) < 30000) {}
+  uint32_t t1 = micros();
+  while (digitalRead(16) == HIGH && (micros() - t1) < 30000) {}
+  uint32_t t2 = micros();
+  Serial.print("SR:"); Serial.println(t2 - t1);
   delay(1000);
 }
 `;
@@ -926,12 +1072,6 @@ const CASES = [
   },
   {
     family: 'displays', name: 'lcd2004-parallel', type: 'openhw-lcd2004',
-    blocked: 'runner strobe gap (see matrix (k)): the HD44780 latches on '
-      + 'the E falling edge, but the parallel 4-bit write (RS + nibble + E '
-      + 'high + E low) completes inside one runner tick (~16ms) and GPIO '
-      + 'levels are sampled once per tick, so the model never sees E high. '
-      + 'The I2C backpack variants are proven green; this needs per-edge '
-      + 'GPIO dispatch like the SPI/I2C mirrors.',
     wires: (b) => [
       { from: `${b}:GP15`, to: 'c1:RS' }, { from: `${b}:GP16`, to: 'c1:E' },
       { from: `${b}:GP17`, to: 'c1:D4' }, { from: `${b}:GP18`, to: 'c1:D5' },
@@ -949,12 +1089,6 @@ const CASES = [
   },
   {
     family: 'displays', name: 'lcd1602-parallel', type: 'openhw-lcd1602',
-    blocked: 'runner strobe gap (see matrix (k)): the HD44780 latches on '
-      + 'the E falling edge, but the parallel 4-bit write (RS + nibble + E '
-      + 'high + E low) completes inside one runner tick (~16ms) and GPIO '
-      + 'levels are sampled once per tick, so the model never sees E high. '
-      + 'The I2C backpack variants are proven green; this needs per-edge '
-      + 'GPIO dispatch like the SPI/I2C mirrors.',
     wires: (b) => [
       { from: `${b}:GP15`, to: 'c1:RS' }, { from: `${b}:GP16`, to: 'c1:E' },
       { from: `${b}:GP17`, to: 'c1:D4' }, { from: `${b}:GP18`, to: 'c1:D5' },
@@ -972,11 +1106,6 @@ const CASES = [
   },
   {
     family: 'i2c', name: 'mpu6050', type: 'openhw-mpu6050',
-    blocked: 'engine gap: the pico I2C mirror answers every master read with '
-      + '0xFF (sdd_jsmirror.c jsmirror_i2c_read) and exposes no read-inject '
-      + 'export, so device models can never answer the guest. Writes are '
-      + 'proven by the oled/lcd2004 cells; promote this cell when the engine '
-      + 'adds an I2C read queue.',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
       { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
@@ -997,8 +1126,6 @@ const CASES = [
   },
   {
     family: 'i2c', name: 'bmp180', type: 'openhw-bmp180',
-    blocked: 'engine gap: no I2C read-inject (see mpu6050 above); the '
-      + 'calibration/UT readback needs master reads.',
     wires: (b) => [
       { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
       { from: `${b}:3V3`, to: 'c1:VIN' }, { from: `${b}:GND`, to: 'c1:GND' },
@@ -1014,6 +1141,140 @@ const CASES = [
       for (const ut of uts.slice(-3)) expect(ut > 30000 && ut < 42000).toBe(true);
       expect(Number(st(v, 'c1').temperature)).toBeCloseTo(25, 0);
       expect(Number(st(v, 'c1').pressure)).toBeGreaterThan(30000);
+    },
+  },
+  {
+    family: 'i2c', name: 'ds1307-rtc', type: 'openhw-ds1307-rtc',
+    attrs: { datetime: '2024-01-01T12:34:56' },
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: DS1307_CODE, needle: 'RTC:', runMs: 22000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      const rows = [...s.matchAll(/RTC:(\d+):(\d+):(\d+) D(\d+)\/(\d+)\/20(\d+)/g)]
+        .map((m) => m.slice(1).map(Number));
+      expect(rows.length).toBeGreaterThan(2);
+      const [h, mnt, sec, day, mon, yr] = rows[rows.length - 1];
+      // Attr seed 2024-01-01 12:34:56; sim-time runs ahead (DS1307 divides
+      // runner cycles by its 16 MHz assumption), so allow the 12:xx hour
+      // or the 13:xx rollover but require the seeded date.
+      expect(h === 12 || h === 13).toBe(true);
+      expect(mnt).toBeGreaterThanOrEqual(0);
+      expect(mnt).toBeLessThan(60);
+      expect(sec).toBeGreaterThanOrEqual(0);
+      expect(sec).toBeLessThan(60);
+      expect(day).toBe(1);
+      expect(mon).toBe(1);
+      expect(yr).toBe(24);
+      expect(st(v, 'c1').powered).toBe(true);
+      // `display` is the model's local-time rendering (ISO `datetime` is
+      // UTC and shifts with the host timezone).
+      expect(String(st(v, 'c1').display || '')).toMatch(/^2024-01-01 1[23]:/);
+    },
+  },
+  {
+    family: 'i2c', name: 'adxl345', type: 'openhw-adxl345',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:3V3`, to: 'c1:CS' },
+      { from: `${b}:GND`, to: 'c1:SDO' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: ADXL345_CODE, needle: 'ADXL_XYZ:', runMs: 22000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      expect(s).toContain('ADXL_ID:E5');
+      const xyz = [...s.matchAll(/ADXL_XYZ:(-?\d+),(-?\d+),(-?\d+)/g)]
+        .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+      expect(xyz.length).toBeGreaterThan(2);
+      const [x, y, z] = xyz[xyz.length - 1];
+      expect(Math.abs(x)).toBeLessThan(50);
+      expect(Math.abs(y)).toBeLessThan(50);
+      expect(Math.abs(z - 256)).toBeLessThan(50);
+      expect(st(v, 'c1').powered).toBe(true);
+      expect(Number(st(v, 'c1').accelZ)).toBeCloseTo(1, 1);
+    },
+  },
+  {
+    family: 'i2c', name: 'ili9341-touch', type: 'openhw-ili9341-touch',
+    wires: (b) => [
+      { from: `${b}:GP4`, to: 'c1:SDA' }, { from: `${b}:GP5`, to: 'c1:SCL' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: ILI9341_TOUCH_CODE, needle: 'TS_ID:', runMs: 20000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      expect(s).toContain('TS_ID:11');
+      const tds = [...s.matchAll(/TS_TD:(\d+)/g)].map((m) => Number(m[1]));
+      expect(tds.length).toBeGreaterThan(2);
+      for (const td of tds.slice(-3)) expect(td).toBe(0); // no contact
+      expect(st(v, 'c1').powerOn).toBe(true);
+    },
+  },
+  {
+    family: 'inputs', name: 'hp4067', type: 'openhw-hp4067',
+    wires: (b) => [
+      { from: `${b}:GP14`, to: 'c1:S0' }, { from: `${b}:GP15`, to: 'c1:S1' },
+      { from: `${b}:GND`, to: 'c1:S2' }, { from: `${b}:GND`, to: 'c1:S3' },
+      { from: `${b}:GP16`, to: 'c1:C0' }, { from: `${b}:GP17`, to: 'c1:C1' },
+      { from: `${b}:GP26`, to: 'c1:SIG' },
+      { from: `${b}:GND`, to: 'c1:EN' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: HP4067_CODE, needle: 'MUX_A:', runMs: 22000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      const a = [...s.matchAll(/MUX_A:(\d+)/g)].map((m) => Number(m[1]));
+      const b = [...s.matchAll(/MUX_B:(\d+)/g)].map((m) => Number(m[1]));
+      expect(a.length).toBeGreaterThan(2);
+      expect(b.length).toBeGreaterThan(2);
+      // Channel 0 = GP16 HIGH -> near full scale; channel 1 = GP17 LOW -> 0.
+      expect(a[a.length - 1]).toBeGreaterThan(3500);
+      expect(b[b.length - 1]).toBeLessThan(500);
+      expect(Number(st(v, 'c1').activeChannel)).toBe(1);
+      expect(st(v, 'c1').enabled).toBe(true);
+    },
+  },
+  {
+    // Rotary encoder: headless INTERACT events turn the model's quadrature
+    // outputs; the runner samples CLK/DT and the guest counts the steps.
+    // Four clockwise detents walk the full 11→01→00→10 sequence and return
+    // to idle, so the model reports totalRotations=4.
+    family: 'inputs', name: 'rotary-encoder', type: 'openhw-rotary-encoder',
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:CLK' }, { from: `${b}:GP17`, to: 'c1:DT' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: `void setup(){
+  Serial.begin(9600); Serial.println("ENC_RDY");
+  pinMode(16, INPUT); pinMode(17, INPUT);
+}
+int last = -1, edges = 0;
+void loop(){
+  int s = (digitalRead(16) << 1) | digitalRead(17);
+  if (last >= 0 && s != last) edges++;
+  last = s;
+  Serial.print("ENC_S:"); Serial.print(s);
+  Serial.print(" E:"); Serial.println(edges);
+  delay(200);
+}
+`,
+    needle: 'ENC_S:', runMs: 18000,
+    events: [
+      { compId: 'c1', event: 'rotate-cw', afterMs: 4000 },
+      { compId: 'c1', event: 'rotate-cw', afterMs: 4500 },
+      { compId: 'c1', event: 'rotate-cw', afterMs: 5000 },
+      { compId: 'c1', event: 'rotate-cw', afterMs: 5500 },
+    ],
+    check: (v) => {
+      const s = String(v.serial || '');
+      const es = [...s.matchAll(/E:(\d+)/g)].map((m) => Number(m[1]));
+      expect(es.length).toBeGreaterThan(2);
+      expect(es[es.length - 1]).toBeGreaterThanOrEqual(3);
+      const cust = custom(v, 'c1');
+      expect(Number(cust.totalRotations || 0)).toBeGreaterThanOrEqual(4);
+      expect(Number(cust.quadratureStep ?? 0)).toBe(0);
     },
   },
   {
@@ -1249,13 +1510,11 @@ const CASES = [
     },
   },
   {
+    // HC-SR04: the sketch's 10 us TRIG pulse is captured by the engine's
+    // output-edge ring (cycle-stamped) and replayed into the model, so the
+    // trigger is real. The model schedules ECHO 200 us later; the guest
+    // measures it with pulseIn() and prints the width.
     family: 'inputs', name: 'hc-sr04', type: 'openhw-hc-sr04',
-    blocked: 'runner timing gap: the model measures the echo correctly '
-      + '(lastMeasurement=100cm, echoDurationUs=5800) but drives ECHO for '
-      + '5.8ms, shorter than one runner tick (~16ms). Component-driven GPIO '
-      + 'levels are sampled per tick, so the guest pulseIn() sees no pulse '
-      + '(SR:0). Needs an edge-timed component->board pin path (same class as '
-      + 'DHT/IR pulse decoding), not a component fix.',
     wires: (b) => [
       { from: `${b}:GP15`, to: 'c1:TRIG' }, { from: `${b}:GP16`, to: 'c1:ECHO' },
       { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
@@ -1446,25 +1705,28 @@ const CASES = [
   },
   // ── blocked cells: every remaining peripheral is accounted for ──────
   {
+    // Bare 5 V coil relay: COIL1 on the board's 5V rail, COIL2 driven LOW by
+    // GP16. The model pulls in above a 3.5 V differential, so this proves
+    // the runner's board-rail pump (5V is now a modeled source), not a GPIO
+    // voltage trick.
     family: 'outputs', name: 'ks2e-relay', type: 'openhw-ks2e-m-dc5',
-    blocked: 'coil needs >3.5 V differential (matrix (q)): a Pico GPIO '
-      + 'tops out at 3.3 V and the 5V board pins are not modeled sources, '
-      + 'so the relay can never energise from this board.',
+    wires: (b) => [
+      { from: `${b}:5V`, to: 'c1:COIL1' },
+      { from: `${b}:GP16`, to: 'c1:COIL2' },
+    ],
+    code: 'void setup(){Serial.begin(9600);Serial.println("K5_RDY");pinMode(16,OUTPUT);digitalWrite(16,LOW);}\nvoid loop(){Serial.println("K5_TICK");delay(1000);}\n',
+    needle: 'K5_RDY', runMs: 18000,
+    check: (v) => {
+      expect(st(v, 'c1').energised).toBe(true);
+      // The coil's 5 V terminal is really at 5 V, not the 3.3 V GPIO rail.
+      expect(Number(st(v, 'c1').analogVoltages?.COIL1 || 0)).toBeGreaterThan(4.5);
+    },
   },
   {
     family: 'displays', name: 'ltdc-display', type: 'openhw-ltdc-display',
     blocked: 'STM32 LTDC-only panel: neither RP2040 nor RP2350 has an LTDC '
       + 'controller and the Pico runner has no RGB-parallel frame lane '
       + '(the F4 runner pushes frames into this model).',
-  },
-  {
-    family: 'inputs', name: 'hp4067', type: 'openhw-hp4067',
-    blocked: 'no logic class / registry entry (matrix (r)): UI-only mux.',
-  },
-  {
-    family: 'inputs', name: 'rotary-encoder', type: 'openhw-rotary-encoder',
-    blocked: 'event-only model (matrix (p)): rotation comes from '
-      + 'onEvent(rotate-cw/ccw) and nothing in the UI or E2E emits it.',
   },
   {
     // 4-pin 6 mm switch: same Pushbutton6mmLogic as openhw-pushbutton-6mm;
@@ -1483,38 +1745,82 @@ const CASES = [
     },
   },
   {
+    // IR receiver: a scripted ir-send makes the model emit a real NEC frame,
+    // and the runner fine-slices its step budget at each scheduled edge, so
+    // the guest sees the 9 ms/4.5 ms leader and the 32 LSB-first data bits.
+    // The sketch decodes them itself (no IR library) and prints the word.
     family: 'inputs', name: 'ir-receiver', type: 'openhw-ir-receiver',
-    blocked: 'event-driven NEC burst (matrix (p, k)): transmitNEC only '
-      + 'runs on an onEvent button press, and the 38 kHz burst needs '
-      + 'edge timing finer than one runner tick.',
+    wires: (b) => [
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+      { from: `${b}:GP16`, to: 'c1:OUT' },
+    ],
+    code: IR_NEC_CODE, needle: 'IR_HEX:', runMs: 24000,
+    events: [{ compId: 'c1', event: { type: 'ir-send', button: 'POWER' }, afterMs: 3500 }],
+    check: (v) => {
+      const s = String(v.serial || '');
+      const hex = [...s.matchAll(/IR_HEX:([0-9A-Fa-f]+)/g)].map((m) => m[1].toUpperCase());
+      const lead = [...s.matchAll(/IR_LEAD:(\d+),(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+      expect(hex.length).toBeGreaterThan(0);
+      expect(hex[hex.length - 1]).toBe('E0E040BF');
+      expect(lead.length).toBeGreaterThan(0);
+      const [lo, hi] = lead[lead.length - 1];
+      expect(lo).toBeGreaterThan(8000); expect(lo).toBeLessThan(10000);
+      expect(hi).toBeGreaterThan(3900); expect(hi).toBeLessThan(5200);
+      expect(String(st(v, 'c1').lastButton).toUpperCase()).toBe('POWER');
+    },
   },
   {
+    // IR remote has no electrical pins (UI-only keypad), so the provable
+    // contract is its model: a scripted button_press selects the NEC code
+    // and publishes lastCommand to telemetry.
     family: 'inputs', name: 'ir-remote', type: 'openhw-ir-remote',
-    blocked: 'event-only model (matrix (p)): button_press comes from the '
-      + 'UI; no sketch-side or E2E injection.',
+    wires: () => [],
+    code: 'void setup(){Serial.begin(9600);Serial.println("IRM_RDY");}\nvoid loop(){Serial.println("IRM_TICK");delay(1000);}\n',
+    needle: 'IRM_RDY', runMs: 16000,
+    events: [{ compId: 'c1', event: { type: 'button_press', button: 'Power' }, afterMs: 3500 }],
+    check: (v) => {
+      expect(String(st(v, 'c1').lastCommand)).toBe('Power');
+      expect(String(custom(v, 'c1').lastCommand)).toBe('Power');
+    },
   },
   {
+    // TM1637 two-wire bit-bang (CLK=GP15, DIO=GP16). The runner replays the
+    // engine's guest-output edges with engine cycle stamps, so the 50 us
+    // half-bits arrive at the model in order with real deltas (same path that
+    // fixed the parallel HD44780). Byte sequence identical to the AVR cell:
+    // auto-increment write (0x40), address 0 (0xC0) + '0','1','2','3', on.
     family: 'displays', name: 'tm1637', type: 'openhw-tm1637-7segment',
-    blocked: 'bit-banged CLK/DIO (matrix (k)): the runner has no '
-      + 'TwoWireProtocol bridge and samples GPIO once per tick.',
+    wires: (b) => [
+      { from: `${b}:GP15`, to: 'c1:CLK' }, { from: `${b}:GP16`, to: 'c1:DIO' },
+      { from: `${b}:5V`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: 'static void md(uint32_t us){uint32_t t0=micros();while((micros()-t0)<us){}}\n#define CLK 15\n#define DIO 16\nvoid bb(uint8_t b){for(uint8_t i=0;i<8;i++){digitalWrite(CLK,LOW);digitalWrite(DIO,(b>>i)&1);md(50);digitalWrite(CLK,HIGH);md(50);}digitalWrite(CLK,LOW);pinMode(DIO,INPUT);digitalWrite(CLK,HIGH);md(50);pinMode(DIO,OUTPUT);digitalWrite(CLK,LOW);}\nvoid start(){digitalWrite(CLK,HIGH);digitalWrite(DIO,HIGH);md(50);digitalWrite(DIO,LOW);md(50);}\nvoid stop(){digitalWrite(CLK,LOW);digitalWrite(DIO,LOW);md(50);digitalWrite(CLK,HIGH);md(50);digitalWrite(DIO,HIGH);md(50);}\nvoid setup(){Serial.begin(9600);Serial.println("TM_RDY");pinMode(CLK,OUTPUT);pinMode(DIO,OUTPUT);start();bb(0x40);stop();start();bb(0xC0);bb(0x3F);bb(0x06);bb(0x5B);bb(0x4F);stop();start();bb(0x8F);stop();}\nvoid loop(){Serial.println("TM_TICK");delay(1000);}\n',
+    needle: 'TM_RDY', runMs: 20000,
+    check: (v) => {
+      const d = st(v, 'c1').digits;
+      expect(d).toEqual([0x3f, 0x06, 0x5b, 0x4f]);
+    },
   },
   {
+    // DS18B20 over 1-Wire (DQ=GP16). Engine replays the bit-banged DQ edges
+    // with cycle stamps; the runner decodes reset (>=360 us low) and bit
+    // slots (<20 us = 1, >=20 us = 0) in the guest cycle domain, and the
+    // OneWireProtocol model (now cycles/us-aware) schedules the presence
+    // pulse in the same domain. SKIP ROM + raw scratchpad read avoids the
+    // 64-bit search path.
     family: 'inputs', name: 'ds18b20', type: 'openhw-ds18b20',
-    blocked: '1-Wire has no Pico dispatch path (matrix (u)) and the '
-      + 'reset/presence pulses are shorter than one runner tick.',
-  },
-  {
-    family: 'i2c', name: 'ds1307-rtc', type: 'openhw-ds1307-rtc',
-    blocked: 'I2C master reads return 0xFF (matrix (j)).',
-  },
-  {
-    family: 'i2c', name: 'adxl345', type: 'openhw-adxl345',
-    blocked: 'I2C/SPI master reads return 0xFF (matrix (j, s)).',
-  },
-  {
-    family: 'i2c', name: 'ili9341-touch', type: 'openhw-ili9341-touch',
-    blocked: 'touch controller needs I2C reads (matrix (j)); the TFT '
-      + 'write path itself is green via openhw-ili9341.',
+    attrs: { temperature: '25' },
+    wires: (b) => [
+      { from: `${b}:GP16`, to: 'c1:DQ' },
+      { from: `${b}:3V3`, to: 'c1:VCC' }, { from: `${b}:GND`, to: 'c1:GND' },
+    ],
+    code: '#define OW 16\nstatic void md(uint32_t us){uint32_t t0=micros();while((micros()-t0)<us){}}\nstatic void owLow(){digitalWrite(OW,LOW);}\nstatic void owHigh(){digitalWrite(OW,HIGH);}\nstatic int owReset(){owLow();md(480);owHigh();md(70);int p=digitalRead(OW);md(410);return p==0;}\nstatic void owWriteBit(int b){owLow();if(b){md(10);owHigh();md(55);}else{md(65);owHigh();md(5);}}\nstatic int owReadBit(){owLow();md(3);owHigh();md(45);int b=digitalRead(OW);md(40);return b;}\nstatic void owWriteByte(uint8_t v){for(int i=0;i<8;i++)owWriteBit((v>>i)&1);}\nstatic uint8_t owReadByte(){uint8_t v=0;for(int i=0;i<8;i++)v|=(uint8_t)(owReadBit()<<i);return v;}\nvoid setup(){Serial.begin(9600);pinMode(OW,OUTPUT);digitalWrite(OW,HIGH);Serial.println("DS_READY");if(!owReset()){Serial.println("OW_NOPRESENCE");}owWriteByte(0xCC);owWriteByte(0x44);delay(800);owReset();owWriteByte(0xCC);owWriteByte(0xBE);uint8_t sp[9];for(int i=0;i<9;i++)sp[i]=owReadByte();int16_t raw=(sp[1]<<8)|sp[0];Serial.print("TEMP:");Serial.print(raw/16);Serial.println(".00");}\nvoid loop(){Serial.println("DS_TICK");delay(2000);}\n',
+    needle: 'DS_READY', runMs: 24000,
+    check: (v) => {
+      const s = String(v.serial || '');
+      expect(s).toContain('TEMP:25.00');
+      expect(Number(st(v, 'c1').temperature)).toBe(25);
+    },
   },
   {
     family: 'spi', name: 'sd-card', type: 'openhw-sd-card',
@@ -1596,14 +1902,14 @@ for (const board of boards) {
       });
       expect(setup.ok).toBe(true);
 
-      const verdict = await page.evaluate(({ forMs, needle }) => window.OpenHWE2E.run({
-        forMs, selectTelemetry: ['c1'], serialNeedle: needle, telemetryMode: 'detail',
-      }), { forMs: c.runMs, needle: c.needle });
+      const verdict = await page.evaluate(({ forMs, needle, events }) => window.OpenHWE2E.run({
+        forMs, selectTelemetry: ['c1'], serialNeedle: needle, telemetryMode: 'detail', events,
+      }), { forMs: c.runMs, needle: c.needle, events: c.events || [] });
       expect(verdict.ok).toBe(true);
       console.log(`PICOCOMP ${board.key}/${c.name} pass=${verdict.pass} reasons=${JSON.stringify(verdict.reasons || [])} lines=${verdict.serialLines}`);
-      console.log(`PICOCOMP ${board.key}/${c.name} serial=${JSON.stringify(String(verdict.serial || '').slice(-240))}`);
+      console.log(`PICOCOMP ${board.key}/${c.name} serial=${JSON.stringify(String(verdict.serial || '').slice(-4000))}`);
       console.log(`PICOCOMP ${board.key}/${c.name} state=${JSON.stringify(st(verdict, 'c1')).slice(0, 300)}`);
-      console.log(`PICOCOMP ${board.key}/${c.name} av=${JSON.stringify(st(verdict, 'c1').analogVoltages || {})} custom=${JSON.stringify(custom(verdict, 'c1')).slice(0, 300)}`);
+      console.log(`PICOCOMP ${board.key}/${c.name} av=${JSON.stringify(st(verdict, 'c1').analogVoltages || {})} custom=${JSON.stringify(custom(verdict, 'c1')).slice(0, 20000)}`);
       expect(verdict.pass).toBe(true);
       c.check(verdict);
 
