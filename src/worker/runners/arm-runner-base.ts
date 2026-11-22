@@ -919,6 +919,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
 
     /** Dispatch optional protocol callbacks for a pin edge (PWM/OneWire…). */
     protected dispatchOptionalProtocols(pinId: string, isHigh: boolean, cycles?: number): void {
+        try { this.dispatchBitBangI2C(pinId, isHigh); } catch { /* never break tick */ }
         for (const endpoint of this.getProtocolEndpointsForPin(pinId)) {
             try {
                 invokeOptional(endpoint.inst as any, ['onPWM', 'onPwm', 'onPWMSignal'], [endpoint.pinId, { boardPin: pinId, isHigh }]);
@@ -932,6 +933,62 @@ export abstract class ArmRunnerBase implements BoardRunner {
         try {
             this.dispatchOptionalOneWire(pinId, isHigh, cycles);
         } catch { /* ignore */ }
+    }
+
+    /** Edge-driven bit-bang I2C decoder: retro boards drive SDA/SCL as
+     *  GPIO; host models only expose onI2CStart/onI2CByte/onI2CStop. */
+    private i2cBitState = new Map<string, {
+      sda: boolean; scl: boolean; active: boolean; bits: number;
+      byte: number; address: number;
+    }>();
+
+    protected dispatchBitBangI2C(pinId: string, isHigh: boolean): void {
+      const net = (this as any).pinToNet?.get(`${this.boardId}:${pinId}`);
+      if (net === undefined) return;
+      const endpoints = this.getProtocolEndpointsForPin(pinId).filter(
+        (e) => typeof (e.inst as any)?.onI2CStart === 'function',
+      );
+      if (!endpoints.length) return;
+      const role = /sda/i.test(String(endpoints[0].pinId)) ? 'sda'
+        : /scl/i.test(String(endpoints[0].pinId)) ? 'scl' : null;
+      if (!role) return;
+      // SDA and SCL sit on different nets; key the decoder by the slave
+      // instance so both edges feed one bus state.
+      const key = String((endpoints[0].inst as any)?.id || net);
+      let st = this.i2cBitState.get(key);
+      if (!st) {
+        st = { sda: true, scl: true, active: false, bits: 0, byte: 0, address: 0 };
+        this.i2cBitState.set(key, st);
+      }
+      const wasScl = st.scl;
+      const wasSda = st.sda;
+      if (role === 'sda') st.sda = isHigh; else st.scl = isHigh;
+      if (role === 'sda' && wasScl && wasSda !== isHigh) {
+        if (!isHigh) { st.active = true; st.bits = 0; st.byte = 0; st.address = 0; }
+        else if (st.active) {
+          for (const ep of endpoints) {
+            try { (ep.inst as any).onI2CStop?.(); } catch { /* ignore */ }
+          }
+          st.active = false;
+        }
+        return;
+      }
+      if (role !== 'scl' || !st.active || wasScl || !isHigh) return;
+      st.byte = ((st.byte << 1) | (st.sda ? 1 : 0)) & 0xff;
+      st.bits += 1;
+      if (st.bits < 8) return;
+      const byte = st.byte;
+      st.bits = 0; st.byte = 0;
+      if (!st.address) {
+        st.address = byte >> 1;
+        for (const ep of endpoints) {
+          try { (ep.inst as any).onI2CStart?.(st.address, !!(byte & 1)); } catch { /* ignore */ }
+        }
+      } else {
+        for (const ep of endpoints) {
+          try { (ep.inst as any).onI2CByte?.(st.address, byte); } catch { /* ignore */ }
+        }
+      }
     }
 
     private oneWireState = new Map<string, { lowStartUs: number | null; highStartUs: number | null }>();
