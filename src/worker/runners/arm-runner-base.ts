@@ -137,6 +137,8 @@ export interface ArmEngineHooks {    /** Load firmware (hexData string per board
     isHalted?(): boolean;
     /** Optional: tear down engine resources. */
     close?(): void;
+    /** Optional: called after component models update each tick. */
+    tickEnd?(): void;
     /** Optional: reset engine to reset vector. */
     resetEngine?(): void;
     /**
@@ -378,6 +380,7 @@ export abstract class ArmRunnerBase implements BoardRunner {
             for (const inst of this.instances.values()) {
                 try { inst.update(this.simCycleCount, this.currentWires, this.instances as any); } catch { /* never break tick */ }
             }
+            try { this.engine.tickEnd?.(); } catch { /* engine tick-end never breaks tick */ }
         } catch (e) {
             console.error(`[${this.boardId}] tick error:`, e);
         }
@@ -969,6 +972,86 @@ export abstract class ArmRunnerBase implements BoardRunner {
         }
       } catch { /* discovery never breaks the tick */ }
       return out;
+    }
+
+    /** Board GPIO pins carrying MOSI/SCK/CS for a bit-bang SPI target. */
+    protected bitBangSPIPins(): Array<{ pinId: string; role: 'mosi' | 'sck' | 'cs' }> {
+      const out: Array<{ pinId: string; role: 'mosi' | 'sck' | 'cs' }> = [];
+      const seen = new Set<string>();
+      try {
+        for (const wire of this.currentWires || []) {
+          for (const end of [wire?.from, wire?.to]) {
+            const [compId, pinId] = String(end || '').split(':');
+            if (!compId || !pinId || !/^(mosi|din|sdi|sck|clk|cs|ss|csn)$/i.test(pinId)) continue;
+            const inst = this.instances.get(compId) as any;
+            if (typeof inst?.onSPIByte !== 'function') continue;
+            const net = (this as any).pinToNet?.get(String(end));
+            if (net === undefined) continue;
+            for (const [node, id] of this.pinToNet) {
+              if (id !== net) continue;
+              const sep = node.indexOf(':');
+              if (sep < 0 || node.slice(0, sep) !== this.boardId) continue;
+              const bPin = node.slice(sep + 1);
+              const role = /^(mosi|din|sdi)$/i.test(pinId) ? 'mosi'
+                : /^(sck|clk)$/i.test(pinId) ? 'sck' : 'cs';
+              const key = `${bPin}:${role}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              out.push({ pinId: bPin, role });
+            }
+          }
+        }
+      } catch { /* discovery never breaks the tick */ }
+      return out;
+    }
+
+    private spiBitState = new Map<string, {
+      mosi: boolean; sck: boolean; cs: boolean; bits: number; byte: number;
+    }>();
+
+    protected dispatchBitBangSPI(pinId: string, isHigh: boolean): void {
+      const endpoints = this.getProtocolEndpointsForPin(pinId).filter(
+        (e) => typeof (e.inst as any)?.onSPIByte === 'function',
+      );
+      if (!endpoints.length) return;
+      const role = /^(mosi|din|sdi)$/i.test(String(endpoints[0].pinId)) ? 'mosi'
+        : /^(sck|clk)$/i.test(String(endpoints[0].pinId)) ? 'sck' : 'cs';
+      const key = String((endpoints[0].inst as any)?.id || pinId);
+      let st = this.spiBitState.get(key);
+      if (!st) {
+        st = { mosi: true, sck: false, cs: true, bits: 0, byte: 0 };
+        this.spiBitState.set(key, st);
+      }
+      const wasSck = st.sck;
+      if (role === 'mosi') st.mosi = isHigh;
+      else if (role === 'sck') st.sck = isHigh;
+      else if (!st.cs && isHigh) {
+        // CS deassert: SPIProtocol commits the frame on the CS pin edge.
+        for (const ep of endpoints) {
+          try { (ep.inst as any).onPinStateChange?.(ep.pinId, true, 0); } catch { /* ignore */ }
+        }
+        st.cs = true;
+        return;
+      } else {
+        if (st.cs && !isHigh) {
+          st.bits = 0; st.byte = 0; // CS assert starts a frame
+          for (const ep of endpoints) {
+            try { (ep.inst as any).onPinStateChange?.(ep.pinId, false, 0); } catch { /* ignore */ }
+          }
+        }
+        st.cs = isHigh;
+      }
+      if (!st.cs && !wasSck && st.sck) {
+        st.byte = ((st.byte << 1) | (st.mosi ? 1 : 0)) & 0xff;
+        st.bits += 1;
+        if (st.bits === 8) {
+          const byte = st.byte;
+          st.bits = 0; st.byte = 0;
+          for (const ep of endpoints) {
+            try { (ep.inst as any).onSPIByte(byte); } catch { /* ignore */ }
+          }
+        }
+      }
     }
 
     protected dispatchBitBangI2C(pinId: string, isHigh: boolean): void {

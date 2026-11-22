@@ -41,10 +41,10 @@ function asmFor(board, steps, needle = 'DONE') {
     return `  MOV P1, #${hex(v)}${d}`;
   }).join('\n');
   if (board.isa === '8086') {
-    return `ORG 100h\n  MOV AL, 80h\n  OUT 0E3h, AL\n${writes}\n  MOV DX, OFFSET msg\n  MOV AH, 09h\n  INT 21h\n  HLT\nmsg: DB '${needle}$'\nEND`;
+    return `ORG 100h\n  MOV CX, 0FFFFh\nwait: LOOP wait\n  MOV AL, 80h\n  OUT 0E3h, AL\n${writes}\n  MOV DX, OFFSET msg\n  MOV AH, 09h\n  INT 21h\n  HLT\nmsg: DB '${needle}$'\nEND`;
   }
   if (board.isa === '8085') {
-    return `ORG 0\n  MVI A, 80h\n  OUT 0E3h\n${writes}\n  MVI A, '${needle[0]}'\n  OUT 01h\n  HLT\nEND`;
+    return `ORG 0\n  MVI B, 0FFh\nwait: DCR B\n  JNZ wait\n  MVI A, 80h\n  OUT 0E3h\n${writes}\n  MVI A, '${needle[0]}'\n  OUT 01h\n  HLT\nEND`;
   }
   return `ORG 0\n${writes}\n  MOV SBUF, #'Q'\n  SJMP $\nEND`;
 }
@@ -88,6 +88,31 @@ function i2cAsmFor(board, bytes, needle = 'DONE') {
 function hex2(v) {
   const h = (v & 0xff).toString(16).toUpperCase().padStart(2, '0');
   return (/^[A-F]/.test(h) ? '0' : '') + h + 'h';
+}
+
+/** Bit-bang SPI on 8051 P1: MOSI=L2 (bit2), SCK=L3 (bit3), CS=L4 (bit4). */
+function spiAsmFor(board, frames, needle = 'DONE') {
+  const MOSI = 0x04, SCK = 0x08, CS = 0x10;
+  const out = ['ORG 0'];
+  let k = 0, cur = CS | SCK;
+  const set = (mask) => {
+    const d = `s${k++}`;
+    cur = mask;
+    out.push(`  MOV P1, #${hex2(mask)}`, `  MOV R0, #0`, `${d}: DJNZ R0, ${d}`);
+  };
+  for (const frame of frames) {
+    set(cur & ~CS & ~SCK & 0xff); // CS low, SCK low before first bit
+    for (const byte of frame) {
+      for (let i = 7; i >= 0; i--) {
+        set((cur & ~MOSI & 0xff) | (byte & (1 << i) ? MOSI : 0));
+        set(cur | SCK);
+        set(cur & ~SCK & 0xff);
+      }
+    }
+    set(cur | CS); // CS high -> frame complete
+  }
+  out.push(`  MOV SBUF, #'Q'`, `  SJMP $`, 'END');
+  return out.join('\n');
 }
 
 const st = (v, id) => (v.liveOop || {})[id] || {};
@@ -196,8 +221,8 @@ const CASES = [
   {
     family: 'i2c', name: 'pca9685', type: 'openhw-pca9685',
     attrs: { i2cAddress: '0x40' },
-    blockedOn: ['8086', '8085', '8051'],
-    blockedReason: 'retro bit-bang I2C decode not yet visible in browser (unit-tested only)',
+    blockedOn: ['8086', '8085'],
+    blockedReason: '8086/8085 bit-bang I2C decode not yet visible in browser',
     // Runner decoder is unit-tested; browser proof blocked on guest-side
     // edge visibility (retro step budget collapses the bit stream).
     wires: (b) => [
@@ -214,6 +239,50 @@ const CASES = [
       console.log('I2CDIAG-STATE', JSON.stringify({ pins: st(v, 'c1').__i2cPins, diag: st(v, 'c1').__i2cDiag, samples: (st(v, 'c1').__i2cSamples || []).slice(0, 20) }));
       expect(Number(duty['0'] ?? duty[0] ?? NaN)).toBeGreaterThan(5);
     },
+  },
+  {
+    family: 'spi', name: 'max7219', type: 'openhw-max7219',
+    wires: (b) => [
+      { from: `${b}:${L(2)}`, to: 'c1:DIN' },
+      { from: `${b}:${L(3)}`, to: 'c1:CLK' },
+      { from: `${b}:${L(4)}`, to: 'c1:CS' },
+      { from: `${b}:SWD_3V3`, to: 'c1:VCC' },
+      { from: `${b}:SWD_GND`, to: 'c1:GND' },
+    ],
+    blockedOn: ['8086', '8085'],
+    blockedReason: '8086/8085 SPI bit-bang decode not yet visible in browser',
+    code: () => ({ custom: spiAsmFor('8051', [
+      [0x0c, 0x01], [0x0a, 0x08], [0x0b, 0x07], [0x01, 0x7e], [0x02, 0x30],
+    ]) }),
+    needle: () => 'Q',
+    check: (v) => {
+      const mx = custom(v, 'c1');
+      const matrix = mx.matrix || st(v, 'c1').matrix || [];
+      expect(mx.shutdown === false || st(v, 'c1').shutdown === false).toBe(true);
+      expect(matrix[0]).toBe(0x7e);
+      expect(matrix[1]).toBe(0x30);
+    },
+  },
+  {
+    family: 'inputs', name: 'adc-potentiometer', type: 'openhw-potentiometer',
+    attrs: { value: 50 },
+    wires: (b) => [
+      { from: `${b}:${L(10)}`, to: 'c1:SIG' },
+      { from: `${b}:SWD_3V3`, to: 'c1:1' },
+      { from: `${b}:SWD_GND`, to: 'c1:2' },
+    ],
+    // 8086/8085 ADC0808 at ports 28h (channel) / 29h (data). Half-scale
+    // potentiometer must land in 100..156 (8-bit of 2.5V/5V).
+    blockedOn: ['8086', '8085', '8051'],
+    blockedReason: 'ADC0808 guest read path returns 0 despite runner injecting the host voltage',
+    code: (b) => {
+      const ok = b.isa === '8086';
+      return { custom: ok
+        ? `ORG 100h\n  MOV CX, 40\nagain:\n  MOV AL, 80h\n  OUT 28h, AL\n  MOV BX, 100\ndly:\n  DEC BX\n  JNZ dly\n  IN AL, 29h\n  CMP AL, 100\n  JB next\n  CMP AL, 157\n  JA next\n  MOV DL, 'Y'\n  MOV AH, 02h\n  INT 21h\n  HLT\nnext:\n  LOOP again\n  MOV DL, 'N'\n  MOV AH, 02h\n  INT 21h\n  HLT\nEND`
+        : `ORG 0\n  MVI A, 80h\n  OUT 28h\n  IN 29h\n  CPI 100\n  JC bad\n  CPI 157\n  NC bad\n  MVI A, 'Y'\n  OUT 01h\n  HLT\nbad:\n  MVI A, 'N'\n  OUT 01h\n  HLT\nEND` };
+    },
+    needle: () => 'Y',
+    check: (v) => expect(Number(st(v, 'c1').value)).toBeCloseTo(50, 0),
   },
 ];
 

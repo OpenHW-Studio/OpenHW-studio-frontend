@@ -226,7 +226,8 @@ export class RetroRunner extends ArmRunnerBase {
                     } catch { before = null; }
                     let n = 0;
                     const i2cPins = self.bitBangI2CBoardPins();
-                    if (i2cPins.length > 0) {
+                    const spiPins = self.bitBangSPIPins();
+                    if (i2cPins.length > 0 || spiPins.length > 0) {
                       // Bit-bang I2C: sample SDA/SCL between small engine
                       // slices so guest strobe widths need not exceed one
                       // wall tick (a coarse single-step collapses them).
@@ -242,6 +243,13 @@ export class RetroRunner extends ArmRunnerBase {
                             const bit = self.gpioBit(pinId);
                             const high = !!((Number(port) >> bit) & 1);
                             self.dispatchBitBangI2C(pinId, high);
+                          } catch { /* one pin never breaks the tick */ }
+                        }
+                        for (const { pinId } of spiPins) {
+                          try {
+                            const port = self.readGpioPort(self.gpioPort(pinId));
+                            const bit = self.gpioBit(pinId);
+                            self.dispatchBitBangSPI(pinId, !!((Number(port) >> bit) & 1));
                           } catch { /* one pin never breaks the tick */ }
                         }
                       }
@@ -407,6 +415,11 @@ export class RetroRunner extends ArmRunnerBase {
             isHalted(): boolean {
                 try { return !!self.emu?.halted?.(); } catch { return false; }
             },
+            // Called by the base tick AFTER instance models update, so host
+            // sensor voltages are settled before injection into ADC0808.
+            tickEnd(): void {
+                try { self.driveRetroADC(); } catch { /* ADC never breaks tick */ }
+            },
             close(): void {
                 try { self.emu?.free?.(); } catch { /* ignore */ }
                 self.emu = null;
@@ -506,6 +519,42 @@ export class RetroRunner extends ArmRunnerBase {
         }
         return 0;
     }
+    /** Host analogue sensors → ADC0808 channels (8086/8085 ports 28h/29h).
+     *  Convention: board pins L10..L17 map to ADC channels 0..7. */
+    private driveRetroADC(): void {
+        if (!this.emu || (this.isa !== '8086' && this.isa !== '8085' && this.isa !== '8088')) return;
+        try {
+            const pinToNet = (this as any).pinToNet as Map<string, number> | undefined;
+            if (!pinToNet) return;
+            const channels = new Map<number, number>();
+            for (const [node, netId] of pinToNet) {
+                const sep = node.indexOf(':');
+                if (sep < 0) continue;
+                const compId = node.slice(0, sep), pinId = node.slice(sep + 1);
+                // Only host component pins carrying a voltage source.
+                if (compId === this.boardId) continue;
+                const inst: any = this.instances.get(compId);
+                if (!inst || typeof inst.getPinVoltage !== 'function') continue;
+                const volts = Number(inst.getPinVoltage(pinId));
+                if (!Number.isFinite(volts) || volts < 0) continue;
+                // Find the board pin on the same net: L10..L17 = ADC ch 0..7.
+                for (const [node2, net2] of pinToNet) {
+                    if (net2 !== netId) continue;
+                    const s2 = node2.indexOf(':');
+                    if (s2 < 0 || node2.slice(0, s2) !== this.boardId) continue;
+                    const bm = /^[LR](1[0-7])$/.exec(node2.slice(s2 + 1));
+                    if (!bm) continue;
+                    const ch = Number(bm[1]) - 10;
+                    channels.set(ch, Math.max(0, Math.min(255, Math.round((volts / 5) * 255))));
+                    break;
+                }
+            }
+            for (const [ch, raw] of channels) {
+                try { this.emu.adc_set?.(ch, raw); } catch { /* one channel never breaks tick */ }
+            }
+        } catch { /* ADC inject never breaks the tick */ }
+    }
+
     /** Stamp supply pins of components sitting on a board rail net
      * (AVR lowImpRails pattern). Kit shells source no power, so passive
      * inputs (switches) would float at 0V; the wiper pin lives on a
