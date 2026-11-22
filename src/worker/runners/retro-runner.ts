@@ -233,14 +233,15 @@ export class RetroRunner extends ArmRunnerBase {
                       let remaining = Math.max(1, Math.floor(budget));
                       let guard = 0;
                       while (remaining > 0 && guard++ < 10000) {
-                        const slice = Math.min(remaining, 8192);
+                        const slice = Math.min(remaining, 256);
                         n += Number(self.emu.run(slice)) || 0;
                         remaining -= slice;
                         for (const { pinId } of i2cPins) {
                           try {
                             const port = self.readGpioPort(self.gpioPort(pinId));
                             const bit = self.gpioBit(pinId);
-                            self.dispatchBitBangI2C(pinId, !!((Number(port) >> bit) & 1));
+                            const high = !!((Number(port) >> bit) & 1);
+                            self.dispatchBitBangI2C(pinId, high);
                           } catch { /* one pin never breaks the tick */ }
                         }
                       }

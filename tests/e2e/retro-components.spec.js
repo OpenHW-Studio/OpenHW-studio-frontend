@@ -75,7 +75,7 @@ function i2cAsmFor(board, bytes, needle = 'DONE') {
   };
   out.push('ORG ' + (board.isa === '8086' ? '100h' : '0'));
   if (board.isa === '8086' || board.isa === '8085') out.push(`  MOV ${board.isa === '8086' ? 'AL' : 'A'}, 80h`, '  OUT 0E3h, AL');
-  set(SCL);            // idle: both high
+  set(SDA | SCL);      // idle: both high
   sda(false);          // START: SDA falls while SCL stays HIGH
   scl(false);
   for (const byte of bytes) bits(byte);
@@ -196,10 +196,10 @@ const CASES = [
   {
     family: 'i2c', name: 'pca9685', type: 'openhw-pca9685',
     attrs: { i2cAddress: '0x40' },
-    // Runner decoder is unit-tested; browser proof blocked on guest-side
-    // edge visibility (retro step budget collapses the bit stream).
     blockedOn: ['8086', '8085', '8051'],
     blockedReason: 'retro bit-bang I2C decode not yet visible in browser (unit-tested only)',
+    // Runner decoder is unit-tested; browser proof blocked on guest-side
+    // edge visibility (retro step budget collapses the bit stream).
     wires: (b) => [
       { from: `${b}:${L(2)}`, to: 'c1:SDA' },
       { from: `${b}:${L(3)}`, to: 'c1:SCL' },
