@@ -40,6 +40,9 @@ const CATEGORIES = [
   { id: 'code', label: 'Code', color: '#a256c7' },
   { id: 'addons',  label: 'Add-ons', color: '#e67e22' },
   { id: 'sensors', label: 'Sensors', color: '#1abc9c' },
+  { id: 'esp32',   label: 'ESP32',   color: '#e74c3c' },
+  { id: 'esp32cam', label: 'ESP32-CAM', color: '#8e44ad' },
+  { id: 'pico',    label: 'Raspberry Pi Pico', color: '#c51a4a' },
 ]
 
 const SUB_CATEGORIES = {
@@ -60,7 +63,25 @@ const SUB_CATEGORIES = {
     { id: 'sensors_ir', label: 'IR Remote' },
     { id: 'sensors_temp', label: 'Temp' },
     { id: 'sensors_thermistor', label: 'Thermistor' },
-  ]
+  ],
+  esp32: [
+    { id: 'esp32_system', label: 'System & Power' },
+    { id: 'esp32_wifi', label: 'WiFi Network' },
+    { id: 'esp32_io', label: 'Touch & DAC & ADC' },
+    { id: 'esp32_pwm', label: 'Hardware PWM (LEDC)' },
+  ],
+  esp32cam: [
+    { id: 'esp32cam_core', label: 'Camera Core' },
+    { id: 'esp32cam_sensor', label: 'Sensor & Flash' },
+    { id: 'esp32cam_storage', label: 'MicroSD Storage' },
+  ],
+  pico: [
+    { id: 'pico_system', label: 'System & Core' },
+    { id: 'pico_io', label: 'GPIO & Sensors' },
+    { id: 'pico_pwm', label: 'Hardware PWM' },
+    { id: 'pico_multicore', label: 'Dual Core' },
+    { id: 'pico_wifi', label: 'Pico W WiFi' },
+  ],
 }
 
 // ─── Block shape kinds ────────────────────────────────────────────────────────
@@ -70,6 +91,8 @@ const HAT_TYPES = new Set([
   'on_button_pressed', 'on_shake', 'on_pin_pressed',
   'on_pin_changed', 'on_radio_number', 'on_radio_string', 'on_radio_key_value',
   'create_block', 'setup_runs_once', 'on_button_sensor_press',
+  'esp32_setup',
+  'pico_setup', 'pico_core1_setup', 'pico_core1_loop',
 ])
 const VALUE_TYPES = new Set([
   'math_arithmetic_openhw', 'math_compare', 'pick_random', 'map_value',
@@ -83,15 +106,101 @@ const VALUE_TYPES = new Set([
   'colour_picker', 'colour_random', 'colour_rgb',
   'analog_sensor_read', 'button_is_pressed', 'digital_sensor_read', 'digital_sensor_is_on',
   'ir_remote_has_code', 'ir_remote_get_code', 'temp_sensor_read', 'thermistor_read',
+  'esp32_wifi_is_connected', 'esp32_wifi_local_ip', 'esp32_wifi_soft_ap_ip', 'esp32_wifi_rssi', 'esp32_wifi_mac_address',
+  'esp32_touch_read', 'esp32_hall_read', 'esp32_temp_read', 'esp32_get_free_heap', 'esp32_get_chip_model',
+  'esp32cam_init_status', 'esp32cam_has_frame', 'esp32cam_frame_length', 'esp32cam_frame_width', 'esp32cam_frame_height', 'esp32cam_sd_card_size',
+  'pico_get_temp', 'pico_get_free_ram', 'pico_get_chip_id',
+  'pico_analog_read', 'pico_analog_read_voltage',
+  'pico_fifo_pop', 'pico_fifo_available',
+  'pico_wifi_is_connected', 'pico_wifi_local_ip', 'pico_wifi_soft_ap_ip',
+  'pico_wifi_rssi', 'pico_wifi_mac_address',
 ])
 const getShapeKind = (type) =>
   HAT_TYPES.has(type) ? 'hat' : VALUE_TYPES.has(type) ? 'value' : 'statement'
 
 // ─── Pin Helpers ─────────────────────────────────────────────────────────────
+const GET_PICO_PINS = () => [
+  ['GP0 (TX0/SDA0)', '0'],
+  ['GP1 (RX0/SCL0)', '1'],
+  ['GP2', '2'],
+  ['GP3', '3'],
+  ['GP4 (SDA0)', '4'],
+  ['GP5 (SCL0)', '5'],
+  ['GP6', '6'],
+  ['GP7', '7'],
+  ['GP8 (TX1)', '8'],
+  ['GP9 (RX1)', '9'],
+  ['GP10', '10'],
+  ['GP11', '11'],
+  ['GP12', '12'],
+  ['GP13', '13'],
+  ['GP14', '14'],
+  ['GP15', '15'],
+  ['GP16', '16'],
+  ['GP17', '17'],
+  ['GP18', '18'],
+  ['GP19', '19'],
+  ['GP20', '20'],
+  ['GP21', '21'],
+  ['GP22', '22'],
+  ['GP26 (A0)', '26'],
+  ['GP27 (A1)', '27'],
+  ['GP28 (A2)', '28'],
+]
+
+const GET_PICO_ANALOG_PINS = () => [
+  ['GP26 (ADC 0)', '26'],
+  ['GP27 (ADC 1)', '27'],
+  ['GP28 (ADC 2)', '28'],
+  ['ADC 3 (VSYS)', '29'],
+]
+
 const GET_DIGITAL_PINS = () => {
-  const kind = window.BLOCKLY_BOARD_KIND || 'arduino_uno'
-  if (kind === 'rp2040') {
+  const kind = String(window.BLOCKLY_BOARD_KIND || 'arduino_uno').toLowerCase()
+  if (kind === 'rp2040' || kind.includes('pico')) {
     return Array.from({ length: 29 }, (_, i) => [i === 25 ? `GP25 (LED)` : `GP${i}`, String(i)])
+  }
+  if (kind.includes('cam')) {
+    return [
+      ['GPIO 4 (Flash LED)', '4'],
+      ['GPIO 33 (Red LED)', '33'],
+      ['GPIO 2', '2'],
+      ['GPIO 12', '12'],
+      ['GPIO 13', '13'],
+      ['GPIO 14', '14'],
+      ['GPIO 15', '15'],
+      ['GPIO 16', '16'],
+      ['GPIO 0 (Boot)', '0'],
+      ['GPIO 1 (TX)', '1'],
+      ['GPIO 3 (RX)', '3'],
+    ]
+  }
+  if (kind.includes('esp32')) {
+    return [
+      ['GPIO 2 (LED)', '2'],
+      ['GPIO 4', '4'],
+      ['GPIO 5', '5'],
+      ['GPIO 12', '12'],
+      ['GPIO 13', '13'],
+      ['GPIO 14', '14'],
+      ['GPIO 15', '15'],
+      ['GPIO 16', '16'],
+      ['GPIO 17', '17'],
+      ['GPIO 18', '18'],
+      ['GPIO 19', '19'],
+      ['GPIO 21 (SDA)', '21'],
+      ['GPIO 22 (SCL)', '22'],
+      ['GPIO 23', '23'],
+      ['GPIO 25 (DAC1)', '25'],
+      ['GPIO 26 (DAC2)', '26'],
+      ['GPIO 27', '27'],
+      ['GPIO 32', '32'],
+      ['GPIO 33', '33'],
+      ['GPIO 34 (IN)', '34'],
+      ['GPIO 35 (IN)', '35'],
+      ['GPIO 36 (VP)', '36'],
+      ['GPIO 39 (VN)', '39'],
+    ]
   }
   return [
     ['D0', '0'], ['D1', '1'], ['D2', '2'], ['D3', '3'], ['D4', '4'], ['D5', '5'],
@@ -100,17 +209,114 @@ const GET_DIGITAL_PINS = () => {
   ]
 }
 const GET_ANALOG_PINS = () => {
-  const kind = window.BLOCKLY_BOARD_KIND || 'arduino_uno'
-  if (kind === 'rp2040') {
+  const kind = String(window.BLOCKLY_BOARD_KIND || 'arduino_uno').toLowerCase()
+  if (kind === 'rp2040' || kind.includes('pico')) {
     return [['GP26 (A0)', '26'], ['GP27 (A1)', '27'], ['GP28 (A2)', '28']]
+  }
+  if (kind.includes('cam')) {
+    return [
+      ['GPIO 2 (ADC2_CH2)', '2'],
+      ['GPIO 4 (ADC2_CH0)', '4'],
+      ['GPIO 12 (ADC2_CH5)', '12'],
+      ['GPIO 13 (ADC2_CH4)', '13'],
+      ['GPIO 14 (ADC2_CH6)', '14'],
+      ['GPIO 15 (ADC2_CH3)', '15'],
+    ]
+  }
+  if (kind.includes('esp32')) {
+    return [
+      ['GPIO 36 (VP / ADC1_CH0)', '36'],
+      ['GPIO 39 (VN / ADC1_CH3)', '39'],
+      ['GPIO 34 (ADC1_CH6)', '34'],
+      ['GPIO 35 (ADC1_CH7)', '35'],
+      ['GPIO 32 (ADC1_CH4)', '32'],
+      ['GPIO 33 (ADC1_CH5)', '33'],
+      ['GPIO 25 (ADC2_CH8 / DAC1)', '25'],
+      ['GPIO 26 (ADC2_CH9 / DAC2)', '26'],
+      ['GPIO 27 (ADC2_CH7)', '27'],
+      ['GPIO 14 (ADC2_CH6)', '14'],
+      ['GPIO 12 (ADC2_CH5)', '12'],
+      ['GPIO 13 (ADC2_CH4)', '13'],
+      ['GPIO 4 (ADC2_CH0)', '4'],
+      ['GPIO 2 (ADC2_CH2)', '2'],
+      ['GPIO 15 (ADC2_CH3)', '15'],
+    ]
   }
   return [['A0', 'A0'], ['A1', 'A1'], ['A2', 'A2'], ['A3', 'A3'], ['A4', 'A4'], ['A5', 'A5']]
 }
 const GET_PWM_PINS = () => {
-  const kind = window.BLOCKLY_BOARD_KIND || 'arduino_uno'
+  const kind = String(window.BLOCKLY_BOARD_KIND || 'arduino_uno').toLowerCase()
   if (kind === 'rp2040') return GET_DIGITAL_PINS()
+  if (kind.includes('cam')) return GET_DIGITAL_PINS()
+  if (kind.includes('esp32')) {
+    return GET_DIGITAL_PINS().filter(p => !['34', '35', '36', '39'].includes(p[1]))
+  }
   return [['P3', '3'], ['P5', '5'], ['P6', '6'], ['P9', '9'], ['P10', '10'], ['P11', '11']]
 }
+
+const GET_ESP32_TOUCH_PINS = () => [
+  ['Touch 0 (GPIO 4)', '4'],
+  ['Touch 2 (GPIO 2)', '2'],
+  ['Touch 3 (GPIO 15)', '15'],
+  ['Touch 4 (GPIO 13)', '13'],
+  ['Touch 5 (GPIO 12)', '12'],
+  ['Touch 6 (GPIO 14)', '14'],
+  ['Touch 7 (GPIO 27)', '27'],
+  ['Touch 8 (GPIO 33)', '33'],
+  ['Touch 9 (GPIO 32)', '32'],
+]
+
+const GET_ESP32_DAC_PINS = () => [
+  ['DAC 1 (GPIO 25)', '25'],
+  ['DAC 2 (GPIO 26)', '26'],
+]
+
+const GET_ESP32_RTC_PINS = () => [
+  ['GPIO 0 (Boot)', '0'],
+  ['GPIO 2', '2'],
+  ['GPIO 4', '4'],
+  ['GPIO 12', '12'],
+  ['GPIO 13', '13'],
+  ['GPIO 14', '14'],
+  ['GPIO 15', '15'],
+  ['GPIO 25', '25'],
+  ['GPIO 26', '26'],
+  ['GPIO 27', '27'],
+  ['GPIO 32', '32'],
+  ['GPIO 33', '33'],
+  ['GPIO 34', '34'],
+  ['GPIO 35', '35'],
+  ['GPIO 36', '36'],
+  ['GPIO 39', '39'],
+]
+
+const GET_ESP32_LEDC_CHANNELS = () => Array.from({ length: 16 }, (_, i) => [`Channel ${i}`, String(i)])
+
+const GET_ESP32CAM_FRAMESIZES = () => [
+  ['QQVGA (160x120)', 'FRAMESIZE_QQVGA'],
+  ['QVGA (320x240)', 'FRAMESIZE_QVGA'],
+  ['VGA (640x480)', 'FRAMESIZE_VGA'],
+  ['SVGA (800x600)', 'FRAMESIZE_SVGA'],
+  ['XGA (1024x768)', 'FRAMESIZE_XGA'],
+  ['SXGA (1280x1024)', 'FRAMESIZE_SXGA'],
+  ['UXGA (1600x1200)', 'FRAMESIZE_UXGA'],
+]
+
+const GET_ESP32CAM_PIXFORMATS = () => [
+  ['RGB565', 'PIXFORMAT_RGB565'],
+  ['JPEG', 'PIXFORMAT_JPEG'],
+  ['Grayscale', 'PIXFORMAT_GRAYSCALE'],
+]
+
+const GET_ESP32CAM_EFFECTS = () => [
+  ['No Effect', '0'],
+  ['Negative', '1'],
+  ['Grayscale', '2'],
+  ['Red Tint', '3'],
+  ['Green Tint', '4'],
+  ['Blue Tint', '5'],
+  ['Sepia', '6'],
+]
 
 // ─── Category → block list ────────────────────────────────────────────────────
 const CATEGORY_BLOCKS = {
@@ -280,6 +486,136 @@ const CATEGORY_BLOCKS = {
   sensors_thermistor: [
     { type: 'thermistor_setup', label: 'thermistor setup' },
     { type: 'thermistor_read', label: 'thermistor read' },
+  ],
+  esp32: [
+    { type: 'esp32_setup', label: 'ESP32 setup' },
+    { type: 'esp32_restart', label: 'restart ESP32' },
+    { type: 'esp32_wifi_connect', label: 'connect WiFi' },
+    { type: 'esp32_wifi_is_connected', label: 'WiFi connected?' },
+    { type: 'esp32_wifi_local_ip', label: 'WiFi local IP' },
+    { type: 'esp32_touch_read', label: 'read touch pin' },
+    { type: 'esp32_dac_write', label: 'write DAC pin' },
+    { type: 'esp32_ledc_setup', label: 'setup PWM channel' },
+    { type: 'esp32_ledc_write', label: 'set PWM duty' },
+    { type: 'esp32_deep_sleep', label: 'deep sleep' },
+  ],
+  esp32_system: [
+    { type: 'esp32_setup', label: 'ESP32 setup' },
+    { type: 'esp32_restart', label: 'restart ESP32' },
+    { type: 'esp32_cpu_freq', label: 'set CPU frequency' },
+    { type: 'esp32_deep_sleep', label: 'deep sleep (timer)' },
+    { type: 'esp32_light_sleep', label: 'light sleep (timer)' },
+    { type: 'esp32_ext0_wakeup', label: 'enable GPIO wakeup' },
+    { type: 'esp32_touch_wakeup', label: 'enable touch wakeup' },
+    { type: 'esp32_get_free_heap', label: 'free heap bytes' },
+    { type: 'esp32_get_chip_model', label: 'chip model' },
+  ],
+  esp32_wifi: [
+    { type: 'esp32_wifi_connect', label: 'connect WiFi (STA)' },
+    { type: 'esp32_wifi_soft_ap', label: 'start WiFi hotspot (AP)' },
+    { type: 'esp32_wifi_is_connected', label: 'WiFi connected?' },
+    { type: 'esp32_wifi_local_ip', label: 'WiFi local IP' },
+    { type: 'esp32_wifi_soft_ap_ip', label: 'hotspot IP' },
+    { type: 'esp32_wifi_rssi', label: 'WiFi signal (RSSI)' },
+    { type: 'esp32_wifi_mac_address', label: 'MAC address' },
+    { type: 'esp32_wifi_disconnect', label: 'disconnect WiFi' },
+  ],
+  esp32_io: [
+    { type: 'esp32_touch_read', label: 'read touch pin' },
+    { type: 'esp32_dac_write', label: 'write DAC pin' },
+    { type: 'esp32_hall_read', label: 'read hall sensor' },
+    { type: 'esp32_temp_read', label: 'read internal temp' },
+    { type: 'esp32_adc_resolution', label: 'set ADC resolution' },
+    { type: 'esp32_adc_attenuation', label: 'set ADC range' },
+  ],
+  esp32_pwm: [
+    { type: 'esp32_ledc_setup', label: 'setup PWM channel' },
+    { type: 'esp32_ledc_attach', label: 'attach pin to PWM' },
+    { type: 'esp32_ledc_write', label: 'set PWM duty cycle' },
+    { type: 'esp32_ledc_tone', label: 'play PWM tone' },
+  ],
+  esp32cam: [
+    { type: 'esp32cam_init', label: 'init camera (AI-Thinker)' },
+    { type: 'esp32cam_capture', label: 'take picture / capture' },
+    { type: 'esp32cam_has_frame', label: 'picture captured?' },
+    { type: 'esp32cam_return_fb', label: 'release picture' },
+    { type: 'esp32cam_flash_led', label: 'set flash LED' },
+    { type: 'esp32cam_status_led', label: 'set red indicator LED' },
+    { type: 'esp32cam_sd_init', label: 'mount MicroSD' },
+    { type: 'esp32cam_sd_save_photo', label: 'save photo to SD' },
+  ],
+  esp32cam_core: [
+    { type: 'esp32cam_init', label: 'init camera (AI-Thinker)' },
+    { type: 'esp32cam_init_status', label: 'camera initialized?' },
+    { type: 'esp32cam_capture', label: 'take picture / capture' },
+    { type: 'esp32cam_has_frame', label: 'picture captured?' },
+    { type: 'esp32cam_return_fb', label: 'release picture memory' },
+    { type: 'esp32cam_frame_length', label: 'photo size in bytes' },
+    { type: 'esp32cam_frame_width', label: 'photo width' },
+    { type: 'esp32cam_frame_height', label: 'photo height' },
+  ],
+  esp32cam_sensor: [
+    { type: 'esp32cam_flash_led', label: 'set flash LED (GPIO 4)' },
+    { type: 'esp32cam_flash_brightness', label: 'flash brightness (PWM)' },
+    { type: 'esp32cam_status_led', label: 'red indicator LED (GPIO 33)' },
+    { type: 'esp32cam_set_brightness', label: 'camera brightness' },
+    { type: 'esp32cam_set_contrast', label: 'camera contrast' },
+    { type: 'esp32cam_set_effect', label: 'camera special effect' },
+    { type: 'esp32cam_flip', label: 'flip camera image' },
+  ],
+  esp32cam_storage: [
+    { type: 'esp32cam_sd_init', label: 'mount MicroSD card' },
+    { type: 'esp32cam_sd_card_size', label: 'MicroSD card size' },
+    { type: 'esp32cam_sd_save_photo', label: 'save photo to MicroSD' },
+  ],
+  pico: [
+    { type: 'pico_setup', label: 'Pico setup' },
+    { type: 'pico_led_builtin', label: 'set onboard LED' },
+    { type: 'pico_led_toggle', label: 'toggle onboard LED' },
+    { type: 'pico_get_temp', label: 'internal temperature' },
+    { type: 'pico_pwm_write', label: 'set PWM duty' },
+    { type: 'pico_core1_setup', label: 'Core 1 setup' },
+    { type: 'pico_core1_loop', label: 'Core 1 loop' },
+    { type: 'pico_wifi_connect', label: 'connect to WiFi (Pico W)' },
+  ],
+  pico_system: [
+    { type: 'pico_setup', label: 'Pico setup' },
+    { type: 'pico_cpu_freq', label: 'set CPU frequency' },
+    { type: 'pico_get_temp', label: 'internal temperature' },
+    { type: 'pico_reboot', label: 'reboot Pico' },
+    { type: 'pico_get_free_ram', label: 'free RAM bytes' },
+    { type: 'pico_get_chip_id', label: 'chip unique ID' },
+  ],
+  pico_io: [
+    { type: 'pico_led_builtin', label: 'set onboard LED' },
+    { type: 'pico_led_toggle', label: 'toggle onboard LED' },
+    { type: 'pico_analog_read', label: 'read analog pin' },
+    { type: 'pico_analog_read_voltage', label: 'read analog voltage' },
+    { type: 'pico_adc_resolution', label: 'set ADC resolution' },
+  ],
+  pico_pwm: [
+    { type: 'pico_pwm_write', label: 'set PWM duty' },
+    { type: 'pico_pwm_freq', label: 'set PWM frequency' },
+    { type: 'pico_pwm_range', label: 'set PWM range' },
+    { type: 'pico_tone', label: 'play tone' },
+    { type: 'pico_no_tone', label: 'stop tone' },
+  ],
+  pico_multicore: [
+    { type: 'pico_core1_setup', label: 'Run on Core 1 (setup)' },
+    { type: 'pico_core1_loop', label: 'Run on Core 1 (loop)' },
+    { type: 'pico_fifo_push', label: 'send to other core' },
+    { type: 'pico_fifo_pop', label: 'read from other core' },
+    { type: 'pico_fifo_available', label: 'is core data available' },
+  ],
+  pico_wifi: [
+    { type: 'pico_wifi_connect', label: 'Pico W connect to WiFi' },
+    { type: 'pico_wifi_soft_ap', label: 'Pico W start Access Point' },
+    { type: 'pico_wifi_is_connected', label: 'WiFi is connected' },
+    { type: 'pico_wifi_local_ip', label: 'local IP address' },
+    { type: 'pico_wifi_soft_ap_ip', label: 'Access Point IP' },
+    { type: 'pico_wifi_rssi', label: 'signal strength (RSSI)' },
+    { type: 'pico_wifi_mac_address', label: 'MAC address' },
+    { type: 'pico_wifi_disconnect', label: 'disconnect WiFi' },
   ],
 }
 
@@ -1425,6 +1761,741 @@ const BLOCK_DEFS = [
     output: 'Number', colour: 160,
     tooltip: 'Read temperature from thermistor.'
   },
+
+  // ── ESP32 Blocks ─────────────────────────────────────────────────────────
+  {
+    type: 'esp32_setup',
+    message0: 'ESP32 setup (Serial %1 baud) %2 %3',
+    args0: [
+      { type: 'field_dropdown', name: 'BAUD', options: [['115200', '115200'], ['9600', '9600'], ['57600', '57600'], ['230400', '230400'], ['460800', '460800'], ['921600', '921600'], ['none', 'NONE']] },
+      { type: 'input_dummy' },
+      { type: 'input_statement', name: 'DO' },
+    ],
+    colour: '#e74c3c',
+    tooltip: 'Runs once at startup to initialize the ESP32 and optional Serial monitor.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_restart',
+    message0: 'restart ESP32',
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Performs software reset of the ESP32 (ESP.restart()).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_cpu_freq',
+    message0: 'set CPU frequency %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'FREQ',
+        options: [['240 MHz (Max)', '240'], ['160 MHz (Standard)', '160'], ['80 MHz (Low Power)', '80']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Sets ESP32 CPU clock frequency in MHz.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_deep_sleep',
+    message0: 'ESP32 deep sleep for %1 seconds',
+    args0: [
+      { type: 'input_value', name: 'SEC', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Puts the ESP32 into deep sleep mode for specified seconds.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_light_sleep',
+    message0: 'ESP32 light sleep for %1 seconds',
+    args0: [
+      { type: 'input_value', name: 'SEC', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Puts the ESP32 into light sleep mode for specified seconds.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_ext0_wakeup',
+    message0: 'enable deep sleep wakeup on %1 level %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_ESP32_RTC_PINS },
+      { type: 'field_dropdown', name: 'LEVEL', options: [['HIGH (1)', '1'], ['LOW (0)', '0']] }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Configures an RTC GPIO pin to wake the ESP32 from deep sleep.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_touch_wakeup',
+    message0: 'enable touch pad wakeup from deep sleep',
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Enables any configured capacitive touch pin to wake the ESP32 from deep sleep.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_get_free_heap',
+    message0: 'free heap memory (bytes)',
+    output: 'Number', colour: '#e74c3c',
+    tooltip: 'Returns free RAM heap in bytes.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_get_chip_model',
+    message0: 'ESP32 chip model',
+    output: 'String', colour: '#e74c3c',
+    tooltip: 'Returns chip model name string (e.g. ESP32-D0WDQ6).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_connect',
+    message0: 'ESP32 connect WiFi  SSID %1 Password %2',
+    args0: [
+      { type: 'input_value', name: 'SSID', check: 'String' },
+      { type: 'input_value', name: 'PASS', check: 'String' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Connect ESP32 to a WiFi network with SSID and password.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_soft_ap',
+    message0: 'start WiFi hotspot  SSID %1 Password %2',
+    args0: [
+      { type: 'input_value', name: 'SSID', check: 'String' },
+      { type: 'input_value', name: 'PASS', check: 'String' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Start a WiFi Access Point / hotspot network.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_is_connected',
+    message0: 'ESP32 WiFi connected?',
+    output: 'Boolean', colour: '#e74c3c',
+    tooltip: 'Returns true if ESP32 is currently connected to WiFi.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_local_ip',
+    message0: 'ESP32 WiFi local IP',
+    output: 'String', colour: '#e74c3c',
+    tooltip: 'Returns the local IP address of the ESP32 as text.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_soft_ap_ip',
+    message0: 'ESP32 hotspot IP',
+    output: 'String', colour: '#e74c3c',
+    tooltip: 'Returns the Access Point IP address of the ESP32 as text.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_rssi',
+    message0: 'WiFi signal strength (RSSI dBm)',
+    output: 'Number', colour: '#e74c3c',
+    tooltip: 'Returns current WiFi RSSI in dBm.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_mac_address',
+    message0: 'WiFi MAC address',
+    output: 'String', colour: '#e74c3c',
+    tooltip: 'Returns hardware MAC address string of the WiFi adapter.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_wifi_disconnect',
+    message0: 'disconnect from WiFi',
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Disconnects from current WiFi network.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_touch_read',
+    message0: 'read capacitive touch %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_ESP32_TOUCH_PINS },
+    ],
+    output: 'Number', colour: '#e74c3c',
+    tooltip: 'Read capacitive touch sensor value on ESP32 touch pin.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_dac_write',
+    message0: 'write DAC %1 value %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_ESP32_DAC_PINS },
+      { type: 'input_value', name: 'VAL', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Output true 8-bit analog voltage (0-255) on ESP32 hardware DAC pin.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_hall_read',
+    message0: 'read ESP32 hall sensor',
+    output: 'Number', colour: '#e74c3c',
+    tooltip: 'Read ESP32 internal magnetic hall effect sensor.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_temp_read',
+    message0: 'read ESP32 internal temp (°C)',
+    output: 'Number', colour: '#e74c3c',
+    tooltip: 'Read internal on-chip temperature sensor of ESP32 in Celsius.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_adc_resolution',
+    message0: 'set ADC analog read resolution %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'BITS',
+        options: [['12-bit (0-4095)', '12'], ['11-bit (0-2047)', '11'], ['10-bit (0-1023)', '10'], ['9-bit (0-511)', '9']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Sets bit resolution for analogRead() on ESP32.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_adc_attenuation',
+    message0: 'set ADC input range (attenuation) %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'ATTEN',
+        options: [
+          ['11 dB (0V - 3.3V)', 'ADC_11db'],
+          ['6 dB (0V - 2.2V)', 'ADC_6db'],
+          ['2.5 dB (0V - 1.5V)', 'ADC_2_5db'],
+          ['0 dB (0V - 1.1V)', 'ADC_0db']
+        ]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Sets full-scale input voltage range for ADC analog readings.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_ledc_setup',
+    message0: 'setup PWM channel %1 frequency %2 Hz resolution %3',
+    args0: [
+      { type: 'field_dropdown', name: 'CHANNEL', options: GET_ESP32_LEDC_CHANNELS },
+      { type: 'input_value', name: 'FREQ', check: 'Number' },
+      {
+        type: 'field_dropdown', name: 'RES',
+        options: [['8-bit (0-255)', '8'], ['10-bit (0-1023)', '10'], ['12-bit (0-4095)', '12'], ['14-bit (0-16383)', '14']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Configures an ESP32 hardware LEDC PWM timer and channel.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_ledc_attach',
+    message0: 'attach pin %1 to PWM channel %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PWM_PINS },
+      { type: 'field_dropdown', name: 'CHANNEL', options: GET_ESP32_LEDC_CHANNELS },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Routes the LEDC PWM channel output to a physical GPIO pin.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_ledc_write',
+    message0: 'PWM channel %1 set duty cycle %2',
+    args0: [
+      { type: 'field_dropdown', name: 'CHANNEL', options: GET_ESP32_LEDC_CHANNELS },
+      { type: 'input_value', name: 'DUTY', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Sets the PWM duty cycle for the specified channel.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32_ledc_tone',
+    message0: 'PWM channel %1 play tone frequency %2 Hz',
+    args0: [
+      { type: 'field_dropdown', name: 'CHANNEL', options: GET_ESP32_LEDC_CHANNELS },
+      { type: 'input_value', name: 'FREQ', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e74c3c',
+    tooltip: 'Outputs a continuous audio frequency on the PWM channel.',
+    helpUrl: ''
+  },
+
+  // ── ESP32-CAM Blocks ─────────────────────────────────────────────────────
+  {
+    type: 'esp32cam_init',
+    message0: 'init ESP32-CAM | size %1 format %2 JPEG quality %3',
+    args0: [
+      { type: 'field_dropdown', name: 'FRAMESIZE', options: GET_ESP32CAM_FRAMESIZES },
+      { type: 'field_dropdown', name: 'FORMAT', options: GET_ESP32CAM_PIXFORMATS },
+      { type: 'input_value', name: 'QUALITY', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Initializes the OV2640 camera module with standard AI-Thinker pinout.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_init_status',
+    message0: 'camera initialized successfully?',
+    output: 'Boolean', colour: '#8e44ad',
+    tooltip: 'Returns true if esp_camera_init() succeeded without errors (ESP_OK).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_capture',
+    message0: 'take picture / capture camera frame',
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Triggers the camera sensor to capture a new frame buffer.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_has_frame',
+    message0: 'picture captured successfully?',
+    output: 'Boolean', colour: '#8e44ad',
+    tooltip: 'Returns true if the last capture produced a valid frame buffer.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_return_fb',
+    message0: 'release picture memory (free frame)',
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Releases the captured frame buffer back to the camera driver pool.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_frame_length',
+    message0: 'captured picture size in bytes',
+    output: 'Number', colour: '#8e44ad',
+    tooltip: 'Returns size in bytes of the current captured image (fb->len).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_frame_width',
+    message0: 'captured picture width (pixels)',
+    output: 'Number', colour: '#8e44ad',
+    tooltip: 'Returns pixel width of the captured image (fb->width).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_frame_height',
+    message0: 'captured picture height (pixels)',
+    output: 'Number', colour: '#8e44ad',
+    tooltip: 'Returns pixel height of the captured image (fb->height).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_flash_led',
+    message0: 'set camera flash LED %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'VAL',
+        options: [['ON (HIGH)', 'HIGH'], ['OFF (LOW)', 'LOW']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Controls bright white onboard flash LED on GPIO 4.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_flash_brightness',
+    message0: 'set camera flash brightness %1 (0-255)',
+    args0: [
+      { type: 'input_value', name: 'VAL', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Adjusts flash LED brightness using hardware PWM on GPIO 4.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_status_led',
+    message0: 'set red indicator LED %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'VAL',
+        options: [['ON', 'LOW'], ['OFF', 'HIGH']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Controls onboard red status LED on GPIO 33 (active low).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_set_brightness',
+    message0: 'set camera sensor brightness %1 (-2 to 2)',
+    args0: [
+      { type: 'input_value', name: 'VAL', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Adjusts camera sensor exposure brightness (-2 to 2).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_set_contrast',
+    message0: 'set camera sensor contrast %1 (-2 to 2)',
+    args0: [
+      { type: 'input_value', name: 'VAL', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Adjusts camera sensor contrast (-2 to 2).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_set_effect',
+    message0: 'set camera special effect %1',
+    args0: [
+      { type: 'field_dropdown', name: 'EFFECT', options: GET_ESP32CAM_EFFECTS },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Applies hardware image processing filters (negative, grayscale, tints, sepia).',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_flip',
+    message0: 'flip camera image vertical %1 horizontal %2',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'VFLIP',
+        options: [['No (0)', '0'], ['Yes (1)', '1']]
+      },
+      {
+        type: 'field_dropdown', name: 'HMIRROR',
+        options: [['No (0)', '0'], ['Yes (1)', '1']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Flips and mirrors the image orientation.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_sd_init',
+    message0: 'mount MicroSD card (SD_MMC)',
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Initializes and mounts onboard MicroSD card socket via 1-bit SD_MMC.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_sd_card_size',
+    message0: 'MicroSD card size (MB)',
+    output: 'Number', colour: '#8e44ad',
+    tooltip: 'Returns total capacity of the mounted MicroSD card in megabytes.',
+    helpUrl: ''
+  },
+  {
+    type: 'esp32cam_sd_save_photo',
+    message0: 'save captured picture to MicroSD file %1',
+    args0: [
+      { type: 'input_value', name: 'PATH', check: 'String' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#8e44ad',
+    tooltip: 'Writes captured frame buffer directly to a file on the MicroSD card.',
+    helpUrl: ''
+  },
+
+  // ── Raspberry Pi Pico & Pico W Blocks ─────────────────────────────────────
+  {
+    type: 'pico_setup',
+    message0: 'Pico setup | Serial baud %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'BAUD',
+        options: [['115200', '115200'], ['9600', '9600'], ['57600', '57600'], ['None', 'NONE']]
+      }
+    ],
+    message1: '%1',
+    args1: [{ type: 'input_statement', name: 'DO' }],
+    colour: '#c51a4a',
+    tooltip: 'Initializes Raspberry Pi Pico hardware and sets up USB Serial communication.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_cpu_freq',
+    message0: 'set Pico CPU frequency %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'FREQ',
+        options: [
+          ['133 MHz (Standard)', '133'],
+          ['250 MHz (Overclock)', '250'],
+          ['200 MHz', '200'],
+          ['125 MHz', '125'],
+          ['48 MHz (Low Power)', '48']
+        ]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Sets system clock frequency of the RP2040 chip.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_get_temp',
+    message0: 'Pico internal temperature in %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'UNIT',
+        options: [['°C (Celsius)', 'C'], ['°F (Fahrenheit)', 'F']]
+      }
+    ],
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Reads the on-die temperature sensor of the RP2040 chip.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_reboot',
+    message0: 'reboot Pico',
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Performs a software reboot of the Raspberry Pi Pico.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_get_free_ram',
+    message0: 'Pico free RAM (bytes)',
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Returns free heap memory available on the RP2040.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_get_chip_id',
+    message0: 'Pico unique chip ID',
+    output: 'String', colour: '#c51a4a',
+    tooltip: 'Returns 64-bit unique hardware identifier of the RP2040 Flash/chip as a hex string.',
+    helpUrl: ''
+  },
+
+  // ── Pico IO ──
+  {
+    type: 'pico_led_builtin',
+    message0: 'set Pico onboard LED %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'VAL',
+        options: [['HIGH (ON)', 'HIGH'], ['LOW (OFF)', 'LOW']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Controls the green onboard LED (GPIO 25 on Pico, CYW43 pin on Pico W).',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_led_toggle',
+    message0: 'toggle Pico onboard LED',
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Toggles state of the green onboard LED.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_analog_read',
+    message0: 'read Pico analog %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_ANALOG_PINS }
+    ],
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Reads raw analog value (0-1023) from RP2040 ADC channels.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_analog_read_voltage',
+    message0: 'read Pico analog voltage %1 (V)',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_ANALOG_PINS }
+    ],
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Reads analog pin and calculates voltage from 0.0V to 3.3V.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_adc_resolution',
+    message0: 'set Pico ADC resolution %1',
+    args0: [
+      {
+        type: 'field_dropdown', name: 'BITS',
+        options: [['10-bit (0-1023)', '10'], ['12-bit (0-4095)', '12']]
+      }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Sets bit resolution for analogRead on the RP2040.',
+    helpUrl: ''
+  },
+
+  // ── Pico PWM ──
+  {
+    type: 'pico_pwm_write',
+    message0: 'set Pico PWM on %1 duty %2 (0-255)',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_PINS },
+      { type: 'input_value', name: 'DUTY', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Outputs hardware PWM signal with 0-255 duty cycle on any RP2040 GPIO pin.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_pwm_freq',
+    message0: 'set Pico PWM frequency %1 Hz on %2',
+    args0: [
+      { type: 'input_value', name: 'FREQ', check: 'Number' },
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_PINS },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Sets PWM switching frequency in Hertz for RP2040 PWM slices.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_pwm_range',
+    message0: 'set Pico PWM range %1 on %2',
+    args0: [
+      { type: 'input_value', name: 'RANGE', check: 'Number' },
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_PINS },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Sets maximum duty cycle resolution range for analogWrite.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_tone',
+    message0: 'play tone on %1 freq %2 Hz duration %3 ms',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_PINS },
+      { type: 'input_value', name: 'FREQ', check: 'Number' },
+      { type: 'input_value', name: 'DUR', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Generates a square wave tone of specified frequency and duration on a pin.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_no_tone',
+    message0: 'stop tone on %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PICO_PINS }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Stops generating tone on a pin.',
+    helpUrl: ''
+  },
+
+  // ── Pico Multicore ──
+  {
+    type: 'pico_core1_setup',
+    message0: 'Run on Core 1: setup',
+    message1: '%1',
+    args1: [{ type: 'input_statement', name: 'DO' }],
+    colour: '#c51a4a',
+    tooltip: 'Initialization code executing concurrently on the RP2040 secondary CPU core (Core 1).',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_core1_loop',
+    message0: 'Run on Core 1: loop',
+    message1: '%1',
+    args1: [{ type: 'input_statement', name: 'DO' }],
+    colour: '#c51a4a',
+    tooltip: 'Repeated loop executing concurrently on the RP2040 secondary CPU core (Core 1).',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_fifo_push',
+    message0: 'send value %1 to other CPU core (FIFO)',
+    args0: [
+      { type: 'input_value', name: 'VAL', check: 'Number' }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Pushes a 32-bit integer into the inter-core hardware FIFO buffer.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_fifo_pop',
+    message0: 'read value from other CPU core (FIFO)',
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Pops a 32-bit integer received from the other CPU core over hardware FIFO.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_fifo_available',
+    message0: 'is inter-core FIFO data available?',
+    output: 'Boolean', colour: '#c51a4a',
+    tooltip: 'Returns true if there is unread data waiting in the inter-core FIFO.',
+    helpUrl: ''
+  },
+
+  // ── Pico W WiFi ──
+  {
+    type: 'pico_wifi_connect',
+    message0: 'Pico W connect WiFi  SSID %1 Password %2',
+    args0: [
+      { type: 'input_value', name: 'SSID', check: 'String' },
+      { type: 'input_value', name: 'PASS', check: 'String' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Connects Raspberry Pi Pico W to a 2.4GHz WiFi network via the CYW43 wireless chip.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_soft_ap',
+    message0: 'Pico W start Access Point  SSID %1 Password %2',
+    args0: [
+      { type: 'input_value', name: 'SSID', check: 'String' },
+      { type: 'input_value', name: 'PASS', check: 'String' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Starts a standalone WiFi hotspot / Access Point on Pico W.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_is_connected',
+    message0: 'Pico W WiFi is connected?',
+    output: 'Boolean', colour: '#c51a4a',
+    tooltip: 'Returns true if Pico W is actively connected to a WiFi network.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_local_ip',
+    message0: 'Pico W local IP address',
+    output: 'String', colour: '#c51a4a',
+    tooltip: 'Returns assigned local IPv4 address as a string.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_soft_ap_ip',
+    message0: 'Pico W Access Point IP address',
+    output: 'String', colour: '#c51a4a',
+    tooltip: 'Returns IP address of the Pico W SoftAP hotspot.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_rssi',
+    message0: 'Pico W WiFi signal strength (RSSI dBm)',
+    output: 'Number', colour: '#c51a4a',
+    tooltip: 'Returns signal strength of connected WiFi network in dBm.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_mac_address',
+    message0: 'Pico W MAC address',
+    output: 'String', colour: '#c51a4a',
+    tooltip: 'Returns MAC hardware address of the Pico W wireless interface.',
+    helpUrl: ''
+  },
+  {
+    type: 'pico_wifi_disconnect',
+    message0: 'Pico W disconnect WiFi',
+    previousStatement: null, nextStatement: null, colour: '#c51a4a',
+    tooltip: 'Disconnects Pico W from current WiFi network.',
+    helpUrl: ''
+  },
 ]
 
 // ─── Arduino C++ code generator ───────────────────────────────────────────────
@@ -1866,6 +2937,374 @@ function buildGenerator(B) {
     return [tempVar, gen.ORDER_ATOMIC]
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Generators: ESP32 & ESP32-CAM ────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  gen.forBlock['esp32_setup'] = function(b) {
+    const baud = b.getFieldValue('BAUD')
+    const serialInit = baud !== 'NONE' ? `Serial.begin(${baud});\n` : ''
+    return serialInit + sc(b, 'DO')
+  }
+  gen.forBlock['esp32_restart'] = function() {
+    return 'ESP.restart();\n'
+  }
+  gen.forBlock['esp32_cpu_freq'] = function(b) {
+    const freq = b.getFieldValue('FREQ') || '240'
+    return `setCpuFrequencyMhz(${freq});\n`
+  }
+  gen.forBlock['esp32_deep_sleep'] = function(b) {
+    const sec = gen.valueToCode(b, 'SEC', gen.ORDER_ATOMIC) || '10'
+    return `esp_sleep_enable_timer_wakeup((uint64_t)(${sec}) * 1000000ULL);\nesp_deep_sleep_start();\n`
+  }
+  gen.forBlock['esp32_light_sleep'] = function(b) {
+    const sec = gen.valueToCode(b, 'SEC', gen.ORDER_ATOMIC) || '5'
+    return `esp_sleep_enable_timer_wakeup((uint64_t)(${sec}) * 1000000ULL);\nesp_light_sleep_start();\n`
+  }
+  gen.forBlock['esp32_ext0_wakeup'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '0'
+    const lvl = b.getFieldValue('LEVEL') || '0'
+    return `esp_sleep_enable_ext0_wakeup((gpio_num_t)${pin}, ${lvl});\n`
+  }
+  gen.forBlock['esp32_touch_wakeup'] = function() {
+    return 'esp_sleep_enable_touchpad_wakeup();\n'
+  }
+  gen.forBlock['esp32_get_free_heap'] = function() {
+    return ['(int)ESP.getFreeHeap()', gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_get_chip_model'] = function() {
+    return ['String(ESP.getChipModel())', gen.ORDER_ATOMIC]
+  }
+
+  // ── ESP32 WiFi ──
+  gen.forBlock['esp32_wifi_connect'] = function(b) {
+    gen._useWiFi = true
+    const ssid = gen.valueToCode(b, 'SSID', gen.ORDER_ATOMIC) || '"Wokwi-GUEST"'
+    const pass = gen.valueToCode(b, 'PASS', gen.ORDER_ATOMIC) || '""'
+    return `WiFi.begin(${ssid}, ${pass});\n`
+  }
+  gen.forBlock['esp32_wifi_soft_ap'] = function(b) {
+    gen._useWiFi = true
+    const ssid = gen.valueToCode(b, 'SSID', gen.ORDER_ATOMIC) || '"ESP32-AP"'
+    const pass = gen.valueToCode(b, 'PASS', gen.ORDER_ATOMIC) || '""'
+    return `WiFi.softAP(${ssid}, ${pass});\n`
+  }
+  gen.forBlock['esp32_wifi_is_connected'] = function() {
+    gen._useWiFi = true
+    return [`(WiFi.status() == WL_CONNECTED)`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['esp32_wifi_local_ip'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.localIP().toString()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_wifi_soft_ap_ip'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.softAPIP().toString()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_wifi_rssi'] = function() {
+    gen._useWiFi = true
+    return [`(int)WiFi.RSSI()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_wifi_mac_address'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.macAddress()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_wifi_disconnect'] = function() {
+    gen._useWiFi = true
+    return `WiFi.disconnect();\n`
+  }
+
+  // ── ESP32 IO / ADC / DAC ──
+  gen.forBlock['esp32_touch_read'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '4'
+    return [`touchRead(${pin})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_dac_write'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '25'
+    const val = vc(b, 'VAL', gen.ORDER_ATOMIC) || '0'
+    return `dacWrite(${pin}, ${val});\n`
+  }
+  gen.forBlock['esp32_hall_read'] = function() {
+    return [`hallRead()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_temp_read'] = function() {
+    return [`temperatureRead()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32_adc_resolution'] = function(b) {
+    const bits = b.getFieldValue('BITS') || '12'
+    return `analogReadResolution(${bits});\n`
+  }
+  gen.forBlock['esp32_adc_attenuation'] = function(b) {
+    const atten = b.getFieldValue('ATTEN') || 'ADC_11db'
+    return `analogSetAttenuation(${atten});\n`
+  }
+
+  // ── ESP32 Hardware PWM (LEDC) ──
+  gen.forBlock['esp32_ledc_setup'] = function(b) {
+    const ch = b.getFieldValue('CHANNEL') || '0'
+    const freq = gen.valueToCode(b, 'FREQ', gen.ORDER_ATOMIC) || '5000'
+    const res = b.getFieldValue('RES') || '8'
+    return `ledcSetup(${ch}, ${freq}, ${res});\n`
+  }
+  gen.forBlock['esp32_ledc_attach'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '2'
+    const ch = b.getFieldValue('CHANNEL') || '0'
+    return `ledcAttachPin(${pin}, ${ch});\n`
+  }
+  gen.forBlock['esp32_ledc_write'] = function(b) {
+    const ch = b.getFieldValue('CHANNEL') || '0'
+    const duty = gen.valueToCode(b, 'DUTY', gen.ORDER_ATOMIC) || '128'
+    return `ledcWrite(${ch}, ${duty});\n`
+  }
+  gen.forBlock['esp32_ledc_tone'] = function(b) {
+    const ch = b.getFieldValue('CHANNEL') || '0'
+    const freq = gen.valueToCode(b, 'FREQ', gen.ORDER_ATOMIC) || '440'
+    return `ledcWriteTone(${ch}, ${freq});\n`
+  }
+
+  // ── ESP32-CAM Core ──
+  gen.forBlock['esp32cam_init'] = function(b) {
+    gen._useCamera = true
+    const frameSize = b.getFieldValue('FRAMESIZE') || 'FRAMESIZE_QQVGA'
+    const format = b.getFieldValue('FORMAT') || 'PIXFORMAT_RGB565'
+    const quality = gen.valueToCode(b, 'QUALITY', gen.ORDER_ATOMIC) || '12'
+    return `camera_config_t config;\n` +
+      `config.ledc_channel = LEDC_CHANNEL_0;\n` +
+      `config.ledc_timer = LEDC_TIMER_0;\n` +
+      `config.pin_d0 = 5;\n` +
+      `config.pin_d1 = 18;\n` +
+      `config.pin_d2 = 19;\n` +
+      `config.pin_d3 = 21;\n` +
+      `config.pin_d4 = 36;\n` +
+      `config.pin_d5 = 39;\n` +
+      `config.pin_d6 = 34;\n` +
+      `config.pin_d7 = 35;\n` +
+      `config.pin_xclk = 0;\n` +
+      `config.pin_pclk = 22;\n` +
+      `config.pin_vsync = 25;\n` +
+      `config.pin_href = 23;\n` +
+      `config.pin_sccb_sda = 26;\n` +
+      `config.pin_sccb_scl = 27;\n` +
+      `config.pin_pwdn = 32;\n` +
+      `config.pin_reset = -1;\n` +
+      `config.xclk_freq_hz = 20000000;\n` +
+      `config.pixel_format = ${format};\n` +
+      `config.frame_size = ${frameSize};\n` +
+      `config.jpeg_quality = ${quality};\n` +
+      `config.fb_count = 1;\n` +
+      `config.fb_location = CAMERA_FB_IN_DRAM;\n` +
+      `config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;\n` +
+      `camera_init_result = esp_camera_init(&config);\n`
+  }
+  gen.forBlock['esp32cam_init_status'] = function() {
+    gen._useCamera = true
+    return [`(camera_init_result == ESP_OK)`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['esp32cam_capture'] = function() {
+    gen._useCamera = true
+    return `if (fb) { esp_camera_fb_return(fb); fb = NULL; }\nfb = esp_camera_fb_get();\n`
+  }
+  gen.forBlock['esp32cam_has_frame'] = function() {
+    gen._useCamera = true
+    return [`(fb != NULL)`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['esp32cam_return_fb'] = function() {
+    gen._useCamera = true
+    return `if (fb) { esp_camera_fb_return(fb); fb = NULL; }\n`
+  }
+  gen.forBlock['esp32cam_frame_length'] = function() {
+    gen._useCamera = true
+    return [`(fb ? (int)fb->len : 0)`, gen.ORDER_MEMBER]
+  }
+  gen.forBlock['esp32cam_frame_width'] = function() {
+    gen._useCamera = true
+    return [`(fb ? (int)fb->width : 0)`, gen.ORDER_MEMBER]
+  }
+  gen.forBlock['esp32cam_frame_height'] = function() {
+    gen._useCamera = true
+    return [`(fb ? (int)fb->height : 0)`, gen.ORDER_MEMBER]
+  }
+
+  // ── ESP32-CAM Sensor & Flash ──
+  gen.forBlock['esp32cam_flash_led'] = function(b) {
+    const val = b.getFieldValue('VAL') || 'HIGH'
+    return `pinMode(4, OUTPUT);\ndigitalWrite(4, ${val});\n`
+  }
+  gen.forBlock['esp32cam_flash_brightness'] = function(b) {
+    const val = gen.valueToCode(b, 'VAL', gen.ORDER_ATOMIC) || '128'
+    return `ledcSetup(7, 5000, 8);\nledcAttachPin(4, 7);\nledcWrite(7, ${val});\n`
+  }
+  gen.forBlock['esp32cam_status_led'] = function(b) {
+    const val = b.getFieldValue('VAL') || 'LOW'
+    return `pinMode(33, OUTPUT);\ndigitalWrite(33, ${val});\n`
+  }
+  gen.forBlock['esp32cam_set_brightness'] = function(b) {
+    gen._useCamera = true
+    const val = vc(b, 'VAL', gen.ORDER_ATOMIC) || '0'
+    return `{ sensor_t *s = esp_camera_sensor_get(); if (s) s->set_brightness(s, ${val}); }\n`
+  }
+  gen.forBlock['esp32cam_set_contrast'] = function(b) {
+    gen._useCamera = true
+    const val = vc(b, 'VAL', gen.ORDER_ATOMIC) || '0'
+    return `{ sensor_t *s = esp_camera_sensor_get(); if (s) s->set_contrast(s, ${val}); }\n`
+  }
+  gen.forBlock['esp32cam_set_effect'] = function(b) {
+    gen._useCamera = true
+    const eff = b.getFieldValue('EFFECT') || '0'
+    return `{ sensor_t *s = esp_camera_sensor_get(); if (s) s->set_special_effect(s, ${eff}); }\n`
+  }
+  gen.forBlock['esp32cam_flip'] = function(b) {
+    gen._useCamera = true
+    const vflip = b.getFieldValue('VFLIP') || '0'
+    const hmirror = b.getFieldValue('HMIRROR') || '0'
+    return `{ sensor_t *s = esp_camera_sensor_get(); if (s) { s->set_vflip(s, ${vflip}); s->set_hmirror(s, ${hmirror}); } }\n`
+  }
+
+  // ── ESP32-CAM Storage (MicroSD) ──
+  gen.forBlock['esp32cam_sd_init'] = function() {
+    gen._useSD = true
+    return `SD_MMC.begin("/sdcard", true);\n`
+  }
+  gen.forBlock['esp32cam_sd_card_size'] = function() {
+    gen._useSD = true
+    return [`(int)(SD_MMC.cardSize() / (1024 * 1024))`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['esp32cam_sd_save_photo'] = function(b) {
+    gen._useCamera = true
+    gen._useSD = true
+    const path = gen.valueToCode(b, 'PATH', gen.ORDER_ATOMIC) || '"/picture.jpg"'
+    return `if (fb) {\n  File file = SD_MMC.open(${path}, FILE_WRITE);\n  if (file) {\n    file.write(fb->buf, fb->len);\n    file.close();\n  }\n}\n`
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Generators: Raspberry Pi Pico & Pico W ───────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  gen.forBlock['pico_setup'] = function(b) {
+    const baud = b.getFieldValue('BAUD')
+    const serialInit = baud !== 'NONE' ? `Serial.begin(${baud});\n` : ''
+    return serialInit + sc(b, 'DO')
+  }
+  gen.forBlock['pico_cpu_freq'] = function(b) {
+    const freq = b.getFieldValue('FREQ') || '133'
+    return `set_sys_clock_khz(${freq} * 1000, true);\n`
+  }
+  gen.forBlock['pico_get_temp'] = function(b) {
+    const unit = b.getFieldValue('UNIT') || 'C'
+    return unit === 'F' ? ['(analogReadTemp() * 1.8f + 32.0f)', gen.ORDER_ADDITION] : ['analogReadTemp()', gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_reboot'] = function() {
+    return 'rp2040.reboot();\n'
+  }
+  gen.forBlock['pico_get_free_ram'] = function() {
+    return ['(int)rp2040.getFreeHeap()', gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_get_chip_id'] = function() {
+    return ['String(rp2040.getChipID(), HEX)', gen.ORDER_ATOMIC]
+  }
+
+  // ── Pico IO ──
+  gen.forBlock['pico_led_builtin'] = function(b) {
+    const val = b.getFieldValue('VAL') || 'HIGH'
+    return `pinMode(LED_BUILTIN, OUTPUT);\ndigitalWrite(LED_BUILTIN, ${val});\n`
+  }
+  gen.forBlock['pico_led_toggle'] = function() {
+    return `pinMode(LED_BUILTIN, OUTPUT);\ndigitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));\n`
+  }
+  gen.forBlock['pico_analog_read'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '26'
+    return [`analogRead(${pin})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_analog_read_voltage'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '26'
+    return [`(analogRead(${pin}) * 3.3f / 1023.0f)`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_adc_resolution'] = function(b) {
+    const bits = b.getFieldValue('BITS') || '10'
+    return `analogReadResolution(${bits});\n`
+  }
+
+  // ── Pico PWM ──
+  gen.forBlock['pico_pwm_write'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '0'
+    const duty = gen.valueToCode(b, 'DUTY', gen.ORDER_ATOMIC) || '128'
+    return `analogWrite(${pin}, ${duty});\n`
+  }
+  gen.forBlock['pico_pwm_freq'] = function(b) {
+    const freq = gen.valueToCode(b, 'FREQ', gen.ORDER_ATOMIC) || '1000'
+    return `analogWriteFreq(${freq});\n`
+  }
+  gen.forBlock['pico_pwm_range'] = function(b) {
+    const range = gen.valueToCode(b, 'RANGE', gen.ORDER_ATOMIC) || '255'
+    return `analogWriteRange(${range});\n`
+  }
+  gen.forBlock['pico_tone'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '0'
+    const freq = gen.valueToCode(b, 'FREQ', gen.ORDER_ATOMIC) || '440'
+    const dur = gen.valueToCode(b, 'DUR', gen.ORDER_ATOMIC) || '500'
+    return `tone(${pin}, ${freq}, ${dur});\n`
+  }
+  gen.forBlock['pico_no_tone'] = function(b) {
+    const pin = b.getFieldValue('PIN') || '0'
+    return `noTone(${pin});\n`
+  }
+
+  // ── Pico Multicore ──
+  gen.forBlock['pico_core1_setup'] = function(b) {
+    const doCode = sc(b, 'DO')
+    return `void setup1() {\n${doCode}}\n\n`
+  }
+  gen.forBlock['pico_core1_loop'] = function(b) {
+    const doCode = sc(b, 'DO')
+    return `void loop1() {\n${doCode}}\n\n`
+  }
+  gen.forBlock['pico_fifo_push'] = function(b) {
+    const val = gen.valueToCode(b, 'VAL', gen.ORDER_ATOMIC) || '0'
+    return `rp2040.fifo.push((uint32_t)(${val}));\n`
+  }
+  gen.forBlock['pico_fifo_pop'] = function() {
+    return ['(int)rp2040.fifo.pop()', gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_fifo_available'] = function() {
+    return ['(rp2040.fifo.available() > 0)', gen.ORDER_EQUALITY]
+  }
+
+  // ── Pico W WiFi ──
+  gen.forBlock['pico_wifi_connect'] = function(b) {
+    gen._useWiFi = true
+    const ssid = gen.valueToCode(b, 'SSID', gen.ORDER_ATOMIC) || '"Wokwi-GUEST"'
+    const pass = gen.valueToCode(b, 'PASS', gen.ORDER_ATOMIC) || '""'
+    return `WiFi.begin(${ssid}, ${pass});\n`
+  }
+  gen.forBlock['pico_wifi_soft_ap'] = function(b) {
+    gen._useWiFi = true
+    const ssid = gen.valueToCode(b, 'SSID', gen.ORDER_ATOMIC) || '"PicoW-AP"'
+    const pass = gen.valueToCode(b, 'PASS', gen.ORDER_ATOMIC) || '""'
+    return `WiFi.softAP(${ssid}, ${pass});\n`
+  }
+  gen.forBlock['pico_wifi_is_connected'] = function() {
+    gen._useWiFi = true
+    return [`(WiFi.status() == WL_CONNECTED)`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['pico_wifi_local_ip'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.localIP().toString()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_wifi_soft_ap_ip'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.softAPIP().toString()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_wifi_rssi'] = function() {
+    gen._useWiFi = true
+    return [`(int)WiFi.RSSI()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_wifi_mac_address'] = function() {
+    gen._useWiFi = true
+    return [`WiFi.macAddress()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['pico_wifi_disconnect'] = function() {
+    gen._useWiFi = true
+    return `WiFi.disconnect();\n`
+  }
+
   return gen
 }
 
@@ -1879,12 +3318,15 @@ function generateSketch(gen, ws) {
     gen.init(ws)
   }
   
-  // Reset state flags for Add-ons/Sensors
+  // Reset state flags for Add-ons/Sensors/ESP32
   gen._useLCD = false
   gen._useStepper = false
   gen._useIR = false
   gen._useDHT = false
   gen._useThermistor = false
+  gen._useWiFi = false
+  gen._useCamera = false
+  gen._useSD = false
   gen._lcdAddr = '0x27'
   gen._lcdCols = '16'
   gen._lcdRows = '2'
@@ -1923,6 +3365,7 @@ function generateSketch(gen, ws) {
   const FUNCTION_BLOCK_TYPES = new Set([
     'on_button_pressed', 'on_shake', 'on_pin_pressed', 'on_pin_changed',
     'on_radio_number', 'on_radio_string', 'on_radio_key_value', 'create_block',
+    'pico_core1_setup', 'pico_core1_loop',
   ])
 
   // Generate code for top-level blocks first so generators can record usedPins, helpers, etc.
@@ -1937,7 +3380,14 @@ function generateSketch(gen, ws) {
       // Skip stray value blocks (they return [code, order] arrays, not strings)
       if (Array.isArray(code)) return
       
-      const SETUP_BLOCKS = new Set(['on_start', 'setup_runs_once', 'lcd_setup', 'ir_remote_setup', 'temp_sensor_setup', 'stepper_setup', 'analog_sensor_setup', 'button_setup', 'thermistor_setup'])
+      const SETUP_BLOCKS = new Set([
+        'on_start', 'setup_runs_once', 'lcd_setup', 'ir_remote_setup', 'temp_sensor_setup',
+        'stepper_setup', 'analog_sensor_setup', 'button_setup', 'thermistor_setup',
+        'esp32_wifi_connect', 'esp32_wifi_soft_ap', 'esp32_setup', 'esp32_adc_resolution',
+        'esp32_adc_attenuation', 'esp32_cpu_freq', 'esp32_ext0_wakeup', 'esp32_touch_wakeup',
+        'esp32cam_init', 'esp32cam_sd_init',
+        'pico_setup', 'pico_cpu_freq', 'pico_adc_resolution', 'pico_wifi_connect', 'pico_wifi_soft_ap',
+      ])
       
       if (SETUP_BLOCKS.has(b.type)) {
         setup += code
@@ -2020,6 +3470,16 @@ function generateSketch(gen, ws) {
     gen._usedServos.forEach(pin => {
       globals += `Servo myServo_${pin};\n`
     })
+  }
+  if (gen._useWiFi || allCode.includes('WiFi.')) {
+    includes += '#include <WiFi.h>\n'
+  }
+  if (gen._useCamera || allCode.includes('esp_camera_') || allCode.includes('camera_config_t')) {
+    includes += '#include "esp_camera.h"\n#include "esp_system.h"\n'
+    globals += 'camera_fb_t *fb = NULL;\nesp_err_t camera_init_result = ESP_FAIL;\n'
+  }
+  if (gen._useSD || allCode.includes('SD_MMC.')) {
+    includes += '#include "FS.h"\n#include "SD_MMC.h"\n'
   }
   
   if (includes || globals) {
@@ -2132,6 +3592,151 @@ function attachDefaultShadows(ws, block, type) {
         const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('1', 'NUM');
         valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
         block.getInput('DELTA').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_wifi_connect') {
+      if (block.getInput('SSID')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('Wokwi-GUEST', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SSID').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('PASS')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PASS').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_wifi_soft_ap') {
+      if (block.getInput('SSID')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('ESP32-AP', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SSID').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('PASS')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('12345678', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PASS').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_dac_write') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('128', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_deep_sleep') {
+      if (block.getInput('SEC')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('10', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SEC').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_light_sleep') {
+      if (block.getInput('SEC')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('5', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SEC').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_ledc_setup') {
+      if (block.getInput('FREQ')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('5000', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FREQ').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_ledc_write') {
+      if (block.getInput('DUTY')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('128', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('DUTY').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32_ledc_tone') {
+      if (block.getInput('FREQ')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('440', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FREQ').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32cam_init') {
+      if (block.getInput('QUALITY')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('12', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('QUALITY').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32cam_flash_brightness') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('128', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32cam_set_brightness') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('0', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32cam_set_contrast') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('0', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'esp32cam_sd_save_photo') {
+      if (block.getInput('PATH')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('/photo.jpg', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PATH').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_wifi_connect') {
+      if (block.getInput('SSID')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('Wokwi-GUEST', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SSID').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('PASS')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PASS').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_wifi_soft_ap') {
+      if (block.getInput('SSID')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('PicoW-AP', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('SSID').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('PASS')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('12345678', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PASS').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_pwm_write') {
+      if (block.getInput('DUTY')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('128', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('DUTY').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_pwm_freq') {
+      if (block.getInput('FREQ')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('1000', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FREQ').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_pwm_range') {
+      if (block.getInput('RANGE')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('255', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('RANGE').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_tone') {
+      if (block.getInput('FREQ')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('440', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FREQ').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('DUR')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('500', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('DUR').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'pico_fifo_push') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('100', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
       }
     }
 
@@ -3892,6 +5497,29 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
 
 const BlocklyEditorMemoized = React.memo(BlocklyEditor);
 export default BlocklyEditorMemoized;
+
+export {
+  CATEGORIES,
+  SUB_CATEGORIES,
+  CATEGORY_BLOCKS,
+  BLOCK_DEFS,
+  VALUE_TYPES,
+  HAT_TYPES,
+  GET_DIGITAL_PINS,
+  GET_ANALOG_PINS,
+  GET_PWM_PINS,
+  GET_PICO_PINS,
+  GET_PICO_ANALOG_PINS,
+  GET_ESP32_TOUCH_PINS,
+  GET_ESP32_DAC_PINS,
+  GET_ESP32_RTC_PINS,
+  GET_ESP32_LEDC_CHANNELS,
+  GET_ESP32CAM_FRAMESIZES,
+  GET_ESP32CAM_PIXFORMATS,
+  GET_ESP32CAM_EFFECTS,
+  buildGenerator,
+  generateSketch,
+};
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 const BTN = {

@@ -678,9 +678,12 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
 }
 */
 export function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  void options;
   // Retro boards edit assembly, not Arduino sketches.
   if (String(boardKind || '').startsWith('retro')) return `${boardId}.asm`;
+  const env = String(options.env || options.rp2040Mode || '').toLowerCase();
+  if (env.includes('micropython') || env === 'py' || env.includes('circuitpython')) {
+    return 'main.py';
+  }
   return `${boardId}.ino`;
 }
 

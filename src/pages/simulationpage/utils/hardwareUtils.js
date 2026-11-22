@@ -91,10 +91,18 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
 
 
 export function createDefaultMainCode(boardKind, boardId, options = {}) {
-  void boardId; void options;
+  void boardId;
   const kind = normalizeBoardKind(boardKind);
   // Retro boards default to a per-ISA hello program (assembled in-WASM).
   if (String(kind || '').startsWith('retro')) return defaultRetroAsm(kind);
+  const env = String(options?.env || options?.rp2040Mode || '').toLowerCase();
+  if (env.includes('micropython') || env === 'py') {
+    const isCam = String(boardKind || '').includes('cam') || String(boardId || '').includes('cam');
+    if (isCam) {
+      return `# MicroPython on ESP32-CAM\nimport time\nfrom machine import Pin\n\nprint("ESP32-CAM MicroPython Ready")\nflash = Pin(4, Pin.OUT)  # Flash LED on GPIO 4\n\nwhile True:\n    flash.value(1)\n    time.sleep(0.1)\n    flash.value(0)\n    time.sleep(1)\n`;
+    }
+    return `# MicroPython on ESP32\nimport time\nfrom machine import Pin\n\nprint("ESP32 MicroPython Ready")\nled = Pin(2, Pin.OUT)  # Onboard LED on GPIO 2\n\nwhile True:\n    led.value(not led.value())\n    time.sleep(1)\n`;
+  }
   return `void setup() {\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // put your main code here, to run repeatedly:\n\n}\n`;
 }
 
