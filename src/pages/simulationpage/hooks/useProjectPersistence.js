@@ -185,6 +185,16 @@ export function useProjectPersistence({
         currentProjectIdRef.current = null;
         setCurrentProjectId(null);
         setCurrentProjectName("Untitled");
+        // Deleting a project must also drop its files, tabs and firmware
+        // caches — otherwise the old .ino/.py/.wasm state stays visible
+        // and can be compiled by the next project.
+        setProjectFiles([]);
+        setOpenCodeTabs([]);
+        setActiveCodeFileId(null);
+        setCode("");
+        setComponents([]);
+        setWires([]);
+        lastCompiledRef.current = null;
       }
       await refreshProjectList();
     };

@@ -94,9 +94,10 @@ export function useAutoCode({
         new URL("../../../workers/autowiring.worker.ts", import.meta.url),
         { type: "module" },
       );
+      const targetBoardKind = normalizeBoardKind(components.find((c) => c.id === targetBoardId)?.type || '');
       worker.postMessage({
         type: "GENERATE_CODE_SNIPPET",
-        payload: { compId, wires, manifest, components },
+        payload: { compId, wires, manifest, components, boardKind: targetBoardKind },
       });
 
       worker.onmessage = async (e) => {
@@ -104,6 +105,43 @@ export function useAutoCode({
         if (type === "AUTONOMOUS_RESULT") {
           const snippet = payload.code_snippet;
           console.log("[handleAutoCode] Worker returned snippet:", snippet);
+          if (snippet?.asm) {
+            // Retro boards assemble ASM in-WASM; a C setup()/loop() snippet
+            // cannot be injected into <board>.asm. Append the ASM block with
+            // stable markers so re-running autocode replaces it.
+            const boardComp = components.find((c) => c.id === targetBoardId);
+            const asmName = getDefaultMainFileName(normalizeBoardKind(boardComp.type), targetBoardId, {});
+            const asmPath = `project/${targetBoardId}/${asmName}`;
+            setProjectFiles((prev) => {
+              const existing = prev.find((f) => f.id === asmPath || f.path === asmPath);
+              const base = existing?.content || createDefaultMainCode(normalizeBoardKind(boardComp.type), targetBoardId, {});
+              const start = `; autocoding for ${compId} start`;
+              const end = `; autocoding for ${compId} end`;
+              const without = base.split('\n');
+              const kept = [];
+              let skip = false;
+              for (const line of without) {
+                if (line.trim() === start) { skip = true; continue; }
+                if (skip && line.trim() === end) { skip = false; continue; }
+                if (!skip) kept.push(line);
+              }
+              const next = [...kept.filter((l, i, a) => i < a.length - 1 || l.trim() !== '')];
+              if (next.length && next[next.length - 1].trim() !== '') next.push('');
+              next.push(snippet.asm, '');
+              const content = next.join('\n');
+              if (existing) return prev.map((f) => f.id === existing.id ? { ...f, content, dirty: true } : f);
+              return [...prev, {
+                id: asmPath, path: asmPath, name: asmName, kind: 'code',
+                boardId: targetBoardId, boardKind: normalizeBoardKind(boardComp.type), content, dirty: true,
+              }];
+            });
+            if (openEditor) {
+              setOpenCodeTabs((tabs) => tabs.includes(asmPath) ? tabs : [...tabs, asmPath]);
+              setActiveCodeFileId(asmPath);
+            }
+            worker.terminate();
+            return;
+          }
           if (snippet) {
             const boardComp = components.find((c) => c.id === targetBoardId);
             const boardKind = normalizeBoardKind(boardComp.type);

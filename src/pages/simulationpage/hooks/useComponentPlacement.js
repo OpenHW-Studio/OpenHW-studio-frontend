@@ -9,6 +9,23 @@ import {
   isBreadboardType,
   isResistorType,
 } from "../utils/hardwareUtils";
+import { normalizeBoardKind } from "../utils/hardwareUtils";
+
+// Retro board role → shell pin (matches the autowiring crate's retro profile).
+const RETRO_ROLE_PIN = {
+  TX: 'L0', RX: 'L1', SDA: 'L10', SCL: 'L11',
+  MOSI: 'L12', MISO: 'L13', SCK: 'L14', CS: 'L15',
+};
+function resolveRetroWiringTarget(target, boardComp, boardPins) {
+  if (!String(target || '').startsWith('retro:')) return target;
+  const kind = normalizeBoardKind(boardComp?.type || '');
+  if (!String(kind).startsWith('retro_')) return target;
+  const role = String(target).slice(6).toUpperCase();
+  const pinId = RETRO_ROLE_PIN[role] || (/^\d+$/.test(role) ? `L${role}` : null);
+  if (!pinId) return target;
+  const match = boardPins.find((p) => p.id.toLowerCase() === pinId.toLowerCase());
+  return `${boardComp.id}:${match?.id || pinId}`;
+}
 import { COMPONENT_REGISTRY, LOCAL_PIN_DEFS } from "../utils/componentRegistry";
 
 /**
@@ -192,6 +209,8 @@ export function useComponentPlacement({
                       const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
                       if (match) target = `${boardComp.id}:${match.id}`;
                       else target = `${boardComp.id}:${pinId}`;
+                    } else if (target.startsWith('retro:')) {
+                      target = resolveRetroWiringTarget(target, boardComp, boardPins);
                     }
 
                     const fromEndpoint = `${compId}:${fromPin}`;
@@ -391,6 +410,8 @@ export function useComponentPlacement({
                   const pinId = target.split(':')[1];
                   const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
                   target = match ? `${boardComp.id}:${match.id}` : `${boardComp.id}:${pinId}`;
+                } else if (target.startsWith('retro:')) {
+                  target = resolveRetroWiringTarget(target, boardComp, boardPins);
                 }
                 if (conn.via) {
                   const viaId = `${conn.via}_${Date.now()}_${ci}`;

@@ -1276,31 +1276,34 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const getBoardMainCode = useCallback(
     (boardId) => {
-      const preferred = `project/${boardId}/${boardId}.ino`;
+      const bc = (components || []).find((c) => c.id === boardId && c.type);
+      const kind = bc ? normalizeBoardKind(bc.type) : "";
+      const env = bc?.attrs?.env;
+      const mainName = getDefaultMainFileName(kind, boardId, { env });
+      // Prefer the mode-correct main file. A board switched to MicroPython
+      // or retro ASM must no longer compile its stale .ino (bug: boards
+      // changed/deleted left old-extension files active).
+      const preferred = `project/${boardId}/${mainName}`;
       const prefFile = projectFileMap.get(preferred);
       if (prefFile && prefFile.content && !isFileDisabled(prefFile.path))
         return prefFile.content;
 
-      const ino = (projectFiles || []).find(
-        (f) =>
-          f.path.startsWith(`project/${boardId}/`) &&
-          fileExt(f.path) === ".ino" &&
-          !isFileDisabled(f.path),
-      );
-      if (ino?.content) return ino.content;
-
-      // Retro boards: assembly source instead of Arduino sketches.
-      const asm = (projectFiles || []).find(
-        (f) =>
-          f.path.startsWith(`project/${boardId}/`) &&
-          /\.(asm|s|a51)$/i.test(f.path) &&
-          !isFileDisabled(f.path),
-      );
-      if (asm?.content) return asm.content;
-
+      const extOrder = String(kind || '').startsWith('retro')
+        ? ['asm', 's', 'a51', 'ino']
+        : env === 'micropython' || env === 'circuitpython'
+          ? ['py', 'ino']
+          : ['ino', 'py'];
+      for (const ext of extOrder) {
+        const f = (projectFiles || []).find(
+          (x) => x.path.startsWith(`project/${boardId}/`)
+            && fileExt(x.path) === `.${ext}`
+            && !isFileDisabled(x.path),
+        );
+        if (f?.content) return f.content;
+      }
       return "";
     },
-    [projectFileMap, projectFiles],
+    [projectFileMap, projectFiles, components],
   );
 
   const getBoardCompileFiles = useCallback(
@@ -2757,14 +2760,22 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           replaceFilePath(expectedMainDisabledPath, expectedMainPath);
         }
 
+        const expectedExt = fileExt(expectedMainName); // .ino / .py / .asm
         const hasEnabledMainForMode = result.some((file) => {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
-          const ext = fileExt(file.path);
-          // Retro boards use assembly sources, not Arduino sketches.
-          if (String(kind || '').startsWith('retro')) return /\.(asm|s|a51)$/i.test(file.path);
-          return ext === ".ino";
+          return fileExt(file.path) === expectedExt;
         });
+
+        // A board whose env/type changed keeps its old-extension main file;
+        // disable it so the compile resolver cannot pick a stale sketch.
+        for (const file of [...result]) {
+          if (!file.path.startsWith(`${basePath}/`) || isFileDisabled(file.path)) continue;
+          if (file.id === expectedMainPath || file.path === 'diagram.json') continue;
+          if (!['.ino', '.py', '.asm'].includes(fileExt(file.path))) continue;
+          if (file.name === expectedMainName) continue;
+          replaceFilePath(file.id, file.id + DISABLED_FILE_SUFFIX);
+        }
 
         if (!hasEnabledMainForMode) {
           const defaultContent = createDefaultMainCode(kind, bc.id, {});
