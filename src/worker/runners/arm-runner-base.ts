@@ -942,6 +942,35 @@ export abstract class ArmRunnerBase implements BoardRunner {
       byte: number; address: number;
     }>();
 
+    /** Board GPIO pins carrying SDA/SCL for a bit-bang I2C bus on this runner. */
+    protected bitBangI2CBoardPins(): Array<{ pinId: string; role: 'sda' | 'scl' }> {
+      const out: Array<{ pinId: string; role: 'sda' | 'scl' }> = [];
+      const seen = new Set<string>();
+      try {
+        for (const wire of this.currentWires || []) {
+          for (const end of [wire?.from, wire?.to]) {
+            const [compId, pinId] = String(end || '').split(':');
+            if (!compId || !pinId || !/^(sda|scl)$/i.test(pinId)) continue;
+            const inst = this.instances.get(compId) as any;
+            if (typeof inst?.onI2CStart !== 'function') continue;
+            const net = (this as any).pinToNet?.get(String(end));
+            if (net === undefined) continue;
+            for (const [node, id] of this.pinToNet) {
+              if (id !== net) continue;
+              const sep = node.indexOf(':');
+              if (sep < 0 || node.slice(0, sep) !== this.boardId) continue;
+              const bPin = node.slice(sep + 1);
+              const key = `${bPin}:${pinId.toLowerCase()}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              out.push({ pinId: bPin, role: /^sda$/i.test(pinId) ? 'sda' : 'scl' });
+            }
+          }
+        }
+      } catch { /* discovery never breaks the tick */ }
+      return out;
+    }
+
     protected dispatchBitBangI2C(pinId: string, isHigh: boolean): void {
       const net = (this as any).pinToNet?.get(`${this.boardId}:${pinId}`);
       if (net === undefined) return;
@@ -964,7 +993,9 @@ export abstract class ArmRunnerBase implements BoardRunner {
       const wasSda = st.sda;
       if (role === 'sda') st.sda = isHigh; else st.scl = isHigh;
       if (role === 'sda' && wasScl && wasSda !== isHigh) {
-        if (!isHigh) { st.active = true; st.bits = 0; st.byte = 0; st.address = 0; }
+        if (!isHigh) {
+          st.active = true; st.bits = 0; st.byte = 0; st.address = 0;
+        }
         else if (st.active) {
           for (const ep of endpoints) {
             try { (ep.inst as any).onI2CStop?.(); } catch { /* ignore */ }

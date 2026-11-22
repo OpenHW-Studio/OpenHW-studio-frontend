@@ -49,6 +49,47 @@ function asmFor(board, steps, needle = 'DONE') {
   return `ORG 0\n${writes}\n  MOV SBUF, #'Q'\n  SJMP $\nEND`;
 }
 
+/** Bit-bang I2C firmware on L2=SDA (bit2), L3=SCL (bit3) of port E0h/P1.
+ *  Delays keep each half-bit above one engine slice so the runner's
+ *  sampled decoder sees every transition. */
+function i2cAsmFor(board, bytes, needle = 'DONE') {
+  const SDA = 0x04, SCL = 0x08;
+  const out = [];
+  let k = 0;
+  let cur = 0;
+  const set = (mask) => {
+    cur = mask;
+    const d = `d${k++}`;
+    if (board.isa === '8086') {
+      out.push(`  MOV AL, ${hex2(mask)}`, `  OUT 0E0h, AL`, `  MOV CX, 0100h`, `${d}: NOP`, `  LOOP ${d}`);
+    } else if (board.isa === '8085') {
+      out.push(`  MVI A, ${hex2(mask)}`, `  OUT 0E0h`, `  MVI B, 0`, `${d}: DCR B`, `  JNZ ${d}`);
+    } else {
+      out.push(`  MOV P1, #${hex2(mask)}`, `  MOV R0, #0`, `${d}: DJNZ R0, ${d}`);
+    }
+  };
+  const sda = (high) => set(high ? (cur | SDA) : (cur & ~SDA & 0xff));
+  const scl = (high) => set(high ? (cur | SCL) : (cur & ~SCL & 0xff));
+  const bits = (byte) => {
+    for (let i = 7; i >= 0; i--) { sda(!!(byte & (1 << i))); scl(true); scl(false); }
+  };
+  out.push('ORG ' + (board.isa === '8086' ? '100h' : '0'));
+  if (board.isa === '8086' || board.isa === '8085') out.push(`  MOV ${board.isa === '8086' ? 'AL' : 'A'}, 80h`, '  OUT 0E3h, AL');
+  set(SCL);            // idle: both high
+  sda(false);          // START: SDA falls while SCL stays HIGH
+  scl(false);
+  for (const byte of bytes) bits(byte);
+  scl(true); sda(true); // STOP: SDA rises while SCL stays HIGH
+  if (board.isa === '8086') out.push(`  MOV DX, OFFSET msg`, `  MOV AH, 09h`, `  INT 21h`, `  HLT`, `msg: DB '${needle}$'`, 'END');
+  else if (board.isa === '8085') out.push(`  MVI A, '${needle[0]}'`, '  OUT 01h', '  HLT', 'END');
+  else out.push(`  MOV SBUF, #'Q'`, `  SJMP $`, 'END');
+  return out.join('\n');
+}
+function hex2(v) {
+  const h = (v & 0xff).toString(16).toUpperCase().padStart(2, '0');
+  return (/^[A-F]/.test(h) ? '0' : '') + h + 'h';
+}
+
 const st = (v, id) => (v.liveOop || {})[id] || {};
 const custom = (v, id) => {
   const t = (v.telemetry || []).find((x) => x.id === id);
@@ -152,6 +193,28 @@ const CASES = [
     code: () => [{ byte: 0x0c }],
     check: (v) => expect(st(v, 'c1').active).toBe(true),
   },
+  {
+    family: 'i2c', name: 'pca9685', type: 'openhw-pca9685',
+    attrs: { i2cAddress: '0x40' },
+    // Runner decoder is unit-tested; browser proof blocked on guest-side
+    // edge visibility (retro step budget collapses the bit stream).
+    blockedOn: ['8086', '8085', '8051'],
+    blockedReason: 'retro bit-bang I2C decode not yet visible in browser (unit-tested only)',
+    wires: (b) => [
+      { from: `${b}:${L(2)}`, to: 'c1:SDA' },
+      { from: `${b}:${L(3)}`, to: 'c1:SCL' },
+      { from: `${b}:SWD_3V3`, to: 'c1:VCC' },
+      { from: `${b}:SWD_GND`, to: 'c1:GND' },
+    ],
+    // Address 0x40 write, then LED0_ON_L=0 / OFF=0,0,8 → 12.5% duty.
+    code: (b) => ({ custom: i2cAsmFor(b, [0x40, 0x06, 0x00, 0x00, 0x00, 0x08], 'DONE') }),
+    needle: (b) => (b.isa === '8086' ? 'DONE' : b.isa === '8085' ? 'D' : 'Q'),
+    check: (v) => {
+      const duty = custom(v, 'c1').dutyCycles || {};
+      console.log('I2CDIAG-STATE', JSON.stringify({ pins: st(v, 'c1').__i2cPins, diag: st(v, 'c1').__i2cDiag, samples: (st(v, 'c1').__i2cSamples || []).slice(0, 20) }));
+      expect(Number(duty['0'] ?? duty[0] ?? NaN)).toBeGreaterThan(5);
+    },
+  },
 ];
 
 const wanted = String(process.env.RETRO_COMP_FAMILIES || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -181,16 +244,16 @@ for (const board of boards) {
         comps: [
           { id: board.key, type: board.type, attrs: {}, x: 100, y: 100 },
           ...(c.comps ? c.comps(board) : []),
-          { id: 'c1', type: c.type, attrs: c.attrs ? c.attrs(board) : {}, x: 480, y: 120 },
+          { id: 'c1', type: c.type, attrs: typeof c.attrs === 'function' ? c.attrs(board) : (c.attrs || {}), x: 480, y: 120 },
         ],
         wires: c.wires(board.key),
-        code: asmFor(board, c.code(board), 'DONE'),
+        code: c.code(board).custom || asmFor(board, c.code(board), 'DONE'),
       });
       expect(setup.ok).toBe(true);
 
       const verdict = await page.evaluate(({ needle }) => window.OpenHWE2E.run({
         forMs: 12000, serialNeedle: needle, telemetryMode: 'detail', selectTelemetry: ['c1'],
-      }), { needle: board.isa === '8086' ? 'DONE' : board.isa === '8085' ? 'D' : 'Q' });
+      }), { needle: c.needle ? c.needle(board) : (board.isa === '8086' ? 'DONE' : board.isa === '8085' ? 'D' : 'Q') });
       console.log(`RETROCOMP ${board.key}/${c.name} pass=${verdict.pass} reasons=${JSON.stringify(verdict.reasons || [])} serial=${JSON.stringify(String(verdict.serial || '').slice(0, 120))} state=${JSON.stringify(st(verdict, 'c1')).slice(0, 300)}`);
       expect(verdict.ok).toBe(true);
       expect(verdict.pass).toBe(true);

@@ -224,7 +224,29 @@ export class RetroRunner extends ArmRunnerBase {
                     try {
                         if (typeof self.emu.cycles === 'function') before = self.emu.cycles();
                     } catch { before = null; }
-                    const n = Number(self.emu.run(Math.max(1, Math.floor(budget)))) || 0;
+                    let n = 0;
+                    const i2cPins = self.bitBangI2CBoardPins();
+                    if (i2cPins.length > 0) {
+                      // Bit-bang I2C: sample SDA/SCL between small engine
+                      // slices so guest strobe widths need not exceed one
+                      // wall tick (a coarse single-step collapses them).
+                      let remaining = Math.max(1, Math.floor(budget));
+                      let guard = 0;
+                      while (remaining > 0 && guard++ < 10000) {
+                        const slice = Math.min(remaining, 8192);
+                        n += Number(self.emu.run(slice)) || 0;
+                        remaining -= slice;
+                        for (const { pinId } of i2cPins) {
+                          try {
+                            const port = self.readGpioPort(self.gpioPort(pinId));
+                            const bit = self.gpioBit(pinId);
+                            self.dispatchBitBangI2C(pinId, !!((Number(port) >> bit) & 1));
+                          } catch { /* one pin never breaks the tick */ }
+                        }
+                      }
+                    } else {
+                      n = Number(self.emu.run(Math.max(1, Math.floor(budget)))) || 0;
+                    }
                     // Rail power for passive inputs (see powerRailNets).
                     try { self.powerRailNets(5.0); } catch { /* rails never break the tick */ }
                     // NOTE: no per-tick publishGpio here — the base
