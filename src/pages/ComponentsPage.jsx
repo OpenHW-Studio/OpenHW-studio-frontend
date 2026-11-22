@@ -1,6 +1,6 @@
 
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { COMPONENTS } from '../services/gamification/ComponentsConfig'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
@@ -181,8 +181,43 @@ const S = {
 
 export default function ComponentsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { unlockedComponentTypes, completedProjects, currentLevel, xp } = useGamification()
   const [expandedCard, setExpandedCard] = useState(null)
+
+  const getBackUrl = () => {
+    // 1. History state returnTo
+    if (location.state?.returnTo) {
+      return location.state.returnTo
+    }
+    // 2. Query param returnTo
+    const returnTo = searchParams.get('returnTo')
+    if (returnTo) {
+      return returnTo
+    }
+    // 3. Query params: mapId or journey
+    const mapId = searchParams.get('mapId')
+    const journey = searchParams.get('journey')
+    const classId = searchParams.get('classId')
+    if (mapId) {
+      return `/adventure?mapId=${encodeURIComponent(mapId)}${classId ? `&classId=${encodeURIComponent(classId)}` : ''}`
+    }
+    if (journey) {
+      return `/adventure?journey=${encodeURIComponent(journey)}${classId ? `&classId=${encodeURIComponent(classId)}` : ''}`
+    }
+    // 4. Stored last adventure URL
+    const saved = sessionStorage.getItem('openhw_last_adventure_url') || localStorage.getItem('openhw_last_adventure_url')
+    if (saved) {
+      return saved
+    }
+    // 5. Default fallback
+    return '/adventure'
+  }
+
+  const handleBack = () => {
+    navigate(getBackUrl())
+  }
 
   const isAllUnlocked = unlockedComponentTypes === '*'
   const unlockedSet = isAllUnlocked ? null : new Set(Array.isArray(unlockedComponentTypes) ? unlockedComponentTypes : [])
@@ -225,7 +260,7 @@ export default function ComponentsPage() {
       {/* Header */}
       <div style={S.header}>
         <div style={S.headerInner}>
-          <button style={S.backBtn} onClick={() => navigate('/adventure')}>
+          <button style={S.backBtn} onClick={handleBack}>
             ← Back to Map
           </button>
           <span style={S.logo}>⚡ My Components</span>
@@ -275,7 +310,7 @@ export default function ComponentsPage() {
               isStarting={isOwned(comp.wokwiType) && STARTING_COMPONENTS.some(s => s === comp.wokwiType || s === `wokwi-${comp.id}` || s === `openhw-${comp.id}`)}
               expanded={expandedCard === comp.id}
               onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
-              onLearn={() => navigate('/adventure')}
+              onLearn={handleBack}
             />
           ))}
         </div>
@@ -299,7 +334,7 @@ export default function ComponentsPage() {
                 unlocker={nextProject}
                 expanded={expandedCard === comp.id}
                 onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
-                onGoToProject={() => navigate('/adventure')}
+                onGoToProject={handleBack}
               />
             ))}
           </div>

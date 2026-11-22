@@ -410,7 +410,7 @@ export default function ContributorsPage() {
     return (
       document.documentElement.getAttribute("data-theme") ||
       localStorage.getItem("theme") ||
-      "dark"
+      "light"
     );
   });
 

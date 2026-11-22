@@ -1634,7 +1634,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
-    const t = document.documentElement.getAttribute('data-theme') || 'light';
+    const t = localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light';
     document.documentElement.setAttribute('data-theme', t);
     return t;
   })
@@ -1643,6 +1643,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)
     document.documentElement.setAttribute('data-theme', newTheme)
+    localStorage.setItem('theme', newTheme)
   }
 
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection

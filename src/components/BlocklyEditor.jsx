@@ -4168,7 +4168,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [isDark, setIsDark] = useState(
-    () => document.documentElement.getAttribute('data-theme') !== 'light'
+    () => document.documentElement.getAttribute('data-theme') === 'dark'
   )
 
   const captureWorkspaceXml = useCallback(() => {
@@ -4279,7 +4279,7 @@ function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useB
   // ── Track theme changes ────────────────────────────────────────────────────
   useEffect(() => {
     const mo = new MutationObserver(() =>
-      setIsDark(document.documentElement.getAttribute('data-theme') !== 'light')
+      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark')
     )
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => mo.disconnect()

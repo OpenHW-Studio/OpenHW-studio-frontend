@@ -64,6 +64,17 @@ export default defineConfig(({ mode }) => {
 
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
+  // Derive backend proxy target from VITE_API_BASE_URL (or fallback to port 5001)
+  let backendProxyTarget = 'http://localhost:5001';
+  if (env.VITE_API_BASE_URL) {
+    try {
+      const parsedUrl = new URL(env.VITE_API_BASE_URL);
+      backendProxyTarget = parsedUrl.origin;
+    } catch (e) {
+      // ignore invalid URL format
+    }
+  }
+
   return {
     plugins: [
       wasm(),
@@ -290,11 +301,11 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: 'http://localhost:5001',
+          target: backendProxyTarget,
           changeOrigin: true,
         },
         '/auth': {
-          target: 'http://localhost:5001',
+          target: backendProxyTarget,
           changeOrigin: true,
         },
       },
