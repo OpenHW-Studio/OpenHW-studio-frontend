@@ -790,7 +790,11 @@ export class Esp32Runner extends ArmRunnerBase {
             const defs: any[] = [];
             try {
                 for (const inst of this.instances.values()) {
-                    self.compAttrById.set(String((inst as any)?.id || ''), {});
+                    const id = String((inst as any)?.id || '');
+                    // Keep attrs already captured from component defs: I2C
+                    // slaves addressed only via attrs.i2cAddress (PCA9685,
+                    // PCA9865) were NACKing because this map was wiped here.
+                    if (!self.compAttrById.has(id)) self.compAttrById.set(id, {});
                 }
                 void defs;
             } catch { /* ignore */ }
