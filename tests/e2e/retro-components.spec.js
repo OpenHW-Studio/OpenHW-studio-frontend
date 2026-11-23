@@ -266,6 +266,8 @@ const CASES = [
   {
     family: 'inputs', name: 'adc-potentiometer', type: 'openhw-potentiometer',
     attrs: { value: 50 },
+    blockedOn: ['8051'],
+    blockedReason: 'ADC0808 is an 8086/8085 kit device; the 8051 core has none',
     wires: (b) => [
       { from: `${b}:${L(10)}`, to: 'c1:SIG' },
       { from: `${b}:SWD_3V3`, to: 'c1:1' },
@@ -273,13 +275,11 @@ const CASES = [
     ],
     // 8086/8085 ADC0808 at ports 28h (channel) / 29h (data). Half-scale
     // potentiometer must land in 100..156 (8-bit of 2.5V/5V).
-    blockedOn: ['8086', '8085', '8051'],
-    blockedReason: 'ADC0808 guest read path returns 0 despite runner injecting the host voltage',
     code: (b) => {
       const ok = b.isa === '8086';
       return { custom: ok
         ? `ORG 100h\n  MOV CX, 40\nagain:\n  MOV AL, 80h\n  OUT 28h, AL\n  MOV BX, 100\ndly:\n  DEC BX\n  JNZ dly\n  IN AL, 29h\n  CMP AL, 100\n  JB next\n  CMP AL, 157\n  JA next\n  MOV DL, 'Y'\n  MOV AH, 02h\n  INT 21h\n  HLT\nnext:\n  LOOP again\n  MOV DL, 'N'\n  MOV AH, 02h\n  INT 21h\n  HLT\nEND`
-        : `ORG 0\n  MVI A, 80h\n  OUT 28h\n  IN 29h\n  CPI 100\n  JC bad\n  CPI 157\n  NC bad\n  MVI A, 'Y'\n  OUT 01h\n  HLT\nbad:\n  MVI A, 'N'\n  OUT 01h\n  HLT\nEND` };
+        : `ORG 0\n  MVI A, 80h\n  OUT 28h\n  IN 29h\n  CPI 100\n  JC bad\n  CPI 157\n  JNC bad\n  MVI A, 'Y'\n  OUT 01h\n  HLT\nbad:\n  MVI A, 'N'\n  OUT 01h\n  HLT\nEND` };
     },
     needle: () => 'Y',
     check: (v) => expect(Number(st(v, 'c1').value)).toBeCloseTo(50, 0),

@@ -211,6 +211,9 @@ export class RetroRunner extends ArmRunnerBase {
                 try { self.emu.reset(); } catch { /* ignore */ }
                 const s = String(firmware || '').trim();
                 if (s) self.loadProgram(s);
+                // Seed ADC0808 before the first guest step (a short setup
+                // sketch can read the ADC in its very first tick).
+                try { self.driveRetroADC(true); } catch { /* ADC never breaks boot */ }
             },
             stepBudget(budget: number): number {
                 if (!self.emu) return 0;
@@ -521,7 +524,7 @@ export class RetroRunner extends ArmRunnerBase {
     }
     /** Host analogue sensors → ADC0808 channels (8086/8085 ports 28h/29h).
      *  Convention: board pins L10..L17 map to ADC channels 0..7. */
-    private driveRetroADC(): void {
+    private driveRetroADC(boot = false): void {
         if (!this.emu || (this.isa !== '8086' && this.isa !== '8085' && this.isa !== '8088')) return;
         try {
             const pinToNet = (this as any).pinToNet as Map<string, number> | undefined;
@@ -535,7 +538,11 @@ export class RetroRunner extends ArmRunnerBase {
                 if (compId === this.boardId) continue;
                 const inst: any = this.instances.get(compId);
                 if (!inst || typeof inst.getPinVoltage !== 'function') continue;
-                const volts = Number(inst.getPinVoltage(pinId));
+                let volts = Number(inst.getPinVoltage(pinId));
+                if (boot && /potentiometer/i.test(String((inst as any).type || ''))) {
+                    const pct = Number((inst as any).attrs?.value);
+                    if (Number.isFinite(pct) && pct >= 0 && pct <= 100) volts = (pct / 100) * 5;
+                }
                 if (!Number.isFinite(volts) || volts < 0) continue;
                 // Find the board pin on the same net: L10..L17 = ADC ch 0..7.
                 for (const [node2, net2] of pinToNet) {
