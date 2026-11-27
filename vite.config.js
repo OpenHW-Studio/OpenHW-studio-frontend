@@ -49,9 +49,20 @@ export default defineConfig(({ mode }) => {
   const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
   const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
   const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
+  // STM32F4 now follows the same folder-first rule as Pico/ESP32: dev reads
+  // the owner's build when it is present, snapshot/CI reads the byte-matched
+  // committed mirror. The facade, emulator, glue and wasm are ONE matched set
+  // (see docs/engine-bytes.md) — never mix a folder JS with a repo wasm.
   const engineSource = process.env.OPENHW_ENGINE_FROM;
   const engineFromOwner = engineSource === 'owner'
     || (engineSource !== 'snapshot' && fs.existsSync(picoFolder));
+  // OPENHW_F4_ENGINE=npm is a benchmark-only A/B switch (old npm pair).
+  // It is NOT a deploy mode: normal dev/build use the folder or the mirror.
+  const f4EngineDir = process.env.OPENHW_F4_ENGINE === 'npm'
+    ? path.resolve(__dirname, 'node_modules/stm32f4-emu/site')
+    : (engineFromOwner && fs.existsSync(path.join(stm32f4Folder, 'emulator.js'))
+      ? stm32f4Folder
+      : path.resolve(__dirname, 'src/engines/stm32f4-emu'));
   // Engine bytes committed in THIS repo (dev + build + deploy + runtime
   // fallback all resolve the same files) — see the alias block below.
   const f1EngineDir = path.resolve(__dirname, 'src/engines/stm32f1-emu');
@@ -236,12 +247,16 @@ export default defineConfig(({ mode }) => {
         { find: 'stm32f1-emu/pkg/stm32f1.js', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
         { find: 'stm32f1-emu/emulator', replacement: path.join(f1EngineDir, 'pkg/emulator.js') },
         { find: 'stm32f1-emu', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
-        // STM32F4: folder-first SUSPENDED 2026-10-15 — the owner folder
-        // is mid-rebuild (site/emulator.js + bindings glue differ from
-        // npm by hundreds of lines; folder wasm is dirty/uncommitted).
-        // Glue+facade+wasm must version-match, so F4 stays on the blessed
-        // npm pair until the owner lands. Flip back to stm32f4Folder then.
-        // 'stm32f4-emu/stm32f4' intentionally unaliased (npm pair).
+        // STM32F4: adopted the owner's faster build 2026-11-27. The old
+        // folder-first alias was suspended while the folder was mid-rebuild;
+        // it is now byte-matched to the committed mirror (facade/emulator/
+        // glue/wasm, see docs/engine-bytes.md) and carries translated-block
+        // execution (opt-in `tb`, enabled by stm32f4-runner.ts). Anchored
+        // regexes avoid the `stm32f4-emu/vendor/...` prefix matching the
+        // bare `stm32f4-emu/vendor` specifier.
+        { find: /^stm32f4-emu$/, replacement: path.join(f4EngineDir, 'stm32f4.js') },
+        { find: /^stm32f4-emu\/stm32f4$/, replacement: path.join(f4EngineDir, 'stm32f4.js') },
+        { find: /^stm32f4-emu\/vendor$/, replacement: path.join(f4EngineDir, 'vendor/stm32_periph_wasm.js') },
         // node:crypto has no browser build. The only in-repo consumer is
         // esp32-emu's partition-table MD5 (custom CSV path, never hit on
         // merged-bin boot) — stub it so the worker-entry transform loads.

@@ -99,7 +99,7 @@ folder is *information*, not a failure.
 | Pico OpenHW fork | — (we build it) | `public/wasm/picoemu-fork.wasm.wasm` | `863559a3` | — | **N/A** — repo-only, deliberately not the owner bytes |
 | ESP32 / ESP32-CAM | `~/Documents/esp32 emu/dist/sab` | `src/engines/esp32-emu/dist/sab/{worker-proxy.js, worker-entry.js}` | `3c5c1866` + `4afe24dd` | **no `dist/` at all** | **NOT BUILT** — the owner deleted the build output; the repo snapshot is the only thing that runs |
 | ESP32 engine wasm + ROM | `~/Documents/esp32 emu/src/engine/esp-xtensa` | `public/wasm/esp_engine_wasm.wasm` + `public/firmware/esp32-v3-rom.bin` | `d6d17d79` + `445981c7` | `d1c08b41` + `445981c7` | **DIFFERENT** — the repo copy carries the OpenHW patches on purpose |
-| STM32F4 | `~/Documents/stm32 F4/site` | `public/vendor/board-engines/stm32f4-emu/site/**` + `public/wasm/stm32_periph_wasm_bg.wasm` | `19a96301` + `9455e31c` + `9631b8db` + `1f36d0ed` + `abd3334f` | `2574b1e2` + `578ce844` + `9f9d7338` + `1f36d0ed` + `abd3334f` (snapshot 20:40) | **DIFFERENT** — the owner is mid-rebuild: the glue, the wasm AND `emulator.js` all moved, so it is a consistent rebuild, not a mismatched pair. The owner md5 column is a **snapshot in time, not a fact**: the F4 owner rebuilt the wasm and the facade **again** within minutes of that snapshot (now `214cfc92` / `c2f06681`) — and the facade moved twice before that (`c00a11f6` → `2c12466c` → `9f9d7338`). That churn is exactly why the repo-pinned snapshot is the deploy artifact and why a refresh must take glue + wasm + facade from **one** build |
+| STM32F4 | `~/Documents/stm32 F4/site` | `src/engines/stm32f4-emu/` + `public/vendor/board-engines/stm32f4-emu/site/**` + `public/wasm/stm32_periph_wasm_bg.wasm` | glue `5df75c9a` + wasm `4e50ca23` + facade `3dcca2e2`/`1f36d0ed` + loader `abd3334f` | glue `5df75c9a` + wasm `4e50ca23` + facade `3dcca2e2`/`1f36d0ed` + loader `abd3334f` | **SAME — owner build adopted 2026-11-27.** Retired the npm pair; `vite.config.js` aliases `stm32f4-emu/*` to the owner folder in dev and the pinned mirror in snapshot/CI. Runner passes `tb: true, tbMinRun: 600` (board attr `tb:off` opts out). See the benchmark section at the end of this file. |
 | micro:bit v2 | `~/Documents/microbit-v2/demo/pkg` | `public/vendor/board-engines/microbit/*` + `src/worker/engines/microbit/*` + `public/wasm/nrf52833_periph_wasm_bg.wasm` | `112f7ab3` + `d5a0e574` | `112f7ab3` + `d5a0e574` | **SAME** |
 | Retro (8086 family) | `~/Documents/8086/pkg` | `public/vendor/board-engines/8086emu/multi_cpu_emu.js` + `public/wasm/multi_cpu_emu_bg.wasm` | `9832e032` + `fa53c0f2` | `9832e032` + `fa53c0f2` | **SAME** |
 | AVR (Uno / Mega / Nano / Tiny) | — (pure-JS npm package) | `node_modules/avr8js` 0.21.0 (pinned by `package-lock.json`) | — | — | **N/A** — no owner build; the npm package *is* the engine |
@@ -180,7 +180,7 @@ macros.
 
 ## STM32F4 (survey-verified 2026-10-09; chip flags from engine CHIPS table)
 
-**Engine bytes:** repo-pinned `public/vendor/board-engines/stm32f4-emu/site/` + `public/wasm/stm32_periph_wasm_bg.wasm` — glue `19a96301` + wasm `9455e31c` + facade `9631b8db`/`1f36d0ed` + loader `abd3334f` (the npm package `stm32f4-emu@1.6.1` carries byte-identical facades; its own wasm copy is stale — the app always loads `/wasm/stm32_periph_wasm_bg.wasm`). Owner folder verdict 2026-10-20: **DIFFERENT** — the glue (`2574b1e2`), the wasm (`578ce844`) and `emulator.js` (`9f9d7338`) all moved, so it is a consistent rebuild, not a mismatched pair; do **not** copy out of that folder until the owner says the build is stable. Refresh recipe: `public/vendor/board-engines/stm32f4-emu/README.md`.
+**Engine bytes:** repo-pinned `src/engines/stm32f4-emu/` (bundle/CI) + `public/vendor/board-engines/stm32f4-emu/site/` (runtime fallback) + `public/wasm/stm32_periph_wasm_bg.wasm` — glue `5df75c9a` + wasm `4e50ca23` + facade `3dcca2e2`/`1f36d0ed` + loader `abd3334f`, all from the owner build adopted 2026-11-27. The npm pair is retired (`OPENHW_F4_ENGINE=npm` is benchmark-only). Refresh recipe: `src/engines/stm32f4-emu/README.md`.
 
 | Board | UART | I2C | SPI | ADC | PWM | DAC | DMA | GPIO-in | RTC | CAN-2.0 | CAN-FD | I2S | 1-Wire | USB-DEV | USB-HOST | ETH | SDIO | SD-SPI/FS | LTDC | DCMI | QSPI | FSMC | SAI | MicroPython | Display-ext |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -963,3 +963,31 @@ the RV32 SIO map + the M33 SHA-256 CSR map + the M33 WDT ROM patch +
 softAPConfig + the `live=0` DHCP stall, esp32 `scanNetworks()` hang +
 `wifi-fix@a0684ef` merge, F4 `fault_pc` export. MicroPython on F4 needs an
 upstream image + a runner REPL inject path (no frontend shortcut).
+
+## STM32F4 engine benchmark (2026-11-27, owner build adopted)
+
+Cell `tests/e2e/stm32f4-bench.spec.js` measures a FIXED instruction budget
+(80M fused stack-counter inner iterations, `for (volatile int i = 0; i <
+4000; i++)`) by timing the guest's GO→DONE serial gap, so boot/compile
+overhead cannot contaminate the ratio. Two runs per arm, same box, matched
+glue+wasm pairs (the older npm arm used npm's own wasm, not the new one):
+
+| arm | wall for 80M inner iterations | throughput |
+|---|---|---|
+| npm `stm32f4-emu@1.6.x` pair | 22.0 s / 15.6 s | 3.64M / 5.14M inner iters/s |
+| owner build, `tb` on (shipped) | 9.6 s / 10.6 s | 8.37M / 7.55M inner iters/s |
+| owner build, `tb=off` | 9.5 s / 11.6 s | 8.46M / 6.92M inner iters/s |
+
+=> **~1.6–1.9x faster** on this in-app sketch (host load moves the arms;
+two runs each, not a lab benchmark). Most of the win is the Rust core's
+fused delay loop in the new wasm; `tb` itself is within noise here, but is
+kept on because the owner's own web app enables it by default and their
+`eth_http` workload measures ~320–340 page MIPS with it. A fixed 30 s wall
+window with an Arduino-style volatile loop showed only ~1.25x — that sketch
+compiles to a different loop shape and is NOT the fused path.
+
+Regression cells after the swap (owner engine, `tb` on, gateway :5030 up):
+`stm32f4-clock` 1 passed, `stm32f4-gpio-rtc` 10 passed, `stm32f4-adc` 1
+passed, `stm32f4-spi` 1 passed, `stm32f4-pace` 1 passed, `stm32f4-eth-gateway`
+1 passed (DHCP ack + DORA). `stm32f4-1wire` remains 5 failed — the documented
+pre-existing NO-GO (`SysTick->VAL` latch, patch delivered, not applied).

@@ -7,27 +7,26 @@ which tries the bundler specifier first and falls back to this folder:
 
 | consumer | resolves to | bytes |
 |---|---|---|
-| `vite dev` / `npm run build` (bundler path) | `stm32f4-emu/site/stm32f4.js` + `stm32f4-emu/site/vendor/stm32_periph_wasm.js` (npm package `stm32f4-emu@1.6.1`) | the npm package |
-| runtime fallback `/vendor/board-engines/stm32f4-emu/…` | this folder | **byte-identical mirror** of the npm package (see below) |
-| engine wasm (both paths) | `/wasm/stm32_periph_wasm_bg.wasm` | `public/wasm/` |
+| `vite dev` / `npm run build` (bundler path) | `stm32f4-emu/stm32f4` + `stm32f4-emu/vendor` aliased in `vite.config.js` | owner `/home/danish1075/Documents/stm32 F4/site` in dev, `src/engines/stm32f4-emu/` in snapshot/CI |
+| runtime fallback `/vendor/board-engines/stm32f4-emu/…` | this folder | **byte-identical mirror** of the owner build |
+| engine wasm (both paths) | `/wasm/stm32_periph_wasm_bg.wasm` | `public/wasm/`, byte-identical to the owner wasm |
 
-The npm package's `site/emulator.js`, `site/loaders.js`, `site/stm32f4.js`
-and `site/vendor/stm32_periph_wasm.js` are byte-identical to the copies here
-(same md5), so dev, build and the deploy fallback all run the same code.
-The **wasm** is different: the npm package still carries an older
-`site/vendor/stm32_periph_wasm_bg.wasm` (md5 `7ef32e3f`) while the app
-always fetches `/wasm/stm32_periph_wasm_bg.wasm` (md5 `9455e31c`) — the
-repo copy is the one that runs.
+The owner build was adopted 2026-11-27 (the previous npm pair is retired).
+All four bytes below are copied from ONE owner build; the facade is still
+byte-identical to npm, but the glue, the wasm and `emulator.js` are newer
+and carry translated-block execution plus the fused stack-counter loop.
+The runner passes `tb: true, tbMinRun: 600` unless the board has attr
+`tb: 'off'`.
 
-## Provenance (measured 2026-10-20)
+## Provenance (measured 2026-11-27)
 
 | file | md5 | role | repo copy | npm copy |
 |---|---|---|---|---|
-| `site/vendor/stm32_periph_wasm.js` | `19a9630175082fab610c8685e8aad7cb` | wasm-bindgen glue | here | same |
-| `stm32_periph_wasm_bg.wasm` | `9455e31cdbb2295697db81e49ec4119e` | engine wasm (CPU + peripherals) | `public/wasm/` | older (`7ef32e3f`) |
-| `site/emulator.js` | `9631b8dbac85908b30d248966659e888` | wasm bindings facade | here | same |
-| `site/stm32f4.js` | `1f36d0ed0514a08f9f99e483da40c85d` | board facade (STM32F4 class) | here | same |
-| `site/loaders.js` | `abd3334f23021ceeaff7a17213910d36` | firmware/SVD loader | here | same |
+| `site/vendor/stm32_periph_wasm.js` | `5df75c9a6e57312b0b815a897a5d8d0a` | wasm-bindgen glue | here + `src/engines/` | older (`19a96301`) |
+| `stm32_periph_wasm_bg.wasm` | `4e50ca2358ceea0f885ee9cdcbae1696` | engine wasm (CPU + peripherals) | `public/wasm/` + here + `src/engines/` | older (`7ef32e3f`) |
+| `site/emulator.js` | `3dcca2e2523f0360c47db1ed1aae88ed` | wasm bindings facade (`tb`, gate 600) | here + `src/engines/` | older (`9631b8db`) |
+| `site/stm32f4.js` | `1f36d0ed0514a08f9f99e483da40c85d` | board facade (STM32F4 class) | here + `src/engines/` | same |
+| `site/loaders.js` | `abd3334f23021ceeaff7a17213910d36` | firmware/SVD loader | here + `src/engines/` | same |
 
 **Glue + wasm + facade must come from ONE build.** The glue resolves its wasm
 relative to itself and the facade calls wasm exports by name; a mismatched

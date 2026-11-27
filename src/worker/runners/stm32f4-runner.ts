@@ -980,6 +980,20 @@ export class Stm32f4Runner extends ArmRunnerBase {
                     uart_addr: f4SerialUsart(self.chip) === 2 ? 0x40004400 : 0x40011000,
                     enable_irqs: true,
                 };
+                // Translated-block execution: the owner build's general
+                // speed win (loop regions run as compiled WASM instead of
+                // interpreted; page MIPS ~95 -> ~170 with the 600 gate).
+                // Default ON; board attr `tb=off` is an escape hatch for
+                // presets that need the interpreter-only path.
+                try {
+                    const battrs = self.compAttrById?.get?.(self.boardId) || {};
+                    const tbAttr = String((battrs as any)?.tb ?? '').toLowerCase();
+                    const tbOff = tbAttr === 'off' || tbAttr === '0' || tbAttr === 'false';
+                    if (!tbOff) {
+                        withAssets.tb = true;
+                        withAssets.tbMinRun = 600;
+                    }
+                } catch { /* tb flag never breaks boot */ }
                 // SDIO card bind (native SDIO cell): board attr sdio=true
                 // (or block count) binds an erased card image AFTER init
                 // (silicon boots slot-empty by default — never bind
