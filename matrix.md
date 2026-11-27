@@ -986,6 +986,24 @@ kept on because the owner's own web app enables it by default and their
 window with an Arduino-style volatile loop showed only ~1.25x — that sketch
 compiles to a different loop shape and is NOT the fused path.
 
+### Runner pacing follow-up (2026-11-28)
+
+The ~6x gap to the owner's 290-340 page MIPS was **the app's pacing budget,
+not runner waste**. Temporary worker instrumentation over a 9.4 s run showed
+566.9M guest instructions executed in 7.58 s inside `stepBudget` = **74.8
+MIPS, exactly the runner's old 75K instr/ms setting**, with 476 ticks ~20 ms
+apart (16 ms engine + 4 ms timer), 80% of wall in the engine and zero
+governor skips. The owner's headline is an unpaced direct `execute` batch.
+
+`stm32f4-runner.ts` now uses `budgetForDelta = 200K instr/ms` and
+`maxBudgetPerTick = 4M`, so a 168 MHz guest (1 guest-ms = 168K instructions)
+can approach 1x real time; the wall governor still caps sustained guest time
+at `speed x wall`. Same fixed-budget benchmark: **8.0M -> 9.6-9.9M inner
+iters/s (~1.2x)**. Beyond real time (`speed=2`) measured 9.1-9.8M iters/s —
+no gain, i.e. engine-bound, so the change is deliberately capped at 1x.
+Timing cells after the budget change: `stm32f4-clock` 1 passed,
+`stm32f4-spi` 1 passed, `stm32f4-pace` 1 passed, `stm32f4-periph-x` 16 passed.
+
 Regression cells after the swap (owner engine, `tb` on, gateway :5030 up):
 `stm32f4-clock` 1 passed, `stm32f4-gpio-rtc` 10 passed, `stm32f4-adc` 1
 passed, `stm32f4-spi` 1 passed, `stm32f4-pace` 1 passed, `stm32f4-eth-gateway`

@@ -2095,12 +2095,18 @@ export class Stm32f4Runner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // 75K/ms (not the 50K base): the wasm core sustains ~82 MIPS
-        // in-execute (profiled), so 75K tracks just under it (stable:
-        // budget rate < engine rate converges; the 1.2M cap bounds
-        // stall bursts). With SysTick-paced chunking the per-tick budget
-        // directly sets the guest-ms rate.
-        return Math.floor(deltaMs * 75000 * this.speed);
+        // 200K/ms (was 75K/ms until 2026-11-28): profiling with the owner
+        // engine showed 566.9M guest instructions executed in 7.58 s inside
+        // stepBudget = 74.8 MIPS, i.e. exactly the old 75K/ms cap, with 80%
+        // of wall already in the engine and the governor never engaged.
+        // Raising the budget to 200K/ms + a 4M per-tick cap lets a 168 MHz
+        // guest approach 1x real time (1 guest-ms = 168K instructions);
+        // the wall governor still caps sustained guest time at speed x wall.
+        // Measured: 8.0M -> 9.6-9.9M fused-loop iters/s (~1.2x), with all
+        // timing-sensitive cells green (clock, spi, pace, periph-x 16).
+        // Going beyond real time (speed=2) gave no extra throughput: the
+        // engine, not the governor, is the limit at this budget.
+        return Math.floor(deltaMs * 200000 * this.speed);
     }
 
     protected override tickIntervalMs(): number {
@@ -2112,10 +2118,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
     }
 
     protected maxBudgetPerTick(): number {
-        // 1.2M (not the 1M of old): the SysTick-paced chunking above turns
-        // every ~LOAD instructions into one guest-ms, so the per-tick cap
-        // directly sets the guest-ms rate (floor(1.2M/168K)=7 ISRs/tick vs
-        // 5 at 1M). Still far under the base 2.5M stall-burst ceiling.
-        return 1_200_000;
+        // 4M (was 1.2M): with the 200K/ms rate above, the cap bounds a
+        // stalled tab while letting each tick cover ~24 guest-ms. The
+        // governor still holds sustained guest time to speed x wall.
+        return 4_000_000;
     }
 }
