@@ -544,6 +544,45 @@ until the engine lands — do not weaken them to HIGH-only.
 | openhw-esp32 | FULL | FULL | FULL | FULL | FULL | FULL (loopback) | NONE | FULL (static rails, switch wiper both directions, pushbutton w/ external 10k, keypad, joystick ADC; `INPUT_PULLUP` alone and output readback are engine gaps P4/P5) | FULL (bit-bang + Dallas, centrally green) | FULL (RMT transport) | PARTIAL (RX only; TX needs ACKing peer) | FULL (DAC out) | FULL (QQVGA via camcell) | FULL (I2C) | NONE (deferred) | NONE | FULL (SSD1306 I2C, ILI9341 SPI, ePaper full frame, N5110 fill, LCD1602 I2C, MAX7219 VSPI) | NONE |
 | openhw-esp32-cam | FULL | NONE | NONE | NONE | NONE | ABSENT (no 25/26 on shell) | NONE | NONE | NONE | NONE | NONE (no 21/22 on shell) | NONE | FULL (QQVGA) | NONE | FULL (gateway DHCP + 2-board LAN + HTTP/NAT 2026-10-20; LAN cell FLAKY: 2nd ESP32 board sometimes never joins — client serial stops after CCLI-BEGUN while the server side completes) | NONE | NONE | NONE |
 
+### ESP32 A/B board: `openhw-esp32sc` (esp32sim classic, 2026-11-28)
+
+A second, pin-identical DevKit shell runs the **same compiled Arduino merged
+`.bin`** on esp32sim's Xtensa LX6 core so the two engines can be A/B'd in the
+browser. Component: `openhw-studio-emulator/src/components/ESP32SC/` (type
+`openhw-esp32sc`, label `ESP32 (esp32sim classic)`, same 40-pin map). Family
+`esp32sc` in `src/worker/boards-registry.ts` → `runners/esp32sc-runner.ts` →
+`esp32sim`; `openhw-esp32` still → `runners/esp32-runner.ts` → `esp32-emu`
+(proved by the catalog resolution cell in the A/B spec).
+
+**Engine bytes:** `esp32sim-bridge.wasm` md5 `5daf387d3277f4a361a249cf263dc84d`
+(15 bridge exports; byte-identical in `src/engines/esp32sim/`,
+`public/vendor/board-engines/esp32sim/` and `public/wasm/`). Mask ROM:
+`public/firmware/esp32sc_rev300_rom.elf`, sha256
+`920b70635440517866aab2230964a570d2cf2b676658d93c52fbac108c1cca31`
+(Espressif esp-rom-elfs 20241011, Apache-2.0). Boot path (direct WASM ABI, no
+worker glue): `esp32sim_new_bridge` is refused for classic boards, so
+`esp32sim_new('esp32', 4, 0)` → `esp32sim_load(kind 0, ROM ELF)` →
+`esp32sim_load(kind 5, merged flash)` → `esp32sim_boot` → bounded 1 M-cycle
+`esp32sim_run` slices from the runner's 8 ms tick.
+
+| Board | Engine | Host serial component (guest needle) | Capabilities claimed | Hard gaps |
+|---|---|---|---|---|
+| `openhw-esp32sc` | esp32sim | FULL — `AB_NEEDLE` + repeated `ABT <millis> <counter>` rows | `uart` only | bridge refused on classic: no GPIO output readback (LED cell skipped), no host I2C/SPI/PWM/ADC/I2S (EEPROM/MAX7219 cell skipped), no WiFi/gateway, no MicroPython |
+| `openhw-esp32` | esp32-emu | FULL — same sketch, same needles | unchanged (see rows above) | unchanged |
+
+**A/B numbers** (`tests/e2e/esp32sc-vs-esp32.spec.js`, one cell per board,
+same sketch, guest/wall from the guest's own `millis()` over a 6 s window).
+Last clean run (3 passed / 2 skipped):
+`openhw-esp32sc` needle at **4547 ms wall**, guest/wall **0.945**;
+`openhw-esp32` needle at **5458 ms wall**, guest/wall **2.607** (esp32-emu
+fast-forwards `delay()` idle time, so its guest/wall can exceed 1). An earlier
+run on the same host measured 14282 ms / 0.998 and 4506 ms / 0.732 — the
+needle wall time includes backend compile + engine/JIT warm-up and varies with
+host load, so treat the steady-state ratio as the throughput signal and the
+whole pair as one A/B sample, not a benchmark leaderboard. Both cells pass;
+the two gap cells are `test.skip` with the engine fact in the test body, never
+weakened.
+
 Specs: esp32-i2c, esp32-spi, esp32-adc, esp32-pwm, esp32-dac, esp32-onewire,
 esp32-dht22, esp32-twai (RX), esp32-i2s-tx, esp32-camcell (DevKit camera),
 esp32-camboard (cam shell), esp32-mp-i2c,

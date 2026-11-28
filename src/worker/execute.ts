@@ -65,6 +65,12 @@ export async function createRunnerForBoard(
         const { PicoRunner } = await import('./runners/pico-runner.ts');
         return new PicoRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
     }
+    // Classic ESP32 over esp32sim (A/B board). Must precede the generic
+    // esp32-emu branch below: 'openhw-esp32sc' also contains 'esp32'.
+    if (t.includes('esp32sc')) {
+        const { Esp32ScRunner } = await import('./runners/esp32sc-runner.ts');
+        return new Esp32ScRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
+    }
     // ESP32 DevKit over esp32-emu.
     if (t.includes('esp32')) {
         const { Esp32Runner } = await import('./runners/esp32-runner.ts');

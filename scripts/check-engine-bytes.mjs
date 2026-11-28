@@ -231,6 +231,47 @@ const ENGINES = [
     ],
   },
   {
+    id: 'esp32sim',
+    label: 'esp32sim (A/B board openhw-esp32sc — classic ESP32 Xtensa LX6)',
+    ownerRoot: null,
+    ownerBuild: null,
+    ownerNoneReason: 'the rebuilt bridge WASM is staged from the engine source tree; integrity here = the three repo mirrors + the pinned mask ROM, verified byte-identical on 2026-11-28',
+    refreshRecipe: 'docs/engine-bytes.md (esp32sim row)',
+    groups: [
+      {
+        id: 'bridge-wasm',
+        pair: false,
+        note: '15-export bridge wasm, fetched by esp32sc-runner.ts from /wasm/esp32sim-bridge.wasm; the three repo copies must stay byte-identical',
+        files: [
+          {
+            name: 'esp32sim-bridge.wasm',
+            role: 'wasm',
+            pinned: 'src/engines/esp32sim/esp32sim-bridge.wasm',
+            copies: [
+              'public/vendor/board-engines/esp32sim/esp32sim-bridge.wasm',
+              'public/wasm/esp32sim-bridge.wasm',
+            ],
+            owner: null,
+          },
+        ],
+      },
+      {
+        id: 'mask-rom',
+        pair: false,
+        note: 'Espressif esp-rom-elfs 20241011, sha256 920b70635440517866aab2230964a570d2cf2b676658d93c52fbac108c1cca31',
+        files: [
+          {
+            name: 'esp32sc_rev300_rom.elf',
+            role: 'rom',
+            pinned: 'public/firmware/esp32sc_rev300_rom.elf',
+            copies: [],
+            owner: null,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'stm32f4-emu',
     label: 'STM32F4 (F401 / F407 / F411 / F407VE / F429)',
     ownerRoot: '/home/danish1075/Documents/stm32 F4',

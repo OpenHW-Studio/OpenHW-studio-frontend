@@ -136,6 +136,38 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     limits: NO_LIMITS,
   },
   {
+    family: 'esp32sc',
+    // Specific before the generic `esp32` family below: 'openhw-esp32sc'
+    // contains 'esp32', so this row must win. No exclude — the component is
+    // its own board shell (openhw-esp32sc), not a peripheral sharing a token.
+    match: ['esp32sc'],
+    railVoltage: 3.3,
+    engine: 'esp32sim',
+    runner: 'runners/esp32sc-runner.ts',
+    // Only what is proved in the browser A/B spec: classic ESP32 boots from
+    // the esp32sim mask ROM + merged flash image and streams guest serial.
+    capabilities: ['uart'],
+    firmware: ['arduino-sketch'],
+    limits: [
+      {
+        code: 'no-gpio-output-readback',
+        detail: 'esp32sim_new_bridge refuses classic ESP32 ("the host bridge supports only S3, C3 and C6 boards", verified against the staged WASM). No GPIO output readback/edge export is reachable, so firmware-driven LED components cannot be lit. The GPIO LED cell is test.skip, never weakened.',
+      },
+      {
+        code: 'no-i2c-spi-pwm-adc-i2s-bridge',
+        detail: 'The same bridge refusal makes esp32sim_bridge_{i2c,spi,pwm,adc,i2s}_* unreachable on classic ESP32. Host I2C EEPROM / SSD1306 / SPI MAX7219 / PWM / ADC / I2S component cells cannot be driven; skipped with this reason.',
+      },
+      {
+        code: 'merged-flash-image-only',
+        detail: 'Firmware must be the backend compiled merged .bin (bootloader@0x1000 + ptable@0x8000 + app@0x10000) loaded with esp32sim_load(kind=5), or Intel HEX text. MicroPython images / REPL injection are not bridged.',
+      },
+      {
+        code: 'no-wifi-gateway',
+        detail: 'WiFi/gateway dialing and the esp32sim network exports are not bridged by this runner; classic WiFi cells are out of scope for the A/B.',
+      },
+    ],
+  },
+  {
     family: 'esp32_cam',
     match: ['esp32-cam', 'esp32_cam', 'esp32cam'],
     railVoltage: 3.3,

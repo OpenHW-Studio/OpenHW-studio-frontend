@@ -61,6 +61,19 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Powered by rp2040js engine with PIO support.'
   },
 
+  'openhw-esp32sc': {
+    status: 'beta',
+    summary: 'Classic ESP32 (Xtensa LX6 @ 240 MHz) on the esp32sim engine — A/B board for openhw-esp32',
+    working: ['Merged-bin boot from the esp32sim mask ROM', 'UART Serial Communication', 'Guest millis() / delay() pacing'],
+    inProgress: ['GPIO / I2C / SPI bridge on classic ESP32 (engine refuses the bridge)'],
+    limitations: [
+      'No firmware-driven GPIO output readback (no LED cell)',
+      'No host I2C / SPI / PWM / ADC / I2S component bridge',
+      'WiFi / BLE not bridged by this runner'
+    ],
+    notes: 'Runs the same Arduino merged .bin as openhw-esp32 on a different engine for A/B comparison.'
+  },
+
   'openhw-esp32': {
     status: 'beta',
     summary: 'Tensilica Xtensa Dual-Core 32-bit LX6 @ 240 MHz',
