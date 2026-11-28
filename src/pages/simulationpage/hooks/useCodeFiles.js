@@ -7,6 +7,7 @@ import {
   fileExt,
   isFileDisabled,
 } from "../../../utils/projectCompilerUtils";
+import { getBoardMainExtension } from "../../../utils/boardLanguageUtils.js";
 import {
   UF2_PAYLOAD_PREFIX,
   ROOT_UPLOADABLE_EXTENSIONS,
@@ -71,7 +72,9 @@ export function useCodeFiles({
           parent: normalizedParent,
           boardId,
           boardKind,
-          defaultExt: ".ino",
+          defaultExt: getBoardMainExtension(boardComp?.type || '', {
+            env: boardComp?.attrs?.env,
+          }),
           allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
         };
       },

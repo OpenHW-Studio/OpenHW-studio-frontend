@@ -44,6 +44,7 @@ import { saveProject, loadProject, listProjects, deleteProject, renameProject, g
 // (PNG export, project save/load, Wokwi ZIP import). The SimulatorPage chunk
 // previously dragged both (~150KB) into the initial simulator download.
 import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
+import { resolveBoardLanguage, getBoardMainFileName } from '../../utils/boardLanguageUtils.js';
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
@@ -1290,9 +1291,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const getBoardMainCode = useCallback(
     (boardId) => {
       const bc = (components || []).find((c) => c.id === boardId && c.type);
-      const kind = bc ? normalizeBoardKind(bc.type) : "";
-      const env = bc?.attrs?.env;
-      const mainName = getDefaultMainFileName(kind, boardId, { env });
+      // Derive the language from the component TYPE (kind alone can be a
+      // legacy Uno fallback). One helper owns the entire ext mapping.
+      const def = resolveBoardLanguage(bc?.type || '', { env: bc?.attrs?.env });
+      const mainName = getBoardMainFileName(bc?.type || '', boardId, { env: bc?.attrs?.env });
       // Prefer the mode-correct main file. A board switched to MicroPython
       // or retro ASM must no longer compile its stale .ino (bug: boards
       // changed/deleted left old-extension files active).
@@ -1301,11 +1303,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       if (prefFile && prefFile.content && !isFileDisabled(prefFile.path))
         return prefFile.content;
 
-      const extOrder = String(kind || '').startsWith('retro')
-        ? ['asm', 's', 'a51', 'ino']
-        : env === 'micropython' || env === 'circuitpython'
-          ? ['py', 'ino']
-          : ['ino', 'py'];
+      const extOrder = def.language === 'assembly'
+        ? ['asm', 's', 'a51']
+        : def.language === 'python'
+          ? ['py']
+          : ['ino', 'cpp', 'c', 'h', 'hpp'];
       for (const ext of extOrder) {
         const f = (projectFiles || []).find(
           (x) => x.path.startsWith(`project/${boardId}/`)
@@ -1328,11 +1330,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       }));
 
       return getBoardCompileFilesShared(
-        { projectFiles: virtualProjectFiles },
+        {
+          projectFiles: virtualProjectFiles,
+          // Language/extension resolution uses the board TYPE, not the id.
+          components: componentsRef.current || components || [],
+        },
         boardId,
       );
     },
-    [projectFiles, activeCodeFileId, code],
+    [projectFiles, activeCodeFileId, code, components],
   );
 
   // Stable identity: passed to useEsp32Engine + called from ~20 compile/run
@@ -2557,6 +2563,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [serialBoardFilter, serialBoardOptions]);
 
   useEffect(() => {
+    // Board type switches retarget the current main file in place; collect
+    // old→new ids here and retarget the open tabs / active buffer below.
+    const retargetedFiles = [];
     setProjectFiles((prev) => {
       const normalized = normalizeProjectFiles(prev);
       let changed = normalized.length !== prev.length;
@@ -2763,7 +2772,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           }
         }
 
-        const expectedMainName = getDefaultMainFileName(kind, bc.id, { env: bc.attrs?.env });
+        // The board TYPE (not the normalized kind) owns the language. A Pi
+        // board with env=micropython and a retro board both land here.
+        const langDef = resolveBoardLanguage(bc.type, { env: bc.attrs?.env });
+        const expectedMainName = getBoardMainFileName(bc.type, bc.id, { env: bc.attrs?.env });
         const expectedMainPath = `${basePath}/${expectedMainName}`;
         const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
         if (
@@ -2774,18 +2786,46 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         }
 
         const expectedExt = fileExt(expectedMainName); // .ino / .py / .asm
+        const mainLikeExts = ['.ino', '.py', '.asm'];
+        const staleMains = result.filter((file) =>
+          file.path.startsWith(`${basePath}/`)
+          && !isFileDisabled(file.path)
+          && file.kind === 'code'
+          && mainLikeExts.includes(fileExt(file.path))
+          && file.id !== expectedMainPath
+          && file.name !== expectedMainName,
+        );
+        // Board switched family: rename/retarget the current main file so the
+        // visible tab label and the compile resolver change together. Keep
+        // the edited buffer (including its content) — never regenerate a
+        // default and silently drop user code.
+        if (!result.some((file) => file.id === expectedMainPath) && staleMains.length > 0) {
+          const source = staleMains.find((f) => f.id === activeCodeFileId)
+            || staleMains.find((f) => f.name.startsWith(bc.id))
+            || staleMains[0];
+          replaceFilePath(source.id, expectedMainPath);
+          const renamed = result.find((f) => f.id === expectedMainPath);
+          if (renamed) renamed.language = langDef.language;
+          retargetedFiles.push({ from: source.id, to: expectedMainPath });
+        }
+        const expectedFile = result.find((f) => f.id === expectedMainPath);
+        if (expectedFile && expectedFile.language !== langDef.language) {
+          expectedFile.language = langDef.language;
+          changed = true;
+        }
+
         const hasEnabledMainForMode = result.some((file) => {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
           return fileExt(file.path) === expectedExt;
         });
 
-        // A board whose env/type changed keeps its old-extension main file;
-        // disable it so the compile resolver cannot pick a stale sketch.
+        // Any other old-extension main file is disabled so the compile
+        // resolver cannot pick a stale sketch, but its content is preserved.
         for (const file of [...result]) {
           if (!file.path.startsWith(`${basePath}/`) || isFileDisabled(file.path)) continue;
           if (file.id === expectedMainPath || file.path === 'diagram.json') continue;
-          if (!['.ino', '.py', '.asm'].includes(fileExt(file.path))) continue;
+          if (!mainLikeExts.includes(fileExt(file.path))) continue;
           if (file.name === expectedMainName) continue;
           replaceFilePath(file.id, file.id + DISABLED_FILE_SUFFIX);
         }
@@ -2901,6 +2941,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
       return changed ? normalizeProjectFiles(result) : prev;
     });
+    if (retargetedFiles.length > 0) {
+      const byOld = new Map(retargetedFiles.map((r) => [r.from, r.to]));
+      setOpenCodeTabs((prev) => prev.map((id) => byOld.get(id) || id));
+      if (byOld.has(activeCodeFileId)) setActiveCodeFileId(byOld.get(activeCodeFileId));
+    }
   }, [
     boardComponents,
     board,
@@ -3769,6 +3814,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               normalizeFirmwareFileName,
               appendConsoleEntry,
               result,
+              recordFirmwarePayload: (boardId, payloadKind) => {
+                try {
+                  window.__openhwFirmwarePayloads = {
+                    ...(window.__openhwFirmwarePayloads || {}),
+                    [String(boardId)]: payloadKind,
+                  };
+                } catch { /* ignore */ }
+              },
             },
           );
           result = prologue.result;
@@ -3807,6 +3860,12 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               },
             );
             result = genericOut.result;
+            try {
+              window.__openhwFirmwarePayloads = {
+                ...(window.__openhwFirmwarePayloads || {}),
+                [String(boardComp.id)]: 'arduino',
+              };
+            } catch { /* ignore */ }
           }
         }
       }
@@ -3814,7 +3873,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       if (!result && programmableBoards.length > 0) {
         const blockedMsg =
           boardsWithoutCompilableSketch.length > 0
-            ? `Run blocked: no enabled .ino sketch found for ${boardsWithoutCompilableSketch.join(", ")}.`
+            ? `Run blocked: no enabled source file (.ino/.py/.asm) found for ${boardsWithoutCompilableSketch.join(", ")}.`
             : "Run blocked: no firmware was produced for programmable boards.";
         appendConsoleEntry("warn", blockedMsg, "simulator");
         logSerial(blockedMsg, "var(--orange)");
@@ -4390,11 +4449,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             );
             const boardId = boards[0]?.id || "uno1";
             const boardType = String(boards[0]?.type || "");
-            // Retro boards edit assembly, not Arduino sketches.
-            const isRetroBoard = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(boardType);
-            // Raspberry Pi (Pyodide) boards take Python source, not .ino.
-            const isPyodidePiBoard = /(openhw-pi3|openhw-pi4|openhw-pi5)/i.test(boardType);
-            const mainName = isRetroBoard ? `${boardId}.asm` : (isPyodidePiBoard ? 'main.py' : `${boardId}.ino`);
+            // One board-type→language mapping for every main-file write.
+            const boardDef = resolveBoardLanguage(boardType, {
+              env: boards[0]?.attrs?.env,
+            });
+            const mainName = getBoardMainFileName(boardType, boardId, {
+              env: boards[0]?.attrs?.env,
+            });
             const inoPath = `project/${boardId}/${mainName}`;
             try {
               const store = useEditorStore.getState();
@@ -4408,7 +4469,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                   path: inoPath,
                   name: mainName,
                   kind: "code",
-                  language: isRetroBoard ? "asm" : (isPyodidePiBoard ? "python" : "arduino"),
+                  language: boardDef.language,
                   boardId,
                   dirty: true,
                 };
@@ -4446,19 +4507,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             const b = comps.find((c) => String(c?.id) === String(bid));
             if (!b) continue;
             const bt = String(b?.type || '');
-            const isRetro = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(bt);
-            const benvMp = String(b?.attrs?.env || '').toLowerCase();
-            // MicroPython path (e2e-only): env micropython/py takes main.py
-            // instead of .ino (mirrors the boardLoopPrologue PYSCRIPT
-            // sentinel contract).
-            const isPyMp = !isRetro && (benvMp.includes('micropython') || benvMp === 'py');
-            const mainName = isRetro ? `${bid}.asm` : (isPyMp ? 'main.py' : `${bid}.ino`);
+            // Board type picks the language; env=micropython/py keeps the
+            // existing PYSCRIPT path for Pico/ESP32 MicroPython cells.
+            const def = resolveBoardLanguage(bt, { env: b?.attrs?.env });
+            const mainName = getBoardMainFileName(bt, bid, { env: b?.attrs?.env });
             const inoPath = `project/${bid}/${mainName}`;
             try {
               store.setProjectFiles((prev) => {
                 const list = Array.isArray(prev) ? [...prev] : [];
                 const idx = list.findIndex((f) => f?.id === inoPath || f?.path === inoPath);
-                const base = { id: inoPath, path: inoPath, name: mainName, kind: 'code', language: isRetro ? 'asm' : (isPyMp ? 'python' : 'arduino'), boardId: String(bid), dirty: true };
+                const base = { id: inoPath, path: inoPath, name: mainName, kind: 'code', language: def.language, boardId: String(bid), dirty: true };
                 if (idx >= 0) list[idx] = { ...list[idx], ...base, content: sketch };
                 else list.push({ ...base, content: sketch });
                 return list;
@@ -4467,6 +4525,89 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             } catch { /* ignore */ }
           }
           return { ok: true, wrote: Object.keys(extra || {}).length };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
+      // Switch an existing board component's TYPE without touching its code
+      // files — drives the main-file rename/retarget path deterministically.
+      switchBoardType({ componentId, type, attrs = {} } = {}) {
+        try {
+          const setComponents = live().setComponents || (() => {});
+          setComponents((prev) => (Array.isArray(prev) ? prev : []).map((c) =>
+            String(c?.id) === String(componentId)
+              // Replace attrs: a board-family switch must not carry over the
+              // old board's env=micropython (which would keep .py active).
+              ? { ...c, type: String(type || c.type), attrs: { ...(attrs || {}) } }
+              : c,
+          ));
+          return { ok: true, componentId: String(componentId || ''), type: String(type || '') };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
+      // Board file/language probe: what the editor shows and what the
+      // compile-unit resolver would hand to compileCode / the firmware
+      // payload path. Used by board-file-extension.spec.js.
+      boardFileProbe() {
+        try {
+          const store = useEditorStore.getState();
+          const files = Array.isArray(store.projectFiles) ? store.projectFiles : [];
+          const comps = (componentsRef.current || []).filter((c) =>
+            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(String(c?.type || '')),
+          );
+          const boards = comps.map((c) => {
+            const def = resolveBoardLanguage(c.type, { env: c.attrs?.env });
+            const mainName = getBoardMainFileName(c.type, c.id, { env: c.attrs?.env });
+            const mainPath = `project/${c.id}/${mainName}`;
+            const mainFile = files.find((f) => f.id === mainPath || f.path === mainPath);
+            const unit = getBoardCompileFilesShared(
+              { projectFiles: files, components: comps },
+              String(c.id),
+            );
+            return {
+              boardId: String(c.id),
+              boardType: String(c.type || ''),
+              expectedLanguage: def.language,
+              expectedExtension: def.extension,
+              expectedMainName: mainName,
+              mainFile: mainFile ? {
+                id: mainFile.id,
+                path: mainFile.path,
+                name: mainFile.name,
+                ext: fileExt(mainFile.path),
+                language: mainFile.language || null,
+                disabled: isFileDisabled(mainFile.path),
+              } : null,
+              enabledMainFiles: files
+                .filter((f) => f.path.startsWith(`project/${c.id}/`)
+                  && !isFileDisabled(f.path)
+                  && f.kind === 'code'
+                  && ['.ino', '.py', '.asm'].includes(fileExt(f.path)))
+                .map((f) => ({ id: f.id, name: f.name, ext: fileExt(f.path), language: f.language || null })),
+              compileUnit: {
+                language: unit.language,
+                mainFileName: unit.mainFileName,
+                mainFilePath: unit.mainFilePath,
+                hasMainFile: !!unit.hasMainFile,
+                mainCodeLen: String(unit.mainCode || '').length,
+              },
+              activeFileId: store.activeCodeFileId,
+              openTabs: Array.isArray(store.openCodeTabs) ? [...store.openCodeTabs] : [],
+              payloadKind: (window.__openhwFirmwarePayloads || {})[String(c.id)] || null,
+            };
+          });
+          return {
+            ok: true,
+            boards,
+            lastCompilePayload: window.__openhwLastCompilePayload
+              ? {
+                language: window.__openhwLastCompilePayload.language,
+                sketchName: window.__openhwLastCompilePayload.sketchName,
+                target: window.__openhwLastCompilePayload.target,
+              }
+              : null,
+          };
         } catch (err) {
           return { ok: false, error: String(err?.message || err) };
         }

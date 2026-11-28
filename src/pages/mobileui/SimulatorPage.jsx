@@ -8,6 +8,7 @@ import MobileBottomNav from './MobileBottomNav';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
 import { calculateWireBundleOffsets } from '../../utils/wireRouting.js';
 import { getResolvedPinExitSide } from '../../utils/pinExit.js';
+import { resolveBoardLanguage, getBoardMainFileName, getBoardMainExtension } from '../../utils/boardLanguageUtils.js';
 import { ProjectCard } from './ProjectCard';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
@@ -624,7 +625,7 @@ const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
 const DISABLED_FILE_SUFFIX = '.disabled';
 const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
 const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml']);
+const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.asm', '.s', '.a51', '.txt', '.json', '.xml', '.py']);
 
 function boardKindToDisplayName(kind) {
   const normalized = normalizeBoardKind(kind);
@@ -801,6 +802,10 @@ function allocateComponentId(type, usedIdsInput) {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  if (s.includes('openhw-pi3') || s.includes('raspberry-pi-3') || s === 'pi3') return 'pi3';
+  if (s.includes('openhw-pi4') || s.includes('raspberry-pi-4') || s === 'pi4') return 'pi4';
+  if (s.includes('openhw-pi5') || s.includes('raspberry-pi-5') || s === 'pi5') return 'pi5';
+  if (s.includes('microbit') || s.includes('micro-bit')) return 'microbit_v2';
   if (s.includes('nano')) return 'arduino_nano';
   // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
   if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
@@ -904,13 +909,19 @@ function resolveBoardFqbnForComponent(boardComp, boardKind) {
 }
 
 function createDefaultMainCode(boardKind, boardId, options = {}) {
-  void boardKind; void options;
+  const language = resolveBoardLanguage(boardKind, { env: options?.env }).language;
+  if (language === 'python') {
+    return `# ${boardId} main script\nfrom machine import Pin\nprint("${boardId} ready")\n`;
+  }
+  if (language === 'assembly') {
+    return `; ${boardId} assembly source\nORG 100h\nMOV AH, 4Ch\nINT 21h\nEND\n`;
+  }
   return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
 }
 
 function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  void boardKind; void options;
-  return `${boardId}.ino`;
+  // Single shared board→language/extension mapping (desktop parity).
+  return getBoardMainFileName(boardKind, boardId, options);
 }
 
 function fileExt(path) {
@@ -3640,7 +3651,8 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           }
         }
 
-        const expectedMainName = getDefaultMainFileName(kind, bc.id, {});
+        const expectedMainName = getDefaultMainFileName(bc.type, bc.id, { env: bc.attrs?.env });
+        const expectedExt = fileExt(expectedMainName);
         const expectedMainPath = `${basePath}/${expectedMainName}`;
         const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
         if (!result.some((file) => file.id === expectedMainPath) && result.some((file) => file.id === expectedMainDisabledPath)) {
@@ -3651,7 +3663,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
           const ext = baseFileExt(file.path);
-          return ext === '.ino';
+          return ext === expectedExt;
         });
 
         if (!hasEnabledMainForMode) {
@@ -5061,31 +5073,37 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   }, [projectFileMap]);
 
   const getBoardMainCode = useCallback((boardId) => {
-    const preferred = `project/${boardId}/${boardId}.ino`;
+    const boardComp = (componentsRef.current || []).find((c) => String(c?.id) === String(boardId));
+    const def = resolveBoardLanguage(boardComp?.type || '', { env: boardComp?.attrs?.env });
+    const preferred = `project/${boardId}/${getBoardMainFileName(boardComp?.type || '', boardId, { env: boardComp?.attrs?.env })}`;
     const prefFile = projectFileMap.get(preferred);
     if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-    const ino = projectFiles.find(
-      (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
+    const main = projectFiles.find(
+      (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === def.extension && !isFileDisabled(f.path)
     );
-    if (ino?.content) return ino.content;
+    if (main?.content) return main.content;
 
     return '';
-  }, [projectFileMap, projectFiles]);
+  }, [projectFileMap, projectFiles, components]);
 
   const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
-    const allowed = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
+    const boardComp = (componentsRef.current || []).find((c) => String(c?.id) === String(boardId));
+    const def = resolveBoardLanguage(boardComp?.type || '', { env: boardComp?.attrs?.env });
+    const allowed = new Set(def.language === 'python' ? ['.py']
+      : def.language === 'assembly' ? ['.asm', '.s', '.a51']
+        : ['.ino', '.h', '.hpp', '.c', '.cpp']);
     const allFiles = projectFiles
       .filter((f) => f.path.startsWith(`project/${boardId}/`))
       .filter((f) => !isFileDisabled(f.path))
       .filter((f) => allowed.has(fileExt(f.path)))
       .map((f) => ({ path: f.path, name: f.name, content: f.id === activeCodeFileId ? code : (f.content || '') }));
 
-    const preferredMainName = `${boardId}.ino`;
+    const preferredMainName = getBoardMainFileName(boardComp?.type || '', boardId, { env: boardComp?.attrs?.env });
     const preferredPath = String(preferredMainPath || '').trim();
     const main = allFiles.find((f) => f.path === preferredPath)
       || allFiles.find((f) => f.name === preferredMainName)
-      || allFiles.find((f) => fileExt(f.name) === '.ino')
+      || allFiles.find((f) => fileExt(f.name) === def.extension)
       || null;
 
     const files = allFiles
@@ -5098,8 +5116,10 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       files,
       hasMainFile: !!main,
       mainFilePath: main?.path || '',
+      language: def.language,
+      mainFileName: main?.name || preferredMainName,
     };
-  }, [projectFiles, getBoardMainCode, activeCodeFileId, code]);
+  }, [projectFiles, getBoardMainCode, activeCodeFileId, code, components]);
 
   const resolveFolderFilePolicy = useCallback((parentPath = 'project') => {
     const normalizedParent = String(parentPath || 'project').trim() || 'project';
@@ -5121,7 +5141,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
       parent: normalizedParent,
       boardId,
       boardKind,
-      defaultExt: '.ino',
+      defaultExt: getBoardMainExtension(boardComp?.type || '', { env: boardComp?.attrs?.env }),
       allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
     };
   }, [boardComponentMap]);

@@ -35,6 +35,9 @@ export interface BoardFamily {
   capabilities: string[];
   /** Firmware kinds accepted without backend compile. */
   firmware: string[];
+  /** Source language edited by this family. Optional: omitted rows default
+    to 'arduino' (see src/utils/boardLanguageUtils.js). */
+  language?: 'python' | 'assembly' | 'arduino';
   /** Verified engine limits. */
   limits: BoardLimit[];
   /** Substring rules that veto a match (component shells sharing a
@@ -92,6 +95,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     // the board_info() clock/temperature/PWM-policy differences.
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
+    language: 'python',
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
@@ -107,6 +111,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/rpi-pyodide-runner.ts',
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
+    language: 'python',
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
@@ -122,6 +127,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/rpi-pyodide-runner.ts',
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
+    language: 'python',
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU (BCM2712/RP1), boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
@@ -344,6 +350,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: NO_LIMITS,
   },
   {
@@ -354,6 +361,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: NO_LIMITS,
   },
   {
@@ -364,6 +372,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio-sink', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: [{ code: 'quasi-bidirectional-ports', detail: 'P1/P2 HIGH floats (input); only LOW bits actively drive. Sourcing HIGH to light loads is unsupported.' }],
   },
   {
@@ -374,6 +383,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: [{ code: 'via-ddr-gated', detail: 'VIA pins drive only when DDR configures them as outputs.' }],
   },
   {
@@ -384,6 +394,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: [{ code: 'z80-output-latch', detail: 'Kit port is a plain output latch (no direction): HIGH wins, external pull-down of a driven-HIGH line is unsupported.' }],
   },
   {
@@ -394,6 +405,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: [{ code: 'no-gpio-model', detail: 'rv32 exposes no GPIO model; input injection is inert.' }],
   },
   {
@@ -404,6 +416,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     runner: 'runners/retro-runner.ts',
     capabilities: ['digital-gpio', 'uart-console'],
     firmware: ['asm-source'],
+    language: 'assembly',
     limits: NO_LIMITS,
   },
   {
@@ -422,6 +435,7 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     // 16000 Hz).
     capabilities: ['digital-gpio', 'analog-adc', 'uart', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['fixed-bin'],
+    language: 'python',
     limits: NO_LIMITS,
   },
 ];

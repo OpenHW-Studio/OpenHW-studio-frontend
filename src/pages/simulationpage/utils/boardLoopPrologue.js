@@ -12,6 +12,7 @@ import {
   fileExt,
   isFileDisabled,
 } from "../../../utils/projectCompilerUtils";
+import { getBoardMainExtension, resolveBoardLanguage } from "../../../utils/boardLanguageUtils.js";
 
 /**
  * Per-board loop prologue domain, extracted verbatim from SimulatorPage.jsx
@@ -50,6 +51,12 @@ export function resolveBoardLoopPrologue(args, ctx) {
     appendConsoleEntry,
   } = ctx;
   let { result } = ctx;
+  // Optional e2e/debug hook: records which firmware-payload path this board
+  // took (PYSCRIPT / ASM / FIXEDBIN / uploaded / arduino compile). No effect
+  // on simulation; the probe spec asserts it matches the board language.
+  const recordFirmware = (payloadKind) => {
+    try { ctx.recordFirmwarePayload?.(boardComp.id, payloadKind); } catch { /* ignore */ }
+  };
   const kind = normalizeBoardKind(boardComp.type);
   // Raspberry Pi peripheral boards are Python-first: a main.py (or any .py
   // file in the board's project folder) is firmware, not a source to compile.
@@ -92,6 +99,7 @@ export function resolveBoardLoopPrologue(args, ctx) {
                   ),
                 };
               }
+              recordFirmware(uploadKind);
               return { disposition: "continue", result };
             } else if (useUploaded && !uploadedFirmware) {
               appendConsoleEntry(
@@ -116,8 +124,11 @@ export function resolveBoardLoopPrologue(args, ctx) {
             const boardEnabledFiles = projectFiles
               .filter((f) => f.path.startsWith(`project/${boardComp.id}/`))
               .filter((f) => !isFileDisabled(f.path));
+            const expectedMainExt = getBoardMainExtension(boardComp.type, {
+              env: resolveComponentAttrString(boardComp?.attrs, 'env', ''),
+            });
             const preferredMainPath =
-              activeBoardExt === ".ino" &&
+              activeBoardExt === expectedMainExt &&
                 activeBoardFile &&
                 !isFileDisabled(activeBoardFile.path)
                 ? activeBoardFile.path
@@ -141,8 +152,20 @@ export function resolveBoardLoopPrologue(args, ctx) {
             ) || boardEnabledFiles.find(
               (f) => fileExt(f.path) === '.py' && String(f.content || '').trim(),
             );
-            const wantsMicroPython = isPyodidePi || boardEnv.includes('micropython') || boardEnv === 'py' || (!!mainPyFile && !compileUnit.hasMainFile);
-            if (wantsMicroPython && mainPyFile) {
+            // The board TYPE is authoritative even when no env attr is set:
+            // a micro:bit / Pi board with a .py main must take the script
+            // path, never arduino-cli. A curated fixed .bin still wins for
+            // micro:bit proof images (they are not source-driven).
+            const fixedFwAttr = String(
+              resolveComponentAttrString(boardComp?.attrs, 'firmware', ''),
+            ).trim();
+            const boardLanguage = resolveBoardLanguage(boardComp.type, {
+              env: boardEnv,
+            }).language;
+            const wantsMicroPython = boardLanguage === 'python' || isPyodidePi
+              || boardEnv.includes('micropython') || boardEnv === 'py'
+              || (!!mainPyFile && !compileUnit.hasMainFile);
+            if (wantsMicroPython && mainPyFile && !fixedFwAttr) {
               const pyScript = String(mainPyFile.content || '');
               boardHexMap[boardComp.id] = `PYSCRIPT:${pyScript}`;
               appendConsoleEntry(
@@ -153,6 +176,7 @@ export function resolveBoardLoopPrologue(args, ctx) {
               if (!result) {
                 result = { hex: boardHexMap[boardComp.id], artifactName: mainPyFile.name || 'main.py', micropython: true };
               }
+              recordFirmware('PYSCRIPT');
               return { disposition: 'continue', result };
             }
 
@@ -161,9 +185,6 @@ export function resolveBoardLoopPrologue(args, ctx) {
             // `firmware` attr (URL). Skips arduino compile entirely; the
             // runner fetches + loads the image (FIXEDBIN: sentinel, same
             // first-firmware-wins rule as PYSCRIPT/ASM above).
-            const fixedFwAttr = String(
-              resolveComponentAttrString(boardComp?.attrs, 'firmware', ''),
-            ).trim();
             if (fixedFwAttr) {
               boardHexMap[boardComp.id] = `FIXEDBIN:${fixedFwAttr}`;
               appendConsoleEntry(
@@ -174,6 +195,7 @@ export function resolveBoardLoopPrologue(args, ctx) {
               if (!result) {
                 result = { hex: boardHexMap[boardComp.id], artifactName: fixedFwAttr, fixedbin: true };
               }
+              recordFirmware('FIXEDBIN');
               return { disposition: 'continue', result };
             }
 
@@ -211,6 +233,7 @@ export function resolveBoardLoopPrologue(args, ctx) {
                 if (!result) {
                   result = { hex: boardHexMap[boardComp.id], artifactName: asmName, asm: true };
                 }
+                recordFirmware('ASM');
                 return { disposition: 'continue', result };
               }
             // Empty source: fall through to the standard no-sketch guard

@@ -108,7 +108,7 @@ export async function compileGenericBoard(args, ctx) {
                 );
               }
               try {
-                compiled = await compileCode({
+                const compilePayload = {
                   code: effectiveSource,
                   files: effectiveFiles,
                   sketchName: compileUnit.sketchName,
@@ -116,7 +116,15 @@ export async function compileGenericBoard(args, ctx) {
                   target: kind,
                   libraries_txt: librariesTxt,
                   artifacts,
-                });
+                  // Board-derived language (python/assembly boards never
+                  // reach arduino-cli; this is always 'arduino' here, but
+                  // explicit so the e2e payload assertion is unambiguous).
+                  language: compileUnit.language || 'arduino',
+                };
+                if (typeof window !== 'undefined') {
+                  window.__openhwLastCompilePayload = compilePayload;
+                }
+                compiled = await compileCode(compilePayload);
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
                 throw compileErr;

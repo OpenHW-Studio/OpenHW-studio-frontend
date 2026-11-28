@@ -1,4 +1,5 @@
 import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants';
+import { resolveBoardLanguage } from '../../../utils/boardLanguageUtils.js';
 
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
@@ -9,6 +10,9 @@ export function normalizeBoardKind(source) {
   if (s.includes('openhw-pi5') || s.includes('raspberry-pi-5') || s === 'pi5') return 'pi5';
   if (s.includes('nano')) return 'arduino_nano';
   if (s.includes('mega') || s.includes('2560')) return 'arduino_mega';
+  // micro:bit v2 is a Python-script board (boards-registry family
+  // microbit_v2). Match before the generic nrf52/pico fallbacks.
+  if (s.includes('microbit') || s.includes('micro-bit')) return 'microbit_v2';
   // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
   if (s.includes('pico-2-eth') || s.includes('pico2-eth') || s.includes('5500_evb_pico2') || s.includes('pico2eth')) return 'pico_2_eth';
   if (s.includes('pico-eth') || s.includes('picoeth') || s.includes('5500_evb_pico') || s.includes('w5500')) return 'pico_eth';
@@ -98,10 +102,21 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
 export function createDefaultMainCode(boardKind, boardId, options = {}) {
   void boardId;
   const kind = normalizeBoardKind(boardKind);
+  const def = resolveBoardLanguage(boardKind, {
+    env: options?.env,
+    rp2040Mode: options?.rp2040Mode,
+  });
+  const language = def.language;
   // Retro boards default to a per-ISA hello program (assembled in-WASM).
-  if (String(kind || '').startsWith('retro')) return defaultRetroAsm(kind);
-  const env = String(options?.env || options?.rp2040Mode || '').toLowerCase();
-  if (env.includes('micropython') || env === 'py') {
+  if (language === 'assembly') return defaultRetroAsm(kind);
+  if (language === 'python') {
+    const family = String(def.family?.family || '');
+    if (family.startsWith('pi')) {
+      return `# ${kind} script\nimport RPi.GPIO as GPIO\n\nGPIO.setmode(GPIO.BCM)\nprint("${kind} ready")\n`;
+    }
+    if (family === 'microbit_v2') {
+      return `# micro:bit v2 script\nfrom microbit import *\n\ndisplay.show(Image.HAPPY)\n`;
+    }
     const isCam = String(boardKind || '').includes('cam') || String(boardId || '').includes('cam');
     if (isCam) {
       return `# MicroPython on ESP32-CAM\nimport time\nfrom machine import Pin\n\nprint("ESP32-CAM MicroPython Ready")\nflash = Pin(4, Pin.OUT)  # Flash LED on GPIO 4\n\nwhile True:\n    flash.value(1)\n    time.sleep(0.1)\n    flash.value(0)\n    time.sleep(1)\n`;

@@ -1,4 +1,5 @@
 import { normalizeProjectFiles } from '../../utils/projectCompilerUtils';
+import { getBoardMainFileName } from '../../utils/boardLanguageUtils.js';
 import { COMPONENT_REGISTRY } from './utils/componentRegistry';
 import { allocateComponentId } from './utils/simulatorUtils';
 import * as hardwareUtils from './utils/hardwareUtils';
@@ -678,13 +679,8 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
 }
 */
 export function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  // Retro boards edit assembly, not Arduino sketches.
-  if (String(boardKind || '').startsWith('retro')) return `${boardId}.asm`;
-  const env = String(options.env || options.rp2040Mode || '').toLowerCase();
-  if (env.includes('micropython') || env === 'py' || env.includes('circuitpython')) {
-    return 'main.py';
-  }
-  return `${boardId}.ino`;
+  // Single board→language/extension mapping (boards-registry.ts backed).
+  return getBoardMainFileName(boardKind, boardId, options);
 }
 
 export function toBoardRelativePath(boardId, fullPath) {
