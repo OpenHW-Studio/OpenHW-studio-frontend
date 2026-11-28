@@ -226,16 +226,20 @@ export function useSchematicExport({
         srcH = Math.max(mxY - mnY, 1);
       const maxSymW = Math.max(...Object.values(compSymMap).map((s) => s.w));
       const maxSymH = Math.max(...Object.values(compSymMap).map((s) => s.h));
+      // Reserve half of the widest/tallest symbol at BOTH ends of the canvas
+      // span so no symbol is clipped by the drawing frame.
       const sc = Math.min(
-        availW / Math.max(srcW, maxSymW * 1.15),
-        availH / Math.max(srcH, maxSymH * 1.15),
+        Math.max(100, availW - maxSymW) / srcW,
+        Math.max(100, availH - maxSymH) / srcH,
         1.4,
       );
-
-      // Centre the collected symbols in the drawing frame.
+      const totalW = srcW * sc + maxSymW,
+        totalH = srcH * sc + maxSymH;
+      const ox = FX1 + (availW - totalW) / 2 + maxSymW / 2;
+      const oy = FY1 + (availH - totalH) / 2 + maxSymH / 2;
       const toSch = (cx, cy) => ({
-        x: FX1 + PAD + (maxSymW * sc) / 2 + (cx - mnX) * sc,
-        y: FY1 + PAD + (maxSymH * sc) / 2 + (cy - mnY) * sc,
+        x: ox + (cx - mnX) * sc,
+        y: oy + (cy - mnY) * sc,
       });
 
       // Symbol top-left positions
