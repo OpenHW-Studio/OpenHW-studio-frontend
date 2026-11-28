@@ -51,6 +51,9 @@ export function resolveBoardLoopPrologue(args, ctx) {
   } = ctx;
   let { result } = ctx;
   const kind = normalizeBoardKind(boardComp.type);
+  // Raspberry Pi peripheral boards are Python-first: a main.py (or any .py
+  // file in the board's project folder) is firmware, not a source to compile.
+  const isPyodidePi = kind === "pi3" || kind === "pi4" || kind === "pi5";
   const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
   const defaultBaud = Number(
     BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno,
@@ -138,7 +141,7 @@ export function resolveBoardLoopPrologue(args, ctx) {
             ) || boardEnabledFiles.find(
               (f) => fileExt(f.path) === '.py' && String(f.content || '').trim(),
             );
-            const wantsMicroPython = boardEnv.includes('micropython') || boardEnv === 'py' || (!!mainPyFile && !compileUnit.hasMainFile);
+            const wantsMicroPython = isPyodidePi || boardEnv.includes('micropython') || boardEnv === 'py' || (!!mainPyFile && !compileUnit.hasMainFile);
             if (wantsMicroPython && mainPyFile) {
               const pyScript = String(mainPyFile.content || '');
               boardHexMap[boardComp.id] = `PYSCRIPT:${pyScript}`;

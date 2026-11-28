@@ -1,0 +1,1 @@
+"""Simplified paho-mqtt namespace."""

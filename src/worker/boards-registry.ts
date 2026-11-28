@@ -75,6 +75,56 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     firmware: ['arduino-sketch'],
     limits: NO_LIMITS,
   },
+  // Raspberry Pi 3 B+ / 4 B / 5 — real CPython in Pyodide driving the
+  // deterministic JS peripheral models mirrored under src/engines/pyodide.
+  // These are peripheral-programming models, NOT machine emulation: no Linux
+  // kernel, no ARM CPU, no boot or device-driver execution (see limits).
+  // Matchers are exact family tokens; 'pi3' etc. cannot hit 'pico' boards.
+  {
+    family: 'pi3',
+    match: ['openhw-pi3', 'raspberry-pi-3', 'rpi3'],
+    railVoltage: 3.3,
+    engine: 'pyodide',
+    runner: 'runners/rpi-pyodide-runner.ts',
+    // Proved by tests/e2e/rpi-boards.spec.js: GPIO output readback, I2C
+    // EEPROM block write/read, SPI/PWM peripheral reactions and the
+    // board_info() clock/temperature/PWM-policy differences.
+    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    firmware: ['python-script'],
+    limits: [
+      { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
+      { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
+      { code: 'pi3-pwm-pin-policy', detail: 'BCM2837 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1200 MHz, CPU temp baseline 45 C.' },
+    ],
+  },
+  {
+    family: 'pi4',
+    match: ['openhw-pi4', 'raspberry-pi-4', 'rpi4'],
+    railVoltage: 3.3,
+    engine: 'pyodide',
+    runner: 'runners/rpi-pyodide-runner.ts',
+    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    firmware: ['python-script'],
+    limits: [
+      { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
+      { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
+      { code: 'pi4-pwm-pin-policy', detail: 'BCM2711 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1500 MHz, CPU temp baseline 50 C.' },
+    ],
+  },
+  {
+    family: 'pi5',
+    match: ['openhw-pi5', 'raspberry-pi-5', 'rpi5'],
+    railVoltage: 3.3,
+    engine: 'pyodide',
+    runner: 'runners/rpi-pyodide-runner.ts',
+    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    firmware: ['python-script'],
+    limits: [
+      { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU (BCM2712/RP1), boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
+      { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
+      { code: 'pi5-rp1-pwm-policy', detail: 'RP1 accepts PWM on any valid header GPIO (no 12/13/18/19 restriction). Model clock 2400 MHz, PWM clock 200 MHz, CPU temp baseline 55 C.' },
+    ],
+  },
   {
     family: 'pico_2_eth',
     match: ['pico-2-eth', 'pico2-eth', '5500_evb_pico2'],

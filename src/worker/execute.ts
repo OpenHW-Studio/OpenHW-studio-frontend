@@ -58,6 +58,15 @@ export async function createRunnerForBoard(
         || (componentsDef || []).find((c: any) => String(c?.type || '').toLowerCase() === t)
         || (componentsDef || [])[0];
     const merged = deriveOpts(comp, options);
+    // Raspberry Pi 3 B+ / 4 B / 5: CPython in Pyodide over the deterministic
+    // JS peripheral models. Must precede the generic pico branch (both use
+    // short 'pi' tokens, though the exact families do not overlap).
+    if (t.includes('openhw-pi3') || t.includes('openhw-pi4') || t.includes('openhw-pi5')
+        || t.includes('raspberry-pi-3') || t.includes('raspberry-pi-4') || t.includes('raspberry-pi-5')
+        || t === 'pi3' || t === 'pi4' || t === 'pi5') {
+        const { RpiPyodideRunner } = await import('./runners/rpi-pyodide-runner.ts');
+        return new RpiPyodideRunner(hexData, componentsDef, wiresDef, onStateUpdate, { ...merged, boardType } as any);
+    }
     // Pico (RP2040) + Pico 2 (RP2350) over pico-emu. Matches openhw-pico,
     // openhw-pico-2/-w/2-w/-eth/-2-eth + wokwi aliases. boardType flows into
     // options so the runner picks arch (M0 vs M33/RV32) without extra plumbing.

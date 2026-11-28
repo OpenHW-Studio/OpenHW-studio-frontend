@@ -6,7 +6,11 @@ reason**. The reason is either a **cell** (a spec file + the serial needle
 or telemetry it asserts) or a **file:line** in the engine source. A cell with
 no source is not a claim, it is a guess.
 
-- **Last updated: 2026-11-06** — component lane: Pico/Pico 2 I2C sensor reads
+- **Last updated: 2026-11-28** — Raspberry Pi 3 B+ / 4 B / 5 board family
+  added (Pyodide peripheral model): catalog + runner resolution, Python GPIO
+  LED, I2C EEPROM/SSD1306 and SPI MAX7219 cells green in the browser, per-board
+  clock/temp/PWM differences proved; see the new section below.
+- **Prior 2026-11-06** — component lane: Pico/Pico 2 I2C sensor reads
   (MPU6050, BMP180, DS1307, ADXL345, FT6206 touch) and the HP4067 mux are now
   green on both boards (engine jsmirror read maps + additive SDD attach).
 - **Prior audit 2026-10-22** — every section survey-verified, then
@@ -652,6 +656,42 @@ window hits the canvas, so the model never sees the event and the cell reads
 `GPIO34`/`GPIO35` in wires; a bare `34` endpoint does not land on the injected
 net, so `analogRead` stays at its 2048 default and the component looks dead
 while its model is fine.
+
+## Raspberry Pi 3 B+ / 4 B / 5 — Pyodide peripheral boards (2026-11-28)
+
+Three new board shells run **real CPython (Pyodide 314.0.8) in the worker**,
+importing the mirrored `py/` shims and calling deterministic JS peripheral
+models. Component: `openhw-studio-emulator/src/components/PI{3,4,5}/` (types
+`openhw-pi3`/`openhw-pi4`/`openhw-pi5`, labels `Raspberry Pi … (Pyodide)`,
+`group: Boards`, copied 40-pin ESP32 header map). Family `pi3`/`pi4`/`pi5`
+in `src/worker/boards-registry.ts` → `runners/rpi-pyodide-runner.ts` →
+`pyodide`. All three mirror the engine bytes from the owner's
+`sperte/rpi-pyodide` (`src/engines/pyodide/` + `public/vendor/board-engines/pyodide/`,
+provenance in `src/engines/pyodide/README.md`); the Pyodide runtime itself is
+loaded through `importEngine`, not vendored.
+
+**Honest boundary:** there is **no Linux kernel, no ARM CPU, no boot and no C
+device drivers**. Time is virtual (fast-forward), not wall-clock. The model
+provides peripheral APIs and deterministic device behaviour only — see
+`src/engines/pyodide/FIDELITY.md` and the `no-linux-arm-emulation` /
+`virtual-time-only` limits in the registry.
+
+| Board | GPIO out (LED cell) | I2C (EEPROM + SSD1306 host cells) | SPI (MAX7219 host cell) | Board difference proved | Capabilities claimed | Limits |
+|---|---|---|---|---|---|---|
+| `openhw-pi3` | FULL — `pi1:17 → led1:A/K`, `led.details.state.illuminated=true`, A=3.3 V (`rpi-boards`) | FULL — EEPROM `0x50` block write/read roundtrip in guest (`RPI_EEPROM_OK`) + SSD1306 `0x3C` vram 1024 bytes lit, rx=1082 | FULL — `spidev.xfer` → matrix `[0xFF × 8]` | `board_info()` BCM2837 / 45 C / 1200 MHz / PWM 540 MHz; `GPIO.PWM(17)` rejected (legacy pins only) | `digital-gpio`, `i2c-target`, `spi-target`, `pwm` | no Linux/ARM; virtual time; legacy PWM pin policy |
+| `openhw-pi4` | FULL — same circuit, LED lit | FULL — same cell, OLED vram 1024 lit | FULL — same cell, matrix `[0xFF × 8]` | BCM2711 / 50 C / 1500 MHz / PWM 540 MHz; `GPIO.PWM(17)` rejected | same as pi3 | same as pi3 |
+| `openhw-pi5` | FULL — same circuit, LED lit | FULL — same cell, OLED vram 1024 lit | FULL — same cell, matrix `[0xFF × 8]` | BCM2712 + RP1 / 55 C / 2400 MHz / PWM 200 MHz; `GPIO.PWM(17)` **accepted** (RP1 PWM on any header GPIO) | same as pi3 | no Linux/ARM; virtual time; RP1 PWM policy |
+
+Evidence: `tests/e2e/rpi-boards.spec.js` — one catalog/registry cell (all
+three types present with the Pyodide runner; `openhw-esp32` →
+`runners/esp32-runner.ts` and `openhw-esp32sc` →
+`runners/esp32sc-runner.ts` unchanged) plus one **unskipped** cell per board.
+Each board cell asserts the guest's EEPROM roundtrip, the host LED telemetry,
+the host SSD1306 framebuffer and the host MAX7219 matrix — observations made
+outside the Python guest. Last clean run: **4 passed** (2.0 min, `--workers=1`).
+Only the capabilities proven by these cells are claimed; ADC/UART models
+are documented upstream but have no cell here; WiFi/LAN, camera, real OS threads and
+hardware IRQs are **not** claimed on these boards.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09; re-swept 2026-10-20)
 

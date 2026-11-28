@@ -210,6 +210,12 @@ export default defineConfig(({ mode }) => {
         // aliasing (exact strings don't match with ?url); the replacement
         // `$1` re-appends the query (@rollup/plugin-alias uses
         // String.replace semantics, so captures survive).
+        // Pyodide board engine: single resolution point for the committed
+        // peripheral model (bridge/peripherals/analog). The Pyodide runtime
+        // itself is a CDN ESM module resolved in importEngine(); the Python
+        // shims are fetched from the public vendor mirror at boot.
+        { find: /^pyodide\/src\/(.*)$/, replacement: path.resolve(__dirname, 'src/engines/pyodide/src') + '/$1' },
+        { find: /^pyodide$/, replacement: path.resolve(__dirname, 'src/engines/pyodide/src/runtime.js') },
         { find: 'pico-emu/picoemu.wasm.js', replacement: path.join(picoEngineDir, 'picoemu.wasm.js') },
         { find: /^pico-emu\/picoemu\.wasm\.wasm(\?.*)?$/, replacement: path.join(picoEngineDir, 'picoemu.wasm.wasm') + '$1' },
         // Board-engine SAB proxy: package exports map only exposes ".",

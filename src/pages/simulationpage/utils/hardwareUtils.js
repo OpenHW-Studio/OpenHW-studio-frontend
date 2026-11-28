@@ -2,6 +2,11 @@ import { BOARD_FQBN, BOARD_DISPLAY_NAME } from '../constants/simulatorConstants'
 
 export function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  // Raspberry Pi peripheral boards (CPython/Pyodide) before other 'pi'
+  // tokens; 'openhw-pi3/4/5' and 'raspberry-pi-N' only.
+  if (s.includes('openhw-pi3') || s.includes('raspberry-pi-3') || s === 'pi3') return 'pi3';
+  if (s.includes('openhw-pi4') || s.includes('raspberry-pi-4') || s === 'pi4') return 'pi4';
+  if (s.includes('openhw-pi5') || s.includes('raspberry-pi-5') || s === 'pi5') return 'pi5';
   if (s.includes('nano')) return 'arduino_nano';
   if (s.includes('mega') || s.includes('2560')) return 'arduino_mega';
   // W5500-EVB-Pico carriers before bare pico (type contains 'pico' too).
@@ -145,7 +150,7 @@ export function resolveComponentAttrString(attrs, key, fallback = '') {
 
 export function isProgrammableBoardType(type) {
   const s = String(type || '').toLowerCase();
-  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(s);
+  return /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(s);
 }
 
 export function isBreadboardType(type) {

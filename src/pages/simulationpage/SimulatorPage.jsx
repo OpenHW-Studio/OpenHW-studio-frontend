@@ -1103,7 +1103,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(c.type))
       .map((c) => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId))
@@ -1134,7 +1134,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialBoardKinds = useMemo(() => {
     const kinds = {};
     components
-      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type))
+      .filter((c) => /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(c.type))
       .forEach((c) => {
         kinds[c.id] = normalizeBoardKind(c.type);
       });
@@ -1184,7 +1184,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const boardComponents = useMemo(
     () =>
       components.filter((c) =>
-        /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(c.type),
+        /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(c.type),
       ),
     [components],
   );
@@ -4370,13 +4370,15 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             // not from `code` alone — without the file, firmware is empty.
             // Order: file+buffer first, active second — never setCode alone.
             const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
-              /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(String(c?.type || "")),
+              /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(String(c?.type || "")),
             );
             const boardId = boards[0]?.id || "uno1";
             const boardType = String(boards[0]?.type || "");
             // Retro boards edit assembly, not Arduino sketches.
             const isRetroBoard = /(8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro)/i.test(boardType);
-            const mainName = isRetroBoard ? `${boardId}.asm` : `${boardId}.ino`;
+            // Raspberry Pi (Pyodide) boards take Python source, not .ino.
+            const isPyodidePiBoard = /(openhw-pi3|openhw-pi4|openhw-pi5)/i.test(boardType);
+            const mainName = isRetroBoard ? `${boardId}.asm` : (isPyodidePiBoard ? 'main.py' : `${boardId}.ino`);
             const inoPath = `project/${boardId}/${mainName}`;
             try {
               const store = useEditorStore.getState();
@@ -4390,7 +4392,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                   path: inoPath,
                   name: mainName,
                   kind: "code",
-                  language: isRetroBoard ? "asm" : "arduino",
+                  language: isRetroBoard ? "asm" : (isPyodidePiBoard ? "python" : "arduino"),
                   boardId,
                   dirty: true,
                 };
@@ -4656,7 +4658,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         let compileProbe = null;
         try {
           const boards = (componentsRef.current || []).filter((c) =>
-            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52)/i.test(String(c?.type || "")),
+            /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(String(c?.type || "")),
           );
           compileProbe = boards.map((b) => {
             let mainLen = -1;
