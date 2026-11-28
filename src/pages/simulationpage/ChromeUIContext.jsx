@@ -92,25 +92,20 @@ export function ChromeUIProvider({ children }) {
   const [isExporting, setIsExporting] = useState(false);
 
   // Theme (chrome-level setting, not hot)
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem('theme') || document.documentElement.getAttribute('data-theme') || 'light';
-    } catch (e) {
-      return 'light';
-    }
-  });
+  const [theme, setTheme] = useState(
+    () => document.documentElement.dataset.theme || 'light'
+  );
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const newTheme = prev === 'dark' ? 'light' : 'dark';
-      try {
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.setAttribute('data-theme', newTheme);
-      } catch (e) {
-        console.error('Failed to save theme', e);
-      }
-      return newTheme;
-    });
+    const current = document.documentElement.dataset.theme || 'light';
+    const newTheme = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = newTheme;
+    try {
+      localStorage.setItem('theme', newTheme);
+    } catch (e) {
+      console.error('Failed to save theme', e);
+    }
+    setTheme(newTheme);
   }, []);
 
   const value = {

@@ -91,12 +91,12 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || document.documentElement.getAttribute("data-theme") || "light",
+    () => document.documentElement.dataset.theme || "light",
   );
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+      setTheme(document.documentElement.dataset.theme || "light");
     });
     observer.observe(document.documentElement, {
       attributes: true,
@@ -124,10 +124,11 @@ export default function LandingPage() {
     }));
   }, []);
   const toggleTheme = () => {
-    const newTheme = theme === "dark" ? "light" : "dark";
+    const current = document.documentElement.dataset.theme || "light";
+    const newTheme = current === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = newTheme;
+    localStorage.setItem("theme", newTheme); // persistence only
     setTheme(newTheme);
-    document.documentElement.setAttribute("data-theme", newTheme);
-    localStorage.setItem("theme", newTheme); // Save choice
   };
 
   const handleNavigate = (path) => {
@@ -144,24 +145,21 @@ export default function LandingPage() {
     // Landing page always starts dark. Set data-theme="dark" on <html> so the
     // CSS selector `html[data-theme="dark"] .landing` applies dark vars.
     // We only do this if the user hasn't explicitly chosen light via the toggle.
-    const prevTheme = document.documentElement.getAttribute("data-theme");
     const prevBg = document.body.style.backgroundColor;
     const savedTheme = localStorage.getItem("theme");
 
+    // Landing starts dark only when the user has not explicitly chosen light.
     if (savedTheme !== "light") {
-      document.documentElement.setAttribute("data-theme", "dark");
+      document.documentElement.dataset.theme = "dark";
       setTheme("dark");
       document.body.style.backgroundColor = "#070b14";
     }
 
     return () => {
-      // Restore to light (site default) when navigating away from landing
-      const currentSavedTheme = localStorage.getItem("theme");
-      if (currentSavedTheme) {
-        document.documentElement.setAttribute("data-theme", currentSavedTheme);
-      } else {
-        document.documentElement.setAttribute("data-theme", "light");
-      }
+      // Restore the authoritative theme (persisted choice, else site default).
+      const currentTheme = localStorage.getItem("theme");
+      document.documentElement.dataset.theme =
+        currentTheme === "dark" || currentTheme === "light" ? currentTheme : "light";
       document.body.style.backgroundColor = prevBg;
     };
   }, []);

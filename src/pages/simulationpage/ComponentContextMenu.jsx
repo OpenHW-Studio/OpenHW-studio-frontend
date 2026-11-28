@@ -1,17 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Bug } from 'lucide-react';
+import { normalizeBoardKind } from './utils/hardwareUtils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-function normalizeBoardKind(source) {
-  if (!source) return '';
-  const s = String(source).toLowerCase();
-  if (s.includes('arduino-uno') || s.includes('arduino_uno')) return 'arduino_uno';
-  if (s.includes('arduino-mega') || s.includes('arduino_mega')) return 'arduino_mega';
-  if (s.includes('arduino-nano') || s.includes('arduino_nano')) return 'arduino_nano';
-  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
-  return s;
-}
-
 function resolveComponentAttrString(attrs, key, fallback = '') {
   if (!attrs) return fallback;
   const val = attrs[key];

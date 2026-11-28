@@ -57,10 +57,28 @@
   --radius-lg: 16px;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --glow: 0 0 20px rgba(2, 132, 199, 0.15);
+  /* Canvas / chrome surfaces that must follow the theme without a React
+     re-render (wire glow, board artwork, menu overlays). */
+  --wire-glow: none;
+  --overlay-1: rgba(15, 23, 42, 0.05);
+  --overlay-2: rgba(15, 23, 42, 0.10);
+  --overlay-3: rgba(15, 23, 42, 0.20);
+  --canvas-handle: #ffffff;
+  --canvas-handle-muted: rgba(15, 23, 42, 0.35);
+  --board-body: color-mix(in srgb, var(--canvas-bg) 70%, #1e293b);
+  --board-stroke: color-mix(in srgb, var(--canvas-bg) 45%, var(--text3));
+  --board-ink: var(--text);
+  --board-pin: var(--text2);
 }
 
 [data-theme="dark"] {
   /* Dark Mode Overrides */
+  --wire-glow: drop-shadow(0 0 2px currentColor) drop-shadow(0 0 6px currentColor);
+  --overlay-1: rgba(255, 255, 255, 0.05);
+  --overlay-2: rgba(255, 255, 255, 0.10);
+  --overlay-3: rgba(255, 255, 255, 0.20);
+  --canvas-handle: #0f1c2e;
+  --canvas-handle-muted: rgba(232, 237, 245, 0.35);
   --bg: #070b14;
   --bg2: #0d1525;
   --bg3: #111827;

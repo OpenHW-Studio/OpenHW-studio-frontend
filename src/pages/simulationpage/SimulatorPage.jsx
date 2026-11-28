@@ -439,14 +439,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   // Incremented whenever backend components are injected/updated so catalog consumers re-render
   const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
 
-  // Theme Logic — defaults to light mode
+  // Theme Logic — dataset.theme on <html> is the single source of truth;
+  // localStorage is only the persistence layer that seeds it in index.html.
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || document.documentElement.getAttribute("data-theme") || "light",
+    () => document.documentElement.dataset.theme || "light",
   );
-  // develop: follow external (ThemeToggleSlider) data-theme changes.
+  // Follow external toggles (ThemeToggleSlider / landing page) without
+  // re-reading stale localStorage values.
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+      setTheme(document.documentElement.dataset.theme || "light");
     });
     observer.observe(document.documentElement, {
       attributes: true,
@@ -455,14 +457,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     return () => observer.disconnect();
   }, []);
 
-  // Stable identity: passed to memoized TopToolbox.
+  // Stable identity: passed to memoized TopToolbox. Side effects stay OUT of
+  // the setState updater — StrictMode invokes updaters twice in development.
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const newTheme = prev === "dark" ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", newTheme);
-      localStorage.setItem("theme", newTheme); // Save choice
-      return newTheme;
-    });
+    const current = document.documentElement.dataset.theme || "light";
+    const newTheme = current === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = newTheme;
+    try {
+      localStorage.setItem("theme", newTheme);
+    } catch { /* storage unavailable — attribute still wins */ }
+    setTheme(newTheme);
   }, []);
 
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
@@ -766,6 +770,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [selected]);
   // quickAdd state lives in QuickAddPortal — opened via custom DOM event
   const addComponentAtRef = useRef(null);
+  // PalettePanel is memoized: give it a permanent handler identity and let
+  // the ref carry the latest placement closure (which changes with state).
+  const addComponentAtCenterRef = useRef(null);
+  const handlePaletteAdd = useCallback((item) => addComponentAtCenterRef.current?.(item), []);
   const pageRef = useRef(null);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
@@ -2431,7 +2439,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   useEffect(() => {
     if (!components) return;
     const currentBoardTypes = components
-      .filter((c) => /arduino|attiny|rp2040|pico|esp32|stm32/i.test(c.type))
+      .filter((c) => /arduino|attiny|rp2040|pico|esp32|stm32|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5/i.test(c.type))
       .map((c) => c.type);
 
     const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
@@ -3083,7 +3091,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setComponents,
     setWires,
     setSelected,
+    emulatorReady,
+    ensureEmulatorRegistry,
   });
+  addComponentAtCenterRef.current = addComponentAtCenter;
   // ── Enhanced Zooming (Pinch Only) ──────────────────────────────────────────
   // ── Canvas touch gestures (pinch zoom) ────────────────────────────────
   // Lives in hooks/useCanvasTouchGestures.js (identical clamps + flush).
@@ -4370,7 +4381,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             // not from `code` alone — without the file, firmware is empty.
             // Order: file+buffer first, active second — never setCode alone.
             const boards = (Array.isArray(comps) ? comps : []).filter((c) =>
-              /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(String(c?.type || "")),
+              /(arduino|rp2040|pico|esp32|stm32|8086|8088|8085|8051|mcs-51|6502|z80|rv32|risc|retro|microbit|nrf52|openhw-pi3|openhw-pi4|openhw-pi5)/i.test(String(c?.type || "")),
             );
             const boardId = boards[0]?.id || "uno1";
             const boardType = String(boards[0]?.type || "");
@@ -5269,7 +5280,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 setIsPaletteHovered={setIsPaletteHovered}
                 theme={theme}
                 liveEditingDisabled={liveEditingDisabled}
-                addComponentAtCenter={addComponentAtCenter}
+                addComponentAtCenter={handlePaletteAdd}
+                emulatorReady={emulatorReady}
                 onPaletteDragStart={onPaletteDragStart}
                 handleUploadZip={handleUploadZip}
                 openComponentEditor={openComponentEditor}
@@ -5420,7 +5432,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 getPinExitPoint={getPinExitPoint}
                 wirepointsEnabled={wirepointsEnabled}
                 respectExitSide={respectExitSide}
-                theme={theme}
                 setSelected={setSelected}
                 canvasRef={canvasRef}
                 setWireClickPos={setWireClickPos}
@@ -5666,6 +5677,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               <QuickAddPortal
                 catalog={LOCAL_CATALOG}
                 onAddComponentRef={addComponentAtRef}
+                emulatorReady={emulatorReady}
                 isPaletteItemLocked={isPaletteItemLocked}
                 showLockToast={showLockToast}
               />

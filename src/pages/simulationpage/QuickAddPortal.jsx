@@ -19,11 +19,12 @@ import { isComponentHidden, getComponentWarning } from './utils/componentVisibil
  * Theme: all colours use CSS custom properties so the panel automatically
  * follows light / dark mode without needing a theme prop.
  */
-const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddComponentRef, isPaletteItemLocked, showLockToast }) {
+const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddComponentRef, emulatorReady = true, isPaletteItemLocked, showLockToast }) {
   const [quickAdd, setQuickAdd] = useState(null); // { screenX, screenY, canvasX, canvasY }
   const [search, setSearch]     = useState('');
   const [selIdx, setSelIdx]     = useState(0);
   const inputRef                = useRef(null);
+  const pendingAddRef           = useRef(null);
 
   // ── Read & watch the document theme (light / dark) ──────────────────────
   const [isLight, setIsLight] = useState(
@@ -41,6 +42,14 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
   const panelBg  = isLight ? 'rgba(248, 250, 252, 0.82)' : 'rgba(13, 21, 37, 0.80)';
   const inputBg  = isLight ? 'rgba(255, 255, 255, 0.60)' : 'rgba(0, 0, 0, 0.25)';
   const divider  = isLight ? '1px solid rgba(203,213,225,0.7)' : '1px solid var(--border)';
+
+  // ── Registry readiness: hold a quick-add until the emulator is warm ─────
+  useEffect(() => {
+    if (!emulatorReady || !pendingAddRef.current) return;
+    const { item, x, y } = pendingAddRef.current;
+    pendingAddRef.current = null;
+    onAddComponentRef.current?.(item, x, y);
+  }, [emulatorReady, onAddComponentRef]);
 
   // ── Listen for open events from the canvas ──────────────────────────────
   useEffect(() => {
@@ -104,7 +113,11 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
       setQuickAdd(null);
       return;
     }
-    onAddComponentRef.current?.(item, quickAdd.canvasX, quickAdd.canvasY);
+    if (!emulatorReady) {
+      pendingAddRef.current = { item, x: quickAdd.canvasX, y: quickAdd.canvasY };
+    } else {
+      onAddComponentRef.current?.(item, quickAdd.canvasX, quickAdd.canvasY);
+    }
     setQuickAdd(null);
   };
 

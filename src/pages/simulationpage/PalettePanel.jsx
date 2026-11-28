@@ -8,6 +8,7 @@ const PalettePanel = memo(({
   theme,
   liveEditingDisabled,
   addComponentAtCenter,
+  emulatorReady = true,
   onPaletteDragStart,
   handleUploadZip,
   openComponentEditor,
@@ -296,6 +297,7 @@ const PalettePanel = memo(({
       <aside
         className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0"
         data-tour-id="palette-panel"
+        aria-busy={!emulatorReady}
         style={{
           width: 340,
           position: 'fixed',
@@ -351,7 +353,9 @@ const PalettePanel = memo(({
         }}>
             {/* Sticky top section */}
             <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
-              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
+              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">
+                Components{!emulatorReady && <span className="ml-2 normal-case tracking-normal">· loading engine…</span>}
+              </div>
 
               {/* Search + Filter + View Toggle */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>

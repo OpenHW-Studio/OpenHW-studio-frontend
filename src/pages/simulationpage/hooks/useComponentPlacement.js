@@ -26,6 +26,32 @@ function resolveRetroWiringTarget(target, boardComp, boardPins) {
   const match = boardPins.find((p) => p.id.toLowerCase() === pinId.toLowerCase());
   return `${boardComp.id}:${match?.id || pinId}`;
 }
+
+// Fallback wiring must target the board the plan actually wired to, not just
+// whichever programmable board happens to be first in the component list.
+function findTargetBoard(candidates, plan) {
+  const pool = Array.isArray(candidates) ? candidates : [];
+  const planBoardId =
+    plan?.board_id || plan?.boardId || plan?.target_board || plan?.target_board_id;
+  if (planBoardId) {
+    const direct = pool.find((c) => c.id === planBoardId);
+    if (direct) return direct;
+  }
+  const wiredIds = new Set(
+    (Array.isArray(plan?.added_wires) ? plan.added_wires : []).flatMap((w) => [
+      String(w?.from || '').split(':')[0],
+      String(w?.to || '').split(':')[0],
+    ]),
+  );
+  const wired = pool.find(
+    (c) => wiredIds.has(c.id) && isProgrammableBoardType(c.type),
+  );
+  return (
+    wired ||
+    pool.find((c) => isProgrammableBoardType(c.type)) ||
+    null
+  );
+}
 import { COMPONENT_REGISTRY, LOCAL_PIN_DEFS } from "../utils/componentRegistry";
 
 /**
@@ -71,11 +97,20 @@ export function useComponentPlacement({
   setComponents,
   setWires,
   setSelected,
+  emulatorReady,
+  ensureEmulatorRegistry,
 }) {
   // ── Component addition with autonomous WASM setup ───────────────────────────
   const addComponentInternal = useCallback(
     async (item, x, y) => {
       if (liveEditingDisabled) return;
+      // The registry warms up asynchronously on mount. Defer the first add
+      // instead of making the palette click pay for module loading.
+      if (!emulatorReady && typeof ensureEmulatorRegistry === 'function') {
+        try {
+          await ensureEmulatorRegistry();
+        } catch { /* local catalog still works — continue */ }
+      }
       saveHistory();
 
       const warningMsg = getComponentWarning(item.type);
@@ -192,7 +227,7 @@ export function useComponentPlacement({
                 w => (w.from || '').startsWith(compId + ':') || (w.to || '').startsWith(compId + ':')
               );
               if (!hasAnyWire) {
-                const boardComp = result.components.find(c => isProgrammableBoardType(c.type));
+                const boardComp = findTargetBoard(result.components, plan);
                 if (boardComp) {
                   const newComponents = [...result.components];
                   const newWires = [...result.wires];
@@ -315,9 +350,7 @@ export function useComponentPlacement({
                 }
               }
               // Fallback: write libraries to library.txt for runtime resolution
-              const boardComp = result.components.find((c) =>
-                isProgrammableBoardType(c.type),
-              );
+              const boardComp = findTargetBoard(result.components, plan);
               if (boardComp) {
                 const libPath = `project/${boardComp.id}/library.txt`;
                 setProjectFiles((prev) => {
@@ -395,7 +428,7 @@ export function useComponentPlacement({
             }
           } else {
             // WASM returned no plan — fallback: place component and wire manually
-            const boardComp = components.find(c => isProgrammableBoardType(c.type));
+            const boardComp = findTargetBoard(components, null);
             let fallbackComps = [newCompBase];
             let fallbackWires = [...wires];
 
@@ -459,6 +492,8 @@ export function useComponentPlacement({
     },
     [
       liveEditingDisabled,
+      emulatorReady,
+      ensureEmulatorRegistry,
       saveHistory,
       components,
       wires,
@@ -466,6 +501,20 @@ export function useComponentPlacement({
       autoWiringEnabled,
       autoCodingEnabled,
       generateAutonomousSetup,
+      PIN_DEFS,
+      autoBreadboardEnabled,
+      appendConsoleEntry,
+      setIsConsoleOpen,
+      libInstalled,
+      handleInstallLibrary,
+      setProjectFiles,
+      currentCodeRef,
+      activeCodeFileId,
+      setCode,
+      setCodeTab,
+      setIsPanelOpen,
+      setComponents,
+      setWires,
     ],
   );
 
