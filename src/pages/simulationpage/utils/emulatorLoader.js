@@ -107,6 +107,10 @@ export function buildRegistryInto(EmulatorComponents, rawSources, slots, groupMa
   const { COMPONENT_REGISTRY, LOCAL_PIN_DEFS, BUILTIN_COMPONENT_TYPES, LOCAL_CATALOG } = slots;
   const registry = COMPONENT_REGISTRY;
   const pinDefs = LOCAL_PIN_DEFS;
+  // Schematic View symbols are exported by the emulator catalog and live with
+  // the component code (src/components/<id>/schematic.ts). Attach them to the
+  // live registry so the schematic generator reads the same source of truth.
+  const schematics = EmulatorComponents.SCHEMATICS || {};
 
   Object.entries(EmulatorComponents).forEach(([key, module]) => {
     if (key === 'BaseComponent') return;
@@ -114,13 +118,15 @@ export function buildRegistryInto(EmulatorComponents, rawSources, slots, groupMa
     if (module && module.manifest) {
       const compId = module.manifest.type || module.manifest.id || key;
       const raw = rawSources[compId] || rawSources[key] || rawSources[compId.replace('openhw-', 'wokwi-')];
+      const schematic = schematics[compId] || module.schematic || null;
       registry[compId] = raw
         ? {
           ...module,
           ...raw,
           ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+          ...(schematic ? { schematic } : {}),
         }
-        : module;
+        : (schematic ? { ...module, schematic } : module);
 
       if (module.manifest.pins) {
         pinDefs[compId] = module.manifest.pins;
@@ -135,8 +141,9 @@ export function buildRegistryInto(EmulatorComponents, rawSources, slots, groupMa
               ...raw,
               manifest: { ...module.manifest, type: legacyId, hiddenAlias: true },
               ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+              ...(schematic ? { schematic } : {}),
             }
-            : { ...module, manifest: { ...module.manifest, type: legacyId, hiddenAlias: true } };
+            : { ...module, manifest: { ...module.manifest, type: legacyId, hiddenAlias: true }, ...(schematic ? { schematic } : {}) };
           if (module.manifest.pins) {
             pinDefs[legacyId] = module.manifest.pins;
           }
@@ -150,8 +157,9 @@ export function buildRegistryInto(EmulatorComponents, rawSources, slots, groupMa
               ...raw,
               manifest: { ...module.manifest, type: modernId, hiddenAlias: true },
               ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+              ...(schematic ? { schematic } : {}),
             }
-            : { ...module, manifest: { ...module.manifest, type: modernId, hiddenAlias: true } };
+            : { ...module, manifest: { ...module.manifest, type: modernId, hiddenAlias: true }, ...(schematic ? { schematic } : {}) };
           if (module.manifest.pins) {
             pinDefs[modernId] = module.manifest.pins;
           }

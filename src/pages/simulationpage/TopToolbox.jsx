@@ -431,6 +431,21 @@ function TopToolboxInternal(props) {
   const [showComponentList, setShowComponentList] = useState(false);
   const menuRef = useRef(null);
 
+  // The generator hands us an SVG data URL; decode it so the Schematic View
+  // can show the real drawing (pin labels are DOM nodes, inspectable/tests).
+  const schematicMarkup = React.useMemo(() => {
+    const prefix = "data:image/svg+xml;base64,";
+    if (!schematicDataUrl?.startsWith(prefix)) return "";
+    try {
+      const bin = atob(schematicDataUrl.slice(prefix.length));
+      return new TextDecoder().decode(
+        Uint8Array.from(bin, (ch) => ch.charCodeAt(0)),
+      );
+    } catch {
+      return "";
+    }
+  }, [schematicDataUrl]);
+
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (
@@ -1561,40 +1576,93 @@ function TopToolboxInternal(props) {
         title="Schematic View"
         show={showSchematic}
         onClose={() => setShowSchematic(false)}
-        width={420}
+        width={620}
       >
         <div
+          data-testid="schematic-view"
           style={{
-            textAlign: "center",
-            padding: "40px 20px",
-            color: "var(--text2)",
-            fontSize: "16px",
-            fontWeight: "500",
+            padding: "12px 14px 16px",
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            gap: "12px",
+            gap: "10px",
           }}
         >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ color: "var(--accent)" }}
-          >
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <div>Coming Soon...</div>
-          <div style={{ fontSize: "13px", color: "var(--text3)" }}>
-            We are working hard to bring you the best schematic generation experience.
-          </div>
+          <style>{`.schematic-preview svg{width:100%;height:auto;display:block}`}</style>
+          {schematicLoading ? (
+            <div style={{ padding: "32px", textAlign: "center", color: "var(--text3)" }}>
+              Generating Schematic...
+            </div>
+          ) : schematicMarkup ? (
+            <>
+              <div
+                className="schematic-preview"
+                data-testid="schematic-svg"
+                style={{
+                  maxHeight: "58vh",
+                  overflow: "auto",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  background: "white",
+                }}
+                dangerouslySetInnerHTML={{ __html: schematicMarkup }}
+              />
+              <div style={{ fontSize: "11px", color: "var(--text3)" }}>
+                Wiring view from component manifests — not a SPICE netlist.
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  data-testid="schematic-download-png"
+                  onClick={downloadSchematicPng}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "var(--bg3, rgba(0,0,0,0.15))",
+                    color: "var(--text)",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Download PNG
+                </button>
+                <button
+                  data-testid="schematic-download-pdf"
+                  onClick={downloadSchematicPdf}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "var(--accent)",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Download PDF
+                </button>
+                <button
+                  data-testid="schematic-regenerate"
+                  onClick={() => generateSchematic()}
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: "32px", textAlign: "center", color: "var(--text3)" }}>
+              Failed to load schematic. Add components and try again.
+            </div>
+          )}
         </div>
       </FloatingPanel>
 
