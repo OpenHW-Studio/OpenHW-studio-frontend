@@ -69,6 +69,17 @@ const MenuDropdown = ({
             >
               <button
                 className="canvas-menu-item"
+                // Stable tour hooks: the guided tour must be able to point at
+                // real menu entries instead of guessing pixel coordinates.
+                data-tour-id={
+                  item.label === "Schematic View"
+                    ? "menu-item-schematic-view"
+                    : item.label === "Assist"
+                      ? "menu-item-assist"
+                      : String(item.label).startsWith("Auto-Wiring")
+                        ? "menu-item-autowiring"
+                        : undefined
+                }
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   if (!item.submenu) {
@@ -447,6 +458,14 @@ function TopToolboxInternal(props) {
     }
   }, [schematicDataUrl]);
 
+  // The guided tour opens menus through this event so its spotlight can land
+  // on a visible Tool/Help menu entry. No pixel offsets or DOM spelunking.
+  useEffect(() => {
+    const onSetActiveMenu = (event) => setActiveMenu(event.detail ?? null);
+    window.addEventListener("openhw:set-active-menu", onSetActiveMenu);
+    return () => window.removeEventListener("openhw:set-active-menu", onSetActiveMenu);
+  }, []);
+
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (
@@ -706,7 +725,8 @@ function TopToolboxInternal(props) {
       </div>
 
       <div className="flex items-center gap-2 flex-1 flex-wrap" style={{ minWidth: 0, overflowX: 'auto' }}>
-        {/* RUN button */}
+        {/* RUN / COMPILE button — wrapped so the tour has a stable target */}
+        <div data-tour-id="toolbar-run" style={{ display: "inline-flex" }}>
         <Btn
           color={
             isRunning || isCompiling || isBooting
@@ -792,6 +812,7 @@ function TopToolboxInternal(props) {
             </>
           )}
         </Btn>
+        </div>
 
         {/* STOP button — SVG icon only */}
         <Btn

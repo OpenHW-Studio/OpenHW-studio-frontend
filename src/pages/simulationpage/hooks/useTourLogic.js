@@ -237,6 +237,16 @@ export const useTourLogic = ({
       setIsPanelOpen?.(false);
     } else if (action === 'close-palette') {
       setIsPaletteHovered?.(false);
+    } else if (action === 'open-palette') {
+      // Board steps need the palette expanded so their items have a real,
+      // visible bounding box (no synthetic coordinates).
+      setIsPaletteHovered?.(true);
+    } else if (action === 'open-tool-menu') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: 'tool' }));
+    } else if (action === 'open-help-menu') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: 'help' }));
+    } else if (action === 'close-menus') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: null }));
     }
   }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode, setIsPaletteHovered, openCodeFile, ensureDemoLibraryFile, DEMO_LIBRARY_FILE_ID]);
 

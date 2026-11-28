@@ -5308,7 +5308,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
                 }
                 buildIndexSourceFromRegistry={buildIndexSourceFromRegistry}
                 forceExpand={
-                  tourActiveStep === "palette" || tourActiveStep === "drag-demo"
+                  tourActiveStep === "palette" ||
+                  tourActiveStep === "components-palette" ||
+                  tourActiveStep === "drag-demo" ||
+                  (tourActiveStep || "").startsWith("boards-")
                 }
                 writeEditCopyPayload={writeEditCopyPayload}
               />

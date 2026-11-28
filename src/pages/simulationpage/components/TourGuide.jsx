@@ -67,6 +67,18 @@ const STEPS = [
     letMeTryHint: 'Try right-clicking a component to see its context menu, then click Done →',
   },
   {
+    id: 'autowiring-controls',
+    // Help → Assist is the gateway to the Auto-Wiring / Breadboard / Auto-Coding
+    // toggles. The tour opens the Help menu so this target is really visible.
+    target: '[data-tour-id="menu-item-assist"]',
+    fallbackTarget: '[data-tour-id="menu-help"]',
+    title: 'Autowiring Controls',
+    content: 'The wiring helpers live under Help → Assist: toggle Auto-Wiring, Breadboard and Auto-Coding there. Auto-Wiring is what the previous step demonstrated.',
+    position: 'bottom',
+    action: 'open-help-menu',
+    spotlightPadding: 6,
+  },
+  {
     id: 'components-palette',
     // The palette already carries a stable data-tour-id in PalettePanel
     target: '[data-tour-id="palette-panel"]',
@@ -76,12 +88,64 @@ const STEPS = [
     spotlightPadding: 0,   // full sidebar, no extra padding needed
   },
   {
+    id: 'boards-pi3',
+    target: '[data-tour-type="openhw-pi3"]',
+    title: 'New Board: Raspberry Pi 3',
+    content: 'The palette now includes a Raspberry Pi 3. Drag it onto the canvas to start a Pi project — or click it to add it at the centre.',
+    position: 'right',
+    action: 'open-palette',
+    revealTarget: true,
+    spotlightPadding: 4,
+  },
+  {
+    id: 'boards-pi4',
+    target: '[data-tour-type="openhw-pi4"]',
+    title: 'New Board: Raspberry Pi 4',
+    content: 'Raspberry Pi 4 is available in the same Boards group. Each board carries its own pin map and compile target.',
+    position: 'right',
+    action: 'open-palette',
+    revealTarget: true,
+    spotlightPadding: 4,
+  },
+  {
+    id: 'boards-pi5',
+    target: '[data-tour-type="openhw-pi5"]',
+    title: 'New Board: Raspberry Pi 5',
+    content: 'Raspberry Pi 5 is the newest Pi in the palette. The scrollable palette keeps every board reachable — we scroll the highlighted one into view.',
+    position: 'right',
+    action: 'open-palette',
+    revealTarget: true,
+    spotlightPadding: 4,
+  },
+  {
+    id: 'boards-esp32sc',
+    target: '[data-tour-type="openhw-esp32sc"]',
+    title: 'New Board: ESP32-S3 (esp32sc)',
+    content: 'The esp32sc board runs the ESP32 simulation core. Pick it from Boards just like any other component — no manual wiring offsets involved.',
+    position: 'right',
+    action: 'open-palette',
+    revealTarget: true,
+    spotlightPadding: 4,
+  },
+  {
     id: 'projects',
     // TopToolbox MenuButton exposes data-tour-id="menu-file" on the File menu
     target: '[data-tour-id="menu-file"]',
     title: 'Save Your Work',
     content: 'Use the File menu to save your project, open existing ones, import files, or make a local backup copy.',
     position: 'bottom',
+    spotlightPadding: 6,
+  },
+  {
+    id: 'file-tabs',
+    // The Code tab reveals the open-file tab strip above the editor, where the
+    // main file's extension (.ino / .py / .asm) selects the compile runtime.
+    target: '[data-tour-step="ide"] .panel-scroll.hide-scrollbar',
+    fallbackTarget: '[data-tour-id="tab-code"]',
+    title: 'File Tabs & Extensions',
+    content: 'Open files appear as tabs above the editor. The main file extension (.ino, .py or .asm) tells the simulator which compiler and runtime to use.',
+    position: 'bottom',
+    action: 'switch-code',
     spotlightPadding: 6,
   },
   {
@@ -117,6 +181,34 @@ const STEPS = [
     action: 'switch-library',  // ensures Code tab is active so the Libraries button is visible
     spotlightPadding: 6,
     letMeTryHint: 'Click the Libraries button to continue →',
+  },
+  {
+    id: 'schematic',
+    // Tool → Schematic View renders the circuit as an SVG wiring diagram.
+    // The tour opens the Tool menu so the highlighted item really exists.
+    target: '[data-tour-id="menu-item-schematic-view"]',
+    fallbackTarget: '[data-tour-id="menu-tool"]',
+    title: 'Tool → Schematic View',
+    content: 'Open the Tool menu and choose Schematic View to see a generated wiring diagram of your circuit, with downloadable PNG and PDF.',
+    position: 'right',
+    action: 'open-tool-menu',
+    spotlightPadding: 6,
+  },
+  {
+    id: 'help',
+    target: '[data-tour-id="menu-help"]',
+    title: 'Help Menu',
+    content: 'Everything you need is under Help: restart this tour, open the docs, check component status, report bugs and find keyboard shortcuts.',
+    position: 'bottom',
+    spotlightPadding: 6,
+  },
+  {
+    id: 'run',
+    target: '[data-tour-id="toolbar-run"]',
+    title: 'Run & Compile',
+    content: 'Hit Run to compile your firmware and boot the simulated circuit. Stop ends the session; Pause/Resume appear while it is running.',
+    position: 'bottom',
+    spotlightPadding: 6,
   },
   {
     id: 'serial',
@@ -228,11 +320,20 @@ const GHOST_SELECTORS = {
     return '[id*="pin-dot-demo-led-tour-K"], [data-tour-id="tour-canvas"], main';
   },
   autowiring: '[id*="comp-master-demo-led-tour"], [data-tour-id="tour-canvas"], main',
+  'autowiring-controls': '[data-tour-id="menu-item-assist"], [data-tour-id="menu-help"]',
   'components-palette': '[data-tour-id="palette-panel"]',
+  'boards-pi3': '[data-tour-type="openhw-pi3"], [data-tour-id="palette-panel"]',
+  'boards-pi4': '[data-tour-type="openhw-pi4"], [data-tour-id="palette-panel"]',
+  'boards-pi5': '[data-tour-type="openhw-pi5"], [data-tour-id="palette-panel"]',
+  'boards-esp32sc': '[data-tour-type="openhw-esp32sc"], [data-tour-id="palette-panel"]',
   projects: '[data-tour-id="menu-file"]',
+  'file-tabs': '[data-tour-step="ide"] .panel-scroll.hide-scrollbar, [data-tour-id="tab-code"], [data-tour-step="ide"]',
   ide: '[data-tour-step="ide"]',
   blockly: '[data-tour-step="blockly"], [data-tour-id="tab-block"]',
   library: '[data-tour-step="library"], [data-tour-file="library.txt"]',
+  schematic: '[data-tour-id="menu-item-schematic-view"], [data-tour-id="menu-tool"]',
+  help: '[data-tour-id="menu-help"]',
+  run: '[data-tour-id="toolbar-run"]',
   serial: '[data-tour-id="tab-serial"], [data-tour-step="serial"]',
   plotter: '[data-tour-id="plotter-view-btn"], [data-tour-step="plotter"]',
   console: '#tour-console-btn',
@@ -354,6 +455,18 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     onStepChange?.(STEPS[currentStep].id);
     setDemoPhase(0);
   }, [currentStep, isVisible, onStepChange]);
+
+  // ── Reveal scrollable targets (palette boards) ───────────────────────────
+  // A selector is only useful when its element is on screen. Bring palette
+  // board tiles into view once per step so the spotlight/pointer land on the
+  // real tile rather than an off-screen rectangle.
+  useEffect(() => {
+    if (!isVisible || !STEPS[currentStep].revealTarget) return undefined;
+    const frame = requestAnimationFrame(() => {
+      resolveTargetEl(STEPS[currentStep])?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [currentStep, isVisible]);
 
   // ── Focus management: move focus into tooltip on each step ───────────────
   useEffect(() => {
@@ -486,9 +599,11 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
         onDemoAction('console-demo-log');
       }
     }
-    // Fire panel-switch actions immediately (phase 0 = step entry) so the correct
-    // tab is visible right away regardless of which tab the user was on before.
-    if (step.action?.startsWith('switch-') && demoPhase === 0 && step.id !== 'library' && step.id !== 'plotter' && step.id !== 'console') {
+    // Fire entry actions immediately (phase 0 = step entry) so the correct tab,
+    // palette or menu is visible right away regardless of prior UI state.
+    // library/plotter/console run their own phase-0 sequences above.
+    const SELF_SEQUENCED = ['library', 'plotter', 'console'];
+    if (step.action && demoPhase === 0 && !SELF_SEQUENCED.includes(step.id)) {
       onDemoAction(step.action);
     }
   }, [demoPhase, currentStep, isVisible, onDemoAction, mode]);
@@ -509,6 +624,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       onDemoAction?.('hide-quick-add');
       onDemoAction?.('remove-demo-wire');
       onDemoAction?.('remove-demo-library-file');
+      onDemoAction?.('close-menus');
+      if (STEPS[currentStep].id.startsWith('boards-')) onDemoAction?.('close-palette');
     };
   }, [currentStep, onDemoAction, mode]);
 
@@ -522,6 +639,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       onDemoAction?.('hide-quick-add');
       onDemoAction?.('remove-demo-wire');
       onDemoAction?.('remove-demo-library-file');
+      onDemoAction?.('close-menus');
+      onDemoAction?.('close-palette');
     };
   }, [onDemoAction]);
 
@@ -559,14 +678,16 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
         };
       case 'left':
         return {
-          top: top + height / 2 - 130,
+          top: Math.max(20, top + height / 2 - 130),
           bottom: 'auto',
           left: Math.max(20, left - 340 - margin),
           right: 'auto',
         };
       case 'right':
         return {
-          top: top + height / 2 - 130,
+          // Clamp so a header/menu target near the top does not push the
+          // tooltip off-screen or over the open dropdown it points at.
+          top: Math.max(20, top + height / 2 - 130),
           bottom: 'auto',
           left: left + width + margin,
           right: 'auto',
