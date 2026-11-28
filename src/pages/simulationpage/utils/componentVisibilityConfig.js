@@ -61,6 +61,33 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Powered by rp2040js engine with PIO support.'
   },
 
+  'openhw-pi3': {
+    status: 'beta',
+    summary: 'Raspberry Pi 3 B+ on the Pyodide board-level simulator (BCM2837, 1.2 GHz, 540 MHz PWM, 1.8k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
+  'openhw-pi4': {
+    status: 'beta',
+    summary: 'Raspberry Pi 4 B on the Pyodide board-level simulator (BCM2711, 1.5 GHz, 540 MHz PWM, 1.8k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
+  'openhw-pi5': {
+    status: 'beta',
+    summary: 'Raspberry Pi 5 on the Pyodide board-level simulator (BCM2712 + RP1, 2.4 GHz, 200 MHz PWM, 50k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
   'openhw-esp32sc': {
     status: 'beta',
     summary: 'Classic ESP32 (Xtensa LX6 @ 240 MHz) on the esp32sim engine — A/B board for openhw-esp32',
