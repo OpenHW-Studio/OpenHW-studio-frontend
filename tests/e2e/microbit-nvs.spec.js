@@ -1,10 +1,17 @@
 import { test, expect } from '@playwright/test';
 
-// micro:bit v2 NVS cell — SKIPPED until the runner NVMC erase-pump patch
-// (.tmp-vitest/esp32-mbit-retro-patches.md §MB-2) + a fixed .bin image
-// (erase one flash page, write a magic word, read back, print
-// MB_NVS:<magic>) land. Word writes have no tap (synchronous in-model);
-// the erase->write->readback needle fails loudly if that is wrong.
+// micro:bit v2 NVS cell — STILL SKIPPED, now with exact blocker evidence.
+// The runner erases pages (nvmc_take_erase → mem_write 0xFF → complete),
+// but the byte-matched engine's `src/cpu/mem.rs:53` treats guest stores to
+// flash as ignored ("real flash needs erase/program, serviced by the JS
+// flash driver") and the NVMC model (`src/peripherals/nvmc_nrf.rs:123`)
+// exposes only ERASE*, no program tap. Headless probe with the real MP
+// image: `open('mylib.py','w')` reports 7 bytes written, then
+// `os.listdir() == []` and `open('mylib.py','r')` raises ENOENT; adding
+// QSPI read/write/erase pumps produces zero QSPI takes. No owner
+// `nvs_nrf.bin` exists (blinky/*.bin list has none). Keeping the skip
+// visible is honest; a green cell would require an engine flash-program
+// tap, not a runner change.
 test.describe.skip('micro:bit v2 NVS (blocked: runner patch + firmware)', () => {
   test.setTimeout(240000);
   test.beforeEach(async ({ page }) => {

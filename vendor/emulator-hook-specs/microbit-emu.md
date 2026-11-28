@@ -69,20 +69,35 @@ Three gaps listed below are now **closed** (cells green):
 
 ## Gaps (engine-side, still open)
 
-- **TWIM1 internal sensors** (temperature, etc.) — not modelled.
+- **TWIM1 internal sensors** — LSM303 + KL27 (UIPM/USB-FLASH) are now
+  modelled host-side (`src/engines/microbit/{lsm303,kl27}.ts`) and are what
+  lets the MP image reach its REPL; die temperature is the separate TEMP
+  model (`temp_set_celsius`).
 - **Capacitive touch** — not modelled.
-- **SPI displays** — not modelled.
-- **NVMC NVS** — not modelled.
+- **SPI displays** — not modelled as engine parts; a host MAX7219 is driven
+  by GPIO edges from MP (`microbit-mp-spi.spec.js`).
+- **NVMC NVS** — BLOCKED in the engine: guest flash stores are ignored
+  (`src/cpu/mem.rs:53`) and NVMC only stages ERASE* (`nvmc_nrf.rs`), with no
+  program tap. MP `open('mylib.py','w')` reports 7 bytes then `os.listdir()`
+  is empty and `import mylib` raises ImportError. No owner `nvs_nrf.bin`
+  exists; `microbit-nvs.spec.js` keeps its skip with this evidence.
 - **PPI / GPIOTE** — not modelled.
-- **RNG / TEMP** — not modelled.
-- **MicroPython for micro:bit** — CLOSED 2026-11-28 (cell
-  `tests/e2e/microbit-micropython.spec.js`). `main.py` (PYSCRIPT sentinel)
-  boots the owner MicroPython v1.18 HEX image via the MBR→app reset recipe,
-  with QSPI flash and the TWIM1 LSM303/KL27 parts models, then types a
-  chunked `exec()` script into the live REPL over paced UARTE0 RX. Proven
-  host reaction: `pin0.write_digital(1)` lights a wired LED and
-  `display.show(Image.HAPPY)` scans the 5×5 matrix. Still unproven: MP-driven
-  I2C/SPI/ADC, imported user modules/filesystem, other MicroPython builds.
+- **RNG** — engine tap exists, no cell; **TEMP is GREEN** in MP
+  (`microbit-mp-temp.spec.js`, `temperature()` tracks board `tempC` 0/40).
+- **MicroPython for micro:bit** — CLOSED 2026-11-28 (`microbit-micropython`,
+  `microbit-mp-i2c`, `microbit-mp-spi`, `microbit-mp-temp`). `main.py`
+  (PYSCRIPT sentinel) boots the owner MicroPython v1.18 HEX image via the
+  MBR→app reset recipe with QSPI flash + TWIM1 parts, then types chunked
+  `exec()` lines into the live REPL over paced UARTE0 RX. Proven: host LED,
+  5×5 matrix union, host SSD1306 vram fill, host MAX7219 digit registers,
+  die temperature. BLOCKED with evidence: MP `pin0.read_analog()` always 0
+  (no per-channel analog latch/RESULT register in the engine), high-level
+  `microbit.spi.write()` (spins at PC 0x539e6, stages no SPIM take/event),
+  and on-device module import/filesystem (engine ignores flash writes).
+- **I2S / NFC fixed-bin cells** — CLOSED 2026-11-28 with owner
+  `blinky/i2s_nrf.bin` + `blinky/nfct_nrf.bin` (byte-copied); runner
+  `pumpSysExtras` now performs the owner driver handshakes (patterned RX +
+  mailbox, NFCT `RESP` peer frame) and both specs are unskipped/green.
 - **EASYDMA / memcpy cell** — the DMA path is exercised (UART RX mirror,
   PWM SEQ readback), but there is no dedicated EASYDMA/memcpy proof cell
   yet.

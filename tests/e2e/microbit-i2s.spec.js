@@ -1,13 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-// micro:bit v2 I2S cell — SKIPPED until a fixed .bin image streaming I2S
-// TX (i2s_take_tx → MB_I2S:<words>) lands in public/firmware/microbit/.
-// Runner pump APPLIED 2026-10-09 (microbit-runner.ts pumpSysExtras,
-// I2S-only: taps verified in-file nrf52833_periph_wasm.js 1483-1540
-// i2s_take_tx/take_rx/complete_tx/complete_rx). The pump acks taken words
-// back verbatim (no consumer model — the board-state i2sTxWords count is
-// the oracle, never faked traffic). Unskip when i2s_nrf.bin lands.
-test.describe.skip('micro:bit v2 I2S (blocked: firmware image)', () => {
+// micro:bit v2 I2S cell — owner `blinky/i2s_nrf.bin` (byte-copied into
+// public/firmware/microbit/) streams 8 TX bytes, checks patterned RX and
+// prints `I2S:OK` once the driver releases the RAM mailbox. The runner's
+// pumpSysExtras now performs that owner-bench handshake: real engine takes
+// feed the board counters (i2sTxWords/i2sRxReqs), never faked traffic.
+test.describe('micro:bit v2 I2S (owner i2s_nrf.bin)', () => {
   test.setTimeout(240000);
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/**', async (route) => {
@@ -33,12 +31,13 @@ test.describe.skip('micro:bit v2 I2S (blocked: firmware image)', () => {
     }));
     expect(setup.ok).toBe(true);
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 20000, selectTelemetry: ['mb1'], serialNeedle: 'MB_I2S:', telemetryMode: 'detail',
+      forMs: 20000, selectTelemetry: ['mb1'], serialNeedle: 'I2S:OK', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     console.log('MB I2S serial:', (verdict.serial || '').slice(0, 200));
     expect(verdict.pass).toBe(true);
-    expect(verdict.serial || '').toContain('MB_I2S:');
+    expect(verdict.serial || '').toContain('I2S:OK');
+    expect(verdict.serial || '').not.toContain('I2S:BAD');
     const mb = (verdict.telemetry || []).find((t) => t.id === 'mb1');
     const dump = JSON.stringify(mb || null);
     console.log('MB I2S board telemetry:', dump.slice(0, 300));

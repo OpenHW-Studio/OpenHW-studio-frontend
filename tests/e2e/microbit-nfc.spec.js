@@ -1,15 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-// micro:bit v2 NFC cell — SKIPPED until a fixed .bin image initiating an
-// NFCT exchange (nfct_take_tx → MB_NFC:<frames>) lands in
-// public/firmware/microbit/. Runner pump APPLIED 2026-10-09
-// (microbit-runner.ts pumpSysExtras, NFC-only: taps verified in-file
-// nrf52833_periph_wasm.js 1631-1700 nfct_take_tx/take_rx/complete_tx/
-// complete_rx + nfct_field_present; board attr nfcField presents the RF
-// field at first tick). The pump counts takes only (no peer frames
-// staged — owner engine owns the air model; nfcTxFrames is the oracle,
-// never faked traffic). Unskip when nfct_nrf.bin lands.
-test.describe.skip('micro:bit v2 NFC (blocked: firmware image)', () => {
+// micro:bit v2 NFC cell — owner `blinky/nfct_nrf.bin` (byte-copied into
+// public/firmware/microbit/) drives NFCT ENABLE/SENSE/ACTIVATE + a TX frame
+// and checks the driver-fed `RESP` RX frame before printing `NFC:OK` /
+// `NFCT:OK`. The runner's pumpSysExtras completes the staged TX and supplies
+// the peer answer; the board counters come from real engine takes.
+test.describe('micro:bit v2 NFC (owner nfct_nrf.bin)', () => {
   test.setTimeout(240000);
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/**', async (route) => {
@@ -35,12 +31,14 @@ test.describe.skip('micro:bit v2 NFC (blocked: firmware image)', () => {
     }));
     expect(setup.ok).toBe(true);
     const verdict = await page.evaluate(() => window.OpenHWE2E.run({
-      forMs: 20000, selectTelemetry: ['mb1'], serialNeedle: 'MB_NFC:', telemetryMode: 'detail',
+      forMs: 20000, selectTelemetry: ['mb1'], serialNeedle: 'NFCT:OK', telemetryMode: 'detail',
     }));
     expect(verdict.ok).toBe(true);
     console.log('MB NFC serial:', (verdict.serial || '').slice(0, 200));
     expect(verdict.pass).toBe(true);
-    expect(verdict.serial || '').toContain('MB_NFC:');
+    expect(verdict.serial || '').toContain('NFC:OK');
+    expect(verdict.serial || '').toContain('NFCT:OK');
+    expect(verdict.serial || '').not.toContain('NFCT:BAD');
     const mb = (verdict.telemetry || []).find((t) => t.id === 'mb1');
     const dump = JSON.stringify(mb || null);
     console.log('MB NFC board telemetry:', dump.slice(0, 300));

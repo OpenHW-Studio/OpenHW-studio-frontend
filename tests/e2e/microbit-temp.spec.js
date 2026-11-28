@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-// micro:bit v2 TEMP cell — SKIPPED until the runner TEMP patch
-// (.tmp-vitest/esp32-mbit-retro-patches.md §MB-1) + a fixed .bin image
-// reading NRF_TEMP (TASKS_START -> poll EVENTS_DATARDY -> TEMP.TEMP)
-// printing MB_TEMP:<raw> land. Board attr tempC drives
-// temp_set_celsius (engine line 2277, synchronous). Two runs (0 C vs
-// 40 C) must track. Unskip when both land.
+// micro:bit v2 fixed-bin TEMP cell — STILL SKIPPED: no `temp_nrf.bin`
+// exists in the owner `blinky/*.bin` set. The capability itself is GREEN
+// via MicroPython: `microbit.temperature()` reads the same TEMP model and
+// `tests/e2e/microbit-mp-temp.spec.js` proves 0 C and 40 C track the board
+// attr through `temp_set_celsius`. This aspirational fixed-bin cell is
+// kept (not weakened) so the missing image is visible.
 const RUNS = [
   { tempC: 0, tag: 'MB_TEMP_COLD' },
   { tempC: 40, tag: 'MB_TEMP_HOT' },

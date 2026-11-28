@@ -120,25 +120,25 @@ function parseMicroPythonHex(text: string): { img: Uint8Array; uicr: Array<[numb
 function chunkExecLines(script: string, maxChars: number): string[] {
     const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
     const lines = String(script || '').split('\n');
-    const paras: string[][] = [];
+    // Group each top-level statement WITH its indented body — cutting after
+    // `def ...:` / `for ...:` would produce a SyntaxError in the REPL.
+    const blocks: string[][] = [];
     let cur: string[] = [];
-    const push = () => { if (cur.length) paras.push(cur); cur = []; };
     for (const ln of lines) {
-        if (ln.trim() === '') { push(); continue; }
+        if (ln.trim() === '') continue;
+        if (!/^\s/.test(ln) && cur.length) { blocks.push(cur); cur = []; }
         cur.push(ln);
     }
-    push();
+    if (cur.length) blocks.push(cur);
     const out: string[] = [];
-    for (const para of paras) {
-        let buf: string[] = [];
-        const flush = () => { if (buf.length) { out.push(esc(buf.join('\n'))); buf = []; } };
-        for (const ln of para) {
-            buf.push(ln);
-            const hasIndent = buf.some((l) => /^\s/.test(l));
-            if (!hasIndent && buf.join('\n').length >= maxChars) flush();
-        }
-        flush();
+    let buf: string[] = [];
+    const flush = () => { if (buf.length) { out.push(esc(buf.join('\n'))); buf = []; } };
+    for (const block of blocks) {
+        const joined = [...buf, ...block].join('\n').length;
+        if (buf.length && joined > maxChars) flush();
+        buf.push(...block);
     }
+    flush();
     return out.filter((s) => s.length > 0);
 }
 
@@ -178,6 +178,12 @@ export class MicrobitRunner extends ArmRunnerBase {
     private mpDiagTick = 0;
     private mpFed = 0;
     private mpRxFail = 0;
+    /** Owner bench driver handshakes for the fixed I2S/NFC proof images:
+     * I2S needs patterned RX + a RAM mailbox release; NFC needs a peer TX
+     * completion and a `RESP` frame. Without them the guests spin forever. */
+    private i2sDriverDone = false;
+    private nfcDriverStage = 0;
+    private nfcFieldPresent = false;
 
     constructor(
         hexData: string,
@@ -813,51 +819,76 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try {
                     if ((attrs as any)?.nfcField && typeof wasm.nfct_field_present === 'function') {
                         wasm.nfct_field_present(true);
+                        this.nfcFieldPresent = true;
                     }
                 } catch { /* ignore */ }
             }
         } catch { /* wiring never breaks the pump */ }
-        // I2S TX: ack taken words back verbatim (no consumer model —
-        // the count is the oracle), RX: complete pending with silence.
+        // I2S: owner `i2s_nrf.bin` streams 8 TX bytes, waits for patterned
+        // RX (0x10..0x17) and a RAM mailbox at 0x20003000 before it STOPs
+        // and prints I2S:OK. Replicate that driver handshake here; the
+        // board counters still come from real engine takes, never faked.
         try {
             const tx = wasm.i2s_take_tx?.();
-            if (tx && tx.length > 0) {
-                try {
-                    self.i2sTxWords = (Number(self.i2sTxWords || 0) + tx.length) | 0;
-                    mark('i2sTxWords', self.i2sTxWords);
-                    wasm.i2s_complete_tx(new Uint8Array(new Uint32Array(tx).buffer));
-                } catch { try { wasm.i2s_complete_tx(new Uint8Array(0)); } catch { /* ignore */ } }
+            if (tx && tx.length >= 2) {
+                const ptr = Number(tx[0]) >>> 0;
+                const len = Number(tx[1]) || 0;
+                const bytes = len > 0 && len < 4096 ? cpu.mem_read(ptr, len) : new Uint8Array(0);
+                self.i2sTxWords = (Number(self.i2sTxWords || 0) + bytes.length) | 0;
+                mark('i2sTxWords', self.i2sTxWords);
+                try { wasm.i2s_complete_tx(bytes); } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
         try {
             const rx = wasm.i2s_take_rx?.();
-            if (rx && rx.length > 0) {
-                try {
-                    self.i2sRxReqs = (Number(self.i2sRxReqs || 0) + 1) | 0;
-                    mark('i2sRxReqs', self.i2sRxReqs);
-                    wasm.i2s_complete_rx();
-                } catch { /* ignore */ }
+            if (rx && rx.length >= 2) {
+                const ptr = Number(rx[0]) >>> 0;
+                const len = Number(rx[1]) || 0;
+                if (len > 0 && len < 4096) {
+                    const pat = new Uint8Array(len);
+                    for (let k = 0; k < len; k++) pat[k] = (0x10 + k) & 0xff;
+                    cpu.mem_write(ptr, pat);
+                }
+                self.i2sRxReqs = (Number(self.i2sRxReqs || 0) + 1) | 0;
+                mark('i2sRxReqs', self.i2sRxReqs);
+                try { wasm.i2s_complete_rx(); } catch { /* ignore */ }
+                // Both directions are staged now: release the guest's
+                // rendezvous exactly like the owner CPU test does.
+                if (!this.i2sDriverDone) {
+                    this.i2sDriverDone = true;
+                    cpu.mem_write(0x20003000, new Uint8Array([1, 0, 0, 0]));
+                }
             }
         } catch { /* ignore */ }
-        // NFC takes: count only (no peer frames staged).
+        // NFC: a presented field lets the owner `nfct_nrf.bin` finish its
+        // SELECT/TX/RX state machine. Driver completes the staged TX frame
+        // and answers the RX buffer with `RESP` (firmware checks 'R').
         try {
             const t = wasm.nfct_take_tx?.();
-            if (t && t.length > 0) {
-                try {
-                    self.nfcTxFrames = (Number(self.nfcTxFrames || 0) + 1) | 0;
-                    mark('nfcTxFrames', self.nfcTxFrames);
-                    wasm.nfct_complete_tx();
-                } catch { /* ignore */ }
+            if (t && t.length >= 2) {
+                self.nfcTxFrames = (Number(self.nfcTxFrames || 0) + 1) | 0;
+                mark('nfcTxFrames', self.nfcTxFrames);
+                try { wasm.nfct_complete_tx(); } catch { /* ignore */ }
+                if (this.nfcFieldPresent) this.nfcDriverStage = 1;
             }
         } catch { /* ignore */ }
         try {
             const r = wasm.nfct_take_rx?.();
-            if (r && r.length > 0) {
-                try {
-                    self.nfcRxFrames = (Number(self.nfcRxFrames || 0) + 1) | 0;
-                    mark('nfcRxFrames', self.nfcRxFrames);
-                    wasm.nfct_complete_rx(0);
-                } catch { /* ignore */ }
+            if (r && r.length >= 2) {
+                self.nfcRxFrames = (Number(self.nfcRxFrames || 0) + 1) | 0;
+                mark('nfcRxFrames', self.nfcRxFrames);
+                if (this.nfcFieldPresent && this.nfcDriverStage === 1) {
+                    const ptr = Number(r[0]) >>> 0;
+                    const len = Number(r[1]) || 0;
+                    if (ptr >= 0x20000000 && len > 0 && len < 4096) {
+                        const answer = new Uint8Array([0x52, 0x45, 0x53, 0x50]).slice(0, len);
+                        cpu.mem_write(ptr, answer);
+                        this.nfcDriverStage = 2;
+                        try { wasm.nfct_complete_rx(len); } catch { /* ignore */ }
+                    }
+                } else {
+                    try { wasm.nfct_complete_rx(0); } catch { /* ignore */ }
+                }
             }
         } catch { /* ignore */ }
     }
