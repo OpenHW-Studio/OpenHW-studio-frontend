@@ -6,6 +6,7 @@ function SimulatorRuntimePanelBase({
   isPaused,
   runDurationSec,
   simulationSpeedPercent,
+  measuredSpeed,
   formatRunDuration,
 }) {
   if (!isRunning || isCompiling) return null;
@@ -23,12 +24,14 @@ function SimulatorRuntimePanelBase({
         display: 'flex',
         alignItems: 'center',
         gap: '16px',
-        background: 'rgba(25, 25, 25, 0.65)',
+        // Theme-aware translucent surface (was hardcoded dark — unreadable
+        // in light mode). color-mix tracks var(--bg2) across themes.
+        background: 'color-mix(in srgb, var(--bg2) 82%, transparent)',
         backdropFilter: 'blur(10px)',
         WebkitBackdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        border: '1px solid var(--border)',
         borderRadius: '10px',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
         padding: '6px 12px',
         pointerEvents: 'auto',
       }}
@@ -44,7 +47,7 @@ function SimulatorRuntimePanelBase({
         </span>
       </div>
 
-      <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
+      <div style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
@@ -52,8 +55,35 @@ function SimulatorRuntimePanelBase({
             <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
           </svg>
         </div>
-        <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '11px', fontWeight: 700, minWidth: '35px' }}>
-          {simulationSpeedPercent}%
+        <span
+          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '11px', fontWeight: 700, minWidth: '35px', position: 'relative', cursor: 'default' }}
+          onMouseEnter={(e) => {
+            try {
+              const tip = e.currentTarget.querySelector('[data-pace-tip]');
+              if (tip) tip.style.display = 'block';
+            } catch { /* ignore */ }
+          }}
+          onMouseLeave={(e) => {
+            try {
+              const tip = e.currentTarget.querySelector('[data-pace-tip]');
+              if (tip) tip.style.display = 'none';
+            } catch { /* ignore */ }
+          }}
+        >
+          {measuredSpeed === null ? `${simulationSpeedPercent}%` : `${measuredSpeed.label}%`}
+          {measuredSpeed !== null && (
+            <span
+              data-pace-tip
+              style={{
+                display: 'none', position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+                background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '8px',
+                padding: '6px 10px', fontSize: '10px', fontWeight: 500, whiteSpace: 'pre-line', textAlign: 'left',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.35)', zIndex: 200, pointerEvents: 'none', minWidth: 'max-content',
+              }}
+            >
+              {measuredSpeed.title}
+            </span>
+          )}
         </span>
       </div>
 

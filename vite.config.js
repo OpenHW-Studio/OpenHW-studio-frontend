@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import wasm from 'vite-plugin-wasm'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
@@ -21,6 +22,57 @@ export default defineConfig(({ mode }) => {
     resolvedEmulatorPath = dockerEmulatorPath;
   }
 
+  // Engine bytes: runners import by exact npm-shaped specifiers; these
+  // aliases are the single resolution point (repo bytes now, npm packages
+  // later — flip targets, not sources).
+  //
+  // WHY REPO BYTES (2026-10-20) and not the owner folders:
+  //  1. the container build (Dockerfile / .github/workflows/deploy.yml)
+  //     checks out ONLY this repo + openhw-studio-emulator — the owner
+  //     folders do not exist there, and an alias to a missing path is a
+  //     HARD BUILD FAILURE ("Could not load …"). This bit us for real:
+  //     the owner's `esp32 emu/dist/` was deleted mid-session, so
+  //     `npm run build` failed with ENOENT on worker-proxy.js.
+  //  2. the owner rebuilds those folders every few minutes, so "dev reads
+  //     the folder" can never equal "deploy reads a committed snapshot".
+  // So every engine's bytes are committed under src/engines/<engine>/ and
+  // dev + build + runtime fallback all read the same files. The vendor
+  // mirrors under public/vendor/board-engines/ carry the same bytes plus
+  // the OpenHW patches and stay in sync (see each README's refresh
+  // recipe).
+  //
+  // Engine sourcing: the owner's live folders carry the newest engine work
+  // (I2C/SPI mirror fixes), so when they exist they are the DEFAULT in this
+  // working tree. `OPENHW_ENGINE_FROM=snapshot` forces the committed engine
+  // bytes (CI/container behavior, where the owner folders do not exist).
+  // `OPENHW_ENGINE_FROM=owner` still forces the folders explicitly.
+  const picoFolder = '/home/danish1075/Documents/rp2350/Pico-emu/web';
+  const esp32Folder = '/home/danish1075/Documents/esp32 emu/dist/sab';
+  const stm32f4Folder = '/home/danish1075/Documents/stm32 F4/site';
+  // STM32F4 now follows the same folder-first rule as Pico/ESP32: dev reads
+  // the owner's build when it is present, snapshot/CI reads the byte-matched
+  // committed mirror. The facade, emulator, glue and wasm are ONE matched set
+  // (see docs/engine-bytes.md) — never mix a folder JS with a repo wasm.
+  const engineSource = process.env.OPENHW_ENGINE_FROM;
+  const engineFromOwner = engineSource === 'owner'
+    || (engineSource !== 'snapshot' && fs.existsSync(picoFolder));
+  // OPENHW_F4_ENGINE=npm is a benchmark-only A/B switch (old npm pair).
+  // It is NOT a deploy mode: normal dev/build use the folder or the mirror.
+  const f4EngineDir = process.env.OPENHW_F4_ENGINE === 'npm'
+    ? path.resolve(__dirname, 'node_modules/stm32f4-emu/site')
+    : (engineFromOwner && fs.existsSync(path.join(stm32f4Folder, 'emulator.js'))
+      ? stm32f4Folder
+      : path.resolve(__dirname, 'src/engines/stm32f4-emu'));
+  // Engine bytes committed in THIS repo (dev + build + deploy + runtime
+  // fallback all resolve the same files) — see the alias block below.
+  const f1EngineDir = path.resolve(__dirname, 'src/engines/stm32f1-emu');
+  const picoEngineDir = engineFromOwner
+    ? picoFolder
+    : path.resolve(__dirname, 'src/engines/pico-emu');
+  const esp32EngineDir = engineFromOwner
+    ? esp32Folder
+    : path.resolve(__dirname, 'src/engines/esp32-emu/dist/sab');
+
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath);
 
   // Derive backend proxy target from VITE_API_BASE_URL (or fallback to port 5001)
@@ -36,6 +88,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      wasm(),
       react({
         exclude: [/src[\\\/]worker[\\\/].*/, /openhw-studio-emulator[\\\/].*/],
       }),
@@ -75,10 +128,61 @@ export default defineConfig(({ mode }) => {
             }, null, 2)
           });
         }
+      },
+      {
+        name: 'engine-precache',
+        generateBundle(_options, bundle) {
+          // Board engine = simulation worker + board runners + shared
+          // registry/execute chunks + render/net workers + raw emulator
+          // sources (emitted as ui-*.tsx / logic-*.ts) + wasm.
+          // Hashed names change every build, so we emit the resolved list
+          // here and sw.js precaches it at install time.
+          const engineRe = [
+            /^assets\/simulation\.worker-.*\.js$/,
+            /^assets\/board\.worker-.*\.js$/,
+            /^assets\/avr-runner-.*\.js$/,
+            /^assets\/arm-runner-.*\.js$/,
+            /^assets\/pico-runner-.*\.js$/,
+            /^assets\/esp32-runner-.*\.js$/,
+            /^assets\/stm32f1-runner-.*\.js$/,
+            /^assets\/stm32f4-runner-.*\.js$/,
+            /^assets\/rp2040-runner-.*\.js$/,
+            /^assets\/execute-.*\.js$/,
+            /^assets\/logic-.*\.js$/,
+            /^assets\/emulatorLoader-.*\.js$/,
+            /^assets\/display\.render\.worker-.*\.js$/,
+            /^assets\/network\.worker-.*\.js$/,
+            /^assets\/simulatorConstants-.*\.js$/,
+            /^assets\/precompiledBinaries-.*\.js$/,
+            /^assets\/guidedProject.*\.js$/,
+            /^assets\/ui-.*\.tsx$/,
+            /^assets\/logic-.*\.ts$/,
+          ];
+          const files = Object.keys(bundle)
+            .filter((f) => engineRe.some((re) => re.test(f)))
+            .map((f) => `/${f}`);
+          // Any wasm emitted into the bundle (autowiring/grading engines)
+          Object.keys(bundle).forEach((f) => {
+            if (f.endsWith('.wasm') && !files.includes(`/${f}`)) files.push(`/${f}`);
+          });
+          // littlefs.wasm ships via public/wasm (not in bundle) — the sim
+          // worker loads it for SD-card / filesystem emulation.
+          if (!files.includes('/wasm/littlefs.wasm')) files.push('/wasm/littlefs.wasm');
+          files.sort();
+          this.emitFile({
+            type: 'asset',
+            fileName: 'engine-precache.json',
+            source: JSON.stringify({ version: 1, buildTime: Date.now(), files }, null, 2),
+          });
+        }
       }
     ],
     define: {
       __APP_BUILD_TIME__: JSON.stringify(Date.now()),
+      // Engine-development switch: runner picks the owner folder's matched
+      // glue+wasm for the I2C/SPI/ADC fork path instead of the vendored
+      // fork snapshot (which would otherwise hide new engine exports).
+      __OPENHW_ENGINE_FROM_OWNER__: JSON.stringify(engineFromOwner),
     },
     worker: {
       format: 'es',
@@ -87,19 +191,93 @@ export default defineConfig(({ mode }) => {
     esbuild: {
       target: 'es2020',
     },
+    assetsInclude: ['**/*.wasm'],
     build: {
       target: 'es2020',
       minify: 'esbuild',
       cssMinify: true,
     },
     resolve: {
-      alias: resolvedEmulatorPath ? {
-        '@openhw/emulator': resolvedEmulatorPath,
-      } : {},
+      alias: [
+        ...(resolvedEmulatorPath ? [{
+          find: '@openhw/emulator',
+          replacement: resolvedEmulatorPath,
+        }] : []),
+        // Pico: repo-committed bytes (src/engines/pico-emu) — the glue and
+        // its wasm are ONE matched pair (md5 c3b784f0 + 0c74dffe, byte-equal
+        // to the owner's `rp2350/Pico-emu/web` build of 2026-10-08).
+        // The `.wasm?url` regex form is needed so the query survives
+        // aliasing (exact strings don't match with ?url); the replacement
+        // `$1` re-appends the query (@rollup/plugin-alias uses
+        // String.replace semantics, so captures survive).
+        // Pyodide board engine: single resolution point for the committed
+        // peripheral model (bridge/peripherals/analog). The Pyodide runtime
+        // itself is a CDN ESM module resolved in importEngine(); the Python
+        // shims are fetched from the public vendor mirror at boot.
+        { find: /^pyodide\/src\/(.*)$/, replacement: path.resolve(__dirname, 'src/engines/pyodide/src') + '/$1' },
+        { find: /^pyodide$/, replacement: path.resolve(__dirname, 'src/engines/pyodide/src/runtime.js') },
+        { find: 'pico-emu/picoemu.wasm.js', replacement: path.join(picoEngineDir, 'picoemu.wasm.js') },
+        { find: /^pico-emu\/picoemu\.wasm\.wasm(\?.*)?$/, replacement: path.join(picoEngineDir, 'picoemu.wasm.wasm') + '$1' },
+        // Board-engine SAB proxy: package exports map only exposes ".",
+        // whose root pulls node:crypto (no browser shim). Alias the deep
+        // file so `import 'esp32-emu/dist/sab/worker-proxy.js'` resolves in
+        // vite dev AND the worker build (file has zero node: imports).
+        // Repo-committed bytes (src/engines/esp32-emu/dist/sab) — the same
+        // byte set as the runtime fallback mirror, including the OpenHW
+        // patches: the node:crypto MD5 stub and the inline
+        // CMD_GET_WIFI_STATS service while RUN=1 (the upstream wedge fix).
+        { find: 'esp32-emu/dist/sab/worker-proxy.js', replacement: path.join(esp32EngineDir, 'worker-proxy.js') },
+        // STM32F1 — repo-canonical owner engine bytes (src/engines/… is the
+        // single resolution point for dev AND deploy).
+        //
+        // Why NOT the owner folder (`/home/…/stm32 emu blue pill/pkg`):
+        //  1. the folder is a moving target — the owner rebuilds the wasm
+        //     every few minutes while working on the CPU core, so "dev
+        //     reads the folder" can never equal "deploy reads a committed
+        //     snapshot" for more than minutes at a time;
+        //  2. the container build (Dockerfile / CI, .github/workflows/
+        //     deploy.yml) checks out ONLY this repo + openhw-studio-emulator
+        //     — the owner folders do not exist there, and an alias to a
+        //     missing path is a HARD BUILD FAILURE ("Could not load …").
+        // So the bytes are committed here, copied verbatim from the owner's
+        // build (see src/engines/stm32f1-emu/README.md for provenance +
+        // the refresh recipe), and dev/deploy/fallback all read them.
+        //
+        // The wasm-bindgen glue resolves its wasm relative to ITSELF
+        // (new URL('stm32_bluepill_wasm_bg.wasm', import.meta.url)), so the
+        // glue and the wasm must sit side by side — they do, in pkg/.
+        // Aliased per specifier (most specific first): an alias to a
+        // directory does NOT carry the package "exports" map, so the
+        // subpaths the runner imports must be listed explicitly.
+        { find: 'stm32f1-emu/pkg/emulator.js', replacement: path.join(f1EngineDir, 'pkg/emulator.js') },
+        { find: 'stm32f1-emu/pkg/stm32f1.js', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
+        { find: 'stm32f1-emu/emulator', replacement: path.join(f1EngineDir, 'pkg/emulator.js') },
+        { find: 'stm32f1-emu', replacement: path.join(f1EngineDir, 'pkg/stm32f1.js') },
+        // STM32F4: adopted the owner's faster build 2026-11-27. The old
+        // folder-first alias was suspended while the folder was mid-rebuild;
+        // it is now byte-matched to the committed mirror (facade/emulator/
+        // glue/wasm, see docs/engine-bytes.md) and carries translated-block
+        // execution (opt-in `tb`, enabled by stm32f4-runner.ts). Anchored
+        // regexes avoid the `stm32f4-emu/vendor/...` prefix matching the
+        // bare `stm32f4-emu/vendor` specifier.
+        { find: /^stm32f4-emu$/, replacement: path.join(f4EngineDir, 'stm32f4.js') },
+        { find: /^stm32f4-emu\/stm32f4$/, replacement: path.join(f4EngineDir, 'stm32f4.js') },
+        { find: /^stm32f4-emu\/vendor$/, replacement: path.join(f4EngineDir, 'vendor/stm32_periph_wasm.js') },
+        // node:crypto has no browser build. The only in-repo consumer is
+        // esp32-emu's partition-table MD5 (custom CSV path, never hit on
+        // merged-bin boot) — stub it so the worker-entry transform loads.
+        { find: 'node:crypto', replacement: path.resolve(__dirname, 'src/worker/shims/node-crypto-stub.ts') },
+      ],
     },
     optimizeDeps: {
+      // Board-engine emulators are worker-side ES modules with node:fs
+      // fallbacks + relative wasm fetches. Pre-bundling them into
+      // .vite/deps breaks resolution (deep subpaths, wasm URLs), so keep
+      // them native: vite serves them as transformable ESM with proper
+      // relative URLs. (Pico works pre-bundled today; excluding it too
+      // keeps all four engines on one predictable path.)
       include: useAlias ? [] : ['@openhw/emulator'],
-      exclude: useAlias ? ['@openhw/emulator'] : [],
+      exclude: ['@openhw/emulator', 'pico-emu', 'stm32f1-emu', 'stm32f4-emu', 'esp32-emu'],
       esbuildOptions: {
          plugins: [
            {
@@ -127,11 +305,11 @@ export default defineConfig(({ mode }) => {
                  loader: 'js',
                }))
              },
-           },
-         ],
-      },
-    },
-    ssr: {
+            },
+          ],
+       },
+     },
+     ssr: {
       noExternal: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
     },
     test: {
@@ -157,11 +335,20 @@ export default defineConfig(({ mode }) => {
         'Cross-Origin-Embedder-Policy': 'credentialless',
       },
       watch: {
-        ignored: ['**/test-results/**', '**/playwright-report/**', '**/tests/fixtures/binary-cache/**']
+        // .tmp-vitest holds live Playwright browser profiles (leveldb LOCK/
+        // MANIFEST/Code Cache churn constantly during e2e). Without this,
+        // vite pushes a full page reload mid-run and every in-flight cell
+        // dies with "execution context was destroyed". Never remove.
+        ignored: ['**/test-results/**', '**/playwright-report/**', '**/tests/fixtures/binary-cache/**', '**/.tmp-vitest/**']
       },
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
+          // Owner engine folders (outside the repo root): folder-first
+          // engine bytes for pico / esp32 / stm32f4.
+          '/home/danish1075/Documents/rp2350/Pico-emu',
+          '/home/danish1075/Documents/esp32 emu',
+          '/home/danish1075/Documents/stm32 F4',
           ...(resolvedEmulatorPath ? [resolvedEmulatorPath] : []),
         ],
       },

@@ -1,137 +1,46 @@
+// Perf (bundle-split): thin re-export shim over ./emulatorLoader.js.
+//
+// History: this module statically imported the 17MB @openhw/emulator package
+// (`import *`) AND eagerly inlined ~1.5MB of raw component sources via
+// import.meta.glob — both landed in the initial SimulatorPage chunk. Now the
+// emulator loads on demand; these bindings are live references to the loader's
+// mutable slots (populated by ensureEmulatorRegistry() before first use), so
+// ALL existing importers (hooks, utils, SimulatorPage) work unchanged.
+//
+// Pure helper functions (sortCatalog, buildCatalog, inject*, build*Source)
+// are defined here and take explicit args — same behavior, no hidden imports.
 import React from 'react';
-import * as EmulatorComponents from "@openhw/emulator";
 import { toPascalCase, extractFunctionSource, resolveUiExport } from './simulatorUtils';
 import { GROUP_MAPPING } from '../constants/simulatorConstants';
+import {
+  COMPONENT_REGISTRY,
+  LOCAL_PIN_DEFS,
+  BUILTIN_COMPONENT_TYPES,
+  LOCAL_CATALOG,
+  COMPONENT_RAW_SOURCES,
+  collectRawComponentSources,
+  ensureEmulatorRegistry,
+  isEmulatorRegistryReady,
+  getEmulator,
+  preloadEmulator,
+  sortCatalog as sortCatalogImpl,
+} from './emulatorLoader';
 
-export function collectRawComponentSources() {
-  const rawFiles = {
-    ...import.meta.glob('../../../../../openhw-studio-emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../../openhw-studio-emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../../openhw-studio-emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../../openhw-studio-emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../../openhw-studio-emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
-  };
-
-  const out = {};
-  Object.entries(rawFiles).forEach(([filePath, raw]) => {
-    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/\?raw$/, '');
-    const match = normalized.match(/\/components\/([^/]+)\/(.+)$/);
-    if (!match) return;
-
-    const [, componentType, leaf] = match;
-    if (!out[componentType]) out[componentType] = {};
-    const text = String(raw || '');
-
-    if (leaf === 'ui.tsx') out[componentType].uiRaw = text;
-    if (leaf === 'logic.ts') out[componentType].logicRaw = text;
-    if (leaf === 'validation.ts') out[componentType].validationRaw = text;
-    if (leaf === 'index.ts') out[componentType].indexRaw = text;
-    if (leaf === 'doc/index.html') out[componentType].docRaw = text;
-  });
-
-  return out;
-}
-
-export const COMPONENT_RAW_SOURCES = collectRawComponentSources();
-
-export function buildComponentRegistry() {
-  const registry = {};
-  const pinDefs = {};
-
-  Object.entries(EmulatorComponents).forEach(([key, module]) => {
-    if (key === 'BaseComponent') return;
-
-    if (module && module.manifest) {
-      const compId = module.manifest.type || module.manifest.id || key;
-      const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key] || COMPONENT_RAW_SOURCES[compId.replace('openhw-', 'wokwi-')];
-      registry[compId] = raw
-        ? {
-          ...module,
-          ...raw,
-          ...(raw.docRaw ? { doc: raw.docRaw } : {}),
-        }
-        : module;
-
-      if (module.manifest.pins) {
-        pinDefs[compId] = module.manifest.pins;
-      }
-
-      if (compId.startsWith('openhw-')) {
-        const legacyId = compId.replace('openhw-', 'wokwi-');
-        if (!registry[legacyId]) {
-          registry[legacyId] = raw
-            ? {
-              ...module,
-              ...raw,
-              manifest: { ...module.manifest, type: legacyId, hiddenAlias: true },
-              ...(raw.docRaw ? { doc: raw.docRaw } : {}),
-            }
-            : { ...module, manifest: { ...module.manifest, type: legacyId, hiddenAlias: true } };
-          if (module.manifest.pins) {
-            pinDefs[legacyId] = module.manifest.pins;
-          }
-        }
-      } else if (compId.startsWith('wokwi-')) {
-        const modernId = compId.replace('wokwi-', 'openhw-');
-        if (!registry[modernId]) {
-          registry[modernId] = raw
-            ? {
-              ...module,
-              ...raw,
-              manifest: { ...module.manifest, type: modernId, hiddenAlias: true },
-              ...(raw.docRaw ? { doc: raw.docRaw } : {}),
-            }
-            : { ...module, manifest: { ...module.manifest, type: modernId, hiddenAlias: true } };
-          if (module.manifest.pins) {
-            pinDefs[modernId] = module.manifest.pins;
-          }
-        }
-      }
-    }
-  });
-
-  // Compatibility aliases
-  const neopixelBaseModule = registry['wokwi-neopixel-matrix'];
-  if (neopixelBaseModule?.manifest) {
-    ['wokwi-ws2812b', 'wokwi-ws2821b'].forEach((aliasType) => {
-      if (registry[aliasType]) return;
-      registry[aliasType] = {
-        ...neopixelBaseModule,
-        manifest: {
-          ...neopixelBaseModule.manifest,
-          type: aliasType,
-          hiddenAlias: true,
-        },
-      };
-    });
-  }
-
-  return { registry, pinDefs };
-}
-
-export const { registry: COMPONENT_REGISTRY, pinDefs: LOCAL_PIN_DEFS } = buildComponentRegistry();
-
-export const BUILTIN_COMPONENT_TYPES = new Set(
-  Object.values(EmulatorComponents)
-    .filter(m => m && m.manifest)
-    .map(m => m.manifest.type || m.manifest.id)
-    .filter(Boolean)
-);
-
-export const LOCAL_CATALOG = buildCatalog(COMPONENT_REGISTRY, GROUP_MAPPING);
+export {
+  COMPONENT_REGISTRY,
+  LOCAL_PIN_DEFS,
+  BUILTIN_COMPONENT_TYPES,
+  LOCAL_CATALOG,
+  COMPONENT_RAW_SOURCES,
+  collectRawComponentSources,
+  ensureEmulatorRegistry,
+  isEmulatorRegistryReady,
+  getEmulator,
+  preloadEmulator,
+};
 
 export function sortCatalog(catalog) {
-  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
-  catalog.sort((a, b) => {
-    const groupA = String(a?.group || 'Misc');
-    const groupB = String(b?.group || 'Misc');
-    const idxA = GROUP_ORDER.indexOf(groupA);
-    const idxB = GROUP_ORDER.indexOf(groupB);
-    if (idxA === -1 && idxB === -1) return groupA.localeCompare(groupB);
-    if (idxA === -1) return 1;
-    if (idxB === -1) return -1;
-    return idxA - idxB;
-  });
+  return sortCatalogImpl(catalog);
 }
 
 export function normalizeGroupName(name, groupMapping = GROUP_MAPPING) {
@@ -182,27 +91,23 @@ export function injectComponentsIntoRegistry(comps) {
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
 
-      // ── Render-probe: catch stale/broken cached transpiled code before it ──
-      // reaches React's render tree. If the component throws synchronously
-      // (e.g. "can't access property BOUNDS, _constants is null"), we skip
-      // this entry. The IDB DB_VERSION bump will evict the stale cache so the
-      // next load fetches fresh, correct transpiled code automatically.
-      try {
-        const probeEl = React.createElement(uiComponent, {
-          state: {}, attrs: {}, isRunning: false,
-        });
-        // Render-probe: call directly to catch stale transpiled reference errors
-        if (typeof uiComponent === 'function') {
-          uiComponent({ state: {}, attrs: {}, isRunning: false });
-        }
-      } catch (probeErr) {
-        // If it throws a hook error, the component successfully ran up to the hook and is likely valid.
-        if (probeErr.message && probeErr.message.includes('Invalid hook call')) {
-          // Pass the probe safely
-        } else {
-          console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
-          continue;
-        }
+      // ── Static validation (no component invocation) ──
+      // Never CALL the UI here: calling a function component directly runs
+      // hooks outside React's renderer ("Invalid hook call") and crashes on
+      // context-dependent code (display UIs read useDisplayRenderWorker
+      // → null context → TypeError). Just verify the export + BOUNDS shape.
+      if (typeof uiComponent !== 'function') {
+        console.warn(`[ComponentCache] Skipping stale cached component "${id}" (UI export is not a function). Will re-fetch on next load.`);
+        continue;
+      }
+      const boundsOk = exportsUI.BOUNDS == null || (
+        typeof exportsUI.BOUNDS === 'object' &&
+        Number.isFinite(Number(exportsUI.BOUNDS.w)) &&
+        Number.isFinite(Number(exportsUI.BOUNDS.h))
+      );
+      if (!boundsOk) {
+        console.warn(`[ComponentCache] Skipping stale cached component "${id}" (BOUNDS missing/malformed). Will re-fetch on next load.`);
+        continue;
       }
 
       registry[manifest.type] = {

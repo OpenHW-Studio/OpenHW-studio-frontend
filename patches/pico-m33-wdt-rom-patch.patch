@@ -1,0 +1,72 @@
+diff --git a/src/main.c b/src/main.c
+index 781d532..f31377d 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -312,12 +312,19 @@ static void reset_runtime_peripherals(const char *tap_name) {
+ 
+ static void reboot_from_watchdog(const char *tap_name,
+                                  sdcard_t *sdcard, const char *sdcard_path, int sdcard_spi,
+-                                 emmc_t *emmc_dev, const char *emmc_path, int emmc_spi) {
++                                 emmc_t *emmc_dev, const char *emmc_path, int emmc_spi,
++                                 arch_t arch) {
+     fprintf(stderr, "[Watchdog] Reboot triggered\n");
+     watchdog_reboot_pending = 0;
+     clocks_state.wdog_ctrl &= ~(1u << 31);
+ 
+     reset_runtime_peripherals(tap_name);
++    /* M33: reset_runtime_peripherals() calls rom_init(), which rewrites the
++     * ROM image in RP2040 format. The RP2350 patch applied at init
++     * (rom_patch_rp2350_arm()) is therefore LOST on every watchdog reboot
++     * and the M33 guest dies silently after exactly one boot. The M33 ROM
++     * layout is a property of the chip, not of the reset: re-apply it. */
++    if (arch == ARCH_M33) rom_patch_rp2350_arm();
+     /* spi_init cleared the slots; the board keeps its state, storage
+      * re-attaches explicitly below (explicit flags win on conflict). */
+     w5500_board_reattach();
+@@ -1454,7 +1461,7 @@ skip_fuse:
+             /* H17: watchdog, fault injection, script, storage flush */
+             if (watchdog_reboot_pending) {
+                 reboot_from_watchdog(tap_name, &sdcard, sdcard_path, sdcard_spi,
+-                                     &emmc_dev, emmc_path, emmc_spi);
++                                     &emmc_dev, emmc_path, emmc_spi, arch);
+                 /* re-init RV harts after reboot */
+                 rv_cpu_reset(&rv_cores[0], 0x00000000);
+                 rv_cpu_reset(&rv_cores[1], 0x00000000);
+@@ -1560,7 +1567,7 @@ skip_fuse:
+             if (watchdog_reboot_pending) {
+                 corepool_stop_threads();
+                 reboot_from_watchdog(tap_name, &sdcard, sdcard_path, sdcard_spi,
+-                                     &emmc_dev, emmc_path, emmc_spi);
++                                     &emmc_dev, emmc_path, emmc_spi, arch);
+                 corepool_start_threads();
+                 /* L41: reset counters so the safety limit restarts clean */
+                 instruction_count = 0;
+@@ -1694,7 +1701,7 @@ skip_fuse:
+             /* Watchdog reboot: reset all cores and re-start from flash */
+             if (watchdog_reboot_pending) {
+                 reboot_from_watchdog(tap_name, &sdcard, sdcard_path, sdcard_spi,
+-                                     &emmc_dev, emmc_path, emmc_spi);
++                                     &emmc_dev, emmc_path, emmc_spi, arch);
+                 instruction_count = 0;
+                 step_count = 0;
+                 continue;
+diff --git a/src/picoemu_wasm.c b/src/picoemu_wasm.c
+index bdca8fe..12ddf4e 100644
+--- a/src/picoemu_wasm.c
++++ b/src/picoemu_wasm.c
+@@ -394,6 +394,15 @@ static void picoemu_watchdog_reboot(void) {
+     watchdog_reboot_pending = 0;
+     clocks_state.wdog_ctrl &= ~(1u << 31);
+     reset_runtime_peripherals();
++    /* M33: reset_runtime_peripherals() calls rom_init(), which rewrites the
++     * ROM image in RP2040 format ('Mu' magic at 0x10, 16-bit pointers).
++     * The RP2350 patch applied at init (rom_patch_rp2350_arm(), see
++     * picoemu_init) is therefore LOST on every watchdog reboot: the ROM
++     * magic flips back to RP-v1 and the M33 guest dies silently after
++     * exactly one boot (one setup() line, then nothing).
++     * Re-apply the patch: the M33 ROM layout is a property of the chip,
++     * not of the reset. */
++    if (current_arch == ARCH_M33) rom_patch_rp2350_arm();
+     w5500_board_reattach();  /* spi_init cleared slots; board keeps state */
+     w6300_board_reattach();
+     dual_core_init();

@@ -35,21 +35,12 @@ const MenuDropdown = ({
       <div
         className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
         style={{
-          background:
-            theme === "light"
-              ? "rgba(248, 250, 252, 0.95)"
-              : "rgba(13, 21, 37, 0.94)",
+          background: "var(--bg2)",
           backdropFilter: "blur(16px) saturate(1.4)",
           WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-          border:
-            theme === "light"
-              ? "1px solid rgba(203, 213, 225, 0.8)"
-              : "1px solid rgba(30, 45, 71, 0.8)",
+          border: "1px solid var(--border)",
           borderRadius: "12px",
-          boxShadow:
-            theme === "light"
-              ? "0 8px 32px rgba(0, 0, 0, 0.08)"
-              : "0 10px 40px rgba(0,0,0,0.5)",
+          boxShadow: "var(--shadow)",
           minWidth: "200px",
           padding: "5px",
           transformOrigin: "top left",
@@ -78,6 +69,17 @@ const MenuDropdown = ({
             >
               <button
                 className="canvas-menu-item"
+                // Stable tour hooks: the guided tour must be able to point at
+                // real menu entries instead of guessing pixel coordinates.
+                data-tour-id={
+                  item.label === "Schematic View"
+                    ? "menu-item-schematic-view"
+                    : item.label === "Assist"
+                      ? "menu-item-assist"
+                      : String(item.label).startsWith("Auto-Wiring")
+                        ? "menu-item-autowiring"
+                        : undefined
+                }
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   if (!item.submenu) {
@@ -150,12 +152,13 @@ const MenuButton = ({
     onMouseLeave={() => setActiveMenu(null)}
   >
     <button
+      data-tour-id={`menu-${menuKey}`}
       onMouseDown={(e) => {
         e.stopPropagation();
         setActiveMenu(activeMenu === menuKey ? null : menuKey);
       }}
       style={{
-        background: activeMenu === menuKey ? "rgba(255,255,255,0.05)" : "none",
+        background: activeMenu === menuKey ? "var(--overlay-1)" : "none",
         border: "none",
         color: activeMenu === menuKey ? "var(--text)" : "var(--text3)",
         fontSize: "14px",
@@ -167,7 +170,7 @@ const MenuButton = ({
         pointerEvents: "auto",
       }}
       onMouseEnter={(e) => {
-        e.target.style.background = "rgba(255,255,255,0.05)";
+        e.target.style.background = "var(--overlay-1)";
         e.target.style.color = "var(--text)";
       }}
       onMouseLeave={(e) => {
@@ -197,9 +200,9 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
         top: "80px",
         right: "20px",
         width: `${width}px`,
-        background: "rgba(23, 23, 23, 0.85)",
+        background: "var(--card)",
         backdropFilter: "blur(20px)",
-        border: "1px solid rgba(255, 255, 255, 0.1)",
+        border: "1px solid var(--overlay-2)",
         borderRadius: "16px",
         boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
         zIndex: 9999,
@@ -212,18 +215,18 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
       <div
         style={{
           padding: "16px 20px",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+          borderBottom: "1px solid var(--overlay-2)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          background: "rgba(255, 255, 255, 0.03)",
+          background: "var(--overlay-1)",
         }}
       >
         <span
           style={{
             fontSize: "13px",
             fontWeight: "800",
-            color: "#fff",
+            color: "var(--text)",
             textTransform: "uppercase",
             letterSpacing: "0.05em",
           }}
@@ -236,9 +239,9 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
             onClose();
           }}
           style={{
-            background: "rgba(255, 255, 255, 0.05)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            color: "rgba(255, 255, 255, 0.6)",
+            background: "var(--overlay-1)",
+            border: "1px solid var(--overlay-2)",
+            color: "var(--text2)",
             cursor: "pointer",
             padding: "6px",
             borderRadius: "8px",
@@ -248,14 +251,14 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
             transition: "all 0.2s",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#fff";
+            e.currentTarget.style.color = "var(--text)";
             e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)";
             e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.3)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = "rgba(255, 255, 255, 0.6)";
-            e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
-            e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+            e.currentTarget.style.color = "var(--text2)";
+            e.currentTarget.style.background = "var(--overlay-1)";
+            e.currentTarget.style.borderColor = "var(--overlay-2)";
           }}
         >
           <svg
@@ -275,17 +278,17 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
           width: 8px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.02);
+          background: var(--overlay-1);
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.1);
+          background: var(--overlay-2);
           border-radius: 10px;
           border: 2px solid transparent;
           background-clip: content-box;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.2);
+          background: var(--overlay-3);
           background-clip: content-box;
         }
       `}</style>
@@ -439,6 +442,29 @@ function TopToolboxInternal(props) {
   const [showSchematic, setShowSchematic] = useState(false);
   const [showComponentList, setShowComponentList] = useState(false);
   const menuRef = useRef(null);
+
+  // The generator hands us an SVG data URL; decode it so the Schematic View
+  // can show the real drawing (pin labels are DOM nodes, inspectable/tests).
+  const schematicMarkup = React.useMemo(() => {
+    const prefix = "data:image/svg+xml;base64,";
+    if (!schematicDataUrl?.startsWith(prefix)) return "";
+    try {
+      const bin = atob(schematicDataUrl.slice(prefix.length));
+      return new TextDecoder().decode(
+        Uint8Array.from(bin, (ch) => ch.charCodeAt(0)),
+      );
+    } catch {
+      return "";
+    }
+  }, [schematicDataUrl]);
+
+  // The guided tour opens menus through this event so its spotlight can land
+  // on a visible Tool/Help menu entry. No pixel offsets or DOM spelunking.
+  useEffect(() => {
+    const onSetActiveMenu = (event) => setActiveMenu(event.detail ?? null);
+    window.addEventListener("openhw:set-active-menu", onSetActiveMenu);
+    return () => window.removeEventListener("openhw:set-active-menu", onSetActiveMenu);
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -699,7 +725,8 @@ function TopToolboxInternal(props) {
       </div>
 
       <div className="flex items-center gap-2 flex-1 flex-wrap" style={{ minWidth: 0, overflowX: 'auto' }}>
-        {/* RUN button */}
+        {/* RUN / COMPILE button — wrapped so the tour has a stable target */}
+        <div data-tour-id="toolbar-run" style={{ display: "inline-flex" }}>
         <Btn
           color={
             isRunning || isCompiling || isBooting
@@ -785,6 +812,7 @@ function TopToolboxInternal(props) {
             </>
           )}
         </Btn>
+        </div>
 
         {/* STOP button — SVG icon only */}
         <Btn
@@ -1081,7 +1109,7 @@ function TopToolboxInternal(props) {
             borderRadius: 8,
             border: "1px solid var(--accent)",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--text)",
             fontWeight: 700,
             cursor: "pointer",
             fontSize: 13,
@@ -1570,40 +1598,93 @@ function TopToolboxInternal(props) {
         title="Schematic View"
         show={showSchematic}
         onClose={() => setShowSchematic(false)}
-        width={420}
+        width={620}
       >
         <div
+          data-testid="schematic-view"
           style={{
-            textAlign: "center",
-            padding: "40px 20px",
-            color: "rgba(255,255,255,0.7)",
-            fontSize: "16px",
-            fontWeight: "500",
+            padding: "12px 14px 16px",
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            gap: "12px",
+            gap: "10px",
           }}
         >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ color: "var(--accent)" }}
-          >
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <div>Coming Soon...</div>
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
-            We are working hard to bring you the best schematic generation experience.
-          </div>
+          <style>{`.schematic-preview svg{width:100%;height:auto;display:block}`}</style>
+          {schematicLoading ? (
+            <div style={{ padding: "32px", textAlign: "center", color: "var(--text3)" }}>
+              Generating Schematic...
+            </div>
+          ) : schematicMarkup ? (
+            <>
+              <div
+                className="schematic-preview"
+                data-testid="schematic-svg"
+                style={{
+                  maxHeight: "58vh",
+                  overflow: "auto",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  background: "white",
+                }}
+                dangerouslySetInnerHTML={{ __html: schematicMarkup }}
+              />
+              <div style={{ fontSize: "11px", color: "var(--text3)" }}>
+                Wiring view from component manifests — not a SPICE netlist.
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  data-testid="schematic-download-png"
+                  onClick={downloadSchematicPng}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "var(--bg3, rgba(0,0,0,0.15))",
+                    color: "var(--text)",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Download PNG
+                </button>
+                <button
+                  data-testid="schematic-download-pdf"
+                  onClick={downloadSchematicPdf}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "var(--accent)",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Download PDF
+                </button>
+                <button
+                  data-testid="schematic-regenerate"
+                  onClick={() => generateSchematic()}
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: "32px", textAlign: "center", color: "var(--text3)" }}>
+              Failed to load schematic. Add components and try again.
+            </div>
+          )}
         </div>
       </FloatingPanel>
 
@@ -1618,7 +1699,7 @@ function TopToolboxInternal(props) {
             style={{
               textAlign: "center",
               padding: "40px 0",
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--text3)",
               fontSize: "13px",
             }}
           >
@@ -1630,7 +1711,7 @@ function TopToolboxInternal(props) {
           >
             <div
               style={{
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--overlay-2)",
                 borderRadius: "12px",
                 overflow: "hidden",
                 background: "rgba(0,0,0,0.2)",
@@ -1644,14 +1725,14 @@ function TopToolboxInternal(props) {
                 }}
               >
                 <thead>
-                  <tr style={{ background: "rgba(255,255,255,0.05)" }}>
+                  <tr style={{ background: "var(--overlay-1)" }}>
                     {["#", "Component", "Type", "Qty"].map((h) => (
                       <th
                         key={h}
                         style={{
                           padding: "10px 14px",
                           textAlign: "left",
-                          color: "rgba(255,255,255,0.5)",
+                          color: "var(--text3)",
                           fontWeight: "700",
                           fontSize: "10px",
                           textTransform: "uppercase",
@@ -1663,7 +1744,7 @@ function TopToolboxInternal(props) {
                     ))}
                   </tr>
                 </thead>
-                <tbody style={{ color: "rgba(255,255,255,0.8)" }}>
+                <tbody style={{ color: "var(--text2)" }}>
                   {(() => {
                     const counts = {};
                     components.forEach((c) => {
@@ -1679,13 +1760,13 @@ function TopToolboxInternal(props) {
                       <tr
                         key={row.type}
                         style={{
-                          borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          borderBottom: "1px solid var(--overlay-1)",
                         }}
                       >
                         <td
                           style={{
                             padding: "10px 14px",
-                            color: "rgba(255,255,255,0.4)",
+                            color: "var(--text3)",
                           }}
                         >
                           {i + 1}
@@ -1694,7 +1775,7 @@ function TopToolboxInternal(props) {
                           style={{
                             padding: "10px 14px",
                             fontWeight: "600",
-                            color: "#fff",
+                            color: "var(--text)",
                           }}
                         >
                           {row.label}
@@ -1723,9 +1804,9 @@ function TopToolboxInternal(props) {
               style={{
                 padding: "12px",
                 borderRadius: "12px",
-                background: "rgba(255,255,255,0.05)",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: "var(--overlay-1)",
+                color: "var(--text)",
+                border: "1px solid var(--overlay-2)",
                 cursor: "pointer",
                 fontSize: "12px",
                 fontWeight: "600",
@@ -1736,10 +1817,10 @@ function TopToolboxInternal(props) {
                 transition: "all 0.2s",
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
+                (e.currentTarget.style.background = "var(--overlay-2)")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "rgba(255,255,255,0.05)")
+                (e.currentTarget.style.background = "var(--overlay-1)")
               }
             >
               <svg
@@ -1828,28 +1909,28 @@ function TopToolboxInternal(props) {
                       justifyContent: "space-between",
                       alignItems: "center",
                       padding: "6px 8px",
-                      background: "rgba(255,255,255,0.03)",
+                      background: "var(--overlay-1)",
                       borderRadius: "6px",
-                      border: "1px solid rgba(255,255,255,0.05)",
+                      border: "1px solid var(--overlay-1)",
                     }}
                   >
                     <span
                       style={{
                         fontSize: "13px",
-                        color: "rgba(255,255,255,0.7)",
+                        color: "var(--text2)",
                       }}
                     >
                       {s.desc}
                     </span>
                     <kbd
                       style={{
-                        background: "rgba(255,255,255,0.1)",
+                        background: "var(--overlay-2)",
                         padding: "2px 6px",
                         borderRadius: "4px",
                         fontSize: "11px",
                         fontFamily: "JetBrains Mono, monospace",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        color: "var(--text)",
+                        border: "1px solid var(--overlay-2)",
                         boxShadow: "0 2px 0 rgba(0,0,0,0.2)",
                       }}
                     >

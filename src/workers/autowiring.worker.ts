@@ -12,6 +12,8 @@ const BOARD_TYPE_PATTERNS = [
   'arduino-uno', 'arduino-nano', 'arduino-mega',
   'rp2040', 'pico', 'raspberry-pi-pico',
   'esp32', 'esp8266',
+  // Retro ISA boards share the 8086emu engine; their pins are L*/R*.
+  '8086', '8088', '8085', '8051', '6502', 'z80', 'rv32', 'retro',
 ];
 
 // Map types to ID patterns for components whose ID doesn't match (e.g. ID "uno1" type "wokwi-arduino-uno")
@@ -31,7 +33,8 @@ function resolveBoardPin(compId: string, pinId: string, wires: any[], components
   if (components) {
     for (const c of components) {
       const type = (c.type || '').toLowerCase().replace(/[-_]/g, '');
-      if (BOARD_TYPE_TO_PATTERN[type]) boardIdsByType.add(c.id);
+      if (BOARD_TYPE_TO_PATTERN[type]
+        || BOARD_TYPE_PATTERNS.some((pat) => type.includes(pat.replace(/[-_]/g, '')))) boardIdsByType.add(c.id);
       compTypeById.set(c.id, c.type || '');
     }
   }
@@ -119,7 +122,7 @@ function extractGlobalsFromManifest(snippet: any, manifest: any): void {
   if (!snippet || !manifest?.autocoding) return;
   if (snippet.globals) return; // already set
 
-  for (const variant of ['arduino', 'esp32', 'pico']) {
+  for (const variant of ['retro', 'micropython', 'arduino', 'esp32', 'pico']) {
     const raw = manifest.autocoding[variant]?.globals;
     if (!raw) continue;
     snippet.globals = raw;
@@ -170,6 +173,45 @@ function resolveAttributePlaceholders(snippet: any, manifest: any): any {
   }
 
   return snippet;
+}
+
+/** Generate a minimal ASM snippet for a retro board from a component's
+ *  first resolved role pin. The Rust engine only emits Arduino C, so the
+ *  retro path is built here (pin roles are the same as its profile pins). */
+export function retroAsmSnippet(snippet: any, compId: string, wires: any[], components: any[], boardKind: string, manifest?: any): string | null {
+  const isa = String(boardKind || '').replace('retro_', '').toLowerCase();
+  if (!['8086', '8088', '8085', '8051', '6502', 'z80', 'rv32'].includes(isa)) return null;
+  const raw = [snippet?.globals, snippet?.setup, snippet?.loop].filter(Boolean).join(' ');
+  const roles = [...raw.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map((m) => m[1]);
+  let pin: string | null = null;
+  for (const role of [...new Set(roles)]) {
+    pin = resolveBoardPin(compId, role, wires, components);
+    if (pin) break;
+  }
+  if (!pin) return null;
+  const m = /^[LR](\d{1,2})$/i.exec(pin);
+  const bit = m ? Number(m[1]) & 7 : (/^P(\d)$/i.exec(pin) ? Number(RegExp.$1) & 7 : -1);
+  if (bit < 0) return null;
+  const mask = 1 << bit;
+  const hex = (v: number) => (/^[A-F]/.test((v & 0xff).toString(16).toUpperCase().padStart(2, '0'))
+    ? '0' : '') + (v & 0xff).toString(16).toUpperCase().padStart(2, '0') + 'h';
+  const retroMeta = manifest?.autocoding?.retro;
+  const tpl = retroMeta?.[isa] || retroMeta?.asm;
+  const subst = (l: string) => l
+    .replaceAll('${MASK}', hex(mask))
+    .replaceAll('${NOTMASK}', hex(~mask & 0xff))
+    .replaceAll('${PIN}', pin)
+    .replaceAll('${BIT}', String(bit));
+  const lines = tpl
+    ? (Array.isArray(tpl) ? tpl : [tpl]).map(subst)
+    : isa === '8051'
+      ? [`ANL P1, #${hex(~mask & 0xff)}   ; drive ${pin} LOW (quasi-bidir sink)`]
+      : isa === '8086' || isa === '8088'
+        ? [`MOV AL, ${hex(mask)}   ; ${pin} HIGH`, 'OUT 0E0h, AL']
+        : isa === '8085'
+          ? [`MVI A, ${hex(mask)}   ; ${pin} HIGH`, 'OUT 0E0h']
+          : [`; ${pin}: set port bit ${bit} for ${isa} (see board ISA manual)`];
+  return `; autocoding for ${compId} start\n  ${lines.join('\n  ')}\n; autocoding for ${compId} end`;
 }
 
 self.onmessage = async (e) => {
@@ -245,7 +287,7 @@ self.onmessage = async (e) => {
       }
 
       case 'GENERATE_CODE_SNIPPET': {
-        let { compId, wires, manifest, components } = payload;
+        let { compId, wires, manifest, components, boardKind } = payload;
         
         reset(); // reset engine state just in case, though this pure function might not strictly need it
         
@@ -253,6 +295,13 @@ self.onmessage = async (e) => {
         
         // Post-process: replace placeholders the WASM engine left unresolved
         if (snippet && typeof snippet === 'object') {
+          const retroAsm = retroAsmSnippet(snippet, compId, wires || [], components || [], boardKind || '', manifest);
+          if (retroAsm) {
+            snippet.asm = retroAsm;
+            snippet.globals = ''; snippet.setup = ''; snippet.loop = '';
+            self.postMessage({ type: 'AUTONOMOUS_RESULT', payload: { code_snippet: snippet, retro: true } });
+            break;
+          }
           extractGlobalsFromManifest(snippet, manifest);
           ['globals', 'setup', 'loop'].forEach(key => {
             if (snippet[key]) {

@@ -1,8 +1,14 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
-import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig } from './mega-timers.ts';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState, AVREEPROM, EEPROMMemoryBackend, AVRWatchdog, watchdogConfig, AVRClock } from 'avr8js';
+import { megaTimer0Config, megaTimer1Config, megaTimer2Config, megaTimer3Config, megaTimer4Config, megaTimer5Config, megaUsart0Config, megaAdcConfig, megaTwiConfig, megaSpiConfig, megaPortDConfig, megaPortEConfig } from './mega-timers.ts';
 import { BaseComponent } from '@openhw/emulator';
-import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
+import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS, MEGA_DIGITAL_PINS, MEGA_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
+import { SabStateWriter, SabCommandReader, SabEventWriter, SabPinWriter, SabDebugWriter, SabSerialRing, SabDisplayWriter, SabProtocolWriter, sabKindForType } from '../sab/layout.ts';
+import { DebugService } from '../debug/service.ts';
+import { SabTransport } from '../hal/transport.ts';
+import type { SimTransport } from '../hal/types.ts';
+import { spiRecord, i2cRecord } from '../hal/protocol-frames.ts';
+import { matchBoardFamily } from '../boards-registry.ts';
 import { 
     BoardRunner, 
     AVRRunnerOptions, 
@@ -22,6 +28,33 @@ import {
     collectNeopixelShutdownStates,
     invokeOptional
 } from '../registries/component-registry.ts';
+import {
+    normalizeEndpointPin,
+    buildNetGraph,
+    traversePassive as traversePassiveShared,
+} from '../signal/electrical.ts';
+import type { PassiveInstance } from '../signal/electrical.ts';
+
+// ATmega2560 Arduino pin → port/bit routing (single source of truth for the
+// Mega branch: attachPort wiring in setupHooks plus the pin→port resolver
+// below). Verified against the ATmega2560 Arduino mapping.
+const MEGA_PORT_TABLES: Record<string, string[]> = {
+    portA: ['22', '23', '24', '25', '26', '27', '28', '29'],
+    portB: ['53', '52', '51', '50', '10', '11', '12', '13'],
+    portC: ['37', '36', '35', '34', '33', '32', '31', '30'],
+    portD: ['21', '20', '19', '18', '', '', '', '38'],
+    portE: ['0', '1', '', '5', '2', '3', '', ''],
+    portF: ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'],
+    portG: ['41', '40', '39', '', '', '4', '', ''],
+    portH: ['17', '16', '', '6', '7', '8', '9', ''],
+    portJ: ['15', '14', '', '', '', '', '', ''],
+    portK: ['A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'],
+    portL: ['49', '48', '47', '46', '45', '44', '43', '42'],
+};
+
+// Mega hardware SPI pins (Uno: 11/12/13 MOSI/MISO/SCK).
+const MEGA_SPI_PINS = { mosi: '51', miso: '50', sck: '52' };
+const UNO_SPI_PINS = { mosi: '11', miso: '12', sck: '13' };
 
 export class AVRRunner {
     cpu: CPU | null = null;
@@ -29,6 +62,9 @@ export class AVRRunner {
     usart: AVRUSART | null = null;
     twi: AVRTWI | null = null;
     spi: AVRSPI | null = null;
+    eeprom: AVREEPROM | null = null;
+    wdt: AVRWatchdog | null = null;
+    private avrClock: AVRClock | null = null;
     portA: AVRIOPort | null = null;
     portB: AVRIOPort | null = null;
     portC: AVRIOPort | null = null;
@@ -42,8 +78,12 @@ export class AVRRunner {
     portL: AVRIOPort | null = null;
     updatePhysics: (() => void) | null = null;
     repropagateAllVoltages: (() => void) | null = null;
-    timers: AVRTimer[] = [];
+    timers: Array<AVRTimer | ATtinyTimer1> = [];
     running: boolean = false;
+    // Phase A lockstep: when true, the runner never self-schedules —
+    // a scheduler drives fixed quanta via stepQuantum() instead.
+    // Single-board path leaves this false (own runLoop, untouched).
+    externalStepping: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
@@ -88,6 +128,31 @@ export class AVRRunner {
     private physicsWorker: Worker | null = null;
     private physicsWorkerBusy: boolean = false;
     private cpuCyclesAtStart: number = 0;
+    // SAB state river (§12.2): assigned from options at construction.
+    // AVR previously ignored sab entirely — now stored like RP2040/proxy.
+    private sab: SharedArrayBuffer | null = null;
+    private sabOffsets: Record<string, number> = {};
+    private sabWriter: SabStateWriter | null = null;
+    private sabPinWriter: SabPinWriter | null = null;
+    private sabDebugWriter: SabDebugWriter | null = null;
+    private sabSerialTx: SabSerialRing | null = null;
+    private sabSerialRx: SabSerialRing | null = null;
+    private sabDisplayWriter: SabDisplayWriter | null = null;
+    private sabPinIndex: Map<string, number> = new Map();
+    // Transport facade (plan §5.4): publish paths migrate here; physics
+    // (netlist, repropagate, peripheral adapters) stays AVR-owned.
+    private transport: SimTransport | null = null;
+    // Protocol-lane writer (plan §11.1): I2C/SPI transaction summaries.
+    // Null when the region is absent (pre-v3 buffers); every push guarded.
+    private sabProtoWriter: SabProtocolWriter | null = null;
+    // Board type for registry lookups (capabilities/limits/HAL surface).
+    private boardType = '';
+    // Command/event rings + debug service (§10.4/§10.7). All optional:
+    // absent buffers → postMessage control path unchanged (fallback).
+    private cmdReader: SabCommandReader | null = null;
+    private evtWriter: SabEventWriter | null = null;
+    /** Worker-owned debug service (public for DEBUG_STEP fallback queueing). */
+    public debugService: DebugService | null = null;
 
     constructor(
         hexData: string,
@@ -102,11 +167,18 @@ export class AVRRunner {
         this.speed = options.speed ?? 1.0;
         this.solverMode = 'logic';
         this.circuitDirty = true;
-        const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+        const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'openhw-arduino-uno_0';
+        this.boardType = String((options as any)?.boardType || (componentsDef || []).find((c: any) => String(c?.id) === String(this.boardId))?.type || '');
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         const isMega = this.boardId.toLowerCase().includes('mega');
+        // Native ATtiny85 path (avr8js generic CPU + PORTB + tiny timers).
+        // boardType carries the real board ('openhw-attiny85'); the id may
+        // be anything. Flash is truly 8KB (larger firmware fails loudly at
+        // flash time); SRAM stays Uno-sized because firmware is
+        // Uno-compiled until a native attiny FQBN exists.
+        const isTiny = /attiny/i.test(this.boardType) || /attiny/i.test(this.boardId);
 
         // Setup memory and CPU
         const program = isMega ? new Uint16Array(131072) : new Uint16Array(32768);
@@ -133,6 +205,25 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, megaUsart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, megaTwiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, megaSpiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(4096));
+        } else if (isTiny) {
+            // ATtiny85: standard 8-bit Timer0 + high-speed Timer1.
+            // Flash/SRAM/USART/TWI/SPI/ADC stay Uno-class: the local hex
+            // parser pads firmware to a full 32KB image, so a smaller
+            // program array cannot load it; true 8KB/512B bounds need an
+            // attiny-aware parse + native FQBN. Documented deviation;
+            // routing + P-net aliasing + Timer1 are native.
+            // TEMP-DIAG attiny-bisect: Uno timers forced to isolate boot
+            // failure (flash bound vs tiny Timer1).
+            this.timers = [
+                new AVRTimer(this.cpu, timer0Config),
+                new ATtinyTimer1(this.cpu, attinyTimer1Config),
+            ];
+            this.adc = new AVRADC(this.cpu, adcConfig);
+            this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+            this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+            this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(512));
         } else {
             this.timers = [
                 new AVRTimer(this.cpu, timer0Config),
@@ -143,11 +234,17 @@ export class AVRRunner {
             this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
             this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
             this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+            this.eeprom = new AVREEPROM(this.cpu, new EEPROMMemoryBackend(1024));
+            this.avrClock = new AVRClock(this.cpu, 16e6);
+            this.wdt = new AVRWatchdog(this.cpu, watchdogConfig, this.avrClock);
         }
 
         this.usart.onByteTransmit = (value) => {
             const char = String.fromCharCode(value);
             this.pulseBoardLed('1');
+            // Serial TX via transport (SAB ring when bound; postMessage path
+            // below stays authoritative on overflow/strings).
+            try { (this.transport as SimTransport | null)?.publishSerial(this.boardId, [value & 0xff], 'uart0'); } catch { /* ignore */ }
             if (this.onByteTransmitCb) {
                 this.onByteTransmitCb({ boardId: this.boardId, value, char, source: 'uart0' });
             } else {
@@ -155,13 +252,123 @@ export class AVRRunner {
             }
         };
 
+        // SAB river attach (§12.2): store shared buffer + per-component slots.
+        // Accepts both new layout (sabOffsets = slot indexes) and legacy
+        // byte-offset maps (converted via /64 stride) for compat.
+        this.sab = (options as any).sab || null;
+        const rawOffsets = (options as any).sabOffsets || {};
+        this.sabOffsets = {};
+        for (const key of Object.keys(rawOffsets)) {
+            const v = Number(rawOffsets[key]);
+            this.sabOffsets[key] = Number.isFinite(v) && v >= 64 ? Math.floor(v / 64) : (Number.isFinite(v) ? v : 0);
+        }
+        if (this.sab) {
+            try {
+                this.sabWriter = new SabStateWriter(this.sab as SharedArrayBuffer);
+            } catch { this.sabWriter = null; }
+            // Full-map writers (§10.4): pin bitfield + debug region.
+            // Geometry comes from the START alloc (options.sabGeometry /
+            // options.sabDebugOffset); absent = legacy alloc, writers null.
+            try {
+                const sabBuf2 = (this as any).sab as SharedArrayBuffer | null;
+                if (sabBuf2) {
+                    const pinWriter = new SabPinWriter(sabBuf2);
+                    const geo = (options as any)?.sabGeometry as any;
+                    if (geo && Number(geo.pinBitWords) > 0) {
+                        pinWriter.bindGeometry(Number(geo.pinBitWords), Number(geo.analogBase));
+                        (this as any).sabPinWriter = pinWriter;
+                    }
+                    const dbgOff = Number((options as any)?.sabDebugOffset);
+                    if (Number.isFinite(dbgOff) && dbgOff > 0) {
+                        (this as any).sabDebugWriter = new SabDebugWriter(sabBuf2, dbgOff);
+                    }
+                    // Serial TX/RX byte rings (§10.4): bound when the START
+                    // alloc laid them out; absent = postMessage serial path.
+                    try {
+                        const rxOff = Number((options as any)?.sabSerialRxOffset);
+                        const txOff = Number((options as any)?.sabSerialTxOffset);
+                        if (Number.isFinite(rxOff) && rxOff > 0) {
+                            (this as any).sabSerialRx = new SabSerialRing(sabBuf2, rxOff);
+                        }
+                        // Phase B: worker-hosted runners emit serial via
+                        // postMessage (single coherent channel); the SAB TX
+                        // ring stays unbound so the UI poll doesn't deliver
+                        // every byte a second time. RX untouched (UI input).
+                        if (Number.isFinite(txOff) && txOff > 0 && !(options as any)?.sabSerialTxDisabled) {
+                            (this as any).sabSerialTx = new SabSerialRing(sabBuf2, txOff);
+                        }
+                    } catch { /* serial rings stay null */ }
+                    // Display descriptors (§10.4, slot-oriented, never pixels).
+                    try {
+                        const ddOff = Number((options as any)?.sabDisplayDescOffset);
+                        if (Number.isFinite(ddOff) && ddOff > 0) {
+                            (this as any).sabDisplayWriter = new SabDisplayWriter(sabBuf2, ddOff);
+                        }
+                    } catch { /* display writer stays null */ }
+                    // Pin index: board pin order fixed at START (boardPinMaps).
+                    try {
+                        const maps = (options as any)?.boardPinMaps;
+                        const myMap = Array.isArray(maps)
+                            ? maps.find((m: any) => String(m?.boardId) === String((this as any).boardId))
+                              || maps[0]
+                            : null;
+                        const pins = myMap && Array.isArray(myMap.pins) ? myMap.pins : [];
+                        const idx = new Map<string, number>();
+                        pins.forEach((p: any, i: number) => { idx.set(String(p), i); });
+                        (this as any).sabPinIndex = idx;
+                    } catch { /* pin index stays empty */ }
+                }
+            } catch { /* writers stay null */ }
+        }
+        // Command/event ring attach (§10.4): buffers shared from START alloc.
+        // DebugService owns HALT/STEP/WATCH state; runners apply movement cmds.
+        try {
+            const cmdBuf = (options as any).cmdBuffer as SharedArrayBuffer | undefined;
+            const evtBuf = (options as any).evtBuffer as SharedArrayBuffer | undefined;
+            if (cmdBuf) this.cmdReader = new SabCommandReader(cmdBuf);
+            if (evtBuf) this.evtWriter = new SabEventWriter(evtBuf);
+            if (this.sab && (this.cmdReader || this.evtWriter)) {
+                this.debugService = new DebugService(this.sab as SharedArrayBuffer, { ...this.sabOffsets }, this.evtWriter);
+            }
+            // Transport facade + protocol writer (plan §5.4/§11.1). Built
+            // AFTER all rings attach so it binds the final handles; same
+            // writers, same order — behavior identical to direct calls.
+            try {
+                if (this.sab) {
+                    (this as any).sabProtoWriter = new SabProtocolWriter(this.sab as SharedArrayBuffer);
+                    (this as any).transport = new SabTransport({
+                        buffer: this.sab as SharedArrayBuffer,
+                        pinIndex: (this as any).sabPinIndex,
+                        pinWriter: (this as any).sabPinWriter || undefined,
+                        stateWriter: (this as any).sabWriter || undefined,
+                        serialTx: (this as any).sabSerialTx || undefined,
+                        evtWriter: this.evtWriter || undefined,
+                        cmdReader: this.cmdReader || undefined,
+                        railVoltage: 5.0,
+                        clock: () => performance.now(),
+                    });
+                }
+            } catch { (this as any).transport = null; (this as any).sabProtoWriter = null; }
+        } catch { this.cmdReader = null; this.evtWriter = null; this.debugService = null; }
+
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
             if (LogicClass) {
-                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                // Pins: manifest-of-record is the emulator manifest.json; the
+                // COMPONENT_PINS table is a stale fallback only (drift audit:
+                // 25/67 openhw types differ — manifests win, see §6).
+                const logicProbe = LOGIC_REGISTRY[cDef.type];
+                const manifestPins = (logicProbe as any)?.manifest?.pins
+                    || (cDef as any)?.pins
+                    || COMPONENT_PINS[cDef.type]
+                    || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                const pins = manifestPins;
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
+                // Slot assignment: declared upfront on BaseComponent (shape-stable).
+                const slot = this.sabOffsets[cDef.id];
+                inst.sabSlot = Number.isFinite(Number(slot)) ? Number(slot) : -1;
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
                 inst.onTelemetryFinding = (finding: any) => {
                     this.onStateUpdate({
@@ -172,6 +379,14 @@ export class AVRRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                // WASM components (§12.4): lazy async core load, never in tick.
+                // Falls back to JS reference on failure — fire-and-forget.
+                try {
+                    const maybeWasm = (inst as any)?.ensureWasmLoaded;
+                    if (typeof maybeWasm === 'function') {
+                        Promise.resolve(maybeWasm.call(inst)).catch(() => { /* JS fallback */ });
+                    }
+                } catch { /* JS fallback */ }
             }
         });
 
@@ -179,11 +394,14 @@ export class AVRRunner {
 
         this.portB = new AVRIOPort(this.cpu, portBConfig);
         this.portC = new AVRIOPort(this.cpu, portCConfig);
-        this.portD = new AVRIOPort(this.cpu, portDConfig);
-        
+        // Mega D/E ports carry the native 2560 external-interrupt wiring
+        // (INT0-3 on PD0-3, INT4-5 on PE4-5); Uno-class boards keep the
+        // stock 328P configs.
+        this.portD = new AVRIOPort(this.cpu, isMega ? megaPortDConfig : portDConfig);
+
         if (this.boardId.toLowerCase().includes('mega')) {
             this.portA = new AVRIOPort(this.cpu, portAConfig);
-            this.portE = new AVRIOPort(this.cpu, portEConfig);
+            this.portE = new AVRIOPort(this.cpu, megaPortEConfig);
             this.portF = new AVRIOPort(this.cpu, portFConfig);
             this.portG = new AVRIOPort(this.cpu, portGConfig);
             this.portH = new AVRIOPort(this.cpu, portHConfig);
@@ -196,6 +414,9 @@ export class AVRRunner {
         const runnerOnStateUpdate = this.onStateUpdate.bind(this);
         const runnerBoardId = this.boardId;
         const runnerGetSimulatedTimeMs = this.getSimulatedTimeMs.bind(this);
+        // Protocol-lane writer handle (null when region absent; every push
+        // below is guarded so pre-v3 buffers behave exactly as before).
+        const runnerProtoWriter = (this as any).sabProtoWriter as SabProtocolWriter | null;
 
         // Setup I2C Hooks bridging AVRTWI events to BaseComponents
         class TWIAdapter {
@@ -203,7 +424,7 @@ export class AVRRunner {
             private activeSlave: BaseComponent | null = null;
             private currentBuffer: number[] = [];
 
-            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
+            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>, private simCycles: () => number) { }
 
             start(repeated: boolean) {
                 this.currentBuffer = [];
@@ -233,6 +454,14 @@ export class AVRRunner {
                         isWrite,
                         timestamp: runnerGetSimulatedTimeMs()
                     });
+                    // Protocol-lane record (plan §11.1): same transaction as
+                    // a fixed 32 B summary; silent no-op when region absent.
+                    try {
+                        runnerProtoWriter?.push(i2cRecord(
+                            address, data.length, !isWrite,
+                            this.activeSlave !== null, this.simCycles(),
+                        ));
+                    } catch { /* never break sim */ }
                 }
 
                 this.activeSlave = null;
@@ -259,7 +488,14 @@ export class AVRRunner {
             writeByte(value: number) {
                 const instArray = Array.from(this.instances.values());
                 let handled = false;
-                for (const inst of instArray) {
+                // I2C-correct delivery: data bytes belong to the ADDRESSED
+                // slave only. Broadcasting every byte into every instance
+                // corrupts multi-slave buses (a neighbor's register pointer
+                // follows another device's traffic — observed as BMP180
+                // lastRegister tracking MPU6050 config writes). Fall back to
+                // all only when no slave was addressed (general-call edge).
+                const targets = this.activeSlave ? [this.activeSlave] : instArray;
+                for (const inst of targets) {
                     if (inst.onI2CByte) {
                         if (inst.onI2CByte(-1, value)) {
                             handled = true;
@@ -285,7 +521,7 @@ export class AVRRunner {
             }
         }
 
-        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances, () => this.cpu?.cycles ?? 0);
 
         let spiTransactionBytes: number[] = [];
         let lastSpiTime = 0;
@@ -294,31 +530,43 @@ export class AVRRunner {
         this.spi.onByte = (value: number) => {
             const nowMs = this.getSimulatedTimeMs();
             if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                const frame = [...spiTransactionBytes];
                 this.onStateUpdate({
                     type: 'protocol:spi',
                     boardId: this.boardId,
-                    data: [...spiTransactionBytes],
+                    data: frame,
                     timestamp: lastSpiTime
                 });
+                // Protocol-lane record (plan §11.1): command/first byte,
+                // length, last byte; guarded no-op when region absent.
+                // Shared spiRecord builder — identical bytes to the previous
+                // hand-packed record.
+                try {
+                    runnerProtoWriter?.push(spiRecord(
+                        frame[0] ?? 0, frame.length,
+                        frame.length ? frame[frame.length - 1] : 0,
+                        this.cpu?.cycles ?? 0,
+                    ));
+                } catch { /* never break sim */ }
                 spiTransactionBytes = [];
             }
             lastSpiTime = nowMs;
             spiTransactionBytes.push(value & 0xff);
 
-            const instArray = Array.from(this.instances.values());
-            let returnByte = 0xFF; // Default MISO if nothing responds
+            const instArray = Array.from(this.instances.values());            let returnByte = 0xFF; // Default MISO if nothing responds
 
             const unoId = this.boardId;
+            const spiPins = this.avrSpiPins();
 
             if (unoId) {
-                const misoNet = this.pinToNet.get(`${unoId}:12`);
+                const misoNet = this.pinToNet.get(`${unoId}:${spiPins.miso}`);
                 if (misoNet !== undefined) {
                     // 1. Direct Loopback (MISO connected to MOSI)
-                    if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
+                    if (misoNet === this.pinToNet.get(`${unoId}:${spiPins.mosi}`)) {
                         returnByte = value;
                     }
                     // 2. MISO connected to SCK (Clock pulses)
-                    else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
+                    else if (misoNet === this.pinToNet.get(`${unoId}:${spiPins.sck}`)) {
                         returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
                     }
                     // 3. MISO connected to any other driven Pin (like 10/SS)
@@ -326,7 +574,7 @@ export class AVRRunner {
                         // Check if the net is currently driven HIGH by another pin
                         let drivenHigh = false;
                         for (const [p, net] of this.pinToNet) {
-                            if (net === misoNet && !p.endsWith(':12')) {
+                            if (net === misoNet && !p.endsWith(`:${spiPins.miso}`)) {
                                 const [compId, pinId] = p.split(':');
                                 if (compId === unoId && this.pinStates[pinId]) {
                                     drivenHigh = true;
@@ -366,7 +614,7 @@ export class AVRRunner {
                 this.clockEvents.push({ targetCycle: this.cpu!.cycles + delayCycles, callback: cb });
             };
         }
-        this.instances.forEach(inst => {
+        this.instances.forEach((inst, compId) => {
             if (!(inst as any)._simCpu) {
                 (inst as any)._simCpu = this.cpu;
                 (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
@@ -383,25 +631,38 @@ export class AVRRunner {
             // updateOopPin — so the DHT never receives the LOW wake signal.
             if (!(inst as any)._setAvrPinDirect) {
                 (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
-                    const cleanPin = boardPin.replace(/^D/i, '');
-                    const num = parseInt(cleanPin, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            this.portB?.setPin(num - 8, isHigh);
-                        } else if (num >= 0 && num <= 7) {
-                            this.portD?.setPin(num, isHigh);
-                        }
-                    } else if (cleanPin.startsWith('A')) {
-                        const bit = parseInt(cleanPin.slice(1), 10);
-                        if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                    }
+                    const r = this.resolveAvrPortBit(boardPin);
+                    if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                 };
             }
+            // Runner-agnostic board-drive service (plan §5.3): same effect
+            // as the closure above, routed through the public driveInput
+            // path so components stop depending on AVR-only handles.
+            // Runner-agnostic bus services (plan §5.3); legacy handles above
+            // remain as fallback.
+            this.provideBusServices(inst, compId);
             // Expose runner ref so DHT22 can resolve board pin from netlist
             if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
                 (inst as any)._simCpu._avrRunner = this;
             }
         });
+
+        // Apply START telemetry flags at construction (plan §5.5): the
+        // enable message can race worker creation (stale-state post to the
+        // previous worker), so every run starts with the postamble's intent
+        // already applied; later SET_COMPONENT_TELEMETRY still toggles.
+        try {
+            const o = options as any;
+            if (typeof o?.telemetryEnabled === 'boolean') {
+                this.setTelemetryEnabled(
+                    !!o.telemetryEnabled,
+                    typeof o.telemetryMode === 'string' ? o.telemetryMode : undefined,
+                    o.telemetryWatchedParams && typeof o.telemetryWatchedParams === 'object'
+                        ? o.telemetryWatchedParams : undefined,
+                    !!(o.deepSilicon ?? o.deepSiliconEnabled),
+                );
+            }
+        } catch { /* telemetry defaults stand */ }
 
         this.running = true;
         this.lastTime = performance.now();
@@ -412,6 +673,100 @@ export class AVRRunner {
     getSimulatedTimeMs() {
         if (!this.cpu) return 0;
         return Math.floor(((this.cpu.cycles - this.cpuCyclesAtStart) / 16_000_000) * 1000);
+    }
+
+    // ── Board HAL surface (plan §5.1) ──────────────────────────────────
+    // Read-only capability + sampling surface over existing AVR state.
+    // driveInput reuses the component input path (port set + repropagate),
+    // the same mechanism DHT22/OneWire already use via _setAvrPinDirect.
+    // Callers must check sampleOutput().driving first and never drive a
+    // firmware-driven pin (output wins — same rule as every other runner).
+    railVoltage(): number {
+        return 5.0;
+    }
+
+    boardPins(): string[] {
+        return this.avrBoardPinList();
+    }
+
+    private isMegaBoard(): boolean {
+        return this.boardId.toLowerCase().includes('mega');
+    }
+
+    // Full signal-pin list for the active board (Mega exposes 0-53/A0-A15;
+    // Uno/Nano/Tiny-substitution ride the Uno-class list).
+    private avrBoardPinList(): string[] {
+        return this.isMegaBoard()
+            ? [...MEGA_DIGITAL_PINS, ...MEGA_ANALOG_PINS]
+            : [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+    }
+
+    // Arduino pin label → avr8js port + bit for the active board. Central
+    // resolver: every CPU-port touchpoint (input injection, mode queries,
+    // drive/sample HAL, SoftSerial-RX inject) must go through here so Mega
+    // pins on ports E/F/G/H/J/K/L/A resolve instead of falling through.
+    private resolveAvrPortBit(pin: string): { port: AVRIOPort | null; bit: number } | null {
+        const clean = String(pin || '').replace(/^D/i, '');
+        if (this.isMegaBoard()) {
+            for (const key of Object.keys(MEGA_PORT_TABLES)) {
+                const bit = MEGA_PORT_TABLES[key].indexOf(clean);
+                if (bit >= 0) return { port: (this as any)[key] as AVRIOPort | null, bit };
+            }
+            return null;
+        }
+        const num = parseInt(clean, 10);
+        if (!isNaN(num)) {
+            if (num >= 8 && num <= 13) return { port: this.portB, bit: num - 8 };
+            if (num >= 0 && num <= 7) return { port: this.portD, bit: num };
+            return null;
+        }
+        if (clean.startsWith('A')) {
+            const bit = parseInt(clean.slice(1), 10);
+            if (!isNaN(bit)) return { port: this.portC, bit };
+        }
+        return null;
+    }
+
+    private avrSpiPins(): { mosi: string; miso: string; sck: string } {
+        return this.isMegaBoard() ? MEGA_SPI_PINS : UNO_SPI_PINS;
+    }
+
+    pinAliases(pin: string): string[] {
+        const raw = String(pin || '');
+        const out = new Set<string>([raw]);
+        if (/^D\d+$/i.test(raw)) out.add(raw.substring(1));
+        else if (/^\d+$/.test(raw)) out.add(`D${raw}`);
+        return Array.from(out);
+    }
+
+    boardCapabilities(): string[] {
+        return matchBoardFamily(this.boardType || this.boardId).capabilities;
+    }
+
+    boardLimits(): Array<{ code: string; detail: string }> {
+        return matchBoardFamily(this.boardType || this.boardId).limits;
+    }
+
+    sampleOutput(pin: string): { level: number; driving: boolean } | null {
+        const r = this.resolveAvrPortBit(pin);
+        if (!r || !r.port || r.bit < 0 || !this.cpu) return null;
+        const port = r.port;
+        const bit = r.bit;
+        let state: PinState;
+        try { state = port.pinState(bit); } catch { return null; }
+        const driving = state === PinState.High || state === PinState.Low;
+        const level = driving
+            ? (state === PinState.High ? 1 : 0)
+            : (state === PinState.InputPullUp ? 1 : 0);
+        return { level, driving };
+    }
+
+    driveInput(pin: string, high: boolean): void {
+        try {
+            const r = this.resolveAvrPortBit(pin);
+            if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, high);
+            if (typeof this.repropagateAllVoltages === 'function') this.repropagateAllVoltages();
+        } catch { /* input inject never breaks sim */ }
     }
 
     setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
@@ -458,6 +813,42 @@ export class AVRRunner {
         return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
     }
 
+    /** Provide runner-agnostic bus services to one instance (plan §5.3).
+     * Fills only missing handles; legacy AVR handles stay installed by the
+     * surrounding code as fallback. Safe to call every tick (idempotent). */
+    private provideBusServices(inst: BaseComponent, compId: string): void {
+        try {
+            if (!(inst as any)._driveBoardPin) {
+                (inst as any)._driveBoardPin = (boardPin: string, isHigh: boolean) => {
+                    try { this.driveInput(boardPin, isHigh); } catch { /* ignore */ }
+                };
+            }
+            if (!(inst as any)._scheduleBoardCycles) {
+                (inst as any)._scheduleBoardCycles = (cb: () => void, delayCycles: number) => {
+                    try { (this.cpu as any)?.addClockEvent?.(cb, delayCycles); } catch { /* ignore */ }
+                };
+            }
+            if (!(inst as any)._boardCyclesNow) {
+                (inst as any)._boardCyclesNow = () => this.cpu?.cycles ?? 0;
+            }
+            if (!(inst as any)._boardNetOf) {
+                (inst as any)._boardNetOf = (componentPin: string): string | null => {
+                    try {
+                        const net = this.pinToNet.get(`${compId}:${componentPin}`);
+                        if (net === undefined) return null;
+                        for (const [node, netId] of this.pinToNet) {
+                            if (netId !== net) continue;
+                            const [bId, bPin] = node.split(':');
+                            if (bId !== this.boardId || !bPin) continue;
+                            return /^D\d+$/i.test(bPin) ? bPin.substring(1) : bPin;
+                        }
+                        return null;
+                    } catch { return null; }
+                };
+            }
+        } catch { /* provider install never breaks sim */ }
+    }
+
     private pulseBoardLed(pinId: '0' | '1') {
         const boardInst = this.instances.get(this.boardId);
         if (!boardInst || !this.cpu) return;
@@ -471,14 +862,16 @@ export class AVRRunner {
 
     private setSoftSerialRxLevel(isHigh: boolean) {
         this.softSerialRxLineLow = !isHigh;
-        // UNO pin 11 is PB3 (index 3 in PORTB mapping [8..13]).
-        this.portB?.setPin(3, isHigh);
+        // SoftSerial RX pin 11: PB3 on Uno-class boards, PB5 on Mega.
+        const r = this.resolveAvrPortBit('11');
+        if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
     }
 
     private emitSoftSerialByte(value: number) {
         const byte = value & 0xff;
         const char = String.fromCharCode(byte);
         this.pulseBoardLed('1');
+        try { (this.transport as SimTransport | null)?.publishSerial(this.boardId, [byte], 'softserial'); } catch { /* ignore */ }
         if (this.onByteTransmitCb) {
             this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'softserial' });
         } else {
@@ -581,233 +974,11 @@ export class AVRRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
-            const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
-            if (!otherPin) return;
-            const resistance = Number.parseFloat(String((inst as any).state?.value || (inst as any).state?.resistance || 1000));
-            const safeResistance = Number.isFinite(resistance) && resistance > 0 ? resistance : 1000;
-            const drop = Math.min(voltage * 0.2, Math.max(0.01, safeResistance / 5000));
-            const nextVoltage = Math.max(0, voltage - drop);
-            inst.setPinVoltage(otherPin, nextVoltage);
-            visit(`${compId}:${otherPin}`, nextVoltage);
-        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
-            // Forward bias: Anode to Cathode
-            if (pinId === 'A') {
-                const nextV = Math.max(0, voltage - 1.8);
-                inst.setPinVoltage('K', nextV);
-                visit(`${compId}:K`, nextV);
-            }
-        } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
-            // Internal short-circuit connections
-            if (pinId === '1l' || pinId === '1') {
-                inst.setPinVoltage('1r', voltage);
-                visit(`${compId}:1r`, voltage);
-                inst.setPinVoltage('1', voltage);
-                visit(`${compId}:1`, voltage);
-                inst.setPinVoltage('1l', voltage);
-                visit(`${compId}:1l`, voltage);
-            } else if (pinId === '1r') {
-                inst.setPinVoltage('1l', voltage);
-                visit(`${compId}:1l`, voltage);
-                inst.setPinVoltage('1', voltage);
-                visit(`${compId}:1`, voltage);
-            } else if (pinId === '2l' || pinId === '2') {
-                inst.setPinVoltage('2r', voltage);
-                visit(`${compId}:2r`, voltage);
-                inst.setPinVoltage('2', voltage);
-                visit(`${compId}:2`, voltage);
-                inst.setPinVoltage('2l', voltage);
-                visit(`${compId}:2l`, voltage);
-            } else if (pinId === '2r') {
-                inst.setPinVoltage('2l', voltage);
-                visit(`${compId}:2l`, voltage);
-                inst.setPinVoltage('2', voltage);
-                visit(`${compId}:2`, voltage);
-            }
-
-            // Tactile switch crossing
-            if (inst.state?.pressed) {
-                if (pinId.startsWith('1')) {
-                    inst.setPinVoltage('2l', voltage);
-                    visit(`${compId}:2l`, voltage);
-                    inst.setPinVoltage('2r', voltage);
-                    visit(`${compId}:2r`, voltage);
-                    inst.setPinVoltage('2', voltage);
-                    visit(`${compId}:2`, voltage);
-                } else if (pinId.startsWith('2')) {
-                    inst.setPinVoltage('1l', voltage);
-                    visit(`${compId}:1l`, voltage);
-                    inst.setPinVoltage('1r', voltage);
-                    visit(`${compId}:1r`, voltage);
-                    inst.setPinVoltage('1', voltage);
-                    visit(`${compId}:1`, voltage);
-                }
-            }
-        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
-            if (inst.state?.connectedPair) {
-                const [p1, p2] = inst.state.connectedPair;
-                if (pinId === p1) {
-                    inst.setPinVoltage(p2, voltage);
-                    visit(`${compId}:${p2}`, voltage);
-                } else if (pinId === p2) {
-                    inst.setPinVoltage(p1, voltage);
-                    visit(`${compId}:${p1}`, voltage);
-                }
-            }
-        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
-            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
-            if (isRight) {
-                if (pinId === '3') {
-                    inst.setPinVoltage('2', voltage);
-                    visit(`${compId}:2`, voltage);
-                } else if (pinId === '2') {
-                    inst.setPinVoltage('3', voltage);
-                    visit(`${compId}:3`, voltage);
-                }
-            } else {
-                if (pinId === '1') {
-                    inst.setPinVoltage('2', voltage);
-                    visit(`${compId}:2`, voltage);
-                } else if (pinId === '2') {
-                    inst.setPinVoltage('1', voltage);
-                    visit(`${compId}:1`, voltage);
-                }
-            }
-        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
-            const bridges = getInternalBridgesForComponent(compId, inst.type);
-            for (const bridge of bridges) {
-                if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1], voltage);
-                else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0], voltage);
-            }
-        } else if (inst.type === 'openhw-analog-joystick' || inst.type === 'wokwi-analog-joystick') {
-            // Joystick is two internal potentiometers (VCC→VRX, VCC→VRY) plus a button (SW→GND).
-            // normalizePin maps VCC→5V, so we must accept both names.
-            const isVccPin = pinId === 'VCC' || pinId === '5V';
-            const isGndPin = pinId === 'GND';
-            const xVal = inst.state?.x ?? 0.5;
-            const yVal = inst.state?.y ?? 0.5;
-            const gndV = inst.getPinVoltage('GND') || 0;
-            if (isVccPin) {
-                const vrxV = gndV + xVal * (voltage - gndV);
-                const vryV = gndV + yVal * (voltage - gndV);
-                inst.setPinVoltage('VRX', vrxV);
-                visit(`${compId}:VRX`, vrxV);
-                inst.setPinVoltage('VRY', vryV);
-                visit(`${compId}:VRY`, vryV);
-            } else if (isGndPin) {
-                // Get VCC voltage from whichever pin name is registered
-                const vccV = inst.getPinVoltage('VCC') || inst.getPinVoltage('5V') || 5.0;
-                const vrxV = voltage + xVal * (vccV - voltage);
-                const vryV = voltage + yVal * (vccV - voltage);
-                inst.setPinVoltage('VRX', vrxV);
-                visit(`${compId}:VRX`, vrxV);
-                inst.setPinVoltage('VRY', vryV);
-                visit(`${compId}:VRY`, vryV);
-            }
-            // SW button: connects SW to GND when pressed
-            if (inst.state?.pressed) {
-                if (pinId === 'SW') {
-                    inst.setPinVoltage('GND', voltage);
-                    visit(`${compId}:GND`, voltage);
-                } else if (isGndPin) {
-                    inst.setPinVoltage('SW', voltage);
-                    visit(`${compId}:SW`, voltage);
-                }
-            }
-        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
-            // Rotary potentiometer: voltage divider between pin 2 (VCC) and pin 1 (GND)
-            const potVal = Number(inst.state?.value) ?? 50;
-            const ratio = Math.max(0, Math.min(1, potVal / 100));
-            if (pinId === '2') {
-                const gndV = inst.getPinVoltage('1') || 0;
-                const sigV = gndV + (voltage - gndV) * ratio;
-                inst.setPinVoltage('SIG', sigV);
-                visit(`${compId}:SIG`, sigV);
-            } else if (pinId === '1') {
-                const vccV = inst.getPinVoltage('2') || 5.0;
-                const sigV = voltage + (vccV - voltage) * ratio;
-                inst.setPinVoltage('SIG', sigV);
-                visit(`${compId}:SIG`, sigV);
-            }
-        } else if (inst.type === 'openhw-slide-potentiometer') {
-            // Slide potentiometer: voltage divider between VCC and GND
-            const potVal = Number(inst.state?.value) ?? 50;
-            const ratio = Math.max(0, Math.min(1, potVal / 100));
-            if (pinId === 'VCC') {
-                const gndV = inst.getPinVoltage('GND') || 0;
-                const sigV = gndV + (voltage - gndV) * ratio;
-                inst.setPinVoltage('SIG', sigV);
-                visit(`${compId}:SIG`, sigV);
-            } else if (pinId === 'GND') {
-                const vccV = inst.getPinVoltage('VCC') || 5.0;
-                const sigV = voltage + (vccV - voltage) * ratio;
-                inst.setPinVoltage('SIG', sigV);
-                visit(`${compId}:SIG`, sigV);
-            }
-        } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
-            // HC-SR04: VCC is power input, GND is ground, TRIG is input (ignore), ECHO is output
-            if (pinId === 'VCC') {
-                const gndV = inst.getPinVoltage('GND') || 0;
-                const echoV = (inst as any).echoOutputVoltage !== undefined
-                    ? (inst as any).echoOutputVoltage
-                    : inst.getPinVoltage('ECHO') || 0;
-                inst.setPinVoltage('ECHO', echoV);
-                visit(`${compId}:ECHO`, echoV);
-            } else if (pinId === 'GND') {
-                const echoV = (inst as any).echoOutputVoltage !== undefined
-                    ? (inst as any).echoOutputVoltage
-                    : inst.getPinVoltage('ECHO') || 0;
-                inst.setPinVoltage('ECHO', echoV);
-                visit(`${compId}:ECHO`, echoV);
-            }
-        } else if (inst.type === 'openhw-ks2e-m-dc5') {
-            // DPDT Relay: internal switch contacts + coil
-            const energised = inst.state?.energised;
-            if (pinId === 'COIL1') {
-                const v2 = inst.getPinVoltage('COIL2');
-                const coilV = Math.min(voltage, 5.0);
-                const drop = coilV * 0.01;
-                const nextV = Math.max(0, coilV - drop);
-                inst.setPinVoltage('COIL2', nextV);
-                visit(`${compId}:COIL2`, nextV);
-            } else if (pinId === 'COIL2') {
-                const coilV = Math.min(voltage, 5.0);
-                const drop = coilV * 0.01;
-                const nextV = Math.max(0, coilV - drop);
-                inst.setPinVoltage('COIL1', nextV);
-                visit(`${compId}:COIL1`, nextV);
-            } else if (energised) {
-                // Energised: P1←→NO1, P2←→NO2
-                if (pinId === 'P1') {
-                    inst.setPinVoltage('NO1', voltage);
-                    visit(`${compId}:NO1`, voltage);
-                } else if (pinId === 'NO1') {
-                    inst.setPinVoltage('P1', voltage);
-                    visit(`${compId}:P1`, voltage);
-                } else if (pinId === 'P2') {
-                    inst.setPinVoltage('NO2', voltage);
-                    visit(`${compId}:NO2`, voltage);
-                } else if (pinId === 'NO2') {
-                    inst.setPinVoltage('P2', voltage);
-                    visit(`${compId}:P2`, voltage);
-                }
-            } else {
-                // De-energised: P1←→NC1, P2←→NC2
-                if (pinId === 'P1') {
-                    inst.setPinVoltage('NC1', voltage);
-                    visit(`${compId}:NC1`, voltage);
-                } else if (pinId === 'NC1') {
-                    inst.setPinVoltage('P1', voltage);
-                    visit(`${compId}:P1`, voltage);
-                } else if (pinId === 'P2') {
-                    inst.setPinVoltage('NC2', voltage);
-                    visit(`${compId}:NC2`, voltage);
-                } else if (pinId === 'NC2') {
-                    inst.setPinVoltage('P2', voltage);
-                    visit(`${compId}:P2`, voltage);
-                }
-            }
-        }
+        // Shared implementation (plan §5.3): identical semantics, parity-
+        // tested in tests/unit/worker/signal-electrical.test.mjs. AVR keeps
+        // its own orchestration (rails, pullups, port gating) in
+        // updateOopPin/repropagateAllVoltages below.
+        traversePassiveShared(inst, compId, pinId, voltage, visit, (id, type) => getInternalBridgesForComponent(id, type));
     }
 
     private setupHooks() {
@@ -822,26 +993,9 @@ export class AVRRunner {
             // Board digital/analog pins should remain drivable by external components,
             // not locked to power rail voltage even if the breadboard power row is shared.
             const boardPinNodes = new Set<string>();
-            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
+            this.avrBoardPinList().forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
 
-            const normalizePin = (pinStr: string): string => {
-                const parts = pinStr.split(':');
-                if (parts.length >= 2) {
-                    const compId = parts[0];
-                    const pinId = parts.slice(1).join(':');
-                    const upper = pinId.toUpperCase();
-                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
-                        return `${compId}:GND`;
-                    }
-                    if (upper === '5V' || upper === 'VCC') {
-                        return `${compId}:5V`;
-                    }
-                    if (upper === '3V3' || upper === '3V3_EN') {
-                        return `${compId}:3V3`;
-                    }
-                }
-                return pinStr;
-            };
+            const normalizePin = normalizeEndpointPin; // shared (plan §5.3)
 
             const visit = (rawNode: string, v: number) => {
                 const node = normalizePin(rawNode);
@@ -914,24 +1068,7 @@ export class AVRRunner {
             const visitedEdges = new Set<string>();
             const visitedNodes = new Set<string>();
 
-            const normalizePin = (pinStr: string): string => {
-                const parts = pinStr.split(':');
-                if (parts.length >= 2) {
-                    const compId = parts[0];
-                    const pinId = parts.slice(1).join(':');
-                    const upper = pinId.toUpperCase();
-                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
-                        return `${compId}:GND`;
-                    }
-                    if (upper === '5V' || upper === 'VCC') {
-                        return `${compId}:5V`;
-                    }
-                    if (upper === '3V3' || upper === '3V3_EN') {
-                        return `${compId}:3V3`;
-                    }
-                }
-                return pinStr;
-            };
+            const normalizePin = normalizeEndpointPin; // shared (plan §5.3)
 
             const visitNode = (rawNode: string, v: number) => {
                 const node = normalizePin(rawNode);
@@ -939,6 +1076,25 @@ export class AVRRunner {
 
                 const [compId, compPin] = node.split(':');
                 const isMainBoard = compId === this.boardId || compId === 'arduino' || compId === 'uno' || compId === 'board';
+                // Alias-safe instance pin resolution (plan §5.3): the net
+                // layer normalizes power/numbering aliases (VCC→5V,
+                // GND_n→GND, D13→13), but component pin stores are keyed by
+                // manifest names. Writing the normalized label creates ghost
+                // pins (e.g. sd1:5V) while the real pin (sd1:VCC) stays at
+                // 0V — every power-gated model (SD, displays) then reads
+                // dead rails. Resolve to the real pin sharing this node.
+                const resolveInstPin = (inst: any, want: string): string => {
+                    try {
+                        if (!inst || !inst.pins || inst.pins[want] !== undefined) return want;
+                        for (const pid of Object.keys(inst.pins)) {
+                            try {
+                                const norm = normalizePin(`x:${pid}`).split(':')[1];
+                                if (norm === want) return pid;
+                            } catch { /* keep scanning */ }
+                        }
+                    } catch { /* fall through */ }
+                    return want;
+                };
 
                 // Do not allow passive back-propagation to overwrite constant board power reference pins (GND, 5V, 3V3, VIN)
                 if (isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
@@ -953,24 +1109,9 @@ export class AVRRunner {
                 // to a switch or pushbutton to GND), allow the power rail voltage to drive the pin state!
                 const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
                 if (isPowerRailSrc && isMainBoard && rawNode !== `${compId}:${arduinoPinStr}`) {
-                    let port: AVRIOPort | null = null;
-                    let bit = 0;
-                    if (compPin.startsWith('A')) {
-                        port = this.portC;
-                        const parsed = parseInt(compPin.slice(1), 10);
-                        if (!isNaN(parsed)) bit = parsed;
-                    } else {
-                        const num = parseInt(compPin, 10);
-                        if (!isNaN(num)) {
-                            if (num >= 8 && num <= 13) {
-                                port = this.portB;
-                                bit = num - 8;
-                            } else if (num >= 0 && num <= 7) {
-                                port = this.portD;
-                                bit = num;
-                            }
-                        }
-                    }
+                    const r = this.resolveAvrPortBit(compPin);
+                    const port = r ? r.port : null;
+                    const bit = r ? r.bit : 0;
                     const state = port ? port.pinState(bit) : null;
                     const isOutput = state === PinState.High || state === PinState.Low;
                     if (isOutput) {
@@ -990,8 +1131,9 @@ export class AVRRunner {
                     if (!isPassive) {
                         const railVoltage = lowImpRails.get(node)!;
                         if (railInst) {
-                            if (!railInst.pins[compPin]) railInst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                            railInst.setPinVoltage(compPin, railVoltage);
+                            const realPin = resolveInstPin(railInst, compPin);
+                            if (!railInst.pins[realPin]) railInst.pins[realPin] = { voltage: 0, mode: 'INPUT' };
+                            railInst.setPinVoltage(realPin, railVoltage);
                         }
                         return;
                     }
@@ -1016,8 +1158,9 @@ export class AVRRunner {
                     inst = this.instances.get(this.boardId);
                 }
                 if (inst) {
-                    if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                    inst.setPinVoltage(compPin, v);
+                    const realPin = resolveInstPin(inst, compPin);
+                    if (!inst.pins[realPin]) inst.pins[realPin] = { voltage: 0, mode: 'INPUT' };
+                    inst.setPinVoltage(realPin, v);
                     this.circuitDirty = true;
                     if (this.cpu && compId !== customCompId) {
                         inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
@@ -1036,19 +1179,8 @@ export class AVRRunner {
                         if (!originIsExternal) {
                             this.pinStates[compPin] = isHigh;
                         }
-                        if (compPin.startsWith('A')) {
-                            const bit = parseInt(compPin.slice(1), 10);
-                            if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                        } else {
-                            const num = parseInt(compPin, 10);
-                            if (!isNaN(num)) {
-                                if (num >= 8 && num <= 13) {
-                                    this.portB?.setPin(num - 8, isHigh);
-                                } else if (num >= 0 && num <= 7) {
-                                    this.portD?.setPin(num, isHigh);
-                                }
-                            }
-                        }
+                        const r = this.resolveAvrPortBit(compPin);
+                        if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                     }
 
                     this.traversePassive(inst, compId, compPin, v, (forwardNode, nextV) => {
@@ -1066,24 +1198,9 @@ export class AVRRunner {
         this.repropagateAllVoltages = () => {
             lowImpRails = getLowImpedanceRails();
             const getAvrPinModeState = (pinStr: string) => {
-                let port: AVRIOPort | null = null;
-                let bit = 0;
-                if (pinStr.startsWith('A')) {
-                    port = this.portC;
-                    const parsed = parseInt(pinStr.slice(1), 10);
-                    if (!isNaN(parsed)) bit = parsed;
-                } else {
-                    const num = parseInt(pinStr, 10);
-                    if (!isNaN(num)) {
-                        if (num >= 8 && num <= 13) {
-                            port = this.portB;
-                            bit = num - 8;
-                        } else if (num >= 0 && num <= 7) {
-                            port = this.portD;
-                            bit = num;
-                        }
-                    }
-                }
+                const r = this.resolveAvrPortBit(pinStr);
+                const port = r ? r.port : null;
+                const bit = r ? r.bit : 0;
                 if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
                 const state = port.pinState(bit);
                 if (state === PinState.High || state === PinState.InputPullUp || state === 2) {
@@ -1101,33 +1218,21 @@ export class AVRRunner {
             // Process INPUT/INPUT_PULLUP pins BEFORE OUTPUT pins so that strong OUTPUT signals
             // can override the weak pull-up voltage when a CPU output pin and a pull-up share
             // the same breadboard row (e.g. MUX:D1=0V from pin 3 must beat 5V from pin 5's pull-up).
-            const allBoardPins = [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+            const allBoardPins = this.avrBoardPinList();
             const inputPins = allBoardPins.filter(p => {
                 const state = getAvrPinModeState(p);
                 if (!state.isDriven) return false;
-                const num = parseInt(p, 10);
-                if (isNaN(num)) return false;
-                let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
-                else return false;
-                if (!port) return false;
-                const pinState = port.pinState(bit);
+                const r = this.resolveAvrPortBit(p);
+                if (!r || !r.port || r.bit < 0) return false;
+                const pinState = r.port.pinState(r.bit);
                 return pinState !== PinState.High && pinState !== PinState.Low;
             });
             const outputPins = allBoardPins.filter(p => {
                 const state = getAvrPinModeState(p);
                 if (!state.isDriven) return false;
-                const num = parseInt(p, 10);
-                if (isNaN(num)) return false;
-                let port: AVRIOPort | null = null;
-                let bit = num;
-                if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
-                else if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
-                else return false;
-                if (!port) return false;
-                const pinState = port.pinState(bit);
+                const r = this.resolveAvrPortBit(p);
+                if (!r || !r.port || r.bit < 0) return false;
+                const pinState = r.port.pinState(r.bit);
                 return pinState === PinState.High || pinState === PinState.Low;
             });
             const analogPins = allBoardPins.filter(p => p.startsWith('A'));
@@ -1166,22 +1271,9 @@ export class AVRRunner {
                     }
                 });
 
-                let port: AVRIOPort | null = null;
-                let bit = 0;
-                const num = parseInt(pin, 10);
-                if (!isNaN(num)) {
-                    if (num >= 8 && num <= 13) {
-                        port = this.portB;
-                        bit = num - 8;
-                    } else if (num >= 0 && num <= 7) {
-                        port = this.portD;
-                        bit = num;
-                    }
-                } else if (pin.startsWith('A')) {
-                    port = this.portC;
-                    const parsed = parseInt(pin.slice(1), 10);
-                    if (!isNaN(parsed)) bit = parsed;
-                }
+                const r = this.resolveAvrPortBit(pin);
+                const port = r ? r.port : null;
+                const bit = r ? r.bit : 0;
 
                 if (isDrivenLow) {
                     this.pinStates[pin] = false;
@@ -1194,7 +1286,11 @@ export class AVRRunner {
                     if (isDriven) {
                         this.pinStates[pin] = isHigh;
 
-                        const isPullUp = port ? (port.pinState(bit) === PinState.InputPullUp || port.pinState(bit) === 2) : false;
+                        // Pull-up ONLY (InputPullUp === 3): a floating Input
+                        // (=== 2) must never drive the net — blasting it
+                        // HIGH here self-triggers edge interrupts every
+                        // repropagate pass (Mega INT4 storm root cause).
+                        const isPullUp = port ? port.pinState(bit) === PinState.InputPullUp : false;
                         if (isPullUp) {
                             updateOopPin(pin, true);
                         }
@@ -1202,9 +1298,8 @@ export class AVRRunner {
                 }
             });
             analogPins.forEach(pin => {
-                const bit = parseInt(pin.slice(1), 10);
-                const port = this.portC;
-                const pinState = port ? port.pinState(bit) : null;
+                const r = this.resolveAvrPortBit(pin);
+                const pinState = r && r.port && r.bit >= 0 ? r.port.pinState(r.bit) : null;
                 const isDigitalOutput = pinState === PinState.High || pinState === PinState.Low;
                 if (isDigitalOutput) {
                     const { isDriven, isHigh } = getAvrPinModeState(pin);
@@ -1251,7 +1346,7 @@ export class AVRRunner {
                         }
                     });
                 } else if (inst.type.startsWith('logic-') || inst.type.includes('timer') || inst.type.includes('opamp')) {
-                    const allInsts = Array.from(this.instances.values());
+                    const allInsts: any = this.instances; // Map: O(1) findInstance (BaseComponent accepts Map|Array)
                     if (compId.includes('nd_gate')) {
                         const gateWires = this.currentWires.filter((w: any) =>
                             w.from?.startsWith(compId) || w.to?.startsWith(compId)
@@ -1320,7 +1415,7 @@ export class AVRRunner {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
                 } else if (inst.type.includes('ldr')) {
-                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, this.instances as any);
                     ['DO', 'AO'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
@@ -1331,7 +1426,7 @@ export class AVRRunner {
                 } else if (inst.type.includes('potentiometer') || inst.type.includes('pot')) {
                     if (inst.pins['SIG']) updateOopPin('SIG', inst.pins['SIG'].voltage, compId);
                 } else if (inst.type.includes('ntc')) {
-                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, this.instances as any);
                     ['OUT', 'A0', 'D0'].forEach(pin => {
                         if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
                     });
@@ -1368,7 +1463,7 @@ export class AVRRunner {
             this.instances.forEach((inst, compId) => {
                 if (compId === this.boardId) return;
                 if (inst.type === 'openhw-npn-transistor') {
-                    const allInsts = Array.from(this.instances.values());
+                    const allInsts: any = this.instances; // Map: O(1) findInstance (BaseComponent accepts Map|Array)
                     inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
                     if (inst.pins['C']) {
                         updateOopPin('C', inst.pins['C'].voltage, compId);
@@ -1396,15 +1491,29 @@ export class AVRRunner {
                 pinNames.forEach((pin, i) => {
                     if (!pin) return;
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
-                    // Allow OUTPUT, InputPullUp, and Input (high-impedance release for open-drain buses like 1-Wire/I2C)
+                    // Allow OUTPUT and InputPullUp. A floating INPUT pin must
+                    // NEVER drive the net: the net owns a floating line
+                    // (external component or pull-up repropagate owns it).
+                    // Treating float-as-HIGH here makes every floating input
+                    // a 5V source that fights the real driver on every port
+                    // write — observed as a TRUE/FALSE setPin alternation on
+                    // the same cycle that self-triggers edge interrupts
+                    // (Mega INT4 storm: ~400 spurious ISRs/s with no edges).
+                    // Open-drain release still works: release-to-pullup
+                    // propagates via InputPullUp below, and the repropagate
+                    // input loop drives component-owned lines.
                     const state = port.pinState(i);
-                    const isOutputOrPullUpOrInput = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp || state === PinState.Input || state === 2;
-                    if (!isOutputOrPullUpOrInput) {
+                    if (state === PinState.Input || (state as number) === 2) {
+                        return;
+                    }
+                    const isOutputOrPullUp = state === PinState.Low || state === PinState.High || state === PinState.InputPullUp;
+                    if (!isOutputOrPullUp) {
                         return;
                     }
 
-                    // For open-drain buses (like 1-Wire / I2C), switching to high-impedance Input releases the wire HIGH.
-                    const isHigh = state === PinState.InputPullUp || state === 2 || state === PinState.High || state === PinState.Input || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
+                    // For open-drain buses (like 1-Wire / I2C), switching to
+                    // INPUT_PULLUP releases the wire HIGH.
+                    const isHigh = state === PinState.InputPullUp || state === PinState.High || ((state === PinState.Low || state === PinState.High) && (value & (1 << i)) !== 0);
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1423,32 +1532,20 @@ export class AVRRunner {
             });
         };
 
-        const isMega = this.boardId.toLowerCase().includes('mega');
+        const isMega = this.isMegaBoard();
 
         if (isMega) {
-            const MEGA_PORTA_PINS = ['22', '23', '24', '25', '26', '27', '28', '29'];
-            const MEGA_PORTB_PINS = ['53', '52', '51', '50', '10', '11', '12', '13'];
-            const MEGA_PORTC_PINS = ['37', '36', '35', '34', '33', '32', '31', '30'];
-            const MEGA_PORTD_PINS = ['21', '20', '19', '18', '', '', '', '38'];
-            const MEGA_PORTE_PINS = ['0', '1', '', '5', '2', '3', '', ''];
-            const MEGA_PORTF_PINS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'];
-            const MEGA_PORTG_PINS = ['41', '40', '39', '', '', '4', '', ''];
-            const MEGA_PORTH_PINS = ['17', '16', '', '6', '7', '8', '9', ''];
-            const MEGA_PORTJ_PINS = ['15', '14', '', '', '', '', '', ''];
-            const MEGA_PORTK_PINS = ['A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
-            const MEGA_PORTL_PINS = ['49', '48', '47', '46', '45', '44', '43', '42'];
-
-            if (this.portA) attachPort(this.portA, MEGA_PORTA_PINS);
-            if (this.portB) attachPort(this.portB, MEGA_PORTB_PINS);
-            if (this.portC) attachPort(this.portC, MEGA_PORTC_PINS);
-            if (this.portD) attachPort(this.portD, MEGA_PORTD_PINS);
-            if (this.portE) attachPort(this.portE, MEGA_PORTE_PINS);
-            if (this.portF) attachPort(this.portF, MEGA_PORTF_PINS);
-            if (this.portG) attachPort(this.portG, MEGA_PORTG_PINS);
-            if (this.portH) attachPort(this.portH, MEGA_PORTH_PINS);
-            if (this.portJ) attachPort(this.portJ, MEGA_PORTJ_PINS);
-            if (this.portK) attachPort(this.portK, MEGA_PORTK_PINS);
-            if (this.portL) attachPort(this.portL, MEGA_PORTL_PINS);
+            if (this.portA) attachPort(this.portA, MEGA_PORT_TABLES.portA);
+            if (this.portB) attachPort(this.portB, MEGA_PORT_TABLES.portB);
+            if (this.portC) attachPort(this.portC, MEGA_PORT_TABLES.portC);
+            if (this.portD) attachPort(this.portD, MEGA_PORT_TABLES.portD);
+            if (this.portE) attachPort(this.portE, MEGA_PORT_TABLES.portE);
+            if (this.portF) attachPort(this.portF, MEGA_PORT_TABLES.portF);
+            if (this.portG) attachPort(this.portG, MEGA_PORT_TABLES.portG);
+            if (this.portH) attachPort(this.portH, MEGA_PORT_TABLES.portH);
+            if (this.portJ) attachPort(this.portJ, MEGA_PORT_TABLES.portJ);
+            if (this.portK) attachPort(this.portK, MEGA_PORT_TABLES.portK);
+            if (this.portL) attachPort(this.portL, MEGA_PORT_TABLES.portL);
         } else {
             if (this.portB) attachPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14)); // PORTB
             if (this.portD) attachPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8)); // PORTD
@@ -1456,7 +1553,7 @@ export class AVRRunner {
         }
 
         // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
-        [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+        this.avrBoardPinList().forEach(pin => {
             this.pinStates[pin] = false;
             this.circuitDirty = true;
             updateOopPin(pin, false);
@@ -1474,7 +1571,6 @@ export class AVRRunner {
         });
     }
 
-    private _dbgFrameCount = 0;
     private clockEvents: Array<{ targetCycle: number; callback: () => void }> = [];
 
     private pollADCChannels = () => {
@@ -1526,20 +1622,49 @@ export class AVRRunner {
                 }
             }
 
-            if (i === 0 && this._dbgFrameCount % 60 === 0) {
-                console.log(`[ADC DBG] A0 targetNet=${targetNet} voltage=${voltage} pinToNet.size=${this.pinToNet.size}`);
-            }
-
             this.adc.channelValues[i] = voltage;
         }
     };
 
-    private runLoop = () => {
+    private runLoop = (virtualDeltaMs?: number) => {
         if (!this.running || !this.cpu) return;
+        // Lockstep guard: externally-stepped runners ignore wall-driven
+        // ticks (a pending setTimeout may still fire once after handoff).
+        if (this.externalStepping && virtualDeltaMs === undefined) return;
+
+        // Command ring drain (§10.6 step 1): ≤16 commands per tick, then
+        // HALT freezes the tick (takeStepBudget returns 0) until RESUME/STEP.
+        // postMessage INTERACT/SERIAL/RESET/SPEED/TELEMETRY handlers stay as
+        // fallback for clients without ring buffers.
+        try {
+            if (this.cmdReader && this.debugService) {
+                const changed = this.debugService.drainCommands(this.cmdReader, Number(this.cpu.cycles) || 0);
+                if (changed) this.applyRingMovementCommands();
+                // Serial RX ring (§10.4): bytes the UI pushed ride the ring;
+                // drain into the UART buffer (postMessage SERIAL_INPUT stays
+                // as fallback/overflow path).
+                try {
+                    const rx = (this as any).sabSerialRx;
+                    if (rx && typeof rx.drain === "function") {
+                        const bytes = rx.drain(256);
+                        for (const b of bytes) this.serialRxByte(b & 0xff);
+                    }
+                } catch { /* RX drain never breaks the tick */ }
+                if (this.debugService.isHalted()) {
+                    const budget = this.debugService.takeStepBudget(0);
+                    if (budget <= 0) {
+                        // Frozen: still emit state so UI shows paused frame, then wait.
+                        this.lastTime = performance.now();
+                        if (!this.externalStepping) setTimeout(this.runLoop, 8);
+                        return;
+                    }
+                }
+            }
+        } catch { /* ring drain never breaks the tick */ }
 
         const loopStart = performance.now();
         const now = performance.now();
-        const deltaTime = now - this.lastTime;
+        const deltaTime = virtualDeltaMs !== undefined ? virtualDeltaMs : now - this.lastTime;
         let physicsMs = 0;
 
         if (deltaTime > 0) {
@@ -1550,11 +1675,26 @@ export class AVRRunner {
             const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
 
-            const instArray = Array.from(this.instances.values());
+            const instArray = Array.from(this.instances.entries());
             const componentUpdateThreshold = 32000; // Update components every 2ms of simulated time
 
             while (this.cpu.cycles < targetObj && this.running) {
                 const nextChunkTarget = Math.min(targetObj, this.cpu.cycles + componentUpdateThreshold);
+                // PC breakpoint check (§10.7): chunk boundary only — never
+                // per-instruction. HALT freezes via the service; the loop
+                // below observes isHalted() through the normal drain path.
+                try {
+                    const svc = this.debugService as any;
+                    if (svc && typeof svc.checkPcBreakpoint === 'function') {
+                        const pc = Number((this.cpu as any)?.pc) >>> 0;
+                        if (svc.checkPcBreakpoint(pc, Number(this.cpu.cycles) || 0)) {
+                            this.forceEmitState();
+                            this.lastTime = performance.now();
+                            if (!this.externalStepping) setTimeout(this.runLoop, 8);
+                            return;
+                        }
+                    }
+                } catch { /* breakpoint check never breaks the tick */ }
                 
                 while (this.cpu.cycles < nextChunkTarget && this.running) {
                     avrInstruction(this.cpu);
@@ -1573,7 +1713,7 @@ export class AVRRunner {
                 // Component updates for smooth animation
                 const componentStart = performance.now();
                 let anyStateChanged = false;
-                instArray.forEach(inst => {
+                for (const [compId, inst] of instArray) {
                     if (!(inst as any)._simCpu) {
                         (inst as any)._simCpu = this.cpu;
                         (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
@@ -1591,29 +1731,23 @@ export class AVRRunner {
                             let cleanPin = boardPin.replace(/^D/i, '');
                             this.pinStates[cleanPin] = isHigh;
                             this.pinStates[`D${cleanPin}`] = isHigh;
-                            const num = parseInt(cleanPin, 10);
-                            if (!isNaN(num)) {
-                                if (num >= 8 && num <= 13) {
-                                    this.portB?.setPin(num - 8, isHigh);
-                                } else if (num >= 0 && num <= 7) {
-                                    this.portD?.setPin(num, isHigh);
-                                }
-                            } else if (cleanPin.startsWith('A')) {
-                                const bit = parseInt(cleanPin.slice(1), 10);
-                                if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
-                            }
+                            const r = this.resolveAvrPortBit(boardPin);
+                            if (r && r.port && r.bit >= 0) r.port.setPin(r.bit, isHigh);
                         };
                     }
                     if ((inst as any)._simCpu && !(inst as any)._simCpu._avrRunner) {
                         (inst as any)._simCpu._avrRunner = this;
                     }
-                    inst.update(this.cpu!.cycles, this.currentWires, instArray);
+                    // Runner-agnostic bus services (plan §5.3); legacy handles
+                    // above remain as fallback.
+                    this.provideBusServices(inst, compId);
+                    inst.update(this.cpu!.cycles, this.currentWires, this.instances as any);
                     if (inst.stateChanged) {
                         anyStateChanged = true;
                         (inst as any).pendingVisualStateEmit = true;
                         inst.stateChanged = false;
                     }
-                });
+                }
                 if (anyStateChanged && typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
                 }
@@ -1656,23 +1790,27 @@ export class AVRRunner {
 
             this.lastPhysicsMs = physicsMs;
             this.lastRunLoopMs = performance.now() - loopStart;
-
-            // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            // this.emitStateIfDue(now); // Disabled. Handled by FLUSH_VISUALS from UI thread.
         }
 
-        this._dbgFrameCount++;
-        if (this._dbgFrameCount % 300 === 0) {
-            const instArr = Array.from(this.instances.values());
-            console.log(`[AVRRunner DBG] frame=${this._dbgFrameCount} instances=${instArr.length} running=${this.running} cycles=${this.cpu?.cycles}`);
-            instArr.forEach(inst => {
-                console.log(`  inst id=${inst.id} type=${inst.type} stateChanged=${inst.stateChanged} pendingEmit=${(inst as any).pendingVisualStateEmit} telemetryEnabled=${inst.telemetryEnabled} state=`, JSON.stringify(inst.state));
-            });
-            console.log(`  pinStates=`, JSON.stringify(this.pinStates));
-        }
-
-        setTimeout(this.runLoop, 1);
+        // v2 tick (§10.6): cycles owed derive from sim-time budget (cyclesToRun /
+        // CYCLES_PER_FRAME above), not wall catch-up — the setTimeout here is
+        // pacing only, and every command/event carries cpuCycles stamps.
+        // Lockstep schedulers drive stepQuantum() instead (no reschedule).
+        if (!this.externalStepping) setTimeout(this.runLoop, 1);
     }
+
+    /**
+     * Lockstep tick (Phase A multi-board): advance a fixed sim-time quantum
+     * with no wall reads and no timer reschedule. The scheduler owns pacing;
+     * serial/physics budgets flow from the virtual delta exactly like wall
+     * time. Single-board path never calls this (own runLoop, untouched).
+     */
+    public stepQuantum = (simMs: number): void => {
+        try {
+            if (!this.running || !this.cpu) return;
+            this.runLoop(Math.max(0.5, Number(simMs) || 8));
+        } catch { /* scheduler tick never breaks the loop */ }
+    };
 
     private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
@@ -1729,24 +1867,63 @@ export class AVRRunner {
         const msg: any = { type: 'state', boardId: this.boardId };
         msg.pins = this.pinStates;
         this.pinsChanged = false;
-        
+
         if (this.adc) {
             msg.analog = Array.from(this.adc.channelValues);
         }
 
         const compStates: Array<{ id: string; state: any }> = [];
+        const dirtySlots: number[] = [];
+        // T3: telemetry ring write — one compact record per telemetry-enabled
+        // component per flush (overwrites oldest when full; lossy by design).
+        // Grading/teacher-key paths keep full-fidelity postMessage snapshots.
+        const cyclesNow = Number(this.cpu.cycles) || 0;
+        let anyTelemetry = false;
         for (const inst of this.instances.values()) {
             const pendingEmit = (inst as any).pendingVisualStateEmit;
             if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
-            
+
             const syncState = getUnifiedComponentSyncState(inst);
-            
+
             // Respect the component's sync policy to avoid overloading the UI
             if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-            
+
+            // SAB publish (§12.3 T5) via transport: numeric slot writes, zero
+            // postMessage bytes. Same values/order as the direct calls.
+            const slotFrames: Array<{ id: string; slot: number; version: number; kind: number; f: number[]; i: number[] }> = [];
+            const teleRecords: Array<{ slot: number; code: number; v0: number; v1: number; cycles: number }> = [];
+            if ((this.transport as SimTransport | null) && inst.sabSlot >= 0) {
+                try {
+                    const ui = typeof (inst as any).uiState === 'function' ? (inst as any).uiState() : null;
+                    const f = ui?.f ? Object.values(ui.f).map(Number) : [];
+                    const i = ui?.i ? Object.values(ui.i).map(Number) : [];
+                    slotFrames.push({
+                        id: inst.id, slot: inst.sabSlot,
+                        version: (inst as any).stateVersion || 0,
+                        kind: sabKindForType(inst.type), f, i,
+                    });
+                    dirtySlots.push(inst.sabSlot);
+                    if ((inst as any).telemetryEnabled && (f.length > 0 || i.length > 0)) {
+                        teleRecords.push({
+                            slot: inst.sabSlot, code: sabKindForType(inst.type),
+                            v0: Number(f[0] || 0), v1: Number(i[0] || 0), cycles: cyclesNow,
+                        });
+                        anyTelemetry = true;
+                    } else if ((inst as any).telemetryEnabled) {
+                        anyTelemetry = true;
+                    }
+                } catch { /* SAB write never breaks sim */ }
+            } else if ((inst as any).telemetryEnabled) {
+                anyTelemetry = true;
+            }
+            try {
+                (this.transport as SimTransport | null)?.publishComponentSlots(slotFrames);
+                (this.transport as SimTransport | null)?.publishTelemetryRecords(teleRecords);
+            } catch { /* SAB write never breaks sim */ }
+
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
-            
+
             compStates.push({
                 id: inst.id,
                 type: inst.type,
@@ -1755,12 +1932,17 @@ export class AVRRunner {
             });
         }
         msg.components = compStates;
+        if (dirtySlots.length) msg.dirtySlots = dirtySlots;
+        // T5: mark SAB fast-path eligibility — postRunnerState shrinks to the
+        // wakeup when this is set (slow-mirror still flows when recording).
+        if (this.sabWriter) msg.sabFastPath = true;
 
         this.statusIntervalEmitCount++;
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
         msg.simTimeMs = this.getSimulatedTimeMs();
-        
+        try { (this.transport as SimTransport | null)?.publishFrame(msg.simTimeMs, anyTelemetry); } catch { /* never break sim */ }
+
         this.lastStateEmitCycle = this.cpu.cycles;
         this.lastStateEmitTime = now;
         this.onStateUpdate(msg);
@@ -1820,6 +2002,12 @@ export class AVRRunner {
     private propagateBoardPin(pinId: string, isHigh: boolean) {
         const voltage = isHigh ? 5.0 : 0.0;
         const endpoints = this.getProtocolEndpointsForArduinoPin(pinId);
+        // Pin bitfield publish via transport (§10.4): board pin order fixed
+        // at START. Aliases (D13/13) share one index when the map lists
+        // either form.
+        try {
+            (this.transport as SimTransport | null)?.publishPins(this.boardId, { [pinId]: !!isHigh });
+        } catch { /* pin publish never breaks propagation */ }
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst) {
@@ -1841,6 +2029,129 @@ export class AVRRunner {
         if (Number.isFinite(s) && s > 0) {
             this.speed = s;
         }
+    }
+
+    /** Apply movement-class commands drained from the ring (§10.6 step 1).
+     * INTERACT/SERIAL are applied inline (same semantics as the postMessage
+     * handlers); RESET/SPEED/TELEMETRY delegate to existing methods.
+     * Called only when drainCommands reports a halt-relevant change OR every
+     * tick when pending commands exist — cheap (≤16 records). */
+    private pendingRingLog: Array<{ op: number; target: number; str: string; cycles: number }> = [];
+
+    private applyRingMovementCommands(): void {
+        try {
+            const log = this.debugService?.getCommandLog() || [];
+            const fresh = log.slice(this.pendingRingLog.length);
+            for (const c of fresh) {
+                this.pendingRingLog.push({ op: c.op, target: c.target, str: c.str, cycles: c.cycles });
+                if (c.op === 3) { // RESET
+                    this.reset();
+                } else if (c.op === 4) { // SET_SPEED (arg0 = speed*1000)
+                    this.setSpeed(Number(c.arg0) / 1000);
+                } else if (c.op === 5) { // SET_TELEMETRY (arg0 = enabled)
+                    this.setTelemetryEnabled(!!c.arg0);
+                } else if (c.op === 1) { // INTERACT (str = event, target = slot)
+                    const inst = this.slotToInstance(c.target);
+                    if (inst && c.event) {
+                        try { (inst as any).onEvent(c.event); } catch { /* never break tick */ }
+                    }
+                } else if (c.op === 2) { // SERIAL (str = bytes)
+                    if (c.str) this.serialRx(c.str);
+                }
+            }
+            if (this.pendingRingLog.length > 512) {
+                this.pendingRingLog.splice(0, this.pendingRingLog.length - 512);
+            }
+        } catch { /* ring apply never breaks the tick */ }
+    }
+
+    private slotToInstance(slot: number): BaseComponent | null {
+        for (const inst of this.instances.values()) {
+            if ((inst as any).sabSlot === slot) return inst;
+        }
+        return null;
+    }
+
+    /** Live HALT/STEP/pause controls for worker postMessage handlers. */
+    pause(): void {
+        try {
+            (this.debugService as any)?.halt?.();
+        } catch { /* ignore */ }
+        this.running = false;
+    }
+
+    resume(): void {
+        try {
+            (this.debugService as any)?.resume?.();
+        } catch { /* ignore */ }
+        if (!this.running) {
+            this.running = true;
+            this.lastTime = performance.now();
+            this.runLoop();
+        }
+    }
+
+    /** Single-step N cpu cycles while halted (debug service budget).
+     * Enqueues STEP into the budget AND executes it synchronously so a
+     * halted loop advances immediately (no need to wait for the 8ms refreeze
+     * tick). No-ops when running free (takeStepBudget passes through). */
+    stepCycles(n: number): number {
+        try {
+            const budget = (this.debugService as any)?.takeStepBudget?.(n) ?? 0;
+            if (budget > 0 && this.cpu && !(this as any).running) {
+                // Synchronous burst: bounded (≤1M cycles) so UI can't hang.
+                const target = Number(this.cpu.cycles) + Math.min(budget, 1000000);
+                let guard = 0;
+                while (Number(this.cpu.cycles) < target && guard++ < 1000000) {
+                    avrInstruction(this.cpu);
+                    this.cpu.tick();
+                }
+                this.forceEmitState();
+            }
+            return budget;
+        } catch { return 0; }
+    }
+
+    getDebugSnapshot(): any {
+        try {
+            const snap = (this.debugService as any)?.snapshot?.() ?? { halted: false, cycles: 0 };
+            // Enrich with live CPU state (service only tracks what it drains).
+            // avr8js: cpu.pc (word addr), cpu.SP (byte addr into data[]).
+            try {
+                if (this.cpu) {
+                    (snap as any).cycles = Number(this.cpu.cycles) || (snap as any).cycles;
+                    const pc = Number((this.cpu as any)?.pc);
+                    if (Number.isFinite(pc)) (snap as any).pc = pc >>> 0;
+                    const sp = Number((this.cpu as any)?.SP);
+                    if (Number.isFinite(sp)) (snap as any).sp = sp >>> 0;
+                }
+            } catch { /* enrichment never breaks snapshot */ }
+            // Mirror into the SAB debug region (§10.7 DEBUG REGION) so the UI
+            // can poll without a postMessage round-trip. No-op when absent.
+            try { (this as any).sabDebugWriter?.write(snap); } catch { /* ignore */ }
+            return snap;
+        } catch { return { halted: false, cycles: 0 }; }
+    }
+
+    /** Live RAM/SRAM view for DEBUG_READ_MEM (valid while halted). */
+    readMem(addr: number, len: number): Uint8Array | null {
+        try {
+            const mem = (this.cpu as any)?.data;
+            if (!mem) return null;
+            const n = Math.max(1, Math.min(256, len));
+            const out = new Uint8Array(n);
+            for (let i = 0; i < n; i++) out[i] = mem[(addr + i) & 0xffff] & 0xff;
+            return out;
+        } catch { return null; }
+    }
+
+    /** Direct pin-watch registration (DEBUG_WATCH fallback path). */
+    addPinWatch(pinName: string, expectHigh = true): void {
+        try { (this.debugService as any)?.addPinWatch?.(pinName, expectHigh); } catch { /* ignore */ }
+    }
+
+    removePinWatch(pinName: string): void {
+        try { (this.debugService as any)?.removePinWatch?.(pinName); } catch { /* ignore */ }
     }
 
     stop() {
@@ -1878,10 +2189,19 @@ export class AVRRunner {
      *   • Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
      */
     private isSPISelected(inst: BaseComponent): boolean {
-        const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
+        // Dedicated chip-selects first: CE is a MODE pin on radios (nRF24
+        // RX/TX bias, CC1101-style parts) — checking it first permanently
+        // deselects any device whose CE idles HIGH (observed: NRF24 loop
+        // polls routed to the wrong radio while the listener got nothing).
+        // CE is consulted only when no dedicated CS pin exists at all.
+        const csNames = ['cs', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
         for (const name of csNames) {
             if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
             if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
+        }
+        if (inst.pins['ce'] || inst.pins['CE']) {
+            const v = inst.pins['ce'] ? inst.getPinVoltage('ce') : inst.getPinVoltage('CE');
+            return v < 0.5;
         }
         return true; // no CS pin → always selected
     }
@@ -1903,8 +2223,8 @@ export class AVRRunner {
         if (!inst.onI2SFrame) return;
 
         const pin    = changedPin.toLowerCase();
-        const isBclk = pin === 'bclk' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
-        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'wsel'   || pin === 'lrc';
+        const isBclk = pin === 'bclk' || pin === 'bck' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
+        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'lck' || pin === 'wsel'   || pin === 'lrc';
 
         if (!isBclk && !isWs) return;
 
@@ -1925,6 +2245,11 @@ export class AVRRunner {
                 state.wsLast   = isHigh;
                 state.shiftBuf = 0;
                 state.bitCount = 0;
+                // Re-arm the bit-clock edge detector: a new channel's first
+                // BCLK rising must always count, even if construction-time
+                // traversal left bclkLast stale-HIGH (which would otherwise
+                // eat the first data bit and shift the whole frame).
+                state.bclkLast = false;
             }
             return;
         }
@@ -2144,93 +2469,57 @@ export class AVRRunner {
     private dispatchOptionalProtocols(pinId: string, isHigh: boolean, cycles: number) {
         this.dispatchOptionalPwm(pinId, isHigh, cycles);
         this.dispatchOptionalOneWire(pinId, isHigh, cycles);
+        this.dispatchOptionalNeoPixel(pinId, isHigh, cycles);
+        // Debug pin watchpoints (§10.7): edge check on every board-pin edge.
+        // checkPinWatch is baseline-then-edge (first call seeds, no false hit)
+        // and emits WATCH_HIT into the event ring on match. Never breaks tick.
+        try {
+            (this.debugService as any)?.checkPinWatch?.(String(pinId), !!isHigh, Number(cycles) || 0);
+        } catch { /* ignore */ }
+    }
+
+    private dispatchOptionalNeoPixel(pinId: string, isHigh: boolean, cycles: number) {
+        // WS2812 decoding needs EVERY GPIO edge with true cycle stamps
+        // (sub-microsecond bit timing + 25µs reset gap). The tick-level
+        // electrical fan-out collapses sub-tick edges to one batch stamp
+        // (or none, when idle state is unchanged), so no frame ever
+        // decodes without this per-edge lane. Capability probe only —
+        // no per-component special-casing (same pattern as PWM/OneWire).
+        const key = String(pinId || '').toUpperCase();
+        const endpoints = this.getProtocolEndpointsForArduinoPin(key);
+        for (const endpoint of endpoints) {
+            const inst = endpoint.inst as any;
+            if (!inst || typeof inst.getNeoPixelPinName !== 'function') continue;
+            let din: unknown = null;
+            try {
+                din = inst.getNeoPixelPinName();
+            } catch {
+                continue;
+            }
+            if (endpoint.pinId !== din) continue;
+            try {
+                inst.onPinStateChange(endpoint.pinId, isHigh, cycles);
+            } catch {
+                /* edge delivery never breaks the tick */
+            }
+        }
     }
 
     private netHasResistor = new Set<number>();
 
     private buildNetlist() {
+        // Shared netlist service (plan §5.3): identical graph semantics
+        // (wires + internal bridges, D/Dn aliases, power-rail variants,
+        // resistor-net marking). AVR keeps its own orchestration
+        // (rails, pullups, port gating) in updateOopPin/repropagate below.
         this.protocolEndpointsCache.clear();
-        const adj = new Map<string, string[]>();
-
-        const addEdge = (a: string, b: string) => {
-            if (!adj.has(a)) adj.set(a, []);
-            if (!adj.has(b)) adj.set(b, []);
-            adj.get(a)!.push(b);
-            adj.get(b)!.push(a);
-        };
-
-        // Add wires to adjacency list
-        for (const wire of this.currentWires) {
-            addEdge(wire.from, wire.to);
-        }
-
-        // Add internal bridges (resistors, breadboards)
-        for (const [id, inst] of this.instances) {
-            const bridges = getInternalBridgesForComponent(id, inst.type);
-            for (const bridge of bridges) {
-                addEdge(bridge[0], bridge[1]);
-            }
-        }
-
-        const visited = new Set<string>();
-        let currentNet = 0;
-
-        for (const startNode of adj.keys()) {
-            if (!visited.has(startNode)) {
-                const queue = [startNode];
-                visited.add(startNode);
-                while (queue.length > 0) {
-                    const node = queue.shift()!;
-                    this.pinToNet.set(node, currentNet);
-
-                    // Also set aliases (D11, 11 etc)
-                    const parts = node.split(':');
-                    if (parts.length === 2) {
-                        const compId = parts[0];
-                        const pinId = parts[1];
-                        const upperPin = pinId.toUpperCase();
-                        if (!pinId.startsWith('D') && !pinId.startsWith('A') && /^\d+$/.test(pinId)) {
-                            this.pinToNet.set(`${compId}:D${pinId}`, currentNet);
-                        } else if (pinId.startsWith('D')) {
-                            this.pinToNet.set(`${compId}:${pinId.substring(1)}`, currentNet);
-                        }
-
-                        // Normalize common board power aliases to the same electrical net.
-                        if (upperPin === 'GND' || /^GND[._]?\d+$/.test(upperPin)) {
-                            this.pinToNet.set(`${compId}:GND`, currentNet);
-                            this.pinToNet.set(`${compId}:gnd_1`, currentNet);
-                            this.pinToNet.set(`${compId}:gnd_2`, currentNet);
-                            this.pinToNet.set(`${compId}:gnd_3`, currentNet);
-                            this.pinToNet.set(`${compId}:GND.1`, currentNet);
-                            this.pinToNet.set(`${compId}:GND.2`, currentNet);
-                        }
-                        if (upperPin === '5V' || upperPin === 'VCC') {
-                            this.pinToNet.set(`${compId}:5V`, currentNet);
-                            this.pinToNet.set(`${compId}:VCC`, currentNet);
-                        }
-                    }
-
-                    for (const neighbor of adj.get(node) || []) {
-                        if (!visited.has(neighbor)) {
-                            visited.add(neighbor);
-                            queue.push(neighbor);
-                        }
-                    }
-                }
-                currentNet++;
-            }
-        }
-
-        // Identify nets that contain a resistor pin
-        this.netHasResistor.clear();
-        for (const [id, inst] of this.instances) {
-            if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
-                const n1 = this.pinToNet.get(`${id}:p1`);
-                const n2 = this.pinToNet.get(`${id}:p2`);
-                if (n1 !== undefined) this.netHasResistor.add(n1);
-                if (n2 !== undefined) this.netHasResistor.add(n2);
-            }
-        }
+        const graph = buildNetGraph(
+            this.currentWires,
+            this.instances as unknown as Map<string, PassiveInstance>,
+            (id, type) => getInternalBridgesForComponent(id, type),
+        );
+        this.pinToNet = graph.pinToNet;
+        this.netHasResistor = graph.netHasResistor;
         (this as any).topologyDirty = true;
     }
 

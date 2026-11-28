@@ -40,6 +40,9 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Cycle-accurate AVR simulation powered by avr8js. Standard reference board.'
   },
 
+  // Board UI stays visible while execution is AVR-only: the svg/manifest/ui
+  // artwork returns from the emulator shells; CPU/runner logic for these
+  // boards returns from scratch later (pico-emu / esp32-emu / stm32f1-emu).
   'openhw-raspberry-pi-pico': {
     status: 'verified',
     summary: 'Dual-core ARM Cortex-M0+ RP2040 @ 133 MHz',
@@ -58,8 +61,47 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Powered by rp2040js engine with PIO support.'
   },
 
+  'openhw-pi3': {
+    status: 'beta',
+    summary: 'Raspberry Pi 3 B+ on the Pyodide board-level simulator (BCM2837, 1.2 GHz, 540 MHz PWM, 1.8k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
+  'openhw-pi4': {
+    status: 'beta',
+    summary: 'Raspberry Pi 4 B on the Pyodide board-level simulator (BCM2711, 1.5 GHz, 540 MHz PWM, 1.8k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
+  'openhw-pi5': {
+    status: 'beta',
+    summary: 'Raspberry Pi 5 on the Pyodide board-level simulator (BCM2712 + RP1, 2.4 GHz, 200 MHz PWM, 50k pulls)',
+    working: ['Python scripts in the browser', 'GPIO / I2C / SPI / PWM / ADC / UART / 1-Wire / DHT / camera cells', 'SPICE-like analogue solver'],
+    inProgress: [],
+    limitations: ['No Linux / ARM CPU / boot / device drivers', 'Virtual time only', 'Deterministic circuit and sensor models'],
+    notes: 'Board-level Python simulation, not instruction-level emulation.'
+  },
+
+  'openhw-esp32sc': {
+    status: 'beta',
+    summary: 'Classic ESP32 (Xtensa LX6 @ 240 MHz) on the esp32sim engine — A/B board for openhw-esp32',
+    working: ['Merged-bin boot from the esp32sim mask ROM', 'UART Serial Communication', 'Guest millis() / delay() pacing'],
+    inProgress: ['GPIO / I2C / SPI bridge on classic ESP32 (engine refuses the bridge)'],
+    limitations: [
+      'No firmware-driven GPIO output readback (no LED cell)',
+      'No host I2C / SPI / PWM / ADC / I2S component bridge',
+      'WiFi / BLE not bridged by this runner'
+    ],
+    notes: 'Runs the same Arduino merged .bin as openhw-esp32 on a different engine for A/B comparison.'
+  },
+
   'openhw-esp32': {
-    hide: true,
     status: 'beta',
     summary: 'Tensilica Xtensa Dual-Core 32-bit LX6 @ 240 MHz',
     working: [
@@ -71,18 +113,17 @@ export const COMPONENT_STATUS_CONFIG = {
       'UART Serial Communication'
     ],
     inProgress: [
-      'WiFi Station & Access Point Simulation',
       'FreeRTOS Multi-Tasking Scheduler Timing',
       'Deep Sleep & Wakeup Triggers'
     ],
     limitations: [
-      'Bluetooth BLE Subsystem (Planned)'
+      'Bluetooth BLE Subsystem (Planned)',
+      'WiFi / Ethernet (removed pending engine reimplementation)'
     ],
-    notes: 'Microcontroller core and GPIO peripherals run reliably. WiFi networking stack is currently undergoing active implementation.'
+    notes: 'Microcontroller core and GPIO peripherals run reliably. WiFi networking removed pending engine reimplementation.'
   },
 
   'openhw-esp32-cam': {
-    hide: true,
     status: 'in-development',
     summary: 'ESP32 with OV2640 Camera Module & MicroSD Card Socket',
     working: [
@@ -97,8 +138,10 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Camera sensor frame emulation under active development.'
   },
 
+
+
+
   'openhw-arduino-nano': {
-    hide: true,
     status: 'in-development',
     summary: 'ATmega328P Compact Breadboard-Friendly Board',
     working: ['Core AVR Simulation (AVR8js)'],
@@ -108,7 +151,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-arduino-mega': {
-    hide: true,
     status: 'in-development',
     summary: 'ATmega2560 High-I/O Board (54 Digital I/O, 16 Analog Inputs)',
     working: ['AVR2560 Memory Model'],
@@ -118,7 +160,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-attiny85': {
-    hide: true,
     status: 'in-development',
     summary: '8-pin Low-Power AVR Microcontroller',
     working: ['AVR Tiny Core Execution'],
@@ -127,19 +168,8 @@ export const COMPONENT_STATUS_CONFIG = {
     notes: 'Minimalist AVR board model undergoing palette integration.'
   },
 
-  'openhw-stm32-blue-pill (frontend)': {
-    hide: true,
-    status: 'in-development',
-    summary: 'STM32F103C8T6 ARM Cortex-M3 @ 72 MHz',
-    working: ['Visual Breadboard Form-Factor Model'],
-    inProgress: ['ARM Cortex-M3 GDB / Emulation Core Integration'],
-    limitations: ['ARM backend runner connection'],
-    notes: 'Cortex-M3 simulation backend is currently being linked to the web emulator.'
-  },
-
   // Audio Components
   'openhw-sph0645': {
-    hide: true,
     status: 'in-development',
     summary: 'I2S MEMS Microphone Breakout',
     working: [],
@@ -149,7 +179,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-pcm5102': {
-    hide: true,
     status: 'in-development',
     summary: 'High-Quality Stereo I2S DAC Module',
     working: [],
@@ -159,7 +188,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-max98357': {
-    hide: true,
     status: 'in-development',
     summary: 'I2S Class-D Mono Amplifier',
     working: [],
@@ -169,7 +197,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-inmp441': {
-    hide: true,
     status: 'in-development',
     summary: 'Omnidirectional I2S Microphone with Bottom Port',
     working: [],
@@ -179,7 +206,6 @@ export const COMPONENT_STATUS_CONFIG = {
   },
 
   'openhw-5w-speaker': {
-    hide: true,
     status: 'in-development',
     summary: '4 Ohm 5W Dynamic Audio Speaker',
     working: [],

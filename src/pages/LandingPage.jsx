@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import PublicNavbar from "../components/PublicNavbar.jsx";
+// Perf (bundle-split): the 4KB index is used at landing paint; the full
+// guidedProjects.json / ProjectsConfig load lazily below via their modules.
+import GUIDED_INDEX from "../services/guidedProjects.index.json";
+// develop: certification/adventure additions on the landing page.
 import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
-import GUIDED_JSON from "../services/guidedProjects.json";
 import {
   EXAMPLES_BASE_URL,
   getDemoCircuitUrl,
@@ -77,7 +80,7 @@ const PREFERRED_SLUGS = [
 ];
 
 const PROJECT_ICONS = {};
-for (const p of PROJECTS) {
+for (const p of GUIDED_INDEX.projects) {
   PROJECT_ICONS[p.slug] = p.icon || "🔌";
 }
 
@@ -88,12 +91,12 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || document.documentElement.getAttribute("data-theme") || "light",
+    () => document.documentElement.dataset.theme || "light",
   );
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+      setTheme(document.documentElement.dataset.theme || "light");
     });
     observer.observe(document.documentElement, {
       attributes: true,
@@ -112,31 +115,20 @@ export default function LandingPage() {
   };
 
   const allCards = useMemo(() => {
-    const cards = [];
-    for (const level of LEVEL_ORDER) {
-      const levelData = GUIDED_JSON[level];
-      if (!levelData) continue;
-      const levelLabel = LEVEL_LABELS[level] || level;
-      for (const cat of Object.values(levelData.categories)) {
-        for (const p of cat.projects) {
-          const urlSlug = JSON_SLUG_TO_URL[p.slug] || p.slug;
-          cards.push({
-            slug: urlSlug,
-            title: p.title,
-            board: p.board,
-            difficulty: levelLabel,
-            xp: 100,
-          });
-        }
-      }
-    }
-    return cards;
+    return GUIDED_INDEX.projects.map((p) => ({
+      slug: JSON_SLUG_TO_URL[p.slug] || p.slug,
+      title: p.title,
+      board: p.board,
+      difficulty: LEVEL_LABELS[p.level] || p.level,
+      xp: 100,
+    }));
   }, []);
   const toggleTheme = () => {
-    const newTheme = theme === "dark" ? "light" : "dark";
+    const current = document.documentElement.dataset.theme || "light";
+    const newTheme = current === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = newTheme;
+    localStorage.setItem("theme", newTheme); // persistence only
     setTheme(newTheme);
-    document.documentElement.setAttribute("data-theme", newTheme);
-    localStorage.setItem("theme", newTheme); // Save choice
   };
 
   const handleNavigate = (path) => {
@@ -153,24 +145,21 @@ export default function LandingPage() {
     // Landing page always starts dark. Set data-theme="dark" on <html> so the
     // CSS selector `html[data-theme="dark"] .landing` applies dark vars.
     // We only do this if the user hasn't explicitly chosen light via the toggle.
-    const prevTheme = document.documentElement.getAttribute("data-theme");
     const prevBg = document.body.style.backgroundColor;
     const savedTheme = localStorage.getItem("theme");
 
+    // Landing starts dark only when the user has not explicitly chosen light.
     if (savedTheme !== "light") {
-      document.documentElement.setAttribute("data-theme", "dark");
+      document.documentElement.dataset.theme = "dark";
       setTheme("dark");
       document.body.style.backgroundColor = "#070b14";
     }
 
     return () => {
-      // Restore to light (site default) when navigating away from landing
-      const currentSavedTheme = localStorage.getItem("theme");
-      if (currentSavedTheme) {
-        document.documentElement.setAttribute("data-theme", currentSavedTheme);
-      } else {
-        document.documentElement.setAttribute("data-theme", "light");
-      }
+      // Restore the authoritative theme (persisted choice, else site default).
+      const currentTheme = localStorage.getItem("theme");
+      document.documentElement.dataset.theme =
+        currentTheme === "dark" || currentTheme === "light" ? currentTheme : "light";
       document.body.style.backgroundColor = prevBg;
     };
   }, []);
@@ -396,8 +385,8 @@ export default function LandingPage() {
 
           <span style={{ fontSize: "12px", color: "var(--text3, #64748b)", fontWeight: 500 }}>
             {editorMode === "blocks"
-              ? "🧩 Blocks mode: Edit visually with blocks (Code editor is locked in read-only)"
-              : "💻 Code mode: Edit directly in code editor (Blocks are locked in view-only)"}
+              ? "🧩 Example projects will open in Blocks mode (Code editor locked in read-only)"
+              : "💻 Example projects will open in Code mode (Blocks locked in view-only)"}
           </span>
         </div>
 

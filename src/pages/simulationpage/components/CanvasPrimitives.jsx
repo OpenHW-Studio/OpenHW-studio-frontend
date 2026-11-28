@@ -22,7 +22,6 @@ const canvasWirePropsEqual = (prev, next) => (
   prev.offset === next.offset &&
   prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop &&
   prev.isDragging === next.isDragging &&
-  prev.theme === next.theme &&
   prev.isGhost === next.isGhost
 );
 
@@ -52,7 +51,7 @@ const getGlowColor = (color) => {
   return color;
 };
 
-export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
+export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
   const wirePath = useMemo(() => {
     try {
       return buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions);
@@ -92,7 +91,10 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
         opacity={useFeedback ? 0.75 : 1.0}
         style={{ 
           animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none',
-          filter: theme === 'dark' ? `drop-shadow(0 0 2px ${glowColor}) drop-shadow(0 0 6px ${glowColor})` : 'none'
+          // Glow is theme-driven by --wire-glow (set on <html>), so toggling
+          // the theme never has to re-render the wire tree in React.
+          color: glowColor,
+          filter: 'var(--wire-glow)'
         }}
       />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={strokeColor} opacity={useFeedback ? 0.8 : 1} />
@@ -102,7 +104,7 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
         if (i > 0 && i < arr.length - 1) {
           acc.push(
             <circle key={`wp-${i}`} cx={pt.x} cy={pt.y} r={isSelected ? 5 : 3}
-              fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+              fill={isSelected ? 'var(--canvas-handle)' : 'var(--canvas-handle-muted)'}
               stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
               opacity={isSelected ? 1 : 0.4}
               style={{ pointerEvents: 'all', cursor: 'move' }}
@@ -125,7 +127,7 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
               const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
               acc.push(
                 <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-                  fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+                  fill={isSelected ? 'var(--canvas-handle)' : 'var(--canvas-handle-muted)'}
                   stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
                   opacity={isSelected ? 1 : 0.55}
                   style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}

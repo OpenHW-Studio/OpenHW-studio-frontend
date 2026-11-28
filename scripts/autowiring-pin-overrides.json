@@ -1,0 +1,236 @@
+{
+  "_comment": [
+    "Curated per-family autowiring defaults — the part a board manifest cannot",
+    "express. The manifests are the source of truth for WHICH pins a board has;",
+    "this file says which of them are the board's DEFAULTS (bus instance order,",
+    "PWM/DAC/1-Wire capability, board-specific aliases).",
+    "",
+    "Everything here is filtered against the real shell by",
+    "scripts/gen-autowiring-pins.mjs — a pin listed below that the board does",
+    "not expose is dropped automatically, so this file can never make the",
+    "engine assign a pin the board lacks.",
+    "",
+    "Family keys must match the rules in gen-autowiring-pins.mjs."
+  ],
+  "families": {
+    "uno": {
+      "roles": {
+        "uart": { "tx": ["1", "TX", "TX0", "D1"], "rx": ["0", "RX", "RX0", "D0"] },
+        "i2c": { "sda": ["A4", "SDA"], "scl": ["A5", "SCL"] },
+        "spi": { "sck": ["13", "SCK"], "mosi": ["11", "MOSI"], "miso": ["12", "MISO"], "cs": ["10", "SS"] },
+        "pwm": { "pwm": ["3", "5", "6", "9", "10", "11"] },
+        "adc": { "adc": ["A0", "A1", "A2", "A3", "A4", "A5"] },
+        "onewire": { "data": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"] }
+      },
+      "buses": {
+        "i2c": [["A4", "A5", "", 0]],
+        "spi": [["13", "11", "12", 0]],
+        "uart": [["1", "0", "", 0]]
+      }
+    },
+    "nano": {
+      "inherit": "uno",
+      "roles": {
+        "uart": { "tx": ["TX", "1", "TX0"], "rx": ["RX", "0", "RX0"] },
+        "adc": { "adc": ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"] }
+      },
+      "buses": {
+        "uart": [["TX", "RX", "", 0]]
+      }
+    },
+    "mega": {
+      "roles": {
+        "uart": {
+          "tx": ["1", "TX0", "18", "TX1", "16", "TX2", "14", "TX3"],
+          "rx": ["0", "RX0", "19", "RX1", "17", "RX2", "15", "RX3"]
+        },
+        "i2c": { "sda": ["20", "SDA"], "scl": ["21", "SCL"] },
+        "spi": { "sck": ["52", "SCK"], "mosi": ["51", "MOSI"], "miso": ["50", "MISO"], "cs": ["53", "SS"] },
+        "pwm": { "pwm": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "44", "45", "46"] },
+        "adc": { "adc": ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14", "A15"] },
+        "onewire": { "data": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "22", "23", "24"] }
+      },
+      "buses": {
+        "i2c": [["20", "21", "", 0], ["SDA", "SCL", "", 0]],
+        "spi": [["52", "51", "50", 0], ["SCK", "MOSI", "MISO", 0]],
+        "uart": [["1", "0", "", 0], ["18", "19", "", 1], ["16", "17", "", 2], ["14", "15", "", 3]]
+      }
+    },
+    "attiny85": {
+      "roles": {
+        "pwm": { "pwm": ["P0", "P1"] },
+        "adc": { "adc": ["P3", "P4", "P2"] },
+        "onewire": { "data": ["P0", "P1", "P2", "P3", "P4"] }
+      }
+    },
+    "pico": {
+      "roles": {
+        "uart": {
+          "tx": ["GP0", "TX", "TX0", "GP8", "GP12", "GP16", "GP20", "GP4"],
+          "rx": ["GP1", "RX", "RX0", "GP9", "GP13", "GP17", "GP21", "GP5"]
+        },
+        "i2c": {
+          "sda": ["GP4", "GP0", "GP8", "GP12", "GP16", "GP20", "GP2", "GP6", "GP10", "GP14", "GP26"],
+          "scl": ["GP5", "GP1", "GP9", "GP13", "GP17", "GP21", "GP3", "GP7", "GP11", "GP15", "GP27"]
+        },
+        "spi": {
+          "sck": ["GP18", "GP2", "GP6", "GP10", "GP14", "GP22", "GP26"],
+          "mosi": ["GP19", "GP3", "GP7", "GP11", "GP15", "GP23", "GP27"],
+          "miso": ["GP16", "GP0", "GP4", "GP8", "GP12", "GP20", "GP24"],
+          "cs": ["GP17", "GP1", "GP5", "GP9", "GP13", "GP21", "GP22"]
+        },
+        "pwm": {
+          "pwm": ["GP15", "GP0", "GP1", "GP2", "GP3", "GP4", "GP5", "GP6", "GP7", "GP8", "GP9", "GP10", "GP11", "GP12", "GP13", "GP14", "GP16", "GP17", "GP18", "GP19", "GP20", "GP21", "GP22", "GP26", "GP27", "GP28"]
+        },
+        "adc": { "adc": ["GP26", "GP27", "GP28"] },
+        "i2s": {
+          "bclk": ["GP18", "GP2", "GP6", "GP10"],
+          "ws": ["GP19", "GP3", "GP7", "GP11"],
+          "din": ["GP20", "GP4", "GP8", "GP12"],
+          "dout": ["GP21", "GP5", "GP9", "GP13"]
+        },
+        "usb": { "dp": ["USB_DP"], "dm": ["USB_DM"] },
+        "onewire": { "data": ["GP15", "GP22", "GP0", "GP1", "GP2", "GP16", "GP17"] }
+      },
+      "buses": {
+        "i2c": [
+          ["GP4", "GP5", "", 0], ["GP0", "GP1", "", 0], ["GP8", "GP9", "", 0],
+          ["GP12", "GP13", "", 0], ["GP20", "GP21", "", 0], ["GP6", "GP7", "", 1],
+          ["GP2", "GP3", "", 1], ["GP10", "GP11", "", 1], ["GP14", "GP15", "", 1],
+          ["GP26", "GP27", "", 1]
+        ],
+        "spi": [
+          ["GP18", "GP19", "GP16", 0], ["GP2", "GP3", "GP0", 0], ["GP6", "GP7", "GP4", 0],
+          ["GP10", "GP11", "GP8", 0], ["GP22", "GP23", "GP20", 0], ["GP26", "GP27", "GP24", 0],
+          ["GP14", "GP15", "GP12", 1], ["GP10", "GP11", "GP8", 1], ["GP2", "GP3", "GP0", 1],
+          ["GP6", "GP7", "GP4", 1]
+        ],
+        "uart": [["GP0", "GP1", "", 0], ["GP8", "GP9", "", 1], ["GP4", "GP5", "", 1], ["GP12", "GP13", "", 0]]
+      }
+    },
+    "stm32f1": {
+      "roles": {
+        "uart": {
+          "tx": ["PA9", "TX", "TX0", "TX1", "PA2", "TX2"],
+          "rx": ["PA10", "RX", "RX0", "RX1", "PA3", "RX2"]
+        },
+        "i2c": { "sda": ["PB7", "PB11", "PB9"], "scl": ["PB6", "PB10", "PB8"] },
+        "spi": {
+          "sck": ["PA5", "PB13"], "mosi": ["PA7", "PB15"], "miso": ["PA6", "PB14"], "cs": ["PA4", "PB12"]
+        },
+        "pwm": {
+          "pwm": ["PA8", "PA9", "PA10", "PB6", "PB7", "PB8", "PB9", "PA0", "PA1", "PA2", "PA3", "PA6", "PA7", "PB0", "PB1", "PC13"]
+        },
+        "adc": { "adc": ["PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7", "PB0", "PB1"] },
+        "can": { "cantx": ["PA12", "PB9"], "canrx": ["PA11", "PB8"] },
+        "i2s": { "bclk": ["PB13"], "ws": ["PB12"], "din": ["PB15"], "dout": ["PB14"] },
+        "usb": { "dp": ["PA12"], "dm": ["PA11"] },
+        "onewire": { "data": ["PA8", "PB0", "PB1", "PA0", "PA1"] }
+      },
+      "buses": {
+        "i2c": [["PB7", "PB6", "", 1], ["PB11", "PB10", "", 2], ["PB9", "PB8", "", 3]],
+        "spi": [["PA5", "PA7", "PA6", 1], ["PB13", "PB15", "PB14", 2]],
+        "uart": [["PA9", "PA10", "", 1], ["PA2", "PA3", "", 2]]
+      }
+    },
+    "stm32f4disco": {
+      "inherit": "stm32f1",
+      "roles": {
+        "uart": {
+          "tx": ["PA2", "TX2", "PA9", "TX", "TX0", "TX1"],
+          "rx": ["PA3", "RX2", "PA10", "RX", "RX0", "RX1"]
+        },
+        "spi": {
+          "sck": ["PA5", "PB13", "PB3"], "mosi": ["PA7", "PB15", "PB5"], "miso": ["PA6", "PB14", "PB4"], "cs": ["PA4", "PB12"]
+        },
+        "pwm": {
+          "pwm": ["PA8", "PA9", "PC6", "PC7", "PD12", "PD13", "PD14", "PD15", "PB6", "PB7", "PA0", "PA1", "PB0", "PB1"]
+        },
+        "adc": { "adc": ["PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7", "PB0", "PB1", "PC0", "PC1"] },
+        "dac": { "dac": ["PA4", "PA5"] },
+        "can": { "cantx": ["PB9", "PA12"], "canrx": ["PB8", "PA11"] },
+        "i2s": { "bclk": ["PB13", "PB3"], "ws": ["PB12"], "din": ["PB15"], "dout": ["PB14"] },
+        "onewire": { "data": ["PA0", "PA1", "PB0", "PB1", "PC0", "PC1"] }
+      },
+      "buses": {
+        "uart": [["PA2", "PA3", "", 2], ["PA9", "PA10", "", 1]]
+      }
+    },
+    "stm32f4": {
+      "inherit": "stm32f4disco",
+      "roles": {
+        "uart": {
+          "tx": ["PA9", "TX", "TX0", "TX1", "PA2", "TX2"],
+          "rx": ["PA10", "RX", "RX0", "RX1", "PA3", "RX2"]
+        }
+      },
+      "buses": {
+        "uart": [["PA9", "PA10", "", 1], ["PA2", "PA3", "", 2]]
+      }
+    },
+    "esp32": {
+      "roles": {
+        "uart": { "tx": ["1", "TX", "TX0", "GPIO1"], "rx": ["3", "RX", "RX0"] },
+        "i2c": { "sda": ["21", "SDA"], "scl": ["22", "SCL"] },
+        "spi": {
+          "sck": ["18", "SCK", "14"], "mosi": ["23", "MOSI", "13"], "miso": ["19", "MISO", "12"], "cs": ["5", "SS", "15"]
+        },
+        "pwm": {
+          "pwm": ["18", "19", "21", "22", "23", "2", "4", "5", "12", "13", "14", "15", "16", "17", "25", "26", "27", "32", "33"]
+        },
+        "adc": { "adc": ["32", "33", "34", "35", "VP", "VN", "25", "26", "27", "14", "13", "12", "15", "2", "4"] },
+        "dac": { "dac": ["25", "26"] },
+        "can": { "cantx": ["21", "5"], "canrx": ["22", "4"] },
+        "i2s": { "bclk": ["26", "14"], "ws": ["25", "15"], "din": ["22", "12"], "dout": ["23", "13"] },
+        "onewire": { "data": ["4", "2", "15", "13", "12", "14", "16", "17"] }
+      },
+      "buses": {
+        "i2c": [["21", "22", "", 0]],
+        "spi": [["18", "23", "19", 0], ["14", "13", "12", 1]],
+        "uart": [["1", "3", "", 0]]
+      }
+    },
+    "esp32cam": {
+      "roles": {
+        "uart": { "tx": ["1", "TX"], "rx": ["3", "RX"] },
+        "spi": { "sck": ["14"], "mosi": ["15"], "miso": ["12"], "cs": ["13"] },
+        "pwm": { "pwm": ["2", "4", "12", "13", "14", "15", "16"] },
+        "adc": { "adc": ["12", "13", "14", "15", "2", "4"] },
+        "onewire": { "data": ["13", "12", "14", "15", "16", "2", "4"] }
+      },
+      "buses": {
+        "spi": [["14", "15", "12", 0]],
+        "uart": [["1", "3", "", 0]]
+      }
+    },
+    "microbit": {
+      "roles": {
+        "i2c": { "sda": ["P20", "SDA"], "scl": ["P19", "SCL"] },
+        "spi": { "sck": ["P13", "SCK"], "mosi": ["P15", "MOSI"], "miso": ["P14", "MISO"], "cs": ["P16", "SS"] },
+        "pwm": { "pwm": ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12", "P13", "P14", "P15", "P16"] },
+        "adc": { "adc": ["P0", "P1", "P2", "P3", "P4", "P10"] },
+        "onewire": { "data": ["P0", "P1", "P2"] }
+      },
+      "buses": {
+        "i2c": [["P20", "P19", "", 0]],
+        "spi": [["P13", "P15", "P14", 0]]
+      }
+    },
+    "retro": {
+      "roles": {
+        "uart": { "tx": ["L0", "TX", "TX0", "TXD", "SOUT"], "rx": ["L1", "RX", "RX0", "RXD", "SIN"] },
+        "i2c": { "sda": ["L10", "R10"], "scl": ["L11", "R11"] },
+        "spi": {
+          "sck": ["L12", "R12"], "mosi": ["L13", "R13"], "miso": ["L14", "R14"], "cs": ["L15", "R15"]
+        },
+        "pwm": { "pwm": ["L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9"] },
+        "onewire": { "data": ["L2", "L3", "R2", "R3"] }
+      },
+      "buses": {
+        "i2c": [["L10", "L11", "", 0]],
+        "spi": [["L12", "L13", "L14", 0]],
+        "uart": [["L0", "L1", "", 0]]
+      }
+    }
+  }
+}

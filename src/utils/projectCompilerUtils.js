@@ -4,6 +4,12 @@
  * It is used by both SimulatorPage.jsx and grading-engine.worker.ts.
  */
 
+import {
+  resolveBoardLanguage,
+  getBoardAllowedExtensions,
+  getBoardMainFileName,
+} from './boardLanguageUtils.js';
+
 export const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
 export const OPENHW_META_MARKER = '\x00OPENHW_META\x00';
 
@@ -75,16 +81,15 @@ export function normalizeProjectFiles(files) {
  * Extracts the compilation unit for a specific board from a project structure.
  * @param {Object} project - The project metadata (from PNG/JSON).
  * @param {string} boardId - The ID of the board (e.g. "uno1").
- * @returns {Object} { mainCode, files, sketchName, hasMainFile }
+ * @returns {Object} { mainCode, files, sketchName, hasMainFile, language,
+ *   mainFileName, mainFilePath }
  */
 export function getBoardCompileFiles(project, boardId) {
     // 1. Normalize files first (EXACTLY like SimulatorPage.jsx does)
     const projectFiles = normalizeProjectFiles(project.projectFiles);
-    
-    const allowed = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-    
+
     let targetBoardId = boardId;
-    
+
     // Safety fallback for board discovery
     const hasFilesForBoard = projectFiles.some(f => f.path.startsWith(`project/${targetBoardId}/`));
     if (!hasFilesForBoard) {
@@ -95,15 +100,27 @@ export function getBoardCompileFiles(project, boardId) {
         }
     }
 
+    // Language follows the BOARD TYPE (not the legacy Uno/.ino fallback).
+    // The board component carries both the type and the MicroPython env attr.
+    const boardComp = (project.components || []).find(
+        (c) => String(c?.id) === String(targetBoardId),
+    );
+    const langOptions = {
+        env: boardComp?.attrs?.env,
+        rp2040Mode: boardComp?.attrs?.rp2040Mode,
+    };
+    const lang = resolveBoardLanguage(boardComp?.type || '', langOptions);
+    const allowed = getBoardAllowedExtensions(boardComp?.type || '', langOptions);
+
     // Filter files for the resolved board
     const boardFiles = projectFiles
         .filter((f) => f.path.startsWith(`project/${targetBoardId}/`))
         .filter((f) => !isFileDisabled(f.path))
         .filter((f) => allowed.has(fileExt(f.path)));
 
-    const preferredMainName = `${targetBoardId}.ino`;
+    const preferredMainName = getBoardMainFileName(boardComp?.type || '', targetBoardId, langOptions);
     const main = boardFiles.find((f) => f.name === preferredMainName || f.path.endsWith(preferredMainName))
-              || boardFiles.find((f) => fileExt(f.name) === '.ino')
+              || boardFiles.find((f) => fileExt(f.name) === lang.extension)
               || boardFiles[0]
               || null;
 
@@ -112,10 +129,10 @@ export function getBoardCompileFiles(project, boardId) {
         .map((f) => ({ name: f.name, content: f.content || '' }));
 
     let mainCode = main?.content || project.code || "";
-    
+
     if (!mainCode && project.components) {
-        const boardComp = project.components.find((c) => c.id === targetBoardId);
-        if (boardComp?.attrs?.code) mainCode = boardComp.attrs.code;
+        const boardCompById = project.components.find((c) => c.id === targetBoardId);
+        if (boardCompById?.attrs?.code) mainCode = boardCompById.attrs.code;
     }
 
     return {
@@ -123,5 +140,10 @@ export function getBoardCompileFiles(project, boardId) {
         sketchName: targetBoardId,
         files,
         hasMainFile: !!main,
+        // Compile payload language: one value consumed by genericBoardCompile
+        // and by the e2e probe; no board-specific hardcoding at call sites.
+        language: lang.language,
+        mainFileName: main?.name || preferredMainName,
+        mainFilePath: main?.path || '',
     };
 }

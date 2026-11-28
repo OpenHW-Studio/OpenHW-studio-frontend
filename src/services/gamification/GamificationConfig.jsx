@@ -17,6 +17,7 @@ export const STARTING_COMPONENTS = [
   'arduino-uno', 'arduino-nano', 'arduino-mega',
   // ESP32 boards — always unlocked for ESP32 journey
   'esp32',           'wokwi-esp32-devkit-v1', 'openhw-esp32',
+  'openhw-esp32sc',  // classic ESP32 on esp32sim (A/B board)
   'esp32-cam',       'wokwi-esp32-cam',        'openhw-esp32-cam',
   'esp32-devkit-v1', 'esp32-wroom-32',
 ];

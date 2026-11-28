@@ -1,0 +1,45 @@
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 2600428..928a022 100755
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -55,6 +55,7 @@ EXPORTS='[
+   "_picoemu_write_uart_port","_picoemu_write_usb",
+   "_picoemu_uart_active","_picoemu_usb_active",
+   "_picoemu_get_gpio","_picoemu_get_gpio_raw","_picoemu_get_gpio_out","_picoemu_get_gpio_oe","_picoemu_set_gpio",
++  "_picoemu_set_gpio_input","_picoemu_inject_gpio_level",
+   "_picoemu_mem_read32","_picoemu_mem_write32",
+   "_picoemu_is_halted","_picoemu_get_core_state",
+   "_picoemu_usb_state32",
+diff --git a/src/picoemu_wasm.c b/src/picoemu_wasm.c
+index bdca8fe..0e30f19 100644
+--- a/src/picoemu_wasm.c
++++ b/src/picoemu_wasm.c
+@@ -375,6 +375,28 @@ void picoemu_set_gpio(int pin, int val) {
+     gpio_set_pin((uint8_t)pin, (uint8_t)val);
+ }
+ 
++/* Host -> guest INPUT latch.
++ *
++ * picoemu_set_gpio() writes the OUT latch only (gpio_set_pin), which the
++ * guest ignores while the pin is an input: the guest-visible IN latch keeps
++ * its reset default (all HIGH, gpio_reset) so digitalRead() is stuck at 1
++ * and no external edge ever reaches IO_BANK0. This export is the missing
++ * route into gpio_set_input_pin(), which updates the IN latch, runs the
++ * edge detector and signals the NVIC exactly like a real pad transition.
++ *
++ * pin: GPIO index (0..47).  val: 0 = LOW, non-zero = HIGH. */
++void picoemu_set_gpio_input(int pin, int val) {
++    if (pin < 0 || pin >= 48) return;
++    gpio_set_input_pin((uint8_t)pin, (uint8_t)(val ? 1 : 0));
++}
++
++/* Silent input-latch force (no edge, no IRQ): models an open-drain slave
++ * holding a line (bit-bang ACK/data bits). Same as gpio_inject_level(). */
++void picoemu_inject_gpio_level(int pin, int val) {
++    if (pin < 0 || pin >= 48) return;
++    gpio_inject_level((uint8_t)pin, (uint8_t)(val ? 1 : 0));
++}
++
+ uint32_t picoemu_mem_read32(uint32_t addr) {
+     if (current_arch == ARCH_RV32)
+         return rv_mem_read32(&rv_bus, addr);

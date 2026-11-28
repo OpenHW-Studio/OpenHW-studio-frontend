@@ -111,9 +111,6 @@ function mapBoardToFqbn(board: string): string {
     if (s.includes('uno')) return 'arduino:avr:uno';
     if (s.includes('mega')) return 'arduino:avr:mega';
     if (s.includes('nano')) return 'arduino:avr:nano';
-    if (s.includes('esp32')) return 'esp32:esp32:esp32';
-    if (s.includes('stm32')) return 'STMicroelectronics:stm32:GenF1';
-    if (s.includes('rp2040') || s.includes('pico')) return 'rp2040:rp2040:rpipico';
     return 'arduino:avr:uno';
 }
 
@@ -183,12 +180,11 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
 
     try {
         const { createRunnerForBoard } = await import('./execute');
-        const boardComp = (meta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+        const boardComp = (meta.components || []).find((c: any) => /(arduino)/i.test(String(c.type || '')));
         
         const boardCompId = boardComp?.id || 'uno1';
         const boardType = boardComp?.type || meta.board || 'openhw-arduino-uno';
-        const isRp2040Board = /rp2040|pico/i.test(String(boardType));
-        const effectiveUseSimTimeCapture = useSimTimeCapture && !isRp2040Board;
+        const effectiveUseSimTimeCapture = useSimTimeCapture;
         const compileUnit: any = getBoardCompileFiles(meta, boardCompId);
         
         let firmwareHex = meta.hex || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex || "";
@@ -623,7 +619,7 @@ onmessage = async (e: MessageEvent<any>) => {
 
             postMessage({ type: 'LOG', msg: `[TRACE] Teacher key capture speed: ${runSpeed}x` });
             const telemetry = await captureBehavior(teacherMeta, 8000, "Teacher Reference", runSpeed, true);
-            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino)/i.test(String(c.type || '')));
             const peripheralComp = (teacherMeta.components || []).find((c: any) => c.id !== boardComp?.id);
             const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
             const componentName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";
@@ -676,7 +672,7 @@ onmessage = async (e: MessageEvent<any>) => {
                 ignored_events: rawFrames?.ignored_events || []
             };
 
-            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+            const boardComp = (teacherMeta.components || []).find((c: any) => /(arduino)/i.test(String(c.type || '')));
             const peripheralComp = (teacherMeta.components || []).find((c: any) => c.id !== boardComp?.id);
             const boardName = boardComp ? boardComp.type.split("-").pop() : "board";
             const componentName = peripheralComp ? peripheralComp.type.split("_").pop() : "circuit";

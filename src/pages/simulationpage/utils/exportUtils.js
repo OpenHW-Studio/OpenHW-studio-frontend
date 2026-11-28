@@ -1,6 +1,7 @@
 const _exportShadowSheetCache = new WeakMap();
 let _babelMod = null;
 let _h2cMod = null;
+let _jszipMod = null;
 let _exportLogoPromise = null;
 
 export const getBabel = async () => {
@@ -12,6 +13,18 @@ export const getHtml2canvas = async () => {
   if (!_h2cMod) _h2cMod = (await import('html2canvas')).default;
   return _h2cMod;
 };
+
+// Perf (bundle-split): jszip loaded on demand (project save/load, Wokwi ZIP
+// import, component ZIP upload). Previously statically imported by 4 modules
+// in the SimulatorPage chunk.
+export const getJSZip = async () => {
+  if (!_jszipMod) _jszipMod = (await import('jszip')).default;
+  return _jszipMod;
+};
+
+// Sync access to the Babel module namespace once getBabel() has resolved.
+// Returns null while still loading (callers must handle the loading state).
+export const getBabelSync = () => _babelMod && (_babelMod.transform ? _babelMod : _babelMod.default ? { transform: (...a) => _babelMod.default.transform(...a) } : null);
 
 export const ensureExportLogo = () => {
   if (!_exportLogoPromise) {

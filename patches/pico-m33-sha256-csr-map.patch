@@ -1,0 +1,134 @@
+diff --git a/include/devtools.h b/include/devtools.h
+index 6ee1854..138f4c7 100644
+--- a/include/devtools.h
++++ b/include/devtools.h
+@@ -524,22 +524,36 @@ void trng_write(uint32_t offset, uint32_t val);
+ void trng_init(void);
+ 
+ /* SHA-256 accelerator (base 0x400F8000):
+- *   0x00 CSR (BSWAP[0], DMA_SIZE[2:1], ERR_WDATA_NOT_RDY[4] W1C,
+- *            SUM_VLD[1] RO, WDATA_RDY[0] RO, START[31] WO),
++ *   0x00 CSR (START[0] WO, WDATA_RDY[1] RO, SUM_VLD[2] RO,
++ *            ERR_WDATA_NOT_RDY[4] W1C, DMA_SIZE[9:8],
++ *            BSWAP[12] RW) + the RP2350 atomic aliases
++ *            (+0x1000 XOR, +0x2000 SET, +0x3000 CLEAR),
+  *   0x04 WDATA (16 message words, then digest runs),
+  *   0x08-0x24 SUM0-7 (digest, valid when SUM_VLD).
+  * Model: real SHA-256 over each 512-bit block (host computed); digest
+  * accumulates across blocks until START re-initialises (silicon behavior
+- * for multi-block messages via repeated WDATA writes). */
++ * for multi-block messages via repeated WDATA writes).
++ *
++ * BIT MAP = RP2350 silicon (pico-sdk
++ * src/rp2350/hardware_regs/include/hardware/regs/sha256.h):
++ *   SHA256_CSR_START_MSB            0
++ *   SHA256_CSR_WDATA_RDY_MSB        1
++ *   SHA256_CSR_SUM_VLD_MSB          2
++ *   SHA256_CSR_ERR_WDATA_NOT_RDY_MSB 4
++ *   SHA256_CSR_BSWAP_MSB            12
++ * The previous map (WDATA_RDY=0 / SUM_VLD=1 / START=31) contradicted
++ * silicon: the SDK's sha256_wait_valid_blocking() polls SUM_VLD (bit 2)
++ * and therefore never returned (the M33 SHA cell hung with no digest). */
+ #define SHA256_BASE 0x400F8000
+ #define SHA256_SIZE 0x28
+ #define SHA256_CSR       0x00
+ #define SHA256_WDATA     0x04
+ #define SHA256_SUM0      0x08
+-#define SHA256_CSR_WDATA_RDY (1u << 0)
+-#define SHA256_CSR_SUM_VLD   (1u << 1)
++#define SHA256_CSR_WDATA_RDY (1u << 1)
++#define SHA256_CSR_SUM_VLD   (1u << 2)
+ #define SHA256_CSR_ERR_WDATA_NOT_RDY (1u << 4)
+-#define SHA256_CSR_START     (1u << 31)
++#define SHA256_CSR_BSWAP     (1u << 12)
++#define SHA256_CSR_START     (1u << 0)
+ int  sha256_match(uint32_t addr);
+ uint32_t sha256_read(uint32_t offset);
+ void sha256_write(uint32_t offset, uint32_t val);
+diff --git a/src/devtools.c b/src/devtools.c
+index 5da9763..22ae997 100644
+--- a/src/devtools.c
++++ b/src/devtools.c
+@@ -1398,7 +1398,7 @@ void trng_write(uint32_t offset, uint32_t val) {
+ static uint32_t sha256_h[8];
+ static uint32_t sha256_w[16];
+ static int sha256_nw = 0;
+-static uint32_t sha256_csr = SHA256_CSR_WDATA_RDY;
++static uint32_t sha256_csr = SHA256_CSR_WDATA_RDY | SHA256_CSR_SUM_VLD | SHA256_CSR_BSWAP;
+ static int sha256_bswap = 1;
+ 
+ void sha256_init(void) {
+@@ -1409,8 +1409,10 @@ void sha256_init(void) {
+     sha256_h[6] = 0x1f83d9ab; sha256_h[7] = 0x5be0cd19;
+     sha256_nw = 0;
+     /* START forces WDATA_RDY and SUM_VLD high (silicon behavior). */
+-    sha256_csr = SHA256_CSR_WDATA_RDY | SHA256_CSR_SUM_VLD;
+-    sha256_bswap = 1;
++    /* START resets the digest state only: BSWAP is a separate CSR bit
++     * and survives a new checksum (as on silicon). */
++    sha256_csr = SHA256_CSR_WDATA_RDY | SHA256_CSR_SUM_VLD |
++                 (sha256_bswap ? SHA256_CSR_BSWAP : 0u);
+ }
+ 
+ static uint32_t sha256_rotr(uint32_t x, int n) {
+@@ -1466,10 +1468,39 @@ uint32_t sha256_read(uint32_t offset) {
+ }
+ 
+ void sha256_write(uint32_t offset, uint32_t val) {
+-    offset &= 0xFFF;
++    /* RP2350 atomic aliases: +0x1000 XOR, +0x2000 SET, +0x3000 CLEAR
++     * (pico-sdk hardware/regs/addressmap.h: REG_ALIAS_XOR_BITS /
++     * _SET_BITS / _CLR_BITS). The SDK's hw_set_bits()/hw_clear_bits()
++     * write the MASK to the alias register, so the engine must apply the
++     * alias semantics: masking the offset down to 0xFFF (as before)
++     * turned every "set BSWAP" into "the new CSR value is 0x1000" and
++     * silently dropped every other bit — the digest then came out
++     * byte-swapped (BSWAP lost) and the guest's CSR read-back was
++     * nonsense. */
++    uint32_t alias = offset & 0x3000u;
++    offset &= 0x0FFFu;
+     if (offset == SHA256_CSR) {
+-        if (val & SHA256_CSR_START) sha256_init();
+-        /* BSWAP/DMA_SIZE accepted; ERR bit is W1C */
++        uint32_t csr;
++        if (alias == 0x2000u)      csr = sha256_csr | val;   /* SET   */
++        else if (alias == 0x3000u) csr = sha256_csr & ~val;  /* CLEAR */
++        else if (alias == 0x1000u) csr = sha256_csr ^ val;   /* XOR   */
++        else                      csr = val;                /* plain */
++        /* BSWAP (bit 12) says whether the hardware byte-swaps every
++         * WDATA word. The SDK drives it (hardware/sha256.h
++         * sha256_set_bswap: set for SHA256_BIG_ENDIAN, cleared for
++         * LITTLE_ENDIAN) and byte-swaps the SUM words back in software
++         * (sha256_get_result) — honouring it is what makes the digest
++         * byte-exact. */
++        sha256_bswap = (csr & SHA256_CSR_BSWAP) ? 1 : 0;
++        if (csr & SHA256_CSR_START) {
++            /* START: a new checksum (resets the digest state); the rest
++             * of the CSR keeps its value, START itself is write-only. */
++            sha256_init();
++            csr &= ~SHA256_CSR_START;
++            csr |= (sha256_bswap ? SHA256_CSR_BSWAP : 0u);
++        }
++        sha256_csr = csr;
++        /* DMA_SIZE accepted; ERR bit is W1C */
+         if (val & SHA256_CSR_ERR_WDATA_NOT_RDY)
+             sha256_csr &= ~SHA256_CSR_ERR_WDATA_NOT_RDY;
+         return;
+diff --git a/src/membus.c b/src/membus.c
+index c025097..50ec97e 100644
+--- a/src/membus.c
++++ b/src/membus.c
+@@ -1512,7 +1512,12 @@ void mem_write32(uint32_t addr, uint32_t val) {
+     }
+ 
+     /* RP2350-specific peripherals (both shared stubs and M33-mode routing) */
+-    if (sha256_match(addr)) { sha256_write(addr & 0xFFF, val); return; }
++    /* Keep the atomic-alias bits (bit12 XOR / bit13 SET / bits12+13 CLEAR):
++     * the SDK's hw_set_bits()/hw_clear_bits() write the MASK to the alias
++     * register (address + 0x1000/+0x2000/+0x3000), and the SHA CSR must
++     * apply those semantics — masking the offset to 0xFFF turned every
++     * alias write into a plain "new CSR value = mask" write. */
++    if (sha256_match(addr)) { sha256_write(addr & 0x3FFFu, val); return; }
+     if (hstx_match(addr)) {
+         uint32_t base = addr & ~0x3000u;
+         if (base >= HSTX_FIFO_BASE && base < HSTX_FIFO_BASE + HSTX_FIFO_SIZE)

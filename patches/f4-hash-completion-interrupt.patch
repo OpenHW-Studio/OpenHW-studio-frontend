@@ -1,0 +1,16 @@
+--- a/stm32-periph-wasm/src/peripherals/hash.rs
++++ b/stm32-periph-wasm/src/peripherals/hash.rs
+@@ -185,8 +185,11 @@
+     }
+ 
+     fn check_interrupt(&mut self, sys: &System) {
+-        // DCIE (bit 5): Digest Calculation Complete Interrupt Enable
+-        if (self.sr & 0x08) != 0 && (self.cr & 0x20) != 0 {
++        // RM0090: the completion interrupt fires when HASH_IMR.DCIE (bit 1 of
++        // IMR at 0x5006_0420) is enabled AND HASH_SR.DCIS (bit 1) is set.
++        // The model tested the SR BUSY bit (0x08) and a CR bit (0x20) that
++        // does not exist in HASH_CR, so the HASH IRQ was never raised.
++        if (self.imr & 0x2) != 0 && (self.sr & 0x2) != 0 {
+             sys.p.nvic.borrow_mut().set_intr_pending(HASH_IRQ);
+         }
+     }

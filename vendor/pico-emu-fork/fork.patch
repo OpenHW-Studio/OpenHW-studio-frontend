@@ -1,0 +1,80 @@
+diff --git a/build_wasm.sh b/build_wasm.sh
+index d9b6ab8..fe9b5a9 100755
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -26,6 +26,7 @@ SOURCES=(
+   src/rom.c src/gdb.c src/storage.c src/sdcard.c src/emmc.c
+   src/fatfs.c src/w5500.c src/w6300.c src/bme280.c src/cyw43.c
+   src/devtools.c src/vnet.c src/sdd.c src/sdd_thermo.c src/sdd_eeprom.c
++  src/sdd_jsmirror.c
+   src/rp2350_rv/rv_cpu.c src/rp2350_rv/rv_clint.c
+   src/rp2350_rv/rv_membus.c src/rp2350_rv/rv_bootrom.c
+   src/rp2350_rv/rp2350_periph.c src/rp2350_rv/picobin.c
+@@ -49,6 +50,7 @@ EXPORTS='[
+   "_picoemu_flash_save","_picoemu_flash_load","_picoemu_flash_write",
+   "_picoemu_sdcard_load","_picoemu_emmc_load",
+   "_picoemu_net_enable","_picoemu_net_enable6300","_picoemu_sdd_add",  "_picoemu_eth_push_rx",
++  "_picoemu_jsmirror_pending","_picoemu_jsmirror_drops","_picoemu_jsmirror_pop",
+   "_picoemu_eth_pop_tx","_picoemu_eth_set_uplink","_picoemu_wifi_enable","_picoemu_board_eth",
+   "_picoemu_bt_hci_enable","_picoemu_bt_hci_pop_tx","_picoemu_bt_hci_push_rx",
+   "_picoemu_w5500_push_rx","_picoemu_w5500_push_status","_picoemu_ws_send_w5500",
+diff --git a/include/sdd.h b/include/sdd.h
+index 75ba4cf..f6ed4e9 100644
+--- a/include/sdd.h
++++ b/include/sdd.h
+@@ -107,4 +107,9 @@ int  sdd_create_thermometer(float initial_temp, int i2c_bus, int i2c_addr);
+ /* Create a 24LC256-compatible EEPROM SDD (file may be NULL) */
+ int  sdd_create_eeprom(int i2c_bus, int i2c_addr, const char *file);
+ 
++/* Create JS-mirror slave(s) (OpenHW-studio fork): ACKs the given addresses
++ * and mirrors every transaction into a JS-pollable ring. addrs[] holds up
++ * to 8 seven-bit addresses sharing one ring (sdd_add resets per call). */
++int  sdd_create_jsmirror(int i2c_bus, const int *addrs, int naddrs);
++
+ #endif /* SDD_H */
+diff --git a/src/sdd.c b/src/sdd.c
+index 594ad2a..c60d7be 100644
+--- a/src/sdd.c
++++ b/src/sdd.c
+@@ -141,7 +141,40 @@ int sdd_create_from_arg(const char *arg) {
+         return sdd_create_eeprom(i2c_bus, i2c_addr, file);
+     }
+ 
++    /* OpenHW-studio fork: JS-mirror slave(s). One sdd_add call attaches
++     * all of them (the registry resets per call), sharing one ring:
++     *   jsmirror:i2c=0,addr=0x3c
++     *   jsmirror:i2c=0,addr=0x3c,addr=0x27
++     */
++    if (strcmp(type, "jsmirror") == 0) {
++        int i2c_bus = 0;
++        int addrs[8];
++        int naddrs = 0;
++
++        if (opts) {
++            char *saveptr = NULL;
++            char *token = strtok_r(opts, ",", &saveptr);
++            while (token) {
++                if (strncmp(token, "i2c=", 4) == 0) {
++                    i2c_bus = atoi(token + 4);
++                } else if (strncmp(token, "addr", 4) == 0) {
++                    const char *eq = strchr(token, '=');
++                    if (eq && naddrs < 8) {
++                        addrs[naddrs++] = (int)strtol(eq + 1, NULL, 0) & 0x7F;
++                    }
++                }
++                token = strtok_r(NULL, ",", &saveptr);
++            }
++        }
++
++        if (naddrs == 0) {
++            fprintf(stderr, "[SDD] jsmirror needs addr=0x.. (e.g. jsmirror:i2c=0,addr=0x3c)\n");
++            return -1;
++        }
++        return sdd_create_jsmirror(i2c_bus, addrs, naddrs);
++    }
++
+     fprintf(stderr, "[SDD] Unknown device type: '%s'\n", type);
+-    fprintf(stderr, "[SDD] Available types: thermometer, eeprom\n");
++    fprintf(stderr, "[SDD] Available types: thermometer, eeprom, jsmirror\n");
+     return -1;
+ }

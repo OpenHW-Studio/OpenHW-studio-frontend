@@ -1,0 +1,2930 @@
+// Universal STM32F407 emulator factory — runs in Node and the browser.
+// No imports: the caller supplies the bindings (wasm-bindgen module),
+// the SVD XML, and the firmware bytes. The CPU core is the WASM-native
+// Thumb-2 interpreter (WasmCpu); there is no Unicorn dependency.
+//
+// Default eth_* constants match eth_http/eth_http.elf (nm-verified):
+//   irq_flag 0x20000620, rx_frame_idx 0x20000628, rx_frame_len 0x2000062c,
+//   tx_desc 0x20000610, rx_desc 0x20000630, tx_pkt 0x20000008, rx_buf 0x20000660
+
+export async function createEmulator(opts) {
+    const {
+        firmware,
+        bindings,             // wasm-bindgen module (web or nodejs build)
+        svdXml,               // SVD XML string for init_svd
+        wasmInit,             // optional: wasm bytes for bindings.default() (Node)
+        wasmUrl,              // optional: versioned wasm URL for bindings.default() (browser cache-busting; see VENDOR_V)
+        flash_size = 0x100000,
+        ram_size = 0x20000,
+        vector_table = 0x08000000,
+        onTx = null,          // (frame: Uint8Array, meta) called per TX capture
+        eth = {},             // firmware-specific SRAM addresses (defaults above)
+        ext_devices = {},
+        extra_ram = [],       // [{addr, size}] plain RAM regions mapped before
+                              // extra_mem preload (e.g. FSMC SDRAM, WAD ROM at
+                              // 0xB8000000 for the doom firmware)
+        extra_mem = [],       // [{addr, data}] preloaded into mapped memory (ELF RAM segments)
+        uart_addr = 0x40011000, // USART base for uart_rx_byte injection (UART4 = 0x40004C00)
+        // Run guest IRQ handlers (USART RXNE etc.) between batches. OFF by
+        // default: the ETH firmware is driven by writing irq_flag in SRAM and
+        // is corrupted if the guest ETH_IRQHandler also runs (it re-reads
+        // DMASR and re-scans rx_desc, stomping rx_frame_idx/len). Enable only
+        // for interrupt-driven firmware (rx_interrupt_test, rx_crypto_test).
+        enable_irqs = false,
+        // Interrupt-driven ETH firmware: the guest ETH_IRQHandler (run by the
+        // pump) reads DMASR and scans rx_desc itself, so the driver must NOT
+        // write the SRAM irq_flag / rx_frame_idx / rx_frame_len globals that
+        // the polling ETH firmware (eth_http) expects. Requires enable_irqs.
+        irq_eth = false,
+        // FreeRTOS port: deliver the `svc` instruction (used by
+        // xPortStartScheduler to start the first task) via exact inline
+        // exception entry/return in the Rust core, with EXC_RETURN-based
+        // context restore so FreeRTOS task switches take effect.
+        // GATED: off by default, so existing firmwares are untouched.
+        freertos = false,
+        // Translated-block execution (static binary translation project):
+        // loop regions (translator v1: register-only + B.cond latch) run
+        // as compiled WASM instead of interpreted. Opt-in; everything
+        // else takes the identical native path. See tbRun below.
+        tb = false,
+        // TB run-length gate: a cached shape must average at least this many
+        // executed instructions per hit to keep translating (see TB_MIN_RUN).
+        // Exposed so the gate can be A/B'd on the page without editing code.
+        // Page sweep 2026-11-26 (quiet box, interleaved): 5000 -> ~95 page
+        // MIPS / 58 rounds/s; 600 -> ~170 page MIPS / 72 rounds/s live.
+        // The old 5000 decision was measured on a loaded box (§ history).
+        tbMinRun = 600,
+        // Shared-memory translation override. Default: on whenever the
+        // wasm glue exposes the memory handle (web build). `false` pins
+        // the mirror path (used by the direct-vs-mirror differential).
+        tb_direct = null,
+        // Low-power: trap WFI/WFE and halt the core until a wakeup source
+        // (e.g. RTC alarm) fires. Opt-in so default runs keep their speed.
+        lowpower = false,
+        flat = false,
+    } = opts;
+
+    // Browser-safe env (Node `process` does not exist in the page; the
+    // WASM-step debug flags below would otherwise throw on every step).
+    const ENV = (typeof process !== 'undefined' && process.env) || {};
+
+    // ── firmware image validation (actionable errors on load failure) ──
+    if (!firmware || !(firmware instanceof Uint8Array) || firmware.length < 8) {
+        const len = firmware && firmware.length !== undefined ? firmware.length : typeof firmware;
+        throw new Error(
+            `firmware image is invalid (length=${len}): expected a Uint8Array of at least ` +
+            `8 bytes containing the Cortex-M vector table (initial SP + reset PC). ` +
+            `Load a compiled STM32F4 firmware image (.bin / .elf / .hex).`
+        );
+    }
+
+    const {
+        periph_read, periph_write, tick, tick_n, tick_peripherals, get_uart_output,
+        dma_get_pending_count, dma_get_pending, dma_set_completed,
+        dma_periph_read, dma_periph_write,
+        is_watchdog_reset_requested, add_spi_flash, add_i2c_eeprom, qspi_register_flash, sdio_bind_card, init_svd, init_svd_chip,
+        eth_is_tx_poll, eth_get_tx_desc_addr, eth_clear_tx_poll,
+        eth_is_rx_poll, eth_get_rx_desc_addr, eth_clear_rx_poll, eth_tx_done, eth_rx_done,
+        eth_mac_accept, eth_rx_csum_status, eth_check_wol, eth_tx_wire_busy,
+        eth_rx_wire_busy, eth_arm_collision, eth_take_collision,
+        eth_set_link, eth_link_up, eth_tx_deferred,
+        eth_tx_done_now,
+        eth_get_maccr, eth_loopback_tx, eth_ptp_tse, eth_ptp_sec, eth_ptp_sub,
+        eth_station_addr, eth_tx_sarc, eth_ipco_on, eth_fwd_csum_bad,
+        eth_tx_jabber_limit, eth_pause_rx, eth_take_pause_tx,
+        eth_enhanced_desc, eth_desc_next, eth_rx_ext_status, eth_backoff_slots,
+        eth_note_tx,         eth_note_rx, eth_note_missed,
+        eth_note_rx_stall, eth_rx_stall_clear, eth_note_jabber,
+        eth_signal_rx_poll, eth_signal_tx_poll,
+        get_next_pending_interrupt, set_intr_pending, has_pending_interrupt, pwr_wakeup, pwr_enter_standby, pwr_wakeup_standby, uart_rx_byte,
+        flash_is_programming, flash_take_erase, flash_erase_applied,
+        dma2d_take_job, dma2d_job_done, dma2d_convert, dma2d_blend,
+        spi_tap, spi_take_events, spi_push_miso, add_spi_sd_card, spi_sd_load_image,
+        fsmc_tap, fsmc_take_events, fsmc_push_data,
+        dcmi_feed_frame, dcmi_clear,
+        i2c_register_slave, i2c_take_events, i2c_push_rx, drain_tap_queues,
+        i2c_register_regfile, i2c_regfile_get, i2c_regfile_set,
+         audio_take_capture, can_inject, tim_inject_capture,
+        gpio_read_output, gpio_read_input, gpio_set_input,
+        adc_set_channel_value, adc_clear_channel_value,
+    } = bindings;
+
+    const E = {
+        txDesc: 0x20000610, rxDesc: 0x20000630, txPkt: 0x20000008,
+        rxBuf: 0x20000660, rxStride: 1536, irqFlag: 0x20000620,
+        rxFrameIdx: 0x20000628, rxFrameLen: 0x2000062c, // SRAM addrs of globals
+        rxInjectIdx: 0,                                  // desc index to inject at
+        rxDescs: 4,                                      // number of RX descriptors
+        ...eth,
+    };
+
+    // IRQ-mode RX delivery: the guest owns its descriptor layout. The DMA
+    // takes the frame ONLY if the polled head descriptor (DMARDLAR base)
+    // is DMA-owned; otherwise (RBUS, like silicon) the frame stays queued
+    // for the next poll. NEVER scan forward: past a single-entry ring
+    // lies ordinary guest RAM, and an OWN-looking garbage word would
+    // divert the frame into the wild (observed: DHCP Offer-shaped bytes
+    // misdelivered, ping lost).
+    // NO static-layout fallback: when no poll was ever armed
+    // (listBase==0) there is nowhere silicon could deliver either —
+    // hold the frame AND the (absent) poll for the next poll. (An older
+    // revision delivered to a hardcoded eth_http SRAM layout here; that
+    // wrote frames into unrelated guest RAM for every other firmware —
+    // observed as a netsim-shaped "SARC" frame with len 0x74.)
+    // Returns true on delivery.
+    // rdesExtra carries RDES0 status bits (IPHCE/PCE); with PTP TSE the
+    // snapshot goes to RDES6/7 (guest needs 32-byte descriptors). The
+    // driver additionally writes RDES4 extended status (HAL
+    // ETH_DMAPTPRXDESC_*: IPV4PR/IPHE/IPPE/IPPT/PTPMT) whenever the
+    // descriptor is wide enough (stride >= 20) — RDES4 exists in BOTH
+    // layouts on silicon (normal Des2/Des3 are buffer-2 words; enhanced
+    // adds RDES4-7 at +16..+28). The snapshot words RDES6/7 need a real
+    // 32-byte descriptor (stride >= 32): all in-tree firmware runs
+    // stride-1536 single descs, so the snapshot lands safely (an earlier
+    // revision gated it on EDFE-set and lost PTP RX snap on every
+    // in-tree run — the gate confused the LAYOUT bit with the STRIDE
+    // requirement).
+    // Descriptor mode is per-service-step (not per-boot): EDFE is a live
+    // model bit the guest can flip mid-run, and the chain walk is per
+    // descriptor (TCH/TER or RCH/RER in the control word, else the same
+    // head — single-descriptor guests stay put). All of it resolves
+    // through the eth_enhanced_desc/eth_desc_next/eth_rx_ext_status
+    // model entries so the bit positions stay single-sourced in Rust
+    // (CMSIS values).
+    // NOTE on `wuc`: the optimistic RDES1/RDES3 chain-walk read uses
+    // the caller-supplied memRead32 (NOT the function-scope wuc shim —
+    // that belongs to the wasm branch below and cross-scope use
+    // correctly trips no-undef).
+    const injectRxIrq = (memWrite, memRead32, frame, len, rdesExtra) => {
+        let listBase = 0;
+        try { listBase = eth_get_rx_desc_addr() >>> 0; } catch {}
+        if (listBase === 0) {
+            // No poll ever armed: hold (do NOT latch RBUS — nothing is
+            // "busy", the guest simply hasn't armed yet).
+            return false;
+        }
+        {
+            let rdes0 = 0, rdes1 = 0, rdes1ctrl = 0, rdes3 = 0;
+            try {
+                rdes0 = memRead32(listBase) >>> 0;
+                rdes1 = memRead32(listBase + 4) >>> 0;
+                // RDES1 control word (RCH/RER) + RDES3 link: read
+                // optimistically — a short (8-byte) layout may not map
+                // them, in which case the walk stays put. Uses the
+                // caller-supplied memRead32 (NOT the function-scope wuc
+                // shim — that belongs to the wasm branch below and the
+                // linter correctly flags cross-scope use).
+                try {
+                    rdes1ctrl = memRead32(listBase + 4) >>> 0;
+                    try { rdes3 = memRead32(listBase + 12) >>> 0; } catch {}
+                } catch {}
+            } catch { return false; }
+            if (!((rdes0 & 0x80000000) && rdes1 !== 0)) {
+                // Head still CPU-owned: hold the frame AND the poll
+                // (silicon RBUS) for the next poll, like the driver loop.
+                try { eth_note_rx_stall(); } catch {}
+                return false;
+            }
+                // Chain step: where does the DMA go AFTER this descriptor?
+                // (TCH/RCH = Desc3 link, TER/RER = ring wrap to list base,
+                // else linear advance by stride.) Resolved per descriptor so
+                // ring + chained layouts traverse exactly like silicon.
+                // NOTE: single-descriptor guests (all in-tree firmware:
+                // one rx_desc, one tx_desc, no TCH/TER/RCH/RER programmed)
+                // MUST stay put — advancing the poll past the only
+                // descriptor diverts the NEXT service step to a wild
+                // address (observed: COLLIDE/LINK-DOWN TX polls serviced
+                // at desc+stride with len 0x3C garbage, PTP-RX snapshot
+                // lost). Only walk when the control word actually
+                // requests it (TCH/TER or RCH/RER set); otherwise the
+                // next poll re-targets the same head.
+                let nextDesc = listBase;
+                try {
+                    if (typeof eth_desc_next === 'function') {
+                        if ((rdes1ctrl & 0xC000) !== 0) {
+                            nextDesc = eth_desc_next(false, rdes1ctrl, listBase, rdes3, listBase, (E.rxStride || 8)) >>> 0;
+                        }
+                    } else if (rdes1ctrl & 0x4000) nextDesc = rdes3;
+                    else if (rdes1ctrl & 0x8000) nextDesc = listBase;
+                } catch {}
+            // (Single call above is the walk; no stray second call —
+            // eth_desc_next is one-shot-documented, and even a pure
+            // re-call would waste a wasm crossing per RX frame.)
+            try {
+                // LEN RULE (silicon): RDES0[29:16] is the FRAME length
+                // but the DMA never reports a runt — frames shorter than
+                // 64 B (60 B payload + 4 B FCS the MAC strips) pad to 60.
+                // A 50 B loopback frame therefore reports 60 (0x3C).
+                // (Enhanced-desc layouts only: the PTP snapshot at +24
+                // needs a 32-byte descriptor. On a short layout (fewer
+                // than 32 bytes before the next descriptor/buffer) the
+                // +24 write would clobber the NEXT descriptor or the RX
+                // buffer — observed as RBUS CLEAR FAIL with rx0 stuck at
+                // 0x003C0000 on the single-desc feat layout. Gate on the
+                // configured stride.)
+                // RDES0 status (HAL stm32f4xx_hal_eth.h ETH_DMARXDESC_*):
+                // FS=bit9 + LS=bit8 ALWAYS set on a delivered frame (the
+                // DMA owns single-buffer delivery end-to-end here; ES=bit15
+                // rides along inside rdesExtra when the csum gate raised
+                // it). Previously neither was set — firmware reading
+                // FS/LS (any HAL-based RX path) saw a "middle fragment"
+                // forever and never consumed the frame.
+                const RDESC_FS = 0x200, RDESC_LS = 0x100;
+                const wire = len < 60 ? 60 : len;
+                const out = new Uint8Array(wire);
+                out.set(frame.subarray(0, len));
+                memWrite(BigInt(rdes1), out);
+                const wb = new Uint8Array(4);
+                new DataView(wb.buffer).setUint32(0, (wire << 16) | rdesExtra | RDESC_FS | RDESC_LS, true);
+                memWrite(BigInt(listBase), wb);
+                // RDES4 extended status + RDES6/7 PTP snapshot. RDES4
+                // exists in both layouts (normal Des2/Des3 are buffer-2
+                // words; enhanced adds RDES4-7) — write it whenever the
+                // descriptor is wide enough (stride >= 20). RDES6/7 need
+                // a real 32-byte descriptor (stride >= 32): all in-tree
+                // firmware runs stride-1536 single descs (EDFE-clear
+                // normal layout with room), so the snapshot lands safely.
+                // (An earlier revision gated the snapshot on EDFE-set and
+                // lost PTP RX snap on every in-tree run — the gate
+                // confused the LAYOUT bit with the STRIDE requirement.
+                // EDFE only matters for what +16..+28 MEAN, not whether
+                // they fit: RDES4 goes whenever it fits, the snapshot
+                // whenever the full 32 bytes fit.)
+                try { void (typeof eth_enhanced_desc === 'function' ? !!eth_enhanced_desc() : (E.rxStride || 0) >= 32); } catch {}
+                if ((E.rxStride || 0) >= 20) {
+                    try {
+                        const xst = (typeof eth_rx_ext_status === 'function' ? eth_rx_ext_status(frame) : 0) >>> 0;
+                        const xb = new Uint8Array(4);
+                        new DataView(xb.buffer).setUint32(0, xst, true);
+                        memWrite(BigInt(listBase + 16), xb);
+                    } catch {}
+                }
+                if (eth_ptp_tse() && (E.rxStride || 0) >= 32) {
+                    const sb = new Uint8Array(8);
+                    const sdv = new DataView(sb.buffer);
+                    sdv.setUint32(0, eth_ptp_sec(), true);
+                    sdv.setUint32(4, eth_ptp_sub(), true);
+                    memWrite(BigInt(listBase + 24), sb);
+                }
+                // Advance the DMA poll to the next descriptor in the
+                // chain (silicon consumes the poll per descriptor) — but
+                // ONLY when the descriptor requests it (RCH/RER above).
+                // Single-descriptor guests stay put (see the chain-step
+                // note): the model poll addr tracks DMARDLAR, so re-signal
+                // it at the walked address — the next service step
+                // delivers there. (Flat `if` + return: the OWN/diversion
+                // guards above already returned, so no else chain.)
+                try { if (nextDesc !== listBase) eth_signal_rx_poll(nextDesc); } catch {}
+                return true;
+            } catch { return false; }
+        } // end IRQ-path block (polling path below is a separate block)
+        // Polling-path delivery (non-IRQ firmware): static E layout.
+        const idx = E.rxInjectIdx;
+        E.rxInjectIdx = (E.rxInjectIdx + 1) % E.rxDescs;
+        // Same runt-pad LEN rule as the IRQ path above, same FS+LS status
+        // (single-buffer delivery: first AND last segment always).
+        const RDESC_FS_LS = 0x300;
+        const wire = len < 60 ? 60 : len;
+        const out = new Uint8Array(wire);
+        out.set(frame.subarray(0, len));
+        memWrite(BigInt(E.rxBuf + idx * E.rxStride), out);
+        const wb = new Uint8Array(4);
+        new DataView(wb.buffer).setUint32(0, (wire << 16) | rdesExtra | RDESC_FS_LS, true);
+        memWrite(BigInt(E.rxDesc + idx * 8), wb);
+        return true;
+    };
+
+    // Internet checksum over pkt[off..off+len].
+    const ethCksum = (pkt, off, len) => {
+        let s = 0;
+        for (let i = 0; i + 1 < len; i += 2) s += (pkt[off + i] << 8) | pkt[off + i + 1];
+        if (len & 1) s += pkt[off + len - 1] << 8;
+        while (s >>> 16) s = (s & 0xFFFF) + (s >>> 16);
+        return (~s) & 0xFFFF;
+    };
+
+    // PTP event-message test (silicon snapshots ONLY these): ethertype
+    // 0x88F7 (any payload), or IPv4/IPv6 UDP to port 319/320. VLAN-tagged
+    // forms count (one 802.1Q tag skipped). Everything else — the feat
+    // UDP probe, TCP, ICMP, ARP — is NOT an event message.
+    const ptpIsEvent = (pkt) => {
+        if (!pkt || pkt.length < 14) return false;
+        let off = 12;
+        let et = (pkt[off] << 8) | pkt[off + 1];
+        if (et === 0x8100) {
+            if (pkt.length < 18) return false;
+            et = (pkt[16] << 8) | pkt[17];
+            off = 16;
+        }
+        if (et === 0x88F7) return true;
+        if (et !== 0x0800 && et !== 0x86DD) return false;
+        const ihl = et === 0x0800 ? (pkt[off + 2] & 0x0F) * 4 : 40;
+        const l4 = off + 2 + ihl;
+        if (pkt.length < l4 + 4) return false;
+        const proto = et === 0x0800 ? pkt[off + 2 + 9] : pkt[off + 2 + 6];
+        if (proto !== 17) return false;
+        const dport = (pkt[l4 + 2] << 8) | pkt[l4 + 3];
+        return dport === 319 || dport === 320;
+    };
+
+    // TX checksum offload (TDES0 CIC): insert IP header + TCP/UDP/ICMP
+    // checksums into the captured copy AND guest buffer (via wr16, like
+    // silicon). Defined here (wuc is in TDZ above); called from wProcessEth.
+    const txInsertCsum = (pkt, wr16, cic) => {
+        if (pkt.length < 14 || cic === 0) return;
+        // Untagged frames: ethertype at 12, L3 at 14 (NOT 12 — that
+        // misaligns IHL/proto and writes checksums into TTL/proto).
+        let off = 14, et = (pkt[12] << 8) | pkt[13];
+        if (et === 0x8100) {
+            if (pkt.length < 18) return;
+            off = 18; et = (pkt[16] << 8) | pkt[17];
+        }
+        if (et !== 0x0800 || pkt.length < off + 20) return;
+        const ihl = (pkt[off] & 0xF) * 4;
+        if (ihl < 20 || pkt.length < off + ihl) return;
+        const set16 = (at, v) => {
+            pkt[at] = (v >> 8) & 0xFF; pkt[at + 1] = v & 0xFF;
+            wr16(at, v);
+        };
+        pkt[off + 10] = 0; pkt[off + 11] = 0;
+        set16(off + 10, ethCksum(pkt, off, ihl));
+        if (cic < 2) return; // IP header only
+        const proto = pkt[off + 9], l4 = off + ihl;
+        const pseudo = (pl, p) => {
+            let s = 0;
+            for (let i = 0; i < 4; i += 2) s += (pkt[off + 12 + i] << 8) | pkt[off + 13 + i];
+            for (let i = 0; i < 4; i += 2) s += (pkt[off + 16 + i] << 8) | pkt[off + 17 + i];
+            s += p + pl;
+            for (let i = 0; i + 1 < pl; i += 2) s += (pkt[l4 + i] << 8) | pkt[l4 + i + 1];
+            if (pl & 1) s += pkt[l4 + pl - 1] << 8;
+            while (s >>> 16) s = (s & 0xFFFF) + (s >>> 16);
+            return (~s) & 0xFFFF;
+        };
+        if (proto === 6 && pkt.length >= l4 + 20) {
+            pkt[l4 + 16] = 0; pkt[l4 + 17] = 0;
+            set16(l4 + 16, pseudo(pkt.length - l4, 6));
+        } else if (proto === 17 && pkt.length >= l4 + 8) {
+            pkt[l4 + 6] = 0; pkt[l4 + 7] = 0;
+            set16(l4 + 6, pseudo(Math.max(8, Math.min(pkt.length - l4, ((pkt[l4 + 4] << 8) | pkt[l4 + 5]) || 8)), 17));
+        } else if (proto === 1 && pkt.length >= l4 + 4) {
+            pkt[l4 + 2] = 0; pkt[l4 + 3] = 0;
+            set16(l4 + 2, ethCksum(pkt, l4, pkt.length - l4));
+        }
+    };
+
+    // Web glue returns the wasm exports object (with `memory`); the nodejs
+    // glue is synchronous and exposes none of it. Shared-memory translation
+    // needs that memory handle, so keep it when the glue hands it over.
+    let wasmExports = null;
+    if (typeof bindings.default === 'function') {
+        if (wasmInit) wasmExports = await bindings.default({ module_or_path: wasmInit });
+        else if (wasmUrl) wasmExports = await bindings.default({ module_or_path: wasmUrl });
+        else wasmExports = await bindings.default();
+    }
+    // Clear process-lifetime wasm globals before registering THIS instance's
+    // devices.  ExtDevices is a module-level list and the peripheral
+    // constructors bind by first-match, so without this a second
+    // createEmulator() in the same process silently attaches to the FIRST
+    // instance's devices (measured: a regfile seeded 0x22 read back 0x11).
+    // Older wasm bundles may not export it, hence the guard.
+    if (typeof bindings.reset_state === 'function') bindings.reset_state();
+    for (const cfg of (ext_devices.spi_flash || [])) {
+        add_spi_flash(cfg.peripheral, cfg.jedec_id, cfg.data, cfg.cs ?? null);
+    }
+    // SD card in SPI mode (synchronous model-side protocol engine — the
+    // JS tap round-trip is structurally one transfer late for block reads,
+    // see ext_devices/sd_card.rs). Same before-init() rule as spi_flash:
+    // Spi::new snapshots the device list once at construction.
+    // `ext_devices.spi_sd: [{peripheral, blocks, cs, data?}]` (default 4×512B).
+    // `data` (Uint8Array) seeds the card with a filesystem image after
+    // registration (see tools/make_sd_image.mjs) — block-RW tests use the
+    // default erased image; FS-level tests pass a FAT image here.
+    // Guarded for older wasm bundles without the export.
+    for (const cfg of (ext_devices.spi_sd || [])) {
+        try {
+            if (typeof add_spi_sd_card === 'function') {
+                add_spi_sd_card(cfg.peripheral, cfg.blocks || 4, cfg.cs ?? null);
+                if (cfg.data && typeof spi_sd_load_image === 'function') {
+                    spi_sd_load_image(cfg.peripheral, new Uint8Array(cfg.data));
+                }
+            }
+        } catch {}
+    }
+    for (const cfg of (ext_devices.i2c_eeprom || [])) {
+        add_i2c_eeprom(cfg.peripheral, cfg.address, cfg.data);
+    }
+    // QSPI flash backend. MUST run before init_svd(): the QUADSPI peripheral
+    // binds its flash image at construction time (Qspi::new clones the global
+    // QSPI_FLASH), so the backend must be registered first.
+    for (const cfg of (ext_devices.qspi || [])) {
+        qspi_register_flash(cfg.peripheral || 'QUADSPI', new Uint8Array(cfg.data || new Uint8Array(cfg.size || 256)));
+    }
+    // SD card image backend. The SDIO model boots with NO card bound
+    // (card_blocks()==0, reads erased) — real silicon always has a card
+    // in the slot, so the driver binds the image pre-boot (same pattern
+    // as qspi above). `ext_devices.sdio: {blocks: N}` (default 4×512B).
+    // NOTE: sdio_bind_card lands on the live model (not a pre-init
+    // global like qspi_register_flash), so it runs AFTER init_svd below
+    // (see the second sdio block after init); this pre-init loop only
+    // records the request.
+    let sdioBlocks = 0;
+    if (ext_devices.sdio) {
+        sdioBlocks = (ext_devices.sdio.blocks || 4) >>> 0 || 4;
+    }
+    // Register-file I2C devices (DS3231 RTC). init is a &[u8] snapshot of the
+    // register file: BCD time regs 0x00-0x06, temp MSB/LSB 0x11/0x12. The
+    // `rtc` device config is shorthand for a regfile at 0x68 that also
+    // enables the emu.rtc time/temp decoder.
+    const regfileCfg = [
+        ...(ext_devices.regfile || []),
+        ...(ext_devices.rtc ? [{
+            peripheral: ext_devices.rtc.i2c || 'I2C1',
+            address: ext_devices.rtc.addr || 0x68,
+            size: ext_devices.rtc.size || 20,
+            init: ext_devices.rtc.init || [],
+        }] : []),
+    ];
+    for (const cfg of regfileCfg) {
+        i2c_register_regfile(
+            cfg.peripheral || 'I2C1', cfg.address || 0x68, cfg.size || 20,
+            new Uint8Array(cfg.init || []));
+    }
+    // Virtual peripheral devices (JS hardware layer). Each is a real device
+    // protocol implemented in JS on top of the bus taps, driven by the
+    // firmware through the modeled I2C/SPI/TIM/I2S registers.
+    if (ext_devices.oled) {
+        i2c_register_slave(ext_devices.oled.i2c || 'I2C1', ext_devices.oled.addr || 0x3C);
+    }
+    if (ext_devices.tft) {
+        spi_tap(ext_devices.tft.spi || 'SPI2', ext_devices.tft.cs || null, ext_devices.tft.dc || null);
+    }
+    // Custom SPI/I2C devices (site/components.js-style embedder devices):
+    // { peripheral, cs?, dc?, handler(events, push) } / { peripheral, address, handler }.
+    // spi_tap/i2c_register_slave must run before init() below — the Spi/I2c
+    // peripheral objects snapshot their attached-device list once at
+    // construction and never rescan it (see spi.rs Spi::new).
+    const spiDevices = [];
+    for (const cfg of (ext_devices.spiDevices || [])) {
+        spi_tap(cfg.peripheral, cfg.cs ?? null, cfg.dc ?? null);
+        spiDevices.push({ peripheral: cfg.peripheral, handler: cfg.handler });
+    }
+    const i2cDevices = [];
+    for (const cfg of (ext_devices.i2cDevices || [])) {
+        i2c_register_slave(cfg.peripheral, cfg.address);
+        i2cDevices.push({ peripheral: cfg.peripheral, handler: cfg.handler });
+    }
+    // Memory-mapped FSMC devices: { bank, handler(events, push) }. `bank` is
+    // 0-based (0 = BANK1 @ 0x60000000). Events arrive as PAIRS of words —
+    // header then value — because an FSMC access carries an address as well
+    // as a value; see the fsmc_tap doc comment in lib.rs. Same before-init()
+    // rule as spi_tap: Fsmc binds its banks' devices once at construction.
+    const fsmcDevices = [];
+    for (const cfg of (ext_devices.fsmcDevices || [])) {
+        const bank = cfg.bank ?? 0;
+        fsmc_tap(bank);
+        fsmcDevices.push({ bank, handler: cfg.handler });
+    }
+    // Exactly ONE of these. They both install a fresh WasmSystem and the last
+    // one wins, so calling init() after init_svd() would replace the
+    // SVD-derived peripheral map with the hardcoded one. (It used to be a
+    // harmless no-op only because SYS was a OnceLock that ignored the second
+    // call — see the SYS comment in stm32-periph-wasm/src/lib.rs.)
+    // Per-chip identity (DBGMCU IDCODE DEV_ID): pass the board's SVD
+    // filename as the chip hint when the bundle exports init_svd_chip
+    // (older bundles only have init_svd — same map, F407 IDCODE).
+    // `chipHint` (opts) overrides; default derives from `svdFile` (opts)
+    // which app.js sets to the board's SVD filename (boards.js).
+    if (svdXml) {
+        if (typeof init_svd_chip === 'function') {
+            let hint = '';
+            try {
+                hint = String(opts.chipHint || opts.svdFile || '');
+                hint = hint.split('/').pop().split('.').slice(0, -1).join('.') || hint;
+            } catch {}
+            // compat[0] may carry no SVD filename (older callers pass none):
+            // default to the F407 identity rather than an empty hint that
+            // leaves IDCODE at its reset value (comprehensive_test pins 0x413).
+            if (!hint) hint = 'stm32f407';
+            init_svd_chip(svdXml, hint);
+        } else init_svd(svdXml);
+    }
+    else bindings.init();
+
+    // SD card image: bind AFTER init (live-model call, not a pre-init
+    // global). Guarded for older wasm bundles without the export.
+    if (sdioBlocks > 0 && typeof sdio_bind_card === 'function') {
+        try { sdio_bind_card(sdioBlocks); } catch {}
+    }
+
+    // ── shared virtual-peripheral devices (moved above the wasm branch
+    // so BOTH backends use them; the wasm step() calls processDevices()
+    // too). Register reads go through devRead32 (wread32/read32 per backend).
+    let devRead32 = null;
+    // ── virtual peripheral devices (JS hardware layer) ────────────────────
+    // Device protocols implemented in JS on top of the bus taps:
+    //  - oled:   SSD1306 128x64 over I2C (page-addressed framebuffer)
+    //  - tft:    ILI9341 240x320 RGB565 over SPI with a DC line
+    //  - buzzer: TIM PWM frequency/duty read from the modeled timer regs
+    //  - speaker:I2S TX samples drained from the model's capture FIFO
+    // Enabled per-firmware via ext_devices.{oled,tft,buzzer,speaker}.
+
+    const oled = ext_devices.oled ? {
+        w: 128, h: 64, col: 0, page: 0, cmdArg: 0, cmdLeft: 0,
+        inData: false, needControl: false,
+        fb: new Uint8Array(128 * 64), frame: 0,
+    } : null;
+    const oledI2C = ext_devices.oled ? (ext_devices.oled.i2c || 'I2C1') : null;
+    const OLED_ARG_CMDS = { 0x20: 1, 0x21: 1, 0x22: 1, 0x81: 1, 0x8D: 1, 0xA8: 1, 0xD3: 1, 0xD5: 1, 0xD9: 1, 0xDA: 1, 0xDB: 1 };
+    // Takes its event array as an argument: processI2cBus() takes each bus
+    // queue ONCE per pass and fans the same array out to every consumer on
+    // that peripheral (OLED parser + observer handlers). Separate take()
+    // calls per consumer starve each other (first drain wins).
+    const processOled = (events) => {
+        if (!oled) return;
+        for (const ev of events) {
+            // Read-request marker ((1<<30)|addr, no bit31): observer path,
+            // not display data — a data byte here would corrupt the frame.
+            if ((ev & 0x40000000) && !(ev & 0x80000000)) continue;
+            if (ev & 0x80000000) {
+                // START: the next byte is a control byte (0x00 = command
+                // group, 0x40 = data group). STOP: group ends here.
+                oled.inData = false;
+                if (ev & 0x40000000) oled.needControl = true;
+                continue;
+            }
+            const b = ev & 0xFF;
+            if (oled.needControl) {
+                oled.needControl = false;
+                if (b === 0x40) oled.inData = true;
+                continue;
+            }
+            if (oled.inData) {
+                for (let bit = 0; bit < 8; bit++) {
+                    oled.fb[(oled.page * 8 + bit) * oled.w + oled.col] = (b >> bit) & 1;
+                }
+                oled.col = (oled.col + 1) % oled.w;
+                continue;
+            }
+            if (oled.cmdLeft > 0) { oled.cmdLeft--; continue; }
+            if (b >= 0xB0 && b <= 0xB7) { oled.page = b & 0x07; continue; }
+            if (b >= 0x00 && b <= 0x0F) { oled.col = (oled.col & 0xF0) | b; continue; }
+            if (b >= 0x10 && b <= 0x1F) { oled.col = ((b & 0x0F) << 4) | (oled.col & 0x0F); continue; }
+            const n = OLED_ARG_CMDS[b];
+            if (n !== undefined) { oled.cmdLeft = n; continue; }
+            // single-byte commands (0xAE/0xAF/0x40/0xA4/0xA6/...) — no action
+        }
+        if (events.length) oled.frame++;
+    };
+
+    const tft = ext_devices.tft ? {
+        w: 240, h: 320, x0: 0, y0: 0, x1: 239, y1: 319, x: 0, y: 0,
+        mode: 'idle', cmdArg: 0, cmdLeft: 0, argBuf: [],
+        fb: new Uint8Array(240 * 320 * 2), frame: 0, pixels: 0,
+    } : null;
+    const tftSpi = ext_devices.tft ? (ext_devices.tft.spi || 'SPI2') : null;
+    const TFT_ARG_CMDS = { 0x2A: 4, 0x2B: 4, 0x36: 1, 0x3A: 1, 0xC0: 2, 0xC1: 1, 0xC5: 2, 0xC7: 1, 0xE0: 15, 0xE1: 15, 0xF6: 3, 0x35: 1, 0x53: 1 };
+    // Same fan-out contract as processOled (see above): events in, no take.
+    const processTft = (events) => {
+        if (!tft) return;
+        for (const ev of events) {
+            if (ev & 0x80000000) {
+                if (ev & 0x40000000) {          // CS asserted: fresh transaction
+                    tft.mode = 'idle';
+                    tft.cmdLeft = 0;
+                }
+                continue;
+            }
+            const dc = (ev >> 29) & 1;
+            const b = ev & 0xFF;
+            if (tft.mode === 'write') {
+                tft.argBuf.push(b);
+                if (tft.argBuf.length === 2) {
+                    const px = (tft.argBuf[0] << 8) | tft.argBuf[1];
+                    const off = (tft.y * tft.w + tft.x) * 2;
+                    tft.fb[off] = tft.argBuf[0];
+                    tft.fb[off + 1] = tft.argBuf[1];
+                    tft.x++;
+                    tft.pixels++;
+                    if (tft.x > tft.x1) {
+                        tft.x = tft.x0;
+                        tft.y++;
+                        tft.frame++;
+                    }
+                    if (tft.y > tft.y1) { tft.y = tft.y0; tft.mode = 'idle'; }
+                    tft.argBuf.length = 0;
+                }
+                continue;
+            }
+            if (!dc) {                          // command byte
+                if (b === 0x2C) {
+                    tft.mode = 'write';
+                    tft.x = tft.x0;
+                    tft.y = tft.y0;
+                    tft.argBuf.length = 0;
+                    continue;
+                }
+                const n = TFT_ARG_CMDS[b];
+                if (n !== undefined) { tft.mode = 'args'; tft.cmdArg = b; tft.cmdLeft = n; tft.argBuf.length = 0; }
+                continue;
+            }
+            // data byte in args mode
+            if (tft.mode === 'args') {
+                tft.argBuf.push(b);
+                tft.cmdLeft--;
+                if (tft.cmdLeft === 0) {
+                    if (tft.cmdArg === 0x2A && tft.argBuf.length === 4) {
+                        tft.x0 = (tft.argBuf[0] << 8) | tft.argBuf[1];
+                        tft.x1 = (tft.argBuf[2] << 8) | tft.argBuf[3];
+                    } else if (tft.cmdArg === 0x2B && tft.argBuf.length === 4) {
+                        tft.y0 = (tft.argBuf[0] << 8) | tft.argBuf[1];
+                        tft.y1 = (tft.argBuf[2] << 8) | tft.argBuf[3];
+                    }
+                    tft.mode = 'idle';
+                }
+            }
+        }
+    };
+
+    const buzzer = ext_devices.buzzer ? {
+        base: ext_devices.buzzer.tim === 'TIM3' ? 0x40000400
+            : ext_devices.buzzer.tim === 'TIM4' ? 0x40000800
+            : ext_devices.buzzer.tim === 'TIM5' ? 0x40000C00
+            : 0x40000000,                        // TIM2 default
+        fclk: 84e6, freq: 0, duty: 0, change: 0,
+    } : null;
+    const processBuzzer = () => {
+        if (!buzzer || !devRead32) return;
+        const cr1 = devRead32(buzzer.base + 0x00);
+        const ccer = devRead32(buzzer.base + 0x20);
+        const psc = devRead32(buzzer.base + 0x28);
+        const arr = devRead32(buzzer.base + 0x2C);
+        const ccr = devRead32(buzzer.base + 0x34);
+        let freq = 0, duty = 0;
+        if ((cr1 & 1) && (ccer & 1) && ccr > 0 && arr > 0 && arr < 0xFFFFFF) {
+            const div = (psc + 1) * (arr + 1);
+            if (div > 0) { freq = buzzer.fclk / div; duty = ccr / (arr + 1); }
+        }
+        if (freq !== buzzer.freq || duty !== buzzer.duty) {
+            buzzer.freq = freq; buzzer.duty = duty; buzzer.change++;
+        }
+    };
+
+    const speaker = ext_devices.speaker ? { ring: [], total: 0, samples: 0 } : null;
+    const processSpeaker = () => {
+        if (!speaker) return;
+        const s = audio_take_capture();
+        if (!s || s.length === 0) return;
+        const f = new Float32Array(s.length);
+        for (let i = 0; i < s.length; i++) f[i] = (s[i] > 0x7FFF ? s[i] - 0x10000 : s[i]) / 32768;
+        speaker.ring.push(f);
+        speaker.total += f.length;
+        if (speaker.ring.length > 64) speaker.ring.shift();
+    };
+    const takeSpeakerSamples = () => {
+        if (!speaker) return new Float32Array(0);
+        let n = 0;
+        for (const f of speaker.ring) n += f.length;
+        const out = new Float32Array(n);
+        let off = 0;
+        for (const f of speaker.ring) { out.set(f, off); off += f.length; }
+        speaker.ring.length = 0;
+        return out;
+    };
+
+    // DS3231 RTC: register file behind the tap (BCD time regs 0x00-0x06,
+    // temp MSB/LSB 0x11/0x12). Read live from the modeled registers; the
+    // JS driver seeds the register file (init) and the guest writes it.
+    const rtc = ext_devices.rtc ? {
+        peri: ext_devices.rtc.i2c || 'I2C1', change: 0, time: null, temp: null,
+        lastKey: '',
+    } : null;
+    const bcd2n = (v) => ((v >> 4) * 10) + (v & 0x0F);
+    const processRtc = () => {
+        if (!rtc) return;
+        const r = (o) => i2c_regfile_get(rtc.peri, o);
+        const time = {
+            sec: bcd2n(r(0x00)), min: bcd2n(r(0x01)), hour: bcd2n(r(0x02)),
+            dow: bcd2n(r(0x03)), day: bcd2n(r(0x04)), mon: bcd2n(r(0x05)),
+            year: bcd2n(r(0x06)),
+        };
+        const tmsb = r(0x11), tlsb = r(0x12);
+        const temp = (tmsb & 0x80 ? tmsb - 0x100 : tmsb) + (tlsb >> 6) * 0.25;
+        rtc.time = time;
+        rtc.temp = temp;
+        const key = `${time.sec}:${time.min}:${time.hour}:${time.day}:${time.mon}:${time.year}:${temp}`;
+        if (key !== rtc.lastKey) { rtc.lastKey = key; rtc.change++; }
+    };
+
+    // ── Public component-attachment API (LED/Button/custom SPI/I2C
+    // devices) — built on the same GPIO shims and bus taps the oled/tft
+    // blocks above use internally, but reusable by embedder code without
+    // editing this file. See site/components.js and docs/components.md.
+    const portIndex = (port) => typeof port === 'string' ? port.toUpperCase().charCodeAt(0) - 65 : port;
+
+    // Unified pin handle: pin(port, num) (components.js / facade form) or
+    // pin('PA5') (ws-bridge form). Method set is the union both callers need.
+    const pin = (portOrName, num) => {
+        let p = portIndex(portOrName);
+        let n = num;
+        if (n === undefined && typeof portOrName === 'string') {
+            const m = /^P([A-E])([0-9]|1[0-5])$/i.exec(portOrName || '');
+            if (!m) return null;
+            p = m[1].toUpperCase().charCodeAt(0) - 65;
+            n = parseInt(m[2], 10);
+        }
+        if (p === null || p === undefined || n === undefined) return null;
+        return {
+            read: () => gpio_read_output(p, n),
+            readInput: () => gpio_read_input(p, n),
+            write: (level) => gpio_set_input(p, n, !!level),
+            setInputValue: (v) => gpio_set_input(p, n, !!v),
+            getOutputValue: () => gpio_read_output(p, n),
+            getInputValue: () => gpio_read_input(p, n),
+        };
+    };
+
+    const i2cRegfile = (peripheral) => ({
+        get: (offset) => i2c_regfile_get(peripheral, offset),
+        set: (offset, value) => i2c_regfile_set(peripheral, offset, value & 0xFF),
+    });
+
+    const setAdcChannel = (peripheral, channel, value) => adc_set_channel_value(peripheral, channel, value);
+    const clearAdcChannel = (peripheral, channel) => adc_clear_channel_value(peripheral, channel);
+
+    const gpioWatchers = [];
+    const watchPin = (port, num, callback) => {
+        const p = portIndex(port);
+        const w = { p, num, last: gpio_read_output(p, num), callback };
+        gpioWatchers.push(w);
+        return () => {
+            const i = gpioWatchers.indexOf(w);
+            if (i >= 0) gpioWatchers.splice(i, 1);
+        };
+    };
+    const processGpioWatchers = () => {
+        for (const w of gpioWatchers) {
+            const v = gpio_read_output(w.p, w.num);
+            if (v !== w.last) { w.last = v; w.callback(v); }
+        }
+    };
+
+    // Bus fan-out tables, built once (consumers are fixed at creation:
+    // the model binds devices at init and never rescans). Each pass takes
+    // a bus queue ONCE and delivers the same array to every consumer on
+    // that peripheral, so an OLED parser and an observer on I2C1 (or two
+    // observers on one bus) never starve each other. One bad consumer
+    // can't break the rest: each delivery is guarded.
+    const spiGroups = new Map();
+    if (tft) spiGroups.set(tftSpi, [(events) => processTft(events)]);
+    for (const d of spiDevices) {
+        if (!spiGroups.has(d.peripheral)) spiGroups.set(d.peripheral, []);
+        spiGroups.get(d.peripheral).push(
+            (events) => d.handler(events, (bytes) => spi_push_miso(d.peripheral, bytes)));
+    }
+    const processSpiBus = () => {
+        for (const [peri, fns] of spiGroups) {
+            const events = spi_take_events(peri);
+            if (!events.length) continue;
+            for (const fn of fns) { try { fn(events); } catch {} }
+        }
+    };
+
+    const i2cGroups = new Map();
+    if (oled) i2cGroups.set(oledI2C, [(events) => processOled(events)]);
+    for (const d of i2cDevices) {
+        if (!i2cGroups.has(d.peripheral)) i2cGroups.set(d.peripheral, []);
+        i2cGroups.get(d.peripheral).push(
+            (events) => d.handler(events, (bytes) => i2c_push_rx(d.peripheral, bytes)));
+    }
+    const processI2cBus = () => {
+        for (const [peri, fns] of i2cGroups) {
+            const events = i2c_take_events(peri);
+            if (!events.length) continue;
+            for (const fn of fns) { try { fn(events); } catch {} }
+        }
+    };
+
+    // ── DCMI camera sensor (JS pixel source) ──
+    // The DCMI model consumes one fed frame with real VSYNC/LINE/FRAME/OVR
+    // semantics and drops it when fully read, so a live camera just has to
+    // keep supplying frames. Unlike the bus taps this needs no registration
+    // before init() — the frame slot is a global the model polls.
+    const camera = ext_devices.camera || null;
+    let cameraFrames = 0;
+    let cameraRunning = true;
+    const processCamera = () => {
+        if (!camera || !cameraRunning) return;
+        // `frame(n)` returns the next frame's pixels, or null/undefined to
+        // leave the current one in place (a sensor running slower than the
+        // step loop, which is the normal case).
+        const px = camera.frame ? camera.frame(cameraFrames) : camera.pixels;
+        if (!px) return;
+        dcmi_feed_frame(camera.width, camera.height,
+            px instanceof Uint8Array ? px : Uint8Array.from(px));
+        cameraFrames++;
+    };
+
+    const processFsmcDevices = () => {
+        for (const d of fsmcDevices) {
+            const events = fsmc_take_events(d.bank);
+            if (events.length) d.handler(events, (values) => fsmc_push_data(d.bank, Uint32Array.from(values)));
+        }
+    };
+
+    // Reset hygiene for the observation plumbing (called by reset() and
+    // resetCpu()): drain stale bus events + latched fault flags so nothing
+    // observed pre-reset leaks into the fresh run, and re-arm the JS bus
+    // parsers (a reset mid-transaction must not leave a phantom group
+    // open). Display RAM (fb) and model registers persist — like silicon,
+    // where the panel keeps its pixels across an MCU reset. The frame
+    // counters DO reset (they are our instrumentation: a post-reset
+    // `frame > 0` must mean post-reset traffic). Facade spec._st lives in
+    // stm32f4.js caller specs; runners recreate specs per cell.
+    const resetBusState = () => {
+        try { if (typeof drain_tap_queues === 'function') drain_tap_queues(); } catch {}
+        if (oled) {
+            oled.inData = false; oled.needControl = false;
+            oled.col = 0; oled.page = 0; oled.cmdLeft = 0; oled.frame = 0;
+        }
+        if (tft) {
+            tft.mode = 'idle'; tft.cmdLeft = 0; tft.argBuf.length = 0; tft.frame = 0;
+        }
+    };
+
+    // Full peripheral-model reset (cross-cutting sync contract: reset
+    // clears everything, synchronously). Re-installs a fresh WasmSystem
+    // from the same SVD + chip hint used at creation (~30-60 ms), so all
+    // peripheral registers, NVIC (pending/enable/priority/SysTick period)
+    // and model latches return to reset values. Deliberately NOT cleared
+    // (silicon-faithful or host-owned): flash/RAM (reloaded only by
+    // loadImage/bootPreset), non-volatile device content (EEPROM/flash/
+    // regfile objects are re-attached, not re-seeded), the monotonic
+    // instruction clock (DWT/SysTick math is delta-based), watchdog
+    // reset-cause flags (silicon preserves them for RCC_CSR readout),
+    // ADC overrides + GPIO input levels (host-driven config, re-applied
+    // by the platform), link state (physical). JS-side queues (ETH RX,
+    // inject index) are cleared by fullReset below, not here.
+    const reinitModel = () => {
+        try {
+            if (svdXml) {
+                if (typeof init_svd_chip === 'function') {
+                    let hint = '';
+                    try {
+                        hint = String(opts.chipHint || opts.svdFile || '');
+                        hint = hint.split('/').pop().split('.').slice(0, -1).join('.') || hint;
+                    } catch {}
+                    if (!hint) hint = 'stm32f407';
+                    init_svd_chip(svdXml, hint);
+                } else init_svd(svdXml);
+            }
+            else bindings.init();
+            if (sdioBlocks > 0 && typeof sdio_bind_card === 'function') {
+                try { sdio_bind_card(sdioBlocks); } catch {}
+            }
+        } catch {}
+    };
+
+    const processDevices = () => {
+        processSpiBus();
+        processI2cBus();
+        if (buzzer) processBuzzer();
+        // Speaker drain is the only device DOOM enables: keep its per-step
+        // cost as one guarded wasm call (the FIFO is usually empty; the
+        // take path copies only when samples exist). Everything else above
+        // is a null check when the firmware didn't request the device.
+        if (speaker) processSpeaker();
+        if (rtc) processRtc();
+        if (gpioWatchers.length) processGpioWatchers();
+        if (fsmcDevices.length) processFsmcDevices();
+        if (camera) processCamera();
+    };
+    // Sole CPU backend: the WASM-native Thumb-2 interpreter.
+    if (typeof bindings.WasmCpu !== 'function') {
+        throw new Error('emulator.js requires the WasmCpu backend (Unicorn support was removed)');
+    }
+    // Exception delivery (SysTick/ETH/USART IRQs, SVC/PendSV, WFI sleep)
+    // happens inline in the Rust core's run loop. Translated blocks execute
+    // guest code in a separate module and never touch the NVIC, so a pending
+    // exception cannot be taken while one runs. The TB driver therefore hands
+    // control back to the interpreter while an exception is deliverable (see
+    // tbIrqGate/tbRun); delivery stays exact and translated firmware keeps
+    // its speed.
+    const deliverIrqs = !!(enable_irqs || irq_eth || freertos || lowpower);
+    {
+        // Guest exception delivery runs inline in the Rust core — no ISR
+        // pump needed: stacking is exact, so no mid-instruction hazard can
+        // occur.
+        const wantIrqs = deliverIrqs;
+        const sp0 = (firmware[0] | (firmware[1] << 8) | (firmware[2] << 16) | (firmware[3] << 24)) >>> 0;
+        const pc0 = (firmware[4] | (firmware[5] << 8) | (firmware[6] << 16) | (firmware[7] << 24)) >>> 0;
+        if (sp0 === 0 || pc0 === 0) throw new Error(`WasmCpu: invalid vector table sp=${sp0.toString(16)} pc=${pc0.toString(16)}`);
+        const cpu = new bindings.WasmCpu(sp0, pc0 | 1, flash_size, ram_size);
+        if (wantIrqs && typeof cpu.set_deliver_irqs === 'function') cpu.set_deliver_irqs(true);
+        cpu.load_firmware(firmware, vector_table);
+        for (const r of extra_ram) cpu.load_firmware(new Uint8Array(r.size), r.addr);
+        for (const seg of extra_mem) cpu.load_firmware(seg.data, seg.addr);
+    // Byte-correct uc shim over the wasm memory, used by the
+    // processEth/processDma mirrors below. Assigned in the wasm branch
+    // below before any delivery runs (hence `let`, not `const`).
+    // eslint-disable-next-line prefer-const
+    let wuc = null;
+        wuc = {
+            mem_read: (a, s) => { const aa = Number(a), ss = Number(s); wCheckMapped(aa, ss, 'read'); return new Uint8Array(cpu.mem_read(aa, ss)); },
+            mem_write: (a, d) => { const aa = Number(a), dd = new Uint8Array(d); wCheckMapped(aa, dd.length, 'write'); return cpu.mem_write(aa, dd); },
+            reg_read_i32: (r) => r === 15 ? cpu.get_pc() : r === 13 ? cpu.get_sp() : cpu.get_regs()[r],
+        };
+        const wread32 = (a) => cpu.read32(Number(a)) >>> 0;
+        const wwrite32 = (a, v) => cpu.write32(Number(a), v >>> 0);
+        devRead32 = wread32;
+        // Reject out-of-range MMIO (the edge-case test requires
+        // mem_read/mem_write to throw, not silently drop).
+        const wMapped = (addr, len) => {
+            if (addr >= 0x08000000 && addr + len <= 0x08000000 + flash_size) return true;
+            if (addr >= 0x20000000 && addr + len <= 0x20000000 + ram_size) return true;
+            if ((addr >= 0x40000000 && addr + len <= 0xB0000000) ||
+                (addr >= 0xE0000000 && addr + len <= 0xE1000000)) return true;
+            for (const r of extra_ram) {
+                if (addr >= r.addr && addr + len <= r.addr + r.size) return true;
+            }
+            return false;
+        };
+        const wCheckMapped = (addr, len, what) => {
+            if (!wMapped(addr, len)) {
+                throw new Error(`WasmCpu: ${what} of unmapped address 0x${addr.toString(16)} (len ${len})`);
+            }
+        };
+        const rxQueue = [];
+        let instCount = 0;
+        let lastTxLen = 0; // bytes of the last TX frame (wire pacing)
+        // ── reset / boot control (host-driven, like real hardware) ──
+        // resetCpu(): CPU back to the vector-table SP/PC (peripherals keep
+        //   state — same as the watchdog path in step(), which calls
+        //   cpu.reset_cpu(sp0, pc0 | 1)).
+        // nrstAsserted: while true, step() is a no-op that only advances
+        //   the model clock (peripherals held in reset, CPU not executing)
+        //   — the NRST pin-hold half of a real reset button. Release with
+        //   setNrst(false), then resetCpu() (or bootPreset()) for the edge.
+        // bootPreset(image): full reboot path — reload flash + extra_mem,
+        //   then reset to the (possibly new) vector table. Used by the UI
+        //   Boot button and the bridge LOAD_IMAGE path. Defined here (before
+        //   the wasm branch) so it closes over cpu/sp0/pc0/vector_table/
+        //   extra_mem/wread32/instCount declared below — called only after
+        //   construction completes.
+        let nrstAsserted = false;
+        // NOTE: resetCpu/bootPreset bodies live on the returned handle
+        // (they need cpu/sp0/pc0/wread32 from the wasm branch below); the
+        // setNrst flag itself is safe here because step() reads it late.
+        const setNrst = (asserted) => { nrstAsserted = !!asserted; return nrstAsserted; };
+        const isNrstAsserted = () => nrstAsserted;
+        // Bound the queue against a hung guest (real NICs tail-drop
+        // too): newest frames past 32 are dropped, each counted as a
+        // missed frame (MFC + ROS in the model).
+        const trimRxQueue = () => {
+            try {
+                while (rxQueue.length > 32) { rxQueue.pop(); eth_note_missed(); }
+            } catch {}
+        };
+        // Compact mirrors of processEth/processDma for the wasm memory.
+        // Shared RX delivery: WOL inspect, accept gate, checksum
+        // status, snapshot, descriptor write. `force` bypasses the
+        // RX-poll requirement (sleep drain: the wire delivers even
+        // when the guest can't re-arm). Returns true when a frame
+        // was consumed from the queue.
+            const wDeliverRx = (force) => {
+            if (rxQueue.length === 0) return false;
+            if (!force && !eth_is_rx_poll()) return false;
+            // Peek first: a busy head (or filter drop) must not consume.
+            const frame = rxQueue[0];
+            const len = Math.min(frame.length, E.rxStride);
+            // Wake-on-LAN inspection runs before filtering (it works
+            // in powerdown too); then the MAC accept filter drops
+            // rejected frames with no RS/flag (like silicon).
+            try { eth_check_wol(frame); } catch {}
+            // Dead receiver (RE clear) drops everything past WOL
+            // inspection (powerdown WOL still sees); no RS, no count.
+            // TE check included: silicon needs RE for receive and TE
+            // for transmit, but a TE-clear MAC never completes TX so no
+            // frame can be in flight anyway — RE alone decides RX.
+            try {
+                if ((eth_get_maccr() & 0x4) === 0) {
+                    rxQueue.shift();
+                    eth_clear_rx_poll();
+                    return true;
+                }
+            } catch {}
+            // Flow-control pause: terminates here (never delivered or
+            // counted) after arming the TX stall in the model.
+            try {
+                if (eth_pause_rx(frame)) {
+                    rxQueue.shift();
+                    eth_clear_rx_poll();
+                    return true;
+                }
+            } catch {}
+            let accepted = true;
+            try { accepted = eth_mac_accept(frame); } catch {}
+            if (!accepted) {
+                rxQueue.shift();
+                eth_clear_rx_poll();
+                if (ENV.WASM_DBG) console.log('[wasm-rx] dropped by accept filter');
+                return true;
+            }
+            // RX checksum status -> RDES0 IPHCE(7)/PCE(0)/ES(15), gated
+            // by IPCO (engine off reports nothing, like silicon).
+            // LEN RULE (silicon): RDES0[29:16] is the FRAME length but
+            // the DMA never reports a runt — frames shorter than 64 B
+            // (60 B payload + 4 B FCS the MAC strips) are padded to 60.
+            // A 50 B loopback frame therefore reports 60 (0x3C), and
+            // firmware must accept len >= its payload, not len ==.
+            // FEF GATE (silicon): the checksum engine must actually RUN
+            // for a frame to be "checksum-bad". With IPCO off the engine
+            // is off, st==0, nothing is bad, and FEF is irrelevant — the
+            // frame always delivers. Computing status unconditionally
+            // and dropping on it starved every IPCO-off phase (RBUS f2
+            // held forever behind a CPU-owned head: RBUS CLEAR FAIL,
+            // then JABBER WD + all downstream filters).
+            let rdesExtra = 0, csumBad = false;
+            try {
+                if (eth_ipco_on()) {
+                    const st = (eth_rx_csum_status(frame) >>> 0);
+                    if ((st & 1) && !(st & 2)) { rdesExtra |= 0x80; csumBad = true; }
+                    if ((st & 4) && !(st & 8)) { rdesExtra |= 0x01; csumBad = true; }
+                    if (csumBad) rdesExtra |= 0x8000; // ES error summary
+                }
+            } catch {}
+            // Forward-error-frames gate: checksum-bad frames are dropped
+            // unless FEF forwards them or DTCEFD disables the drop.
+            if (csumBad) {
+                try {
+                    if (!eth_fwd_csum_bad()) {
+                        rxQueue.shift();
+                        eth_clear_rx_poll();
+                        return true;
+                    }
+                } catch {}
+            }
+            let delivered = false;
+            if (!irq_eth) {
+                const idx = E.rxInjectIdx;
+                E.rxInjectIdx = (E.rxInjectIdx + 1) % E.rxDescs;
+                const descAddr = E.rxDesc + idx * 8;
+                const bufAddr = E.rxBuf + idx * E.rxStride;
+                try {
+                    // Same runt-pad LEN rule as injectRxIrq above, same
+                    // FS+LS status (single-buffer delivery).
+                    const RDESC_FS_LS_POLL = 0x300;
+                    const wire = len < 60 ? 60 : len;
+                    const out = new Uint8Array(wire);
+                    out.set(frame.subarray(0, len));
+                    wuc.mem_write(BigInt(bufAddr), out);
+                    const wb = new Uint8Array(4);
+                    new DataView(wb.buffer).setUint32(0, (wire << 16) | rdesExtra | RDESC_FS_LS_POLL, true);
+                    wuc.mem_write(BigInt(descAddr), wb);
+                    wwrite32(E.rxFrameIdx, idx);
+                    wwrite32(E.rxFrameLen, len);
+                    wwrite32(E.irqFlag, wread32(E.irqFlag) | 2);
+                    delivered = true;
+                } catch {}
+            } else {
+                // IRQ-driven firmware owns its descriptor layout: deliver
+                // at the polled head or hold for the next poll (RBUS).
+                try {
+                    delivered = injectRxIrq((a, d) => wuc.mem_write(a, d), wread32, frame, len, rdesExtra);
+                } catch { delivered = false; }
+            }
+            if (!delivered) return false; // hold frame AND poll for retry
+            rxQueue.shift();
+            trimRxQueue();
+            eth_clear_rx_poll();
+            try { eth_rx_stall_clear(); } catch {}
+            try { eth_note_rx(frame); } catch {}
+            // Delivered frames pace RS by their wire time.
+            try { eth_rx_wire_busy(len); } catch {}
+            eth_rx_done();
+            return true;
+        };
+
+        const wProcessEth = () => {
+            // Emitted pause frame (MACFCR FCB/BPA with TFCE): a 64 B
+            // pause frame (multicast pause DA, station SA, 0x8808/0001,
+            // PT quanta) goes on the wire — or loopback, like any TX.
+            // Dead wire drops it silently (no carrier, like silicon).
+            try {
+                const pq = eth_take_pause_tx() >>> 0;
+                if (pq & 0x80000000) {
+                    let linkUp = true;
+                    try { linkUp = eth_link_up(); } catch {}
+                    if (linkUp) {
+                        const quanta = pq & 0xFFFF;
+                        const sa = eth_station_addr();
+                        const pf = new Uint8Array(64);
+                        pf.set([0x01, 0x80, 0xC2, 0x00, 0x00, 0x01], 0);
+                        for (let i = 0; i < 6; i++) pf[6 + i] = Number((sa >> BigInt(8 * (5 - i))) & 0xFFn);
+                        pf[12] = 0x88; pf[13] = 0x08;
+                        pf[14] = 0x00; pf[15] = 0x01;
+                        pf[16] = (quanta >> 8) & 0xFF; pf[17] = quanta & 0xFF;
+                        if (eth_loopback_tx()) {
+                            rxQueue.push(pf);
+                            trimRxQueue();
+                        } else if (onTx) {
+                            onTx(pf, { bufAddr: 0, len: 64 });
+                        }
+                    }
+                }
+            } catch {}
+            if (eth_is_tx_poll()) {
+                const descAddr = eth_get_tx_desc_addr();
+                if (ENV.WASM_DBG) console.log(`[wasm-tx] poll desc=0x${descAddr.toString(16)}`);
+                if (descAddr !== 0) {
+                    // Descriptor-chain walk inputs: TDES1-word control
+                    // (TCH/TER) + TDES3 link. Read optimistically — a
+                    // short layout may not map +8/+12, in which case the
+                    // walk degrades to linear (stride-sized) advance.
+                    let tdes1ctrl = 0, tdes3link = 0;
+                    try {
+                        const dw = wuc.mem_read(BigInt(descAddr), 16);
+                        const dd = new DataView(dw.buffer, dw.byteOffset, dw.byteLength);
+                        tdes1ctrl = dd.getUint32(4, true) >>> 0;
+                        tdes3link = dd.getUint32(12, true) >>> 0;
+                    } catch {}
+                    const desc = wuc.mem_read(BigInt(descAddr), 8);
+                    const dv = new DataView(desc.buffer, desc.byteOffset, desc.byteLength);
+                    const tdes0 = dv.getUint32(0, true);
+                    const tdes1 = dv.getUint32(4, true);
+                    // EMPTY-POLL GUARD: OWN set but len 0 (or null buffer)
+                    // is not a frame — the guest hasn't programmed this
+                    // descriptor yet. Service it as an empty completion
+                    // (OWN-clear + TS, no wire, no note): silicon
+                    // completes zero-length descriptors the same way,
+                    // and dropping the poll WITHOUT completing would
+                    // wedge the guest's TX wait (its OWN bit never
+                    // clears — observed: 46 back-to-back re-polls of
+                    // len-0x2E while the guest spun).
+                    if ((tdes0 & 0x80000000) && ((tdes0 & 0x3FFF) === 0 || (tdes1 & 0xFFFFFFFC) === 0)) {
+                        const wb = new Uint8Array(4);
+                        new DataView(wb.buffer).setUint32(0, tdes0 & ~0x80000000, true);
+                        wuc.mem_write(BigInt(descAddr), wb);
+                        eth_clear_tx_poll();
+                        eth_tx_done();
+                        if (!irq_eth) wwrite32(E.irqFlag, wread32(E.irqFlag) | 1);
+                    } else if (tdes0 & 0x80000000) {
+                        const bufAddr = tdes1 & 0xFFFFFFFC;
+                        const bufSize = tdes0 & 0x3FFF;
+                        if (ENV.WASM_DBG) console.log(`[wasm-tx] tdes0=0x${tdes0.toString(16)} buf=0x${bufAddr.toString(16)} len=${bufSize}`);
+                        let linkUp = true, captured = false, txJabber = false, txDeadWire = false, txEc = 0;
+                        try { linkUp = eth_link_up(); } catch {}
+                        if (!linkUp) {
+                            txDeadWire = true;
+                            // Dead wire: NC status, nothing on the wire.
+                            // Completion still raises TS (error completion,
+                            // like silicon) — the driver learns it from NC.
+                            const wb = new Uint8Array(4);
+                            new DataView(wb.buffer).setUint32(0, (tdes0 & ~0x80000000) | 0x400, true);
+                            wuc.mem_write(BigInt(descAddr), wb);
+                        } else {
+                        let ttss = 0;
+                        let jlim = 2048;
+                        try { jlim = eth_tx_jabber_limit() >>> 0; } catch {}
+                        if (bufAddr !== 0 && bufSize > jlim) {
+                            txJabber = true;
+                            // Jabber (over the WD limit): JT status, TS
+                            // error completion, nothing on the wire.
+                            const wb = new Uint8Array(4);
+                            new DataView(wb.buffer).setUint32(0, (tdes0 & ~0x80000000) | 0x4000, true);
+                            wuc.mem_write(BigInt(descAddr), wb);
+                            try { eth_note_jabber(); } catch {}
+                        } else if (bufAddr !== 0 && bufSize > 0 && bufSize <= jlim) {
+                            captured = true;
+                            lastTxLen = bufSize;
+                            const pkt = new Uint8Array(wuc.mem_read(BigInt(bufAddr), bufSize));
+                            // Checksum offload: TDES0 CIC[23:22] inserts IP
+                            // (+TCP/UDP/ICMP) checksums before capture.
+                            txInsertCsum(pkt, (at, v) => {
+                                wuc.mem_write(BigInt(bufAddr + at), new Uint8Array([(v >> 8) & 0xFF, v & 0xFF]));
+                            }, (tdes0 >>> 22) & 3);
+                            // TX timestamp snapshot (TTSE + PTP TSE + event
+                            // message filter): silicon snapshots only PTP
+                            // event messages (Sync/Delay_Req/Pdelay_Req/
+                            // Pdelay_Resp — ethertype 0x88F7, or UDP dport
+                            // 319/320). A TTSE data frame (like the feat
+                            // UDP probe) gets TTSS=0 and no TDES6/7 write —
+                            // the old code stamped every TTSE frame.
+                            if ((tdes0 & 0x02000000) && eth_ptp_tse() && ptpIsEvent(pkt)) {
+                                const sb = new Uint8Array(8);
+                                const sdv = new DataView(sb.buffer);
+                                sdv.setUint32(0, eth_ptp_sec(), true);
+                                sdv.setUint32(4, eth_ptp_sub(), true);
+                                wuc.mem_write(BigInt(descAddr + 24), sb);
+                                ttss = 0x20000; // TTSS status
+                            }
+                            // SARC (MACCR[29:28] insert/replace): the MAC stamps
+                            // the station address into the on-wire frame
+                            // (guest buffer keeps the original bytes).
+                            try {
+                                const sarc = eth_tx_sarc() >>> 0;
+                                if ((sarc === 2 || sarc === 3) && pkt.length >= 12) {
+                                    const sa = eth_station_addr();
+                                    for (let i = 0; i < 6; i++) {
+                                        pkt[6 + i] = Number((sa >> BigInt(8 * (5 - i))) & 0xFFn);
+                                    }
+                                }
+                            } catch {}
+                            // MAC loopback (LM): internal only, never on
+                            // the wire; ROD filtering happens at accept().
+                            if (eth_loopback_tx()) {
+                                rxQueue.push(pkt.slice());
+                                trimRxQueue();
+                            } else if (onTx) {
+                                onTx(pkt, { bufAddr, len: bufSize });
+                            }
+                        }
+                        // Shared normal-completion writeback (NOT for jabber:
+                        // the JT word above is final — falling through here
+                        // would overwrite JT with a normal completion).
+                        if (!txJabber) {
+                        const wb = new Uint8Array(4);
+                        // Single-node collision report: an armed collision
+                        // ORs EC + CC=15 into the writeback, but only in
+                        // half-duplex (silicon never collides full-duplex).
+                        // NOTE: `txEc` is function-scope (declared with
+                        // linkUp/captured above) — the MMC note below the
+                        // block reads it. Do NOT re-scope it here (a
+                        // block-local `let ec` throws ReferenceError at the
+                        // note call, swallowed by its catch — that silenced
+                        // ALL TX counting once before).
+                        txEc = 0;
+                        try {
+                            // NOTE: (x & MASK) === 0 needs the inner parens —
+                            // & binds looser than === in JS.
+                            // Single take() call: it is one-shot, and even
+                            // logging it would consume the arm.
+                            const tk = eth_take_collision();
+                            if (tk && ((eth_get_maccr() & 0x800) === 0)) txEc = 0x100 | (0xF << 3);
+                        } catch {}
+                        // CSMA/CD deferral: half-duplex TX while a receive
+                        // still occupies the wire reports DB (TS normal).
+                        try {
+                            const df = eth_tx_deferred();
+                            if (df) txEc |= 0x1;
+                        } catch {}
+                        new DataView(wb.buffer).setUint32(0, (tdes0 & ~0x80000000) | 0x20000000 | ttss | txEc, true);
+                        wuc.mem_write(BigInt(descAddr), wb);
+                        } // end if (!txJabber) normal writeback
+                        } // end link-up else (normal + jabber writeback)
+                        if (captured) {
+                            try { eth_note_tx((txEc & 0x100) !== 0); } catch {}
+                        }
+                        // Chain step: where does the DMA go AFTER this
+                        // descriptor? (TCH = TDES3 link, TER = ring wrap
+                        // to the TX list base, else the SAME descriptor —
+                        // single-descriptor guests must stay put, see the
+                        // RX chain-step note.) The walk is per descriptor
+                        // so ring + chained layouts traverse like silicon;
+                        // a stale (OWN-clear) re-poll still drops below.
+                        let nextTx = descAddr;
+                        try {
+                            if (typeof eth_desc_next === 'function') {
+                                if ((tdes1ctrl & 0x300000) !== 0) {
+                                    nextTx = eth_desc_next(true, tdes1ctrl, descAddr, tdes3link, descAddr, 16) >>> 0;
+                                }
+                            } else if (tdes1ctrl & 0x100000) nextTx = tdes3link >>> 0;
+                            else if (tdes1ctrl & 0x200000) nextTx = descAddr;
+                        } catch {}
+                        eth_clear_tx_poll();
+                        // Re-signal at the walked address when the chain
+                        // continues past this descriptor (TCH/TER set):
+                        // silicon consumes one poll per descriptor, so the
+                        // next service step must start at nextTx, not at a
+                        // stale re-poll of the just-completed word.
+                        // Single-descriptor guests (no TCH/TER) stay put:
+                        // no re-signal, the guest re-polls the same head.
+                        try {
+                            if (nextTx !== descAddr) eth_signal_tx_poll(nextTx);
+                        } catch {}
+                        // Wire pacing: TS completion waits for the frame's
+                        // wire time (normal path only — jabber/dead-wire
+                        // use done_now below, empty never reaches here).
+                        try { if (captured) eth_tx_wire_busy(lastTxLen); } catch {}
+                        try {
+                            if (txDeadWire || txJabber) eth_tx_done_now();
+                            else eth_tx_done();
+                        } catch { try { eth_tx_done(); } catch {} }
+                        if (!irq_eth) wwrite32(E.irqFlag, wread32(E.irqFlag) | 1);
+                    } // end OWN-bit branch (descAddr serviced)
+                    // OWN set but empty (len 0 / null buffer): the
+                    // guard above already completed it (OWN-clear +
+                    // TS). Nothing more to do. (else-if form would trip
+                    // no-dupe-else-if against the guard's OWN test above
+                    // — the guard returns, so a flat second test is
+                    // correct and lint-clean.)
+                    if (tdes0 & 0x80000000) {
+                        eth_clear_tx_poll();
+                        return;
+                    }
+                    // OWN clear: stale re-poll of an already-completed
+                    // descriptor. Drop the poll, complete nothing (the
+                    // frame's TS already fired when OWN cleared).
+                    eth_clear_tx_poll();
+                    return;
+                } // end descAddr !== 0
+                // descAddr === 0 (poll armed before DMATDLAR programmed):
+                // nothing to service; drop the poll.
+                eth_clear_tx_poll();
+                return;
+            } // end if (eth_is_tx_poll())
+            if (eth_is_rx_poll() && rxQueue.length > 0) wDeliverRx(false);
+            // Stale polls (armed, queue empty) are dropped: delivery then
+            // requires a poll armed after the frame queued. All firmware
+            // re-arms periodically while waiting, so nothing is lost — and
+            // a synchronously-queued reply (e.g. a WOL trigger's magic)
+            // can no longer be delivered before the guest sleeps on it
+            // (pre-sleep delivery lets the guest consume the IRQ62 wake
+            // before WFI, then it sleeps forever — observed STOP hang).
+            else if (eth_is_rx_poll()) { try { eth_clear_rx_poll(); } catch {} }
+        };
+        const wIsPeriph = (a) => (a >= 0x40000000 && a < 0xB0000000) || (a >= 0xE0000000 && a < 0xE1000000);
+        const wProcessDma = () => {
+            const count = dma_get_pending_count();
+            for (let i = 0; i < count; i++) {
+                const pending = dma_get_pending(0);
+                if (pending.length < 5) continue;
+                const dir = pending[0], stream = pending[1], src = pending[2], dst = pending[3], size = pending[4];
+                const peri_addr = pending[5] || 0;
+                const peripheral = pending[6] || 0;
+                try {
+                    if (dir === 2 || !peripheral || !wIsPeriph(peri_addr)) {
+                        wuc.mem_write(BigInt(dst), wuc.mem_read(BigInt(src), size));
+                    } else if (dir === 0) {
+                        const data = dma_periph_read(peri_addr, size, (pending[7] || 0) === 1, pending[8] || 4);
+                        wuc.mem_write(BigInt(dst), data);
+                    } else {
+                        dma_periph_write(peri_addr, wuc.mem_read(BigInt(src), size));
+                    }
+                } catch (e) { /* ignore */ }
+                dma_set_completed(stream, true);
+            }
+        };
+        // Flash erase completion (restored post-§23: the imports survived the
+        // rewrite but the drain didn't, stalling flash_test at BSY forever).
+        // The model holds BSY until the driver applies the queued fill.
+        const wProcessFlash = () => {
+            try {
+                const q = flash_take_erase();
+                if (!q || q.length < 2) return;
+                try { cpu.flash_fill_erase(q[0] >>> 0, q[1] >>> 0); } catch {}
+                try { flash_erase_applied(); } catch {}
+            } catch {}
+        };
+        // DMA2D Chrom-ART job: gather source lines from guest RAM, convert/
+        // blend them through the model helpers, scatter output lines honoring
+        // the OR line offsets, then complete (TCIF + IRQ56 when TCIE is set).
+        const dma2dBpp = (cm) => cm === 0 ? 4 : cm === 1 ? 3 : 2;
+        const wProcessDma2d = () => {
+            let job;
+            try { job = dma2d_take_job(); } catch { return; }
+            if (!job || job.length < 16) return;
+            const j = Array.from(job, (v) => v >>> 0);
+            const [mode, w, h, fgA, fgCM, fgOff, bgA, bgCM, bgOff, outA, outCM, outOff, ocolr, fgAlpha] = j;
+            try {
+                const ob = dma2dBpp(outCM);
+                if (mode === 0) {
+                    // M2M: raw 32-bit word copy with line offsets.
+                    for (let y = 0; y < h; y++) {
+                        const src = wuc.mem_read(BigInt(((fgA + y * (w + fgOff) * 4) >>> 0)), w * 4);
+                        wuc.mem_write(BigInt(((outA + y * (w + outOff) * 4) >>> 0)),
+                            new Uint8Array(src.buffer, src.byteOffset, w * 4));
+                    }
+                } else if (mode === 3) {
+                    // R2M: OCOLR is an ARGB8888 constant; convert it once to
+                    // the output format, then fill every line.
+                    const src = new Uint8Array([(ocolr & 255), ((ocolr >> 8) & 255), ((ocolr >> 16) & 255), ((ocolr >>> 24) & 255)]);
+                    const px = dma2d_convert(0, outCM, 1, 1, src);
+                    const line = new Uint8Array(w * ob);
+                    for (let x = 0; x < w; x++) line.set(px, x * ob);
+                    for (let y = 0; y < h; y++) {
+                        wuc.mem_write(BigInt(((outA + y * (w + outOff) * ob) >>> 0)), line);
+                    }
+                } else if (mode === 1) {
+                    // M2M+PFC: convert FG lines.
+                    const fb = dma2dBpp(fgCM);
+                    for (let y = 0; y < h; y++) {
+                        const src = wuc.mem_read(BigInt(((fgA + y * (w + fgOff) * fb) >>> 0)), w * fb);
+                        const out = dma2d_convert(fgCM, outCM, w, 1,
+                            new Uint8Array(src.buffer, src.byteOffset, w * fb));
+                        wuc.mem_write(BigInt(((outA + y * (w + outOff) * ob) >>> 0)), out);
+                    }
+                } else {
+                    // M2M+blend: FG over BG, one line per convert call.
+                    const fb = dma2dBpp(fgCM), bb = dma2dBpp(bgCM);
+                    for (let y = 0; y < h; y++) {
+                        const fgs = wuc.mem_read(BigInt(((fgA + y * (w + fgOff) * fb) >>> 0)), w * fb);
+                        const bgs = wuc.mem_read(BigInt(((bgA + y * (w + bgOff) * bb) >>> 0)), w * bb);
+                        const out = dma2d_blend(fgCM, bgCM, outCM, w, 1, fgAlpha,
+                            new Uint8Array(fgs.buffer, fgs.byteOffset, w * fb),
+                            new Uint8Array(bgs.buffer, bgs.byteOffset, w * bb));
+                        wuc.mem_write(BigInt(((outA + y * (w + outOff) * ob) >>> 0)), out);
+                    }
+                }
+            } catch {}
+            try { dma2d_job_done(); } catch {}
+        };
+        // Full reboot path shared by reset/resetCpu/loadImage/bootPreset:
+        // fresh peripheral model + drained JS queues + CPU back to the
+        // vector-table SP/PC (fault flags cleared by reset_cpu, tap/fault
+        // channels by resetBusState, instCount re-zeroed). Also fixes a
+        // latent bug where reset() never zeroed instCount.
+        const fullReset = (sp, pc) => {
+            try { reinitModel(); } catch {}
+            try { rxQueue.length = 0; } catch {}
+            try { E.rxInjectIdx = 0; } catch {}
+            lastTxLen = 0;
+            try { cpu.wake(); } catch {}
+            try { cpu.reset_cpu(sp, pc | 1); } catch {}
+            instCount = 0;
+            resetBusState();
+        };
+        // ── translated-block execution (static binary translation) ─────
+        // Loops only (translator v1 loop regions: register-only bodies +
+        // B.cond latch). Straight code stays interpreted: per-block sync
+        // only pays for run-to-completion loops (fuel-bounded, one sync
+        // per thousands of iterations). Everything is opt-in via `tb`.
+        // Interrupt-driven firmware: translated blocks never touch the
+        // NVIC, so the driver hands control back to the interpreter while
+        // an exception is ready (see tbRun). That needs the core's
+        // delivery predicate; an older wasm bundle without it keeps the
+        // interpreter-only path those presets were validated on.
+        const tbIrqGate = !deliverIrqs || typeof cpu.pending_exception_ready === 'function';
+        const tbEnabled = !!tb && tbIrqGate && typeof bindings.tb_translate === 'function';
+        const tbCache = new Map(); // pc -> { bytes, meta, module, instance }
+        let tbHits = 0, tbFallbacks = 0;
+        let tbTranslated = 0, tbKind3 = 0, tbMissRetry = 0;
+        // Direct-mode miss resume pc: the translated run stopped ON an
+        // item it cannot emit (an MMIO access, a flash store, a hole) and
+        // left pc there. tbRun executes exactly that ONE item natively —
+        // falling through to the 4096-instruction interpret chunk would
+        // run a whole step's worth of loop iterations untranslated.
+        let tbMissPc = 0;
+        // Miss-exit split: device-space misses are the ones an MMIO import
+        // path could absorb; memory misses (flash stores, wild addresses)
+        // must stay interpreted for model/flash/fault semantics.
+        let tbMissDev = 0, tbMissMem = 0;
+        const tbDevSpace = (a) => (a >= 0x40000000 && a < 0x51000000)
+            || (a >= 0x60000000 && a < 0xA2000000) || (a >= 0xE0000000 && a < 0xE1000000);
+        // Mirror-validity generation: bits are per-module-instance, but
+        // guest writes (inter-step servicing, native fallback chunks)
+        // invalidate them all. Bumping tbGen lazily invalidates; each
+        // instance re-clears on next use. Translated-to-translated
+        // transitions (fuel-out resubmits, consecutive loop hits) keep
+        // bits — clearing per tbExec caused full re-fault storms
+        // (1400+ retries on one copy: every resubmit re-faulted every
+        // page with full re-runs).
+        let tbGen = 0;
+        const noBulk = typeof process !== 'undefined' && process.env && process.env.TB_NOBULK;
+        const noMetaCache = typeof process !== 'undefined' && process.env && process.env.TB_NOMETACACHE;
+        let tbFirstErr = '';
+        let tbDeviceCalls = 0, tbDeviceNotDevice = 0, tbDeviceErr = 0, tbDeviceIrq = 0, tbDeviceReset = 0;
+
+
+        let tbPagesIn = 0, tbPagesOut = 0;
+        // Opt-in diagnostics (TB_DIAG=1, Node only — `process` is undefined
+        // in the page, so the whole block compiles away at runtime): per-pc
+        // hit/decline attribution + the cost split read by tb_diag.mjs.
+        // and decline reasons. Zero effect when unset; remove before ship.
+        const TB_DIAG = typeof process !== 'undefined' && process.env && process.env.TB_DIAG;
+        const tbD = TB_DIAG ? {
+            attempts: 0, metaDecl: 0, cacheDecl: 0, shortDecl: 0, gateDecl: 0,
+            // Cost split (TB_DIAG only): where the wall time goes. Ratios are
+            // load-robust even when absolute MIPS are not.
+            probeNs: 0, probeCalls: 0, execNs: 0, execCalls: 0, interpNs: 0, interpCalls: 0,
+            readNs: 0, readCalls: 0, metaNs: 0, metaCalls: 0, buildNs: 0, buildCalls: 0,
+            cacheHit: 0, fastHit: 0, fastNs: 0,
+            execFail: 0, execThrow: 0, assistTop: 0, assistMid: 0, newMod: 0,
+            declinePc: new Map(), hitPc: new Map(), hitInst: new Map(),
+            midTop: new Map(), topDecl: new Map(),
+            eMpu: 0, eIt: 0, eNoFn: 0, eBuild: 0, eInst: 0, eBuildMsg: '', eInstMsg: '', topDeclInfo: [], buildInfo: [],
+        } : null;
+        const tbInc = (m, k, n = 1) => { if (m) m.set(k, (m.get(k) || 0) + n); };
+        // 80-halfword window: call/nested shapes span further than one
+        // loop (VDP L1 submit at 0xbd8 needs through the PIX latch at
+        // 0xc16 plus dup source = ~31 halfwords; 48 covers it with margin)
+        // and the traffic-firmware wait loops carry a long cold arm
+        // (eth_http's RX loop is 130 bytes: poll + handler + tx-done, the
+        // enclosing latch sits 64 halfwords past the top). mem_read is
+        // bulk-fast so the wider read is ~free; the decline cache bounds
+        // repeat cost.
+        const TB_LOOKAHEAD = 80;   // halfwords read per translate attempt
+        // Discovery windows behind/ahead of a mid-body pc. TB_BACK covers
+        // the widest body we translate (the lookahead minus the pair at
+        // pc) so a latch-less mid-body submit can still find its top.
+        const TB_BACK = TB_LOOKAHEAD * 2 - 2;  // 158 bytes behind pc
+        const TB_FWD = 64;                     // bytes ahead of pc
+        // Minimum average run length (insts) for a cached shape to keep
+        // translating. A translated run pays a fixed floor (~40-60us:
+        // sync + reg bulks + writeback) regardless of length; shapes
+        // averaging below this (VDP column: ~1200/run with a kind-3 exit
+        // per column) lose to interpretation. Declining them is always
+        // sound; a periodic re-probe (every 32nd submit) catches phase
+        // changes. Self-tuning per shape — no shape knowledge needed.
+        // Run-length gate: shapes averaging below this per hit stay native
+        // (short runs cost more in sync/writeback than they save — measured:
+        // a 1000 gate ran DOOM gameplay slower than 5000 at 3x the hits).
+        // 5000 is the PAGE-measured value: 600 raises Node throughput
+        // (+5.5%, 8/8 interleaved reps, share 44.5% -> 52.4%) by
+        // keeping eth_http's RX-loop arms translated, but on the page
+        // the same change measured ~9% SLOWER (best 87.4/88.0 ->
+        // 78.0/79.6, medians 84.3/82.8 -> 73.9/78.7, interleaved
+        // 5000/600/5000/600). Those arms average 1.8-3.1k inst per
+        // hit, under this floor, and each hit pays the fixed
+        // sync/writeback cost — on the page that floor loses. Page is
+        // the metric; do not "fix" this back to 600.
+        const TB_MIN_RUN = tbMinRun | 0;
+        const tbShort = (e) => {
+            if (!e || !e.module) return false; // declined handled by callers
+            // Two free runs judge a shape (run lengths are consistent
+            // per shape in practice: countdowns, memcpys, columns);
+            // the 128th-submit re-probe + 256-decline backstop atypical
+            // warmups instead of a third and fourth free run.
+            if ((e.run | 0) <= 1) return false;
+            if ((e.runInst / e.run) >= TB_MIN_RUN) return false;
+            e.probe = ((e.probe | 0) + 1) | 0;
+            // Two failed re-probe cycles (256 gated submits) with no
+            // long run: decline permanently for this instance. Phase
+            // changes bring new shapes (new entries) far more often
+            // than they rehabilitate old ones; re-probing forever costs
+            // ~3% per shape (compile + free runs).
+            if (e.probe > 256) { e.declined = true; return true; }
+            return (e.probe % 128) !== 0;
+        };
+        // Mirror window = chip SRAM (module memory sized by the
+        // translator from the sram_bytes passed per translate).
+        // Mirror-validity gatekeeper: tbGen invalidates (lazy clear on
+        // next use) only when guest RAM actually changed since the last
+        // check (BigInt-exact store sequence; missing export = legacy
+        // always-bump). Called at tbRun start (inter-step servicing) and
+        // every tbExec entry (native chunks, model ticks, DMA) — the ONLY
+        // places RAM can change under a warm mirror.
+        let tbSeq = null;
+        const syncGen = () => {
+            let q = null;
+            try { q = (typeof cpu.mem_write_seq === 'function') ? cpu.mem_write_seq() : null; } catch {}
+            if (q === null || tbSeq === null || q !== tbSeq) { tbGen++; tbSeq = q; }
+        };
+        const tbStats = () => ({ hits: tbHits, fallbacks: tbFallbacks, entries: tbCache.size,
+            translated: tbTranslated, kind3: tbKind3, missRetry: tbMissRetry, firstErr: tbFirstErr,
+            missDev: tbMissDev, missMem: tbMissMem,
+            deviceCalls: tbDeviceCalls, deviceNotDevice: tbDeviceNotDevice, deviceErr: tbDeviceErr,
+            deviceIrq: tbDeviceIrq, deviceReset: tbDeviceReset,
+            direct: tbDirect,
+
+
+
+            pagesIn: tbPagesIn, pagesOut: tbPagesOut });
+        // Mirror segment table (per-emulator constants — hoisted out of
+        // the per-submit path; must match tb_xlate layout EXACTLY:
+        // SCRATCH=262144 reserve at mirror 0 (dirty trailer at [8..)),
+        // then each segment at a 64KB-aligned offset. A stale offset
+        // here silently desyncs every load (caught live: flag reads).
+        // Segments: SRAM + flash (read-mostly; model drops stray writes)
+        // + extra_ram (EXTRAM/WAD for doom-class firmware).
+        let tbSegsCached = null;
+        const tbSegs = () => {
+            if (tbSegsCached) return tbSegsCached;
+            const list = [
+                { base: 0x20000000, size: ram_size >>> 0 },
+                { base: 0x08000000, size: flash_size >>> 0 },
+            ];
+            for (const r of extra_ram) list.push({ base: r.addr >>> 0, size: r.size >>> 0 });
+            const flat = [];
+            // Scratch reserve from the model (never hardcoded: a stale
+            // constant silently desyncs every load — caught twice).
+            const TB_SCRATCH = (typeof bindings.tb_scratch_bytes === 'function'
+                ? bindings.tb_scratch_bytes()
+                : 263168) >>> 0;
+            let mo = TB_SCRATCH;
+            for (const g of list) {
+                if (!(g.size >= 4)) continue;
+                flat.push(g.base >>> 0, g.size >>> 0);
+                g.off = mo;
+                mo += Math.ceil(g.size / 65536) * 65536;
+            }
+            tbSegsCached = { flat, list };
+            return tbSegsCached;
+        };
+        // ── shared-memory (direct) translation ─────────────────────────
+        // The translated module imports the model's linear memory and
+        // addresses live guest bytes: no mirror, no pre-sync, no validity
+        // bitmap, no dirty trailer, no writeback. Needs the web glue's
+        // exports handle (the nodejs glue exposes no memory object, so it
+        // keeps the mirror path). Region buffers never move while
+        // layout_version is unchanged (plain guest stores cannot grow
+        // them), so baked offsets stay valid; a bump clears every entry.
+        const tbMem = (wasmExports && wasmExports.memory) || null;
+        const tbDirectAuto = !!(tbMem && tbEnabled
+            && typeof bindings.tb_translate_direct === 'function'
+            && typeof bindings.tb_translate_meta_direct === 'function'
+            && typeof cpu.region_offsets === 'function'
+            && typeof cpu.layout_version === 'function');
+        const tbDirect = (tb_direct !== false) && tbDirectAuto;
+        let tbLayout = -1;
+        let tbSegsDirectCache = null;
+        const tbSegsDirect = () => {
+            let v;
+            try { v = cpu.layout_version() >>> 0; } catch { return null; }
+            if (tbSegsDirectCache && tbLayout === v) return tbSegsDirectCache;
+            if (tbLayout !== -1) { tbCache.clear(); tbFast.clear(); } // baked offsets just died
+            tbLayout = v;
+            let t;
+            try { t = Array.from(cpu.region_offsets()); } catch { return null; }
+            const flat = [];
+            const list = [];
+            let k = 0;
+            for (let i = 0; i + 2 < t.length; i += 3) {
+                const base = t[i] >>> 0, off = t[i + 1] >>> 0, size = t[i + 2] >>> 0;
+                if (!(size >= 4)) continue;
+                // The model emits flash FIRST: guest stores there must keep
+                // the model's semantics (ignored, or programmed only while
+                // unlocked), so mark it read-only (bit31) — translated
+                // stores miss-exit and the interpreter handles them.
+                flat.push(base, size, (k === 0 ? (off | 0x80000000) : off) >>> 0);
+                list.push({ base, size, off });
+                k++;
+            }
+            tbSegsDirectCache = { flat, list };
+            return tbSegsDirectCache;
+        };
+        const tbSegsFor = () => (tbDirect ? tbSegsDirect() : tbSegs());
+        // ── submit fast path ───────────────────────────────────────────
+        // Every tbRun submit used to pay a 160-byte guest read plus a meta
+        // probe (and, for a mid-body entry, a back-scan plus a SECOND read)
+        // before it could reuse a cached entry. The TB_DIAG cost split put
+        // that probe at ~27% of wall on eth_http — ~3.5x the translated run
+        // it was looking up. Direct mode already imports the model's
+        // Memory, so the same code bytes are readable here with no wasm
+        // round trip: this map keys a submit pc to the entry it resolved to
+        // plus a copy of the window that entry was built from, so a repeat
+        // submit is a Map hit + a 160-byte compare. Soundness is unchanged
+        // — the compare is still the code-identity check (a changed byte
+        // drops the fast entry and the slow path rebuilds), and the
+        // decline gates (declined / tbShort) still run per submit.
+        const tbFast = new Map(); // pc -> { e, base, meta, bytes, off }
+        let tbView = null;
+        const tbMemView = () => {
+            if (!tbMem) return null;
+            const buf = tbMem.buffer;
+            if (!buf || buf.byteLength === 0) return null;
+            if (!tbView || tbView.buffer !== buf) tbView = new Uint8Array(buf);
+            return tbView;
+        };
+        const tbEqAt = (bytes, v, off) => {
+            for (let i = 0; i < bytes.length; i++) if (bytes[i] !== v[off + i]) return false;
+            return true;
+        };
+        // wasm-memory offset of a guest window, or -1 when it is not wholly
+        // inside one region (holes, straddles, disk-backed extras).
+        const tbGuestOff = (addr, len) => {
+            if (!tbDirect) return -1; // mirror regions are not the model's memory
+            const segs = tbSegsFor();
+            if (!segs) return -1;
+            for (const sg of segs.list) {
+                if (addr >= sg.base && addr + len <= sg.base + sg.size) return sg.off + (addr - sg.base);
+            }
+            return -1;
+        };
+        const tbFastSet = (pc, e, base, meta) => {
+            if (noMetaCache) return;
+            const off = tbGuestOff(base >>> 0, TB_LOOKAHEAD * 2);
+            if (off < 0) { tbFast.delete(pc >>> 0); return; }
+            tbFast.set(pc >>> 0, { e, base: base >>> 0, meta: meta | 0, bytes: e.bytes, off });
+        };
+        // One selector per translate entry point (direct ships as a set; a
+        // mixed/older bundle simply keeps mirror mode via tbDirect).
+        const tbTrMeta = tbDirect ? bindings.tb_translate_meta_direct : bindings.tb_translate_meta;
+        const tbTrBytes = tbDirect ? bindings.tb_translate_direct : bindings.tb_translate;
+        const tbTrMetaAt = tbDirect
+            ? (bindings.tb_translate_meta_at_direct || bindings.tb_translate_meta_at)
+            : bindings.tb_translate_meta_at;
+        const tbTrBytesAt = tbDirect
+            ? (bindings.tb_translate_at_direct || bindings.tb_translate_at)
+            : bindings.tb_translate_at;
+        // Host-side model service for peripheral-space accesses made by
+        // translated blocks. Returns a packed i64: high 32 bits are
+        // status flags (0x1 IRQ pending, 0x2 watchdog reset requested,
+        // 0x4 service error, 0x8 NOT_DEVICE), low 32 bits the read value
+        // (0 for writes). Reads/writes to wild or unmapped space are
+        // reported as NOT_DEVICE with ZERO side effects; the translated
+        // block then bails to the interpreter, which raises the precise
+        // bus-fault there. Any model access that latches an interrupt or
+        // a watchdog reset returns with the status bits so the translated
+        // block stops after the instruction — same boundary the
+        // interpreter would have taken the exception at.
+        const tbDevice = (addr, width, mode, value) => {
+            const NOT_DEVICE = 0x8, IRQ = 0x1, RESET = 0x2, ERROR = 0x4;
+            const pack = (v, st) => (BigInt(st >>> 0) << 32n) | BigInt(v >>> 0);
+            tbDeviceCalls++;
+            try {
+                const kind = (typeof bindings.tb_mem_kind === 'function')
+                    ? bindings.tb_mem_kind(addr >>> 0) : 0;
+                if (kind !== 1) { tbDeviceNotDevice++; return pack(0, NOT_DEVICE); }
+                let v = 0;
+                if (mode) {
+                    periph_write(addr >>> 0, width >>> 0, value >>> 0);
+                } else {
+                    v = (periph_read(addr >>> 0, width >>> 0) >>> 0);
+                }
+                let st = 0;
+                try { if (deliverIrqs && has_pending_interrupt()) st |= IRQ; } catch {}
+                try { if (is_watchdog_reset_requested()) st |= RESET; } catch {}
+                if (st & IRQ) tbDeviceIrq++;
+                if (st & RESET) tbDeviceReset++;
+                return pack(v, st);
+            } catch (e) {
+                tbDeviceErr++;
+                try { if (!tbFirstErr) tbFirstErr = 'device: ' + String((e && e.message) || e).slice(0, 160); } catch {}
+                return pack(0, ERROR);
+            }
+        };
+        const tbImports = tbDirect ? { env: { memory: tbMem, device: tbDevice } } : {};
+        // (No per-submit tracing: tbTryLoop runs hot; stats stay counters.)
+        // Try one translated loop at pc. Returns insts executed, else 0
+        // (caller falls back to a native chunk). Never throws.
+        // Latch-entry resubmit (SOUNDNESS RULE): the ONLY sound follow
+        // is when pc IS the loop's back-edge latch (chunk boundary landed
+        // on the branch after a wrap). Resubmitting a latch found BEHIND
+        // pc re-enters an already-exited loop with post-loop registers
+        // (observed: spin re-entered with r3=0, wrapping to 4G iters and
+        // stalling boot), and resubmitting an older loop teleports pc.
+        // Mid-body boundaries decline to interpreted chunks (the next
+        // boundary may land on top or latch). The translator re-validates
+        // the candidate body anyway; a false positive costs one cached
+        // translate.
+        // Classify halfword/pair at w[k] (loose discovery shapes; the
+        // translator re-validates, so false positives cost one cached
+        // translate while false negatives cost perf).
+        // 'alu' = imm8 ALU/NOP/LSLS-T1 + T1 ADD/SUB-reg/imm3 + 0x4000-group
+        // + ADD(2) + ADD.W pairs; 'ldr' = 16-bit LDR/LDRB; 'st' = 16-bit
+        // STR(B); 'ldst' = any F8 pair (word/byte, translator sorts
+        // PUW/signed/halfword); 'b16'/'bw' = Bcc cc<14; 'bun' = B.N.
+        const tbClass = (w, k) => {
+            const op = w[k];
+            if (op === undefined) return { k: 'stop', n: 1 };
+            const cls = op & 0xF800;
+            if (cls === 0x2000 || cls === 0x2800 || cls === 0x3000 || cls === 0x3800
+                || op === 0xBF00 || cls === 0x0000
+                || (op & 0xFE00) === 0x1800 || (op & 0xFE00) === 0x1A00
+                || (op & 0xFE00) === 0x1C00 || (op & 0xFE00) === 0x1E00
+                || (op & 0xFC00) === 0x4000 || (op & 0xFC00) === 0x4400) return { k: 'alu', n: 1 };
+            if (cls === 0x6800 || cls === 0x9800 || cls === 0x7800) return { k: 'ldr', n: 1 };
+            if (cls === 0x7000 || cls === 0x6000 || cls === 0x9000) return { k: 'st', n: 1 };
+            // CBZ/CBNZ: forward-only register-test branch (imm5*2 +
+            // bit9*64, no sign bit). Distinct kind because it shares
+            // nothing with B.cond's immediate layout, and it can never
+            // be a backward latch.
+            if ((op & 0xF500) === 0xB100) return { k: 'cbz', n: 1 };
+            if ((op & 0xF000) === 0xD000) {
+                const cc = (op >> 8) & 0xF;
+                return cc < 14 ? { k: 'b16', n: 1, cc } : { k: 'stop', n: 1 };
+            }
+            if ((op & 0xF800) === 0xE000) return { k: 'bun', n: 1 };
+            if ((op & 0xFF00) === 0xF800 && op < 0xFA00) {
+                if (w[k + 1] === undefined) return { k: 'stop', n: 2 };
+                return { k: 'ldst', n: 2 };
+            }
+            if (((op & 0xFF00) === 0xEA00 || (op & 0xFF00) === 0xEB00
+                || ((op & 0xF800) === 0xF000 && op < 0xF600 && w[k + 1] !== undefined && (w[k + 1] & 0x8000) === 0))
+                && w[k + 1] !== undefined) {
+                return { k: 'alu', n: 2 };
+            }
+            if ((op & 0xF800) === 0xF000) {
+                const o2 = w[k + 1];
+                if (o2 === undefined || (o2 & 0xC000) !== 0x8000 || (o2 & 0x1000) !== 0)
+                    return { k: 'stop', n: 2 };
+                const cc = (op >> 6) & 0xF;
+                return cc < 14 ? { k: 'bw', n: 2, cc } : { k: 'stop', n: 2 };
+            }
+            // Unknown encoding: still walkable when holes are allowed,
+            // but the WIDTH must be right or every later boundary
+            // desyncs. (op & 0xF800) >= 0xE800 is exactly the 32-bit
+            // prefix set {11101, 11110, 11111}, so 16-bit encodings keep
+            // n = 1 and F0xx/F8xx/E8xx-EFFF pairs advance by 2.
+            return { k: 'stop', n: (op & 0xF800) >= 0xE800 ? 2 : 1 };
+        };
+        const tbBodyOk = (c) => c.k === 'alu' || c.k === 'ldr' || c.k === 'st' || c.k === 'ldst';
+        // Body-walk predicate for the two discovery validators. Internal
+        // conditional branches are legal now (the translator fuses them as
+        // internal skips or true exits, and declines unsupported shapes
+        // itself), so the walk only needs item BOUNDARIES to line up — a
+        // false positive costs one cached translate, a false negative
+        // costs the whole loop.
+        // Holes ('stop') are legal too: the translator turns an
+        // unemittable item into a resume exit and keeps scanning, which is
+        // what lets the traffic-firmware wait loops (poll + cold handler
+        // arm + tx-done check) shape as one enclosing loop.
+        const tbFlowOk = (c) => tbBodyOk(c) || c.k === 'b16' || c.k === 'bw'
+            || c.k === 'bun' || c.k === 'cbz' || c.k === 'stop';
+        const tbFindTop = (pc) => {
+            const LATCH = TB_BACK / 2; // halfword index of pc itself
+            let raw;
+            try {
+                raw = wuc.mem_read(BigInt((pc - TB_BACK) >>> 0), TB_BACK + TB_FWD);
+            } catch { return 0; }
+            const b = new Uint8Array(raw.buffer, raw.byteOffset, TB_BACK + TB_FWD);
+            const w = new Uint16Array(b.slice().buffer);
+            const base = (pc - TB_BACK) >>> 0;
+            // Halfword AT pc must be a back-edge latch (Bcc, Bcc.W, or
+            // B.N starting at pc).
+            const lc = tbClass(w, LATCH);
+            if (lc.k !== 'b16' && lc.k !== 'bw' && lc.k !== 'bun') return 0;
+            let target;
+            if (lc.k === 'b16') {
+                const op = w[LATCH];
+                let imm = ((op & 0xFF) << 1);
+                if (imm & 0x100) imm -= 0x200;
+                target = (pc + 4 + imm) >>> 0;
+            } else if (lc.k === 'bun') {
+                const op = w[LATCH];
+                let imm = (op & 0x7FF) << 1;
+                const off = (imm & 0x800) ? (imm | 0xFFFFF000) : imm;
+                target = (pc + 4 + off) >>> 0;
+            } else {
+                const o1 = w[LATCH], o2 = w[LATCH + 1];
+                const sg = (v) => (v & 0x100000) ? (v | 0xFFE00000) : v;
+                const off = sg((((o1 >> 10) & 1) << 20) | (((o2 >> 13) & 1) << 19)
+                    | (((o2 >> 11) & 1) << 18) | ((o1 & 0x3F) << 12) | ((o2 & 0x7FF) << 1));
+                target = (pc + 4 + off) >>> 0;
+            }
+            if (target >= pc) return 0;
+            if ((pc - target) > TB_BACK) return 0; // body must fit the window
+            // Body [target, pc): walkable items only (pair-stepped).
+            const t = (target - base) / 2;
+            let k = t;
+            while (k < LATCH) {
+                const c = tbClass(w, k);
+                if (!tbFlowOk(c)) return 0;
+                k += c.n;
+            }
+            if (k !== LATCH) return 0; // straddled pair: unsafe
+            return target;
+        };
+        // Mid-body discovery: pc strictly inside a loop body (top behind,
+        // latch ahead) in a combined [pc-62, pc+64) window. Returns the
+        // loop TOP, else 0. No prefix restriction: entry-offset execution
+        // starts AT pc and never re-executes the prefix (exact even with
+        // stores). The translator re-validates everything (item
+        // boundaries, latch in window); a false positive costs one cached
+        // translate.
+        const tbMidLatch = (pc) => {
+            const N = (TB_BACK + TB_FWD) / 2; // halfwords read
+            const HERE = TB_BACK / 2;         // halfword index of pc
+            let raw;
+            try {
+                raw = wuc.mem_read(BigInt((pc - TB_BACK) >>> 0), TB_BACK + TB_FWD);
+            } catch { return 0; }
+            const b = new Uint8Array(raw.buffer, raw.byteOffset, TB_BACK + TB_FWD);
+            const w = new Uint16Array(b.slice().buffer);
+            const base = (pc - TB_BACK) >>> 0;
+            for (let i = HERE + 1; i < N; i++) { // halfwords strictly after pc
+                // (i==HERE is the latch-entry case, handled by tbFindTop)
+                const lc = tbClass(w, i);
+                if (lc.k !== 'b16' && lc.k !== 'bw' && lc.k !== 'bun') continue;
+                if (i + lc.n > N) continue; // pair overhangs the window
+                const opc = base + i * 2;
+                let target;
+                if (lc.k === 'b16') {
+                    const op = w[i];
+                    let imm = ((op & 0xFF) << 1);
+                    if (imm & 0x100) imm -= 0x200;
+                    target = (opc + 4 + imm) >>> 0;
+                } else if (lc.k === 'bun') {
+                    const op = w[i];
+                    let imm = (op & 0x7FF) << 1;
+                    const off = (imm & 0x800) ? (imm | 0xFFFFF000) : imm;
+                    target = (opc + 4 + off) >>> 0;
+                } else {
+                    const o1 = w[i], o2 = w[i + 1];
+                    const sg = (v) => (v & 0x100000) ? (v | 0xFFE00000) : v;
+                    const off = sg((((o1 >> 10) & 1) << 20) | (((o2 >> 13) & 1) << 19)
+                        | (((o2 >> 11) & 1) << 18) | ((o1 & 0x3F) << 12) | ((o2 & 0x7FF) << 1));
+                    target = (opc + 4 + off) >>> 0;
+                }
+                if (target >= opc) continue; // must loop back
+                if (target > pc || target < base) continue; // top behind/at pc
+                if ((opc - target) > TB_BACK) continue;
+                const t = (target - base) / 2;
+                // Body [t, latch-end): emittable items only, pair-stepped.
+                // (No prefix content rule: entry-offset starts at pc, so
+                // the prefix never re-executes. Item-boundary alignment
+                // is checked by the translator.)
+                let k = t, ok = true;
+                const end = i + lc.n;
+                while (k < end) {
+                    const c = tbClass(w, k);
+                    if (!tbFlowOk(c) && !(k === i)) { ok = false; break; }
+                    k += (k === i) ? lc.n : c.n;
+                }
+                if (!ok || k !== end) continue;
+                return target; // loop top
+            }
+            return 0;
+        };
+        const tbTryLoop = (pc, budget, follow = true) => {
+            const pcU = pc >>> 0;
+            if (tbFast.size !== 0) {
+                const f = tbFast.get(pcU);
+                if (f) {
+                    const _ft0 = tbD ? performance.now() : 0;
+                    // Check the layout FIRST: tbSegsFor() is what notices a
+                    // layout_version bump and clears both caches, so reading
+                    // the map after it can never hand us an entry whose baked
+                    // region offsets just died.
+                    const segsF = tbSegsFor();
+                    const v = tbMemView();
+                    if (segsF && tbFast.get(pcU) === f && v && f.off >= 0
+                        && f.off + f.bytes.length <= v.length && tbEqAt(f.bytes, v, f.off)) {
+                        if (tbD) { tbD.fastHit = (tbD.fastHit | 0) + 1; tbD.fastNs += performance.now() - _ft0; }
+                        const fe = f.e;
+                        if (fe.declined) { if (tbD) { tbD.cacheDecl++; tbInc(tbD.declinePc, pcU); } return 0; }
+                        if (tbShort(fe)) { if (tbD) { tbD.shortDecl++; tbInc(tbD.declinePc, pcU); } return 0; }
+                        const _rf = tbExec(fe, f.base, budget, f.meta, segsF);
+                        if (tbD) {
+                            if (_rf > 0) { tbInc(tbD.hitPc, pcU); tbInc(tbD.hitInst, pcU, _rf); }
+                            else tbD.execFail++;
+                        }
+                        return _rf;
+                    }
+                    tbFast.delete(pcU); // code bytes changed (or no view)
+                }
+            }
+            let raw;
+            try {
+                if (tbD) {
+                    const _r0 = performance.now();
+                    raw = wuc.mem_read(BigInt(pc >>> 0), TB_LOOKAHEAD * 2);
+                    tbD.readNs += performance.now() - _r0;
+                    tbD.readCalls++;
+                } else {
+                    raw = wuc.mem_read(BigInt(pc >>> 0), TB_LOOKAHEAD * 2);
+                }
+            } catch { return 0; }
+            const bytes = new Uint8Array(raw.buffer, raw.byteOffset, TB_LOOKAHEAD * 2);
+            // Aligned copy for the u16 view (mem_read's offset is arbitrary).
+            const words = new Uint16Array(bytes.slice().buffer);
+            const ops = words.subarray(0, TB_LOOKAHEAD);
+            const segs = tbSegsFor();
+            if (!segs) return 0;
+            // Cache-first: same pc + same code bytes => same shape
+            // (segments are per-emulator constants). Skips a full
+            // re-translate on every submit.
+            let e = tbCache.get(pc >>> 0);
+            let meta = 0;
+            if (tbD) tbD.attempts++;
+            if (!noMetaCache && e && e.top === undefined && e.bytes.length === TB_LOOKAHEAD * 2 && bytesEqual(e.bytes, bytes)) {
+                if (tbD) tbD.cacheHit++;
+                if (e.declined) { if (tbD) { tbD.cacheDecl++; tbInc(tbD.declinePc, pc >>> 0); } return 0; }
+                if (tbShort(e)) { if (tbD) { tbD.shortDecl++; tbInc(tbD.declinePc, pc >>> 0); } return 0; }
+                meta = e.meta;
+                tbFastSet(pcU, e, pcU, meta);
+            } else {
+                    try {
+                    if (typeof bindings.is_mpu_enabled === 'function' && bindings.is_mpu_enabled()) { if (tbD) tbD.gateDecl++; return 0; }
+                    // Predicated stretches stay interpreted (flag semantics
+                    // for in-IT-block ALU live in the interpreter).
+                    if (typeof cpu.get_it_n === 'function' && cpu.get_it_n() !== 0) { if (tbD) tbD.gateDecl++; return 0; }
+                    if (tbD) {
+                        const _m0 = performance.now();
+                        meta = tbTrMeta(ops, segs.flat, pc >>> 0);
+                        tbD.metaNs += performance.now() - _m0;
+                        tbD.metaCalls++;
+                    } else {
+                        meta = tbTrMeta(ops, segs.flat, pc >>> 0);
+                    }
+                } catch { if (tbD) tbD.execThrow++; return 0; }
+                if (!(meta & 1)) {
+                    // Not a loop at pc. Two sound assists (depth-capped, no
+                    // recursion past one level):
+                    if (follow) {
+                        // (a) pc IS the back-edge latch (boundary landed on
+                        // the branch after a wrap): resubmit at the top.
+                        const top = tbFindTop(pc >>> 0);
+                        if (top) { if (tbD) tbD.assistTop++; return tbTryLoop(top, budget, false); }
+                        // (b) pc is MID-BODY (top behind, latch ahead):
+                        // translate at the top with entry=pc (partial first
+                        // pass, exact — no re-execution, no native stepping).
+                        const top2 = tbMidLatch(pc >>> 0);
+                        if (top2) {
+                            if (tbD) { tbD.assistMid++; tbD.midTop.set(pc >>> 0, top2 >>> 0); }
+                            return tbTryEntry(top2, pc >>> 0, budget);
+                        }
+                    }
+                    // Cache the decline (shape-declines are deterministic
+                    // per code bytes; transient gates return earlier and
+                    // are never cached). Repeat declines skip assists.
+                    if (tbD) { tbD.metaDecl++; tbInc(tbD.declinePc, pc >>> 0); }
+                    const dTop = { bytes: bytes.slice(), declined: true };
+                    tbCache.set(pcU, dTop);
+                    tbFastSet(pcU, dTop, pcU, 0);
+                    return 0; // not a loop region: interpret
+                }
+                let modBytes, mod;
+                try {
+                    if (tbD) {
+                        const _b0 = performance.now();
+                        modBytes = tbTrBytes(ops, segs.flat, pc >>> 0);
+                        mod = new WebAssembly.Module(modBytes);
+                        tbD.buildNs += performance.now() - _b0;
+                        tbD.buildCalls++;
+                    } else {
+                        modBytes = tbTrBytes(ops, segs.flat, pc >>> 0);
+                        mod = new WebAssembly.Module(modBytes);
+                    }
+                } catch { return 0; }
+                let inst;
+                try {
+                    inst = new WebAssembly.Instance(mod, tbImports);
+                } catch { return 0; }
+                let loads = [], stores = [];
+                if (!tbDirect) {
+                    try {
+                        if (typeof bindings.tb_translate_loads === 'function') {
+                            loads = Array.from(bindings.tb_translate_loads(ops, segs.flat, pc >>> 0));
+                        }
+                        if (typeof bindings.tb_translate_stores === 'function') {
+                            stores = Array.from(bindings.tb_translate_stores(ops, segs.flat, pc >>> 0));
+                        }
+                    } catch { loads = []; stores = []; }
+                }
+                e = { bytes: bytes.slice(), module: mod, instance: inst, loads, stores, meta };
+                tbCache.set(pcU, e);
+                tbFastSet(pcU, e, pcU, meta);
+            }
+            const _r = tbExec(e, pc >>> 0, budget, meta, segs);
+            if (tbD) {
+                if (_r > 0) { tbInc(tbD.hitPc, pc >>> 0); tbInc(tbD.hitInst, pc >>> 0, _r); }
+                else tbD.execFail++;
+            }
+            return _r;
+        };
+        // Mid-body entry: 16-halfword window at the loop top, translated
+        // with entry=pc. Keyed by entry pc with a 'top:' prefix (a pc can
+        // be both a loop top and another loop's mid-body — string keys
+        // never collide with the numeric top-path keys).
+        const tbTryEntry = (top, pc, budget) => {
+            // Wide enough for call/nested discovery from the top (VDP L1
+            // needs ~31 halfwords) and for the traffic wait loops (the
+            // eth_http RX latch sits 64 halfwords past the top): matches
+            // TB_LOOKAHEAD.
+            const W = TB_LOOKAHEAD;
+            let raw;
+            try {
+                raw = wuc.mem_read(BigInt(top >>> 0), W * 2);
+            } catch { return 0; }
+            const bytes = new Uint8Array(raw.buffer, raw.byteOffset, W * 2);
+            const words = new Uint16Array(bytes.slice().buffer);
+            const ops = words.subarray(0, W);
+            const segs = tbSegsFor();
+            if (!segs) return 0;
+            const key = 'top:' + (pc >>> 0).toString(16);
+            let e = tbCache.get(key);
+            let meta = 0;
+            if (e && e.top === (top >>> 0) && e.bytes.length === W * 2 && bytesEqual(e.bytes, bytes)) {
+                if (e.declined) { if (tbD) { tbD.cacheDecl++; tbInc(tbD.declinePc, pc >>> 0); } return 0; }
+                if (tbShort(e)) { if (tbD) { tbD.shortDecl++; tbInc(tbD.declinePc, pc >>> 0); } return 0; }
+                meta = e.meta;
+                tbFastSet(pc, e, top >>> 0, meta);
+            } else {
+                try {
+                    if (typeof bindings.is_mpu_enabled === 'function' && bindings.is_mpu_enabled()) { if (tbD) tbD.eMpu++; return 0; }
+                    if (typeof cpu.get_it_n === 'function' && cpu.get_it_n() !== 0) { if (tbD) tbD.eIt++; return 0; }
+                    if (typeof bindings.tb_translate_meta_at !== 'function') { if (tbD) tbD.eNoFn++; return 0; }
+                    meta = tbTrMetaAt(ops, segs.flat, top >>> 0, pc >>> 0);
+                } catch { if (tbD) tbD.execThrow++; return 0; }
+                if (!(meta & 1)) {
+                    if (tbD) { tbD.metaDecl++; tbInc(tbD.declinePc, pc >>> 0); tbInc(tbD.topDecl, top >>> 0);
+                        if (tbD.topDeclInfo.length < 12) tbD.topDeclInfo.push([pc >>> 0, top >>> 0, meta | 0, segs.flat.length, ops.length]); }
+                    const dMid = { top: top >>> 0, bytes: bytes.slice(), declined: true };
+                    tbCache.set(key, dMid);
+                    tbFastSet(pc, dMid, top >>> 0, 0);
+                    return 0;
+                }
+                let modBytes, mod;
+                try {
+                    modBytes = tbTrBytesAt(ops, segs.flat, top >>> 0, pc >>> 0);
+                    mod = new WebAssembly.Module(modBytes);
+                } catch (err) { if (tbD) { tbD.eBuild++; tbD.eBuildMsg = String(err && err.message);
+                    if (tbD.buildInfo.length < 8) tbD.buildInfo.push([top >>> 0, pc >>> 0, ops[0], ops[1]]);
+                    if (!tbD.badBytes && modBytes) { tbD.badBytes = modBytes.slice(); tbD.badTop = top >>> 0; tbD.badEntry = pc >>> 0; } } return 0; }
+                let inst;
+                try {
+                    inst = new WebAssembly.Instance(mod, tbImports);
+                } catch (err) { if (tbD) { tbD.eInst++; tbD.eInstMsg = String(err && err.message); } return 0; }
+                let loads = [], stores = [];
+                if (!tbDirect) {
+                    try {
+                        loads = Array.from(bindings.tb_translate_loads_at(ops, segs.flat, top >>> 0, pc >>> 0));
+                        stores = Array.from(bindings.tb_translate_stores_at(ops, segs.flat, top >>> 0, pc >>> 0));
+                    } catch { loads = []; stores = []; }
+                }
+                e = { top: top >>> 0, bytes: bytes.slice(), module: mod, instance: inst, loads, stores, meta };
+                tbCache.set(key, e);
+                tbFastSet(pc, e, top >>> 0, meta);
+            }
+            const _r2 = tbExec(e, top >>> 0, budget, meta, segs);
+            if (tbD) {
+                if (_r2 > 0) { tbInc(tbD.hitPc, pc >>> 0); tbInc(tbD.hitInst, pc >>> 0, _r2); }
+                else tbD.execFail++;
+            }
+            return _r2;
+        };
+        // Direct (shared-memory) executor: guest stores are already
+        // committed to live memory, so a run is just regs-in, run,
+        // regs-out, resume pc. A miss (kind 1) sets tb_pc to the faulting
+        // ITEM and the driver resumes interpretation there — no retry,
+        // since a retry would re-execute stores this run already applied.
+        const tbExecDirect = (e, base, budget, meta) => {
+            const _t0 = tbD ? performance.now() : 0;
+            try {
+                return tbExecDirectInner(e, base, budget, meta);
+            } finally {
+                if (tbD) {
+                    tbD.execNs += performance.now() - _t0;
+                    tbD.execCalls++;
+                }
+            }
+        };
+        const tbExecDirectInner = (e, base, budget, meta) => {
+            const ex = e.instance.exports;
+            const HI = [[8, 'r8'], [9, 'r9'], [10, 'r10'], [11, 'r11'], [12, 'r12'], [14, 'lr']];
+            try {
+                const regs = cpu.get_regs();
+                const sp = cpu.get_sp();
+                const xpsr = cpu.get_xpsr();
+                for (let i = 0; i < 8; i++) ex['r' + i].value = regs[i];
+                for (const [r, nm] of HI) ex[nm].value = regs[r];
+                ex.xpsr.value = xpsr;
+                ex.sp.value = sp;
+                const ret = ex.run(budget | 0);
+                const insts = Number(ret & 0xFFFFFFFFn);
+                const kind = Number(ret >> 32n);
+                // Registers always describe the executed prefix: a miss
+                // does not execute the faulting item.
+                for (let i = 0; i < 8; i++) regs[i] = ex['r' + i].value;
+                for (const [r, nm] of HI) regs[r] = ex[nm].value;
+                if (!noBulk && typeof cpu.set_regs_bulk === 'function') {
+                    const bulk = Array.from(regs.slice(0, 13));
+                    bulk.push(regs[14], ex.xpsr.value);
+                    cpu.set_regs_bulk(bulk);
+                } else {
+                    for (let i = 0; i < 8; i++) cpu.set_reg(i, regs[i]);
+                    for (const [r] of HI) cpu.set_reg(r, regs[r]);
+                    cpu.set_xpsr(ex.xpsr.value);
+                }
+                if (insts > 0) {
+                    try { tick_n(insts); } catch {}
+                    tbTranslated += insts;
+                    e.run = ((e.run | 0) + 1) | 0;
+                    e.runInst = ((e.runInst | 0) + insts) | 0;
+                }
+                if (kind === 1 || kind === 5) {
+                    // Miss (or a device-service error): continue in the
+                    // interpreter at the faulting item. insts counts the
+                    // exact prefix already executed. kind-5 means the
+                    // host model service threw — report it, then retry
+                    // natively (the interpreted MMIO path is native WASM,
+                    // not the JS service, so it cannot rethrow).
+                    if (kind === 5) {
+                        try { if (!tbFirstErr) tbFirstErr = 'device-service-error'; } catch {}
+                    } else {
+                        tbMissRetry++;
+                    }
+                    try {
+                        if (tbDevSpace(ex.tb_addr.value >>> 0)) tbMissDev++; else tbMissMem++;
+                    } catch {}
+                    try {
+                        tbMissPc = ex.tb_pc.value >>> 0;
+                        cpu.set_pc(tbMissPc);
+                    } catch {}
+                    return insts;
+                }
+                tbHits++;
+                if (kind === 3) tbKind3++;
+                if (kind === 0) {
+                    cpu.set_pc((base + (meta >> 1) * 2) >>> 0);
+                } else if (kind === 4) {
+                    // A translated run stopped after an MMIO instruction
+                    // whose model access latched an interrupt (or the
+                    // watchdog): resume at the next instruction; the
+                    // outer loop delivers the exception before the next
+                    // translated run.
+                    cpu.set_pc(ex.tb_pc.value >>> 0);
+                } else if (kind === 3) {
+                    cpu.set_pc(ex.tb_addr.value >>> 0);
+                }
+                // kind 2 (fuel out): the module reports the innermost loop
+                // top in tb_addr, so a flat run resumes there and a nested
+                // fuelled-out inner top resubmits as a standalone shape.
+                if (kind === 2) {
+                    try { cpu.set_pc(ex.tb_addr.value >>> 0); } catch {}
+                }
+                return insts;
+            } catch (err) {
+                try { if (!tbFirstErr) tbFirstErr = String((err && err.message) || err).slice(0, 200); } catch {}
+                return 0;
+            }
+        };
+        // ── flat whole-program module (pilot) ───────────────────────────
+        // One module holding every reachable block of the image; the
+        // driver only feeds it the pc and reads back (kind, insts).
+        // Opt-in via createEmulator({ flat: true }); requires direct mode
+        // (shared memory) and the tb_flat_translate export.
+        const HI_REGS = [[8, 'r8'], [9, 'r9'], [10, 'r10'], [11, 'r11'], [12, 'r12'], [14, 'lr']];
+        let flatInst = null, flatTried = false;
+        let flatBlocksOut = null, flatInstOut = null;
+        const flatTry = (pc, budget) => {
+            if (!flatTried) {
+                flatTried = true;
+                try {
+                    if (typeof bindings.tb_flat_build === 'function') {
+                        const out = bindings.tb_flat_build(firmware, tbSegsFor().flat);
+                        if (out && out.bytes && out.bytes.length) {
+                            flatInst = new WebAssembly.Instance(
+                                new WebAssembly.Module(out.bytes), tbImports);
+                            flatBlocksOut = Array.from(out.blocks);
+                            flatInstOut = flatInst;
+                        }
+                    }
+                } catch (e) {
+                    try { if (!tbFirstErr) tbFirstErr = 'flat: ' + String((e && e.message) || e).slice(0, 160); } catch {}
+                }
+            }
+            if (!flatInst) return 0;
+            const ex = flatInst.exports;
+            try { if (!ex.covers(pc >>> 0)) return 0; } catch { return 0; }
+            try {
+                const regs = cpu.get_regs();
+                const sp = cpu.get_sp();
+                const xpsr = cpu.get_xpsr();
+                for (let i = 0; i < 8; i++) ex['r' + i].value = regs[i];
+                for (const [r, nm] of HI_REGS) ex[nm].value = regs[r];
+                ex.xpsr.value = xpsr;
+                ex.sp.value = sp;
+                ex.tbFuel.value = 4096; // wasm call-stack bound (blocks/run)
+                const ret = ex.run(pc >>> 0, budget | 0);
+                const insts = Number(ret & 0xFFFFFFFFn);
+                const kind = Number(ret >> 32n);
+                for (let i = 0; i < 8; i++) regs[i] = ex['r' + i].value;
+                for (const [r, nm] of HI_REGS) regs[r] = ex[nm].value;
+                if (!noBulk && typeof cpu.set_regs_bulk === 'function') {
+                    const bulk = Array.from(regs.slice(0, 13));
+                    bulk.push(regs[14], ex.xpsr.value);
+                    cpu.set_regs_bulk(bulk);
+                } else {
+                    for (let i = 0; i < 8; i++) cpu.set_reg(i, regs[i]);
+                    for (const [r] of HI_REGS) cpu.set_reg(r, regs[r]);
+                    cpu.set_xpsr(ex.xpsr.value);
+                }
+                // Flat blocks move r13 (push/pop). set_regs_bulk has no sp
+                // slot; set_reg(13) writes the live r13 and the next
+                // interpreter instruction re-syncs the MSP/PSP bank (same
+                // rule as the run-loop bank sync).
+                // set_reg intentionally ignores r13 (loop TB never moves
+                // SP). Flat PUSH/POP does — use the dedicated export.
+                if (typeof cpu.set_sp === 'function') {
+                    try { cpu.set_sp(ex.sp.value >>> 0); } catch {}
+                }
+                if (insts > 0) {
+                    try { tick_n(insts); } catch {}
+                    tbTranslated += insts;
+                    tbHits++;
+                }
+                if (kind === 1 || kind === 5) {
+                    // Miss: interpreter executes the unsupported item.
+                    if (kind === 5) {
+                        try { if (!tbFirstErr) tbFirstErr = 'device-service-error'; } catch {}
+                    } else {
+                        tbMissRetry++;
+                    }
+                    try { cpu.set_pc(ex.tb_pc.value >>> 0); } catch {}
+                    // A flat miss returns >0, so the step loop `continue`s
+                    // without ever running the interpreter — unlike
+                    // tbExecDirect, which leaves tbMissPc for the loop.
+                    // Execute the missed instruction HERE or pc never
+                    // advances (2026-11-25: 20M miss-retries, zero UART).
+                    let c1 = 0;
+                    try { c1 = cpu.step(1); } catch {}
+                    return insts + c1;
+                }
+                // kind 2 (budget/fuel out), 3 (out-of-module branch),
+                // 4 (IRQ/reset latch): resume at tb_addr / tb_pc.
+                if (kind === 4) {
+                    try { cpu.set_pc(ex.tb_pc.value >>> 0); } catch {}
+                } else {
+                    try { cpu.set_pc(ex.tb_addr.value >>> 0); } catch {}
+                }
+                return insts;
+            } catch (e) {
+                try { if (!tbFirstErr) tbFirstErr = 'flat-run: ' + String((e && e.message) || e).slice(0, 160); } catch {}
+                flatInst = null; // poisoned instance (stack overflow etc.): rebuild next submit
+                return 0;
+            }
+        };
+        const flatOn = flat && tbDirect && typeof bindings.tb_flat_build === 'function';
+        const tbExec = (e, base, budget, meta, segs) => (tbDirect
+            ? tbExecDirect(e, base, budget, meta)
+            : tbExecMirror(e, base, budget, meta, segs));
+        // Shared translated-run executor: sync mirror + regs, run to
+        // fuel-out/completion/exit/miss, sync back. `base` is the translate
+        // base (loop top); pc advances from it on kind-0 completion.
+        const tbExecMirror = (e, base, budget, meta, segs) => {
+            const ex = e.instance.exports;
+            // Segmented mirror sync (4KB pages). Pre-run: sync pages for
+            // Exact-range mirror sync (no page rounding): sync-in covers
+            // static slot addrs per run; the dirty trailer records exact
+            // (addr, size) store ranges for writeback. Mirror-is-GO within
+            // the run: loads see own stores. Post-run (kind 0/2/3): write
+            // back coalesced trailer spans, then regs, then pc. Miss path
+            // NEVER writes back (mirror stores are discarded by
+            // re-syncing) — otherwise a retried/give-up run would apply
+            // stores twice.
+            // Guest address + clamp length for a mirror offset (inverse
+            // of mirrorOff; null when outside every segment).
+            const moToGuest = (mo) => {
+                for (const g of segs.list) {
+                    if (g.off === undefined) continue;
+                    if (mo >= g.off && mo < g.off + g.size) {
+                        return [(g.base + (mo - g.off)) >>> 0, g.off + g.size - mo];
+                    }
+                }
+                return null;
+            };
+            const mirrorOff = (addr) => {
+                for (const g of segs.list) {
+                    if (addr >= g.base && addr < g.base + g.size) return g.off + (addr - g.base);
+                }
+                return -1;
+            };
+            // Validity bitmap base from the model (never hardcoded).
+            // 1 bit per 4KB mirror page; set on every successful sync,
+            // cleared per run start.
+            const BITBASE = (typeof bindings.tb_valid_base === 'function'
+                ? bindings.tb_valid_base()
+                : 262144) >>> 0;
+            const setValid = (mo, len) => {
+                try {
+                    const mem = new Uint8Array(ex.mem.buffer);
+                    const first = mo >>> 12, last = (mo + len - 1) >>> 12;
+                    for (let p = first; p <= last; p++) mem[BITBASE + (p >>> 3)] |= (1 << (p & 7));
+                } catch {}
+            };
+            const syncRange = (addr, len) => {
+                const mo = mirrorOff(addr);
+                if (mo < 0) return false;
+                let gb;
+                try {
+                    gb = wuc.mem_read(BigInt(addr >>> 0), len);
+                } catch { return false; }
+                try {
+                    new Uint8Array(ex.mem.buffer).set(
+                        new Uint8Array(gb.buffer, gb.byteOffset, len), mo);
+                } catch { return false; }
+                setValid(mo, len);
+                return true;
+            };
+            const slotAddrs = (pairs, regs, sp) => {
+                const out = [];
+                for (let i = 0; i + 1 < pairs.length; i += 2) {
+                    const pack = pairs[i] >>> 0;
+                    const word = (pack >> 5) & 1; // pack bit5: 1 = word, 0 = byte
+                    let off = pairs[i + 1] | 0;
+                    const base = pack & 0x1F;
+                    const bv = base === 15 ? sp : regs[base];
+                    if (bv === undefined) continue;
+                    out.push([(bv + off) >>> 0, word ? 4 : 1]);
+                }
+                return out;
+            };
+            // Pre-sync is EXACT slot ranges (no neighborhood expansion):
+            // an earlier [-4KB,+32KB) hood window showed zero benefit in
+            // isolation (identical retry counts and MIPS on eth_heavy,
+            // 3x3 back-to-back) while tripling cold-submit sync volume,
+            // so it was removed. Striding loops page in via demand misses
+            // (fault-page sync + re-run, exec is ~500 MIPS so re-runs are
+            // cheap); warm pages are skipped by validity gating anyway.
+            // Merge slot ranges into spans (gap <= 4KB merges stack-local
+            // clusters into one mem_read; span cap 64KB). Mirror bytes
+            // from gaps are never written back (only trailer ranges are),
+            // so merging is always safe.
+            const slotSpans = (pairs, regs, sp, budget) => {
+                const _ = budget;
+                const rs = slotAddrs(pairs, regs, sp).sort((a, b) => a[0] - b[0]);
+                const out = [];
+                let cur = null;
+                for (const [a, n] of rs) {
+                    if (!cur) { cur = [a, n]; continue; }
+                    const end = cur[0] + cur[1];
+                    if (a <= end + 4096 && a + n - cur[0] <= 65536) {
+                        cur[1] = Math.max(end, a + n) - cur[0];
+                    } else { out.push(cur); cur = [a, n]; }
+                }
+                if (cur) out.push(cur);
+                return out;
+            };
+            // Dirty-trailer ranges [(addr,size)] for writeback or re-sync.
+            // Cleared at every run start.
+            const trailerRanges = () => {
+                const out = [];
+                try {
+                    const cnt = ex.dirtyCount.value | 0;
+                    if (cnt <= 0) return out;
+                    const dv = new DataView(ex.mem.buffer);
+                    for (let i = 0; i < cnt; i++) {
+                        out.push([dv.getUint32(8 + i * 8, true) >>> 0, dv.getUint32(12 + i * 8, true) >>> 0]);
+                    }
+                } catch {}
+                return out;
+            };
+            const writeback = () => {
+                // Coalesce OVERLAPPING/ADJACENT ranges only (gap 0).
+                // Merging across gaps is UNSOUND with exact-range
+                // pre-sync: gap bytes in the mirror were never synced
+                // (zeros) and would be written over real guest data
+                // (caught live: a strided framebuffer column zeroed guest
+                // RAM and broke DOOM WAD lookup). Span cap 256KB bounds
+                // waste. Loop-emitted
+                // ranges arrive nearly sorted (ascending addresses), so
+                // skip the sort when a linear check passes — V8's sort
+                // on hundreds of tiny arrays costs more than the writes.
+                let rs = trailerRanges();
+                let sorted = true;
+                for (let i = 1; i < rs.length; i++) {
+                    if (rs[i][0] < rs[i - 1][0]) { sorted = false; break; }
+                }
+                if (!sorted) rs = rs.slice().sort((a, b) => a[0] - b[0]);
+                tbPagesOut += rs.length;
+                // Gap-0 coalesced spans (order preserved).
+                const spans = [];
+                let cur = null;
+                for (const [a, n] of rs) {
+                    if (!cur) { cur = [a, n]; continue; }
+                    const end = cur[0] + cur[1];
+                    if (a <= end && a + n - cur[0] <= 262144) {
+                        cur[1] = Math.max(end, a + n) - cur[0];
+                    } else { spans.push(cur); cur = [a, n]; }
+                }
+                if (cur) spans.push(cur);
+                // One batched scatter-write per run instead of one
+                // crossing per span: strided stores (framebuffer column
+                // = ~200 x 1-4B spans) paid a full bindgen crossing each
+                // and dominated hit cost (DOOM A/B). mem_write_multi
+                // (WasmCpu method, like mem_write) has identical
+                // semantics (ordered, same bytes); falls back to
+                // per-span writes when absent (older vendor).
+                if (spans.length > 0 && typeof cpu.mem_write_multi === 'function') {
+                    try {
+                        const mem = new Uint8Array(ex.mem.buffer);
+                        let total = 0;
+                        const items = [];
+                        for (const [a, n] of spans) {
+                            const mo = mirrorOff(a);
+                            if (mo < 0 || n <= 0) continue;
+                            items.push([a >>> 0, mo, n]);
+                            total += n;
+                        }
+                        if (items.length > 0) {
+                            const pairs = new Uint32Array(items.length * 2);
+                            const blob = new Uint8Array(total);
+                            let bo = 0, pi = 0;
+                            for (const [a, mo, n] of items) {
+                                pairs[pi++] = a; pairs[pi++] = n;
+                                blob.set(mem.subarray(mo, mo + n), bo);
+                                bo += n;
+                            }
+                            cpu.mem_write_multi(pairs, blob);
+                        }
+                    } catch {}
+                } else {
+                    for (const [a, n] of spans) {
+                        try {
+                            const mo = mirrorOff(a);
+                            if (mo >= 0) {
+                                const bytes = new Uint8Array(ex.mem.buffer).slice(mo, mo + n);
+                                wuc.mem_write(BigInt(a >>> 0), bytes);
+                            }
+                        } catch {}
+                    }
+                }
+            };
+            const clearValid = () => {
+                try {
+                    new Uint8Array(ex.mem.buffer).fill(0, BITBASE, BITBASE + 1024);
+                } catch {}
+            };
+            const ensureValid = () => {
+                // Lazy per-instance clear on generation change.
+                try {
+                    if (e.clearGen !== tbGen) {
+                        clearValid();
+                        e.clearGen = tbGen;
+                    }
+                } catch {}
+            };
+            // Sync the 4KB page containing a fault address (validity is
+            // page-granular), clamped to the segment end.
+            const syncFaultPage = (faddr) => {
+                const page = (faddr & ~0xFFF) >>> 0;
+                for (const g of segs.list) {
+                    if (page >= g.base && page < g.base + g.size) {
+                        return syncRange(page, Math.min(4096, g.base + g.size - page));
+                    }
+                }
+                return syncRange(faddr, 4);
+            };
+            // High registers by EXPORT name ('lr', not 'r14').
+            const HI = [[8, 'r8'], [9, 'r9'], [10, 'r10'], [11, 'r11'], [12, 'r12'], [14, 'lr']];
+            const syncRegsTo = (dst, regs, xpsr, sp) => {
+                for (let i = 0; i < 8; i++) dst['r' + i].value = regs[i];
+                for (const [r, nm] of HI) dst[nm].value = regs[r];
+                dst.xpsr.value = xpsr;
+                dst.sp.value = sp;
+            };
+            // Bulk reg sync-back to the CPU: [r0..r12, lr, xpsr] in ONE
+            // crossing (was: 15 set_reg calls per run).
+            const cpuBulk = (regs, xpsr) => {
+                if (!noBulk && typeof cpu.set_regs_bulk === 'function') {
+                    // get_regs() returns a Uint32Array (no push/concat):
+                    // build a real Array for the bulk layout.
+                    const bulk = Array.from(regs.slice(0, 13));
+                    bulk.push(regs[14], xpsr);
+                    cpu.set_regs_bulk(bulk);
+                } else {
+                    for (let i = 0; i < 8; i++) cpu.set_reg(i, regs[i]);
+                    for (const [r] of HI) cpu.set_reg(r, regs[r]);
+                    cpu.set_xpsr(xpsr);
+                }
+            };
+            const readRegsBack = (src, regs) => {
+                for (let i = 0; i < 8; i++) regs[i] = src['r' + i].value;
+                for (const [r, nm] of HI) regs[r] = src[nm].value;
+            };
+            syncGen(); // single gatekeeper: RAM changed => tbGen++ (lazy clear)
+            try {
+                let regs = cpu.get_regs();
+                let sp = cpu.get_sp();
+                const addrs = slotSpans(e.loads, regs, sp, budget).concat(slotSpans(e.stores, regs, sp, budget));
+                // Validity-gated sync: skip 4KB pages whose bit is set
+                // (synced since the last real RAM change — mirror holds
+                // the latest bytes, including prior translated stores).
+                // Without this the pre-run loop re-reads ~100KB of hood
+                // windows per hit (~50us) even when nothing changed.
+                const syncNeeded = (mo, len) => {
+                    let mem;
+                    try { mem = new Uint8Array(ex.mem.buffer); } catch { return null; }
+                    const first = mo >>> 12, last = (mo + len - 1) >>> 12;
+                    const out = [];
+                    let cs = -1, ce = -1;
+                    for (let pg = first; pg <= last; pg++) {
+                        let has = false;
+                        try { has = ((mem[BITBASE + (pg >>> 3)] >>> (pg & 7)) & 1) !== 0; } catch {}
+                        if (!has) {
+                            const ps = Math.max(mo, pg * 4096), pe = Math.min(mo + len, (pg + 1) * 4096);
+                            if (cs < 0) { cs = ps; ce = pe; }
+                            else if (ps <= ce) { ce = Math.max(ce, pe); }
+                            else { out.push([cs, ce - cs]); cs = ps; ce = pe; }
+                        }
+                    }
+                    if (cs >= 0) out.push([cs, ce - cs]);
+                    return out;
+                };
+                for (const [a, n] of addrs) {
+                    const mo = mirrorOff(a);
+                    if (mo < 0) { if (syncRange(a, n)) tbPagesIn++; continue; }
+                    const gaps = syncNeeded(mo, n);
+                    if (gaps === null) { if (syncRange(a, n)) tbPagesIn++; continue; }
+                    for (const [smo, slen] of gaps) {
+                        const g = moToGuest(smo);
+                        if (!g) continue;
+                        if (syncRange(g[0], Math.min(slen, g[1]))) tbPagesIn++;
+                    }
+                }
+                // Entry snapshot for miss-retry restore (mirror stores are
+                // discarded by re-sync, so restoring regs un-runs it).
+                const snapR = regs.slice();
+                const snapX = cpu.get_xpsr();
+                syncRegsTo(ex, regs, snapX, sp);
+                try { ex.dirtyCount.value = 0; } catch {}
+                ensureValid();
+                let retries = 0;
+                for (;;) {
+                    const ret = ex.run(budget | 0);
+                    const insts = Number(ret & 0xFFFFFFFFn);
+                    const kind = Number(ret >> 32n);
+                    if (kind === 1 && retries < 16) {
+                        tbMissRetry++;
+                        // Mirror miss (unmapped addr OR unsynced page):
+                        // NO writeback (see above); restore entry regs,
+                        // clear the trailer (mirror stores are overwritten
+                        // identically on retry), sync the faulting page
+                        // (sets its valid bit), re-run. Retry preserves
+                        // determinism: same entry state, mirror superset.
+                        retries++;
+                        const faddr = ex.tb_addr.value >>> 0;
+                        syncRegsTo(ex, snapR, snapX, sp);
+                        try { ex.dirtyCount.value = 0; } catch {}
+                        if (!syncFaultPage(faddr)) {
+                            cpuBulk(snapR, snapX);
+                            return 0; // outside every segment: interpret
+                        }
+                        for (const [a, n] of addrs) {
+                            const mo = mirrorOff(a);
+                            if (mo < 0) { if (syncRange(a, n)) tbPagesIn++; continue; }
+                            const gaps = syncNeeded(mo, n);
+                            if (gaps === null) { if (syncRange(a, n)) tbPagesIn++; continue; }
+                            for (const [smo, slen] of gaps) {
+                                const g = moToGuest(smo);
+                                if (!g) continue;
+                                if (syncRange(g[0], Math.min(slen, g[1]))) tbPagesIn++;
+                            }
+                        }
+                        regs = snapR.slice();
+                        continue;
+                    }
+                    if (kind === 1) {
+                        cpuBulk(snapR, snapX);
+                        return 0;
+                    }
+                    writeback();
+                    readRegsBack(ex, regs);
+                    cpuBulk(regs, ex.xpsr.value);
+                    try { tick_n(insts); } catch {}
+                    tbHits++;
+                    tbTranslated += insts;
+                    e.run = ((e.run | 0) + 1) | 0;
+                    e.runInst = ((e.runInst | 0) + insts) | 0;
+                    if (kind === 3) tbKind3++;
+                    if (kind === 0) {
+                        // completed: advance past the region.
+                        const exitOff = meta >> 1;
+                        cpu.set_pc((base + exitOff * 2) >>> 0);
+                    } else if (kind === 3) {
+                        // forward-branch exit: resume at the branch target.
+                        cpu.set_pc(ex.tb_addr.value >>> 0);
+                    }
+                    // kind 2 (fuel out): resume at the emitted tb_addr
+                    // (flat: the entry pc, identical to the old leave-pc
+                    // behavior; nested: the fuelled-out inner top, which
+                    // resubmits as a standalone shape).
+                    if (kind === 2) {
+                        try { cpu.set_pc(ex.tb_addr.value >>> 0); } catch {}
+                    }
+                    return insts;
+                }
+            } catch (e) { try { if (!tbFirstErr) tbFirstErr = String((e && e.message) || e).slice(0, 200); } catch {} return 0; }
+        };
+        const bytesEqual = (a, b) => {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+            return true;
+        };
+        // Budget runner mixing translated loops + native chunks. Returns
+        // total instructions executed (feeds instCount + servicing exactly
+        // like cpu.step's count does).
+        // Adaptive backoff: tbTryLoop on never-translating firmware
+        // (blinky: 5000 declines, 0 hits) costs a mem_read + compare per
+        // chunk for nothing. After 200 consecutive declines, probe only
+        // every 32nd chunk — overhead drops ~97% while translatable
+        // firmware (hits reset the count long before 200) never backs
+        // off. Skipping is always sound: decline === interpret anyway.
+        let tbDeclines = 0;
+        const tbRun = (n) => {
+            let done = 0;
+            if (!tbDirect) syncGen(); // inter-step servicing may have written guest RAM
+            while (done < n) {
+                if (cpu.fault_pc() !== 0xFFFFFFFF) break;
+                // Delivery firmware: a translated run cannot take an
+                // exception (it never touches the NVIC). Deliver through
+                // the interpreter while one is ready. The predicate is the
+                // core's own selection (enabled + unmasked + preempting);
+                // raw NVIC pending would livelock on disabled/masked IRQs.
+                if (deliverIrqs && cpu.pending_exception_ready()) {
+                    const c = cpu.step(1);
+                    done += c;
+                    if (c < 1) break;
+                    continue;
+                }
+                const pc = cpu.get_pc() & 0xFFFFFFFE;
+                let step = 0;
+                if (flatOn) {
+                    step = flatTry(pc, n - done);
+                    if (step > 0) { done += step; tbDeclines = 0; continue; }
+                }
+                if (tbDeclines < 200 || (tbDeclines % 32) === 0) {
+                    if (tbD) {
+                        const _p0 = performance.now();
+                        step = tbTryLoop(pc, n - done);
+                        tbD.probeNs += performance.now() - _p0;
+                        tbD.probeCalls++;
+                    } else {
+                        step = tbTryLoop(pc, n - done);
+                    }
+                }
+                // A translated run that missed leaves pc on the item it
+                // cannot emit. Execute exactly that item natively, then
+                // submit again: the next pc sits inside the loop body, so
+                // mid-entry translation takes over. (Without this the
+                // tail falls into the 4096-instruction interpret chunk and
+                // runs many loop iterations untranslated.)
+                if (tbMissPc !== 0) {
+                    const mp = tbMissPc;
+                    tbMissPc = 0;
+                    if ((cpu.get_pc() & 0xFFFFFFFE) === mp) {
+                        const c1 = cpu.step(1);
+                        done += c1;
+                        if (c1 < 1) break;
+                        continue;
+                    }
+                }
+                if (step > 0) { done += step; tbDeclines = 0; continue; }
+                tbDeclines++;
+                tbFallbacks++;
+                // While backed off (no translation happening), step native
+                // at the same 64K granularity as the tb-off path instead
+                // of 4K probe chunks — the chunking itself was measurable.
+                const chunk = Math.min(n - done, tbDeclines >= 200 ? 65536 : 4096);
+                let c;
+                if (tbD) {
+                    const _i0 = performance.now();
+                    c = cpu.step(chunk);
+                    tbD.interpNs += performance.now() - _i0;
+                    tbD.interpCalls++;
+                } else {
+                    c = cpu.step(chunk);
+                }
+                done += c;
+                if (c < chunk) break; // fault/sleep: outer logic resumes
+                // No tbGen++ here: tbExec-entry syncGen() invalidates on
+                // real RAM change (write_seq-gated), so writeless native
+                // fragments keep a warm mirror across submits.
+            }
+            return done;
+        };
+        return {
+            uc: wuc,
+            get flatBlocks() { return flatBlocksOut || []; },
+            get flatInst() { return flatInstOut; },
+            read32: wread32, write32: wwrite32,
+            getRegisters: () => { const r = cpu.get_regs(); return { R0: r[0], R1: r[1], R2: r[2], R3: r[3], R4: r[4], R5: r[5], R6: r[6], R7: r[7], R8: r[8], R9: r[9], R10: r[10], R11: r[11], R12: r[12], SP: r[13], LR: r[14], PC: r[15], XPSR: cpu.get_xpsr() >>> 0 }; },
+            // VFPv4-SP file visibility (debugger pokes; Dd aliases S(2d)/S(2d+1)).
+            getFpuState: () => ({ s: Array.from(cpu.get_sregs(), (v) => v >>> 0), fpscr: cpu.get_fpscr() >>> 0 }),
+            setSreg: (i, v) => { cpu.set_sreg(i >>> 0, v >>> 0); },
+            setFpscr: (v) => { cpu.set_fpscr(v >>> 0); },
+            step: (n = 100000) => {
+                // NRST held: peripherals in reset, CPU not executing. Still
+                // advance the model clock so time-driven state settles, but
+                // run no instructions and service no DMA/ETH/device paths.
+                if (nrstAsserted) {
+                    try { tick_peripherals(); } catch {}
+                    return { instCount, stopped: false, pc: cpu.get_pc() };
+                }
+                // WFI/WFE sleep: advance virtual time (which fires the RTC
+                // alarm etc.), drain any queued RX frames (the wire
+                // delivers even though the guest can't re-arm — this is
+                // what lets a WOL magic packet wake STOP), then wake
+                // when an interrupt is pending.
+                if (typeof cpu.sleeping === 'function' && cpu.sleeping()) {
+                    // STANDBY vs STOP: sample PWR_CR PDDS (bit 1) on sleep
+                    // entry. PDDS=1 -> STANDBY: latch SBF now (it must be
+                    // visible even before wake), wake via pwr_wakeup_standby
+                    // (WUF set, SBF kept). PDDS=0 -> STOP: legacy pwr_wakeup.
+                    // Both are guarded (older wasm bundles lack the standby
+                    // exports; PDDS sampling must not throw).
+                    let standby = false;
+                    try {
+                        const cr = wread32(0x40007000) >>> 0;
+                        standby = (cr & 0x2) !== 0;
+                        if (standby && typeof pwr_enter_standby === 'function') pwr_enter_standby();
+                    } catch {}
+                    try { tick_n(120000); } catch {}
+                    try { periph_read(0x40002800, 4); } catch {}
+                    // Sleep drain: force-deliver (no poll needed — the
+                    // guest can't re-arm while asleep). The stale-poll
+                    // drop above guarantees nothing was delivered early,
+                    // so the queued magic is still here for IRQ62.
+                    try { wDeliverRx(true); } catch {}
+                    if (has_pending_interrupt()) {
+                        try {
+                            if (((wread32(0xE000ED10) >>> 0) >> 2) & 1) {
+                                if (standby && typeof pwr_wakeup_standby === 'function') pwr_wakeup_standby();
+                                else pwr_wakeup();
+                            }
+                        } catch {}
+                        try { cpu.wake(); } catch {}
+                    } else {
+                        instCount += 120000;
+                        return { instCount, stopped: false, pc: cpu.get_pc() };
+                    }
+                }
+                const c = tbEnabled ? tbRun(n) : cpu.step(n);
+                instCount += c;
+                // The core published its executed count itself mid-step, so
+                // tick WITHOUT adding here (tick_n(c) would double-count).
+                try { tick_peripherals(); } catch {}
+                wProcessDma();
+                wProcessFlash();
+                wProcessDma2d();
+                wProcessEth();
+                try { processDevices(); } catch {}
+                if (ENV.WASM_DBG && rxQueue.length > 0) console.log(`[wasm-step] pc=0x${(cpu.get_pc() >>> 0).toString(16)} rxpoll=${eth_is_rx_poll() ? 1 : 0} q=${rxQueue.length}`);
+                if (is_watchdog_reset_requested()) cpu.reset_cpu(sp0, pc0 | 1);
+                const faulted = cpu.fault_pc() !== 0xFFFFFFFF;
+                return { instCount, stopped: faulted, pc: cpu.get_pc() };
+            },
+            drainUart: () => { try { return get_uart_output(); } catch { return ''; } },
+            tbStats: () => (tbEnabled ? tbStats() : { hits: 0, fallbacks: 0, entries: 0 }),
+            tbDiag: () => (tbD ? {
+                probeNs: tbD.probeNs, probeCalls: tbD.probeCalls,
+                readNs: tbD.readNs, readCalls: tbD.readCalls,
+                metaNs: tbD.metaNs, metaCalls: tbD.metaCalls,
+                buildNs: tbD.buildNs, buildCalls: tbD.buildCalls, cacheHit: tbD.cacheHit,
+                fastHit: tbD.fastHit, fastSize: tbFast.size, fastNs: tbD.fastNs,
+                execNs: tbD.execNs, execCalls: tbD.execCalls,
+                interpNs: tbD.interpNs, interpCalls: tbD.interpCalls,
+                attempts: tbD.attempts, metaDecl: tbD.metaDecl, cacheDecl: tbD.cacheDecl,
+                shortDecl: tbD.shortDecl, gateDecl: tbD.gateDecl,
+                execFail: tbD.execFail, execThrow: tbD.execThrow,
+                assistTop: tbD.assistTop, assistMid: tbD.assistMid,
+                declinePc: tbD.declinePc, hitPc: tbD.hitPc, hitInst: tbD.hitInst,
+                midTop: tbD.midTop, topDecl: tbD.topDecl,
+                eMpu: tbD.eMpu, eIt: tbD.eIt, eNoFn: tbD.eNoFn,
+                eBuild: tbD.eBuild, eInst: tbD.eInst,
+                eBuildMsg: tbD.eBuildMsg, eInstMsg: tbD.eInstMsg, topDeclInfo: tbD.topDeclInfo,
+                buildInfo: tbD.buildInfo, badBytes: tbD.badBytes || null, badTop: tbD.badTop || 0, badEntry: tbD.badEntry || 0,
+            } : null),
+            injectFrame: (frame) => { rxQueue.push(frame instanceof Uint8Array ? frame : new Uint8Array(frame)); trimRxQueue(); },
+            // Inject a CAN frame from an external transmitter onto the shared bus.
+            canInject: (id, dlc, data) => { can_inject(id & 0x7FF, dlc & 0xF, new Uint8Array(data)); },
+            timInjectCapture: (name, ch) => { tim_inject_capture(name, ch & 0x3); },
+            sendUart: (bytes) => {
+                const arr = typeof bytes === 'string' ? [...bytes].map((c) => c.charCodeAt(0)) : [...bytes];
+                for (const b of arr) { try { uart_rx_byte(uart_addr, b & 0xFF); } catch {} }
+            },
+            // Explicit-port variant for the console's serial-input target
+            // dropdown: same path, but the caller picks the USART base
+            // (the default stays the firmware's own uart_addr).
+            sendUartTo: (addr, bytes) => {
+                const a = addr >>> 0;
+                const arr = typeof bytes === 'string' ? [...bytes].map((c) => c.charCodeAt(0)) : [...bytes];
+                for (const b of arr) { try { uart_rx_byte(a, b & 0xFF); } catch {} }
+            },
+            sendUartByte(b) { try { uart_rx_byte(uart_addr, b & 0xFF); } catch {} },
+            rxQueue,
+            pin, watchPin, i2cRegfile, setAdcChannel, clearAdcChannel,
+            takeSpeakerSamples,
+            traceStart: () => { try { cpu.trace_start(); } catch {} },
+            traceStop: () => { try { cpu.trace_stop(); } catch {} },
+            takeTrace: () => { try { return cpu.take_trace(); } catch { return []; } },
+            oled: oled ? { fb: oled.fb, frame: () => oled.frame } : null,
+            tft: tft ? { fb: tft.fb, w: tft.w, h: tft.h, frame: () => tft.frame } : null,
+            buzzer: buzzer ? { get freq() { return buzzer.freq; }, get duty() { return buzzer.duty; }, get change() { return buzzer.change; } } : null,
+            rtc: rtc ? { get time() { return rtc.time; }, get temp() { return rtc.temp; }, get change() { return rtc.change; } } : null,
+            camera: {
+                feed(w, h, pixels) {
+                    dcmi_feed_frame(w, h, pixels instanceof Uint8Array ? pixels : Uint8Array.from(pixels));
+                },
+                stop() { cameraRunning = false; dcmi_clear(); },
+                start() { cameraRunning = true; },
+                get frames() { return cameraFrames; },
+            },
+            pushFsmcData(bank, values) { fsmc_push_data(bank, Uint32Array.from(values)); },
+            takeFsmcEvents(bank) { return fsmc_take_events(bank); },
+            dmaPendingCount() { return dma_get_pending_count(); },
+            dmaSetCompleted(streamIdx, success) { dma_set_completed(streamIdx, !!success); },
+            stop() { /* steps are bounded round-trips; nothing to interrupt */ },
+            loadImage(opts = {}) {
+                const flash = opts.flash || new Uint8Array(0);
+                if (flash.length) cpu.load_firmware(flash, vector_table);
+                for (const seg of opts.extraMem || []) cpu.load_firmware(seg.data, seg.addr);
+                const sp = wread32(vector_table);
+                const pc = wread32(vector_table + 4);
+                fullReset(sp, pc | 1);
+                nrstAsserted = false;
+            },
+            close: () => { try { cpu.free(); } catch {} },
+            reset: () => { fullReset(sp0, pc0 | 1); },
+            // Host reset/boot control (real-device Reset button semantics).
+            resetCpu: () => { fullReset(sp0, pc0 | 1); },
+            setNrst, isNrstAsserted,
+            bootPreset: (image) => {
+                const flash = (image && image.flash) || new Uint8Array(0);
+                if (flash.length) cpu.load_firmware(flash, vector_table);
+                for (const seg of (image && image.extraMem) || []) cpu.load_firmware(seg.data, seg.addr);
+                const sp = wread32(vector_table);
+                const pc = wread32(vector_table + 4);
+                fullReset(sp, pc | 1);
+                nrstAsserted = false;
+            },
+            faultInfo: () => {
+                const fpc = cpu.fault_pc() >>> 0;
+                if (fpc === 0xFFFFFFFF) return null;
+                return { pc: fpc, op1: cpu.fault_op1(), op2: cpu.fault_op2(), len: cpu.fault_len() };
+            },
+        };
+    }
+}

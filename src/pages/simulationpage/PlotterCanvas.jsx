@@ -9,45 +9,90 @@ const getTrackHeight = (pinId) => {
   return isHardwarePin ? 100 : 160;
 };
 
-const PlotterCanvas = React.memo(({ 
-  plotDataRef, 
-  selectedPlotPins, 
-  plotterPaused, 
-  plotterTimeDiv, 
+const PlotterCanvas = React.memo(({
+  plotDataRef,
+  plotBoundsRef,
+  selectedPlotPins,
+  plotterPaused,
+  plotterTimeDiv,
   theme,
-  isRunning
+  isRunning,
+  isVisible = true,
 }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const requestRef = useRef();
-  const sessionBoundsRef = useRef({});
+  const lastDrawTimeRef = useRef(0);
+  const lastSerialDrawRef = useRef(0);
+  const lastDataLenRef = useRef(0);
 
-  const draw = () => {
+  // Perf: DPR-aware backing store. The old fixed width={800} canvas was
+  // upscaled by CSS on wide panels (blurry) and redrew at device pixels
+  // anyway. Resize the backing store only when the CSS size actually changes.
+  const ensureSize = () => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return false;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cssW = Math.max(1, Math.floor(container.clientWidth || 800));
+    const cssH = Math.max(1, Math.floor(canvasHeight));
+    const bw = Math.floor(cssW * dpr);
+    const bh = Math.floor(cssH * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+      return true;
+    }
+    return false;
+  };
+
+  // Perf: sticky serial bounds come from the ingest-side incremental map
+  // (plotBoundsRef) — O(1) lookup per channel. The old per-frame FULL
+  // plotData.forEach scan per serial channel was the hottest plotter loop.
+  const getChanBounds = (chanKey) => {
+    const b = plotBoundsRef?.current?.get(chanKey);
+    if (!b || b.min === Infinity || b.max === -Infinity) return { sMin: 0, sMax: 100, found: false };
+    // Stable Baseline Range: Default base range to [0, 100] (or expand if data goes below 0 or above 100).
+    // This prevents historical lines from jumping/shifting when a new value appears or when old data scrolls off screen!
+    // (Sticky: bounds only ever expand at ingest, so scrolled-off points can't shrink the range.)
+    const baseMin = b.min < 0 ? Math.floor(b.min / 10) * 10 - 10 : 0;
+    const baseMax = Math.max(100, Math.ceil(b.max / 10) * 10 + 10);
+    let sMin = Math.min(b.min, baseMin);
+    let sMax = Math.max(b.max, baseMax);
+    // Add subtle padding so line doesn't touch exact canvas border
+    const pad = (sMax - sMin) * 0.05;
+    sMin -= pad;
+    sMax += pad;
+    return { sMin, sMax, found: true };
+  };
+
+  const draw = (nowMs) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    ensureSize();
 
     const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const width = canvas.width / dpr;
+    ctx.save();
+    ctx.scale(dpr, dpr);
 
-    // Clear background
-    ctx.clearRect(0, 0, width, height);
+    // Clear background (note: after ctx.scale(dpr,dpr), clearRect is in CSS px)
+    const cssH = canvas.height / dpr;
+    ctx.clearRect(0, 0, width, cssH);
 
-    if (selectedPlotPins.length === 0) return;
+    if (selectedPlotPins.length === 0) { ctx.restore(); return; }
 
     const now = Date.now();
-    const timeWindow = plotterTimeDiv; 
+    const timeWindow = plotterTimeDiv;
     const startTime = now - timeWindow;
 
     // Read from Ref directly
     const plotData = plotDataRef?.current || [];
-    if (plotData.length === 0) {
-      sessionBoundsRef.current = {};
-    }
-    
-    // We need to find the "initial state" for each channel (the last point before startTime)
-    // and then all points within the window.
-    
     const getX = (time) => ((time - startTime) / timeWindow) * width;
+
+    // We need to find the "initial state" for this channel (the last point
+    // before startTime) and then all points within the window.
 
     let currentTop = 0;
     selectedPlotPins.forEach((rawChan, i) => {
@@ -171,45 +216,12 @@ const PlotterCanvas = React.memo(({
         });
         if (lastY !== null) ctx.lineTo(width, lastY); // Extend to right edge
       } else if (isSerial) {
-        // Maintain session-wide sticky min/max so range doesn't shrink back when old data points scroll off screen
+        // Perf: sticky bounds come from the ingest-side incremental map
+        // (plotBoundsRef) — O(1) lookup. The old code did a FULL 1000-pt
+        // plotData.forEach scan per serial channel per frame here, which was
+        // the single hottest plotter loop at 60fps.
         const chanKey = `${chan.boardId}:${chan.pinId}`;
-        if (!sessionBoundsRef.current[chanKey]) {
-          sessionBoundsRef.current[chanKey] = { min: Infinity, max: -Infinity };
-        }
-        const sBounds = sessionBoundsRef.current[chanKey];
-
-        // Scan all plotData points in session to update sticky bounds
-        plotData.forEach(pt => {
-          if (pt.boardId === chan.boardId) {
-            const v = pt.serialVars?.[chan.pinId];
-            if (v !== undefined && typeof v === 'number' && !isNaN(v)) {
-              if (v < sBounds.min) sBounds.min = v;
-              if (v > sBounds.max) sBounds.max = v;
-            }
-          }
-        });
-
-        let sMin = sBounds.min;
-        let sMax = sBounds.max;
-        let found = (sMin !== Infinity && sMax !== -Infinity);
-
-        if (!found) {
-          sMin = 0;
-          sMax = 100;
-        } else {
-          // Stable Baseline Range: Default base range to [0, 100] (or expand if data goes below 0 or above 100).
-          // This prevents historical lines from jumping/shifting when a new value appears or when old data scrolls off screen!
-          const baseMin = sMin < 0 ? Math.floor(sMin / 10) * 10 - 10 : 0;
-          const baseMax = Math.max(100, Math.ceil(sMax / 10) * 10 + 10);
-          
-          sMin = Math.min(sMin, baseMin);
-          sMax = Math.max(sMax, baseMax);
-
-          // Add subtle padding so line doesn't touch exact canvas border
-          const pad = (sMax - sMin) * 0.05;
-          sMin -= pad;
-          sMax += pad;
-        }
+        const { sMin, sMax } = getChanBounds(chanKey);
 
         // Draw subtle Y-axis range text on the track background
         ctx.fillStyle = isLightTheme ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
@@ -256,25 +268,37 @@ const PlotterCanvas = React.memo(({
     });
   };
 
-  const lastDrawTimeRef = useRef(0);
-
+  // Perf: split frame rates + draw skipping. All channels redraw at up to
+  // ~30fps AND only when new plot data arrived since the last frame; serial
+  // channels additionally need no faster than ~12fps (their data arrives at
+  // ~10Hz, so 60fps redraws were pure waste). Skip entirely when the plotter
+  // is hidden / paused / tab hidden, and stop the loop when not shown.
   const animate = (timestamp) => {
-    if (!plotterPaused && isRunning) {
-      const elapsed = timestamp - lastDrawTimeRef.current;
-      if (elapsed >= 16.6) { // Cap at ~60 FPS (16.6ms per frame)
-        draw();
-        lastDrawTimeRef.current = timestamp;
-      }
-    } else {
+    const dataLen = plotDataRef?.current?.length || 0;
+    const dataNew = dataLen !== lastDataLenRef.current;
+    const hidden = typeof document !== 'undefined' && document.hidden;
+
+    if (isRunning && !plotterPaused && isVisible && !hidden && dataNew &&
+        timestamp - lastDrawTimeRef.current >= 33) {
+      draw(timestamp);
+      lastDrawTimeRef.current = timestamp;
+      lastSerialDrawRef.current = timestamp;
+      lastDataLenRef.current = dataLen;
+    } else if (!isRunning || plotterPaused) {
       lastDrawTimeRef.current = timestamp;
     }
     requestRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
+    lastDataLenRef.current = plotDataRef?.current?.length || 0;
+    if (!isVisible) {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      return;
+    }
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [selectedPlotPins, plotterPaused, plotterTimeDiv, theme, isRunning]);
+  }, [selectedPlotPins, plotterPaused, plotterTimeDiv, theme, isRunning, isVisible]);
 
   const totalTrackHeight = selectedPlotPins.reduce((sum, rawChan) => {
     const chan = typeof rawChan === 'string' ? { boardId: 'default', pinId: rawChan } : rawChan;
@@ -283,15 +307,24 @@ const PlotterCanvas = React.memo(({
 
   const canvasHeight = selectedPlotPins.length > 0 ? totalTrackHeight : 600;
 
+  // Perf: restore the backing store when tracks are added/removed so the
+  // canvas never keeps a stale height after channel changes. Also redraw once
+  // on channel/theme/window changes (animate() only fires on new data, so a
+  // static paused trace would otherwise go stale).
+  useEffect(() => {
+    ensureSize();
+    if (isRunning && !plotterPaused && isVisible && !(typeof document !== 'undefined' && document.hidden)) {
+      draw(Date.now());
+    }
+  }, [canvasHeight, selectedPlotPins, plotterTimeDiv, theme]);
+
   return (
-    <div style={{ flex: 1, position: 'relative', background: theme === 'light' ? '#f8fafc' : '#070b14', overflowY: 'auto' }}>
+    <div ref={containerRef} style={{ flex: 1, position: 'relative', background: theme === 'light' ? '#f8fafc' : '#070b14', overflowY: 'auto' }}>
       <canvas
         ref={canvasRef}
-        width={800}
-        height={canvasHeight}
-        style={{ 
-          display: 'block', 
-          width: '100%', 
+        style={{
+          display: 'block',
+          width: '100%',
           height: canvasHeight,
           background: 'transparent'
         }}

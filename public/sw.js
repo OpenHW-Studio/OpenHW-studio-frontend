@@ -3,9 +3,20 @@
  *
  * Provides offline caching for static assets, JavaScript bundles, Web Workers,
  * WASM binaries, and local Wokwi custom elements.
+ *
+ * Board-engine offline support: the Vite build emits /engine-precache.json
+ * (hashed simulation.worker / avr-runner / rp2040-runner / execute / logic
+ * / emulatorLoader / render+network workers / raw emulator sources / wasm).
+ * At install we fetch that manifest and precache the whole engine, so the
+ * simulator can boot and run fully offline after one online visit.
+ *
+ * NOTE: the engine lives in Cache Storage, not IndexedDB. JS chunks cannot
+ * execute from IndexedDB (would need blob-URL rewriting, breaks worker
+ * static imports + CSP). IndexedDB stays for data: projects, components,
+ * compiled hex.
  */
 
-const CACHE_NAME = 'openhw-studio-v1';
+const CACHE_NAME = 'openhw-studio-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -14,16 +25,36 @@ const PRECACHE_ASSETS = [
   '/favicon.ico',
 ];
 
-// Install Event - Pre-cache core shell resources
+// Install Event - Pre-cache core shell + board engine resources
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
       console.log('[SW] Pre-caching core app shell assets...');
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+      await cache.addAll(PRECACHE_ASSETS).catch((err) => {
         console.warn('[SW] Pre-cache partial failure (non-fatal):', err);
       });
-    })
+      // Board engine: resolve hashed filenames via the build manifest.
+      try {
+        const res = await fetch('/engine-precache.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const manifest = await res.json();
+        const files = Array.isArray(manifest.files) ? manifest.files : [];
+        if (files.length) {
+          console.log(`[SW] Pre-caching board engine (${files.length} files)...`);
+          await cache.addAll(files).catch((err) => {
+            console.warn('[SW] Engine pre-cache partial failure (non-fatal):', err);
+          });
+        } else {
+          console.warn('[SW] engine-precache.json empty — engine will cache on first use.');
+        }
+      } catch (err) {
+        // Offline at first install or old deployment without the manifest:
+        // engine chunks still get cached on first use via the fetch handler.
+        console.warn('[SW] Engine manifest fetch failed (non-fatal):', err?.message || err);
+      }
+    })()
   );
 });
 

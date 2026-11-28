@@ -11,6 +11,8 @@ export const useTourLogic = ({
   setIsPanelOpen,
   setSerialViewMode,
   setIsPaletteHovered, // closes the left components palette
+  setProjectFiles,
+  setOpenCodeTabs,
   windowSize,
   openCodeFile
 }) => {
@@ -19,9 +21,15 @@ export const useTourLogic = ({
   const demoComponentIdRef = useRef(null);
   const demoWireIdRef = useRef(null);
 
-  // Initial check for tour completion
+  const DEMO_LIBRARY_FILE_ID = 'project/demo-comp-tour/library.txt';
+
+  // Initial check for tour completion. `openhw-tour-completed` is the single
+  // canonical flag (TourGuide, tests and Help → Start Tour all use it); the
+  // legacy underscore key is accepted for old sessions only.
   useEffect(() => {
-    const tourCompleted = localStorage.getItem('openhw_tour_completed');
+    const tourCompleted =
+      localStorage.getItem('openhw-tour-completed') ||
+      localStorage.getItem('openhw_tour_completed');
     if (!tourCompleted) {
       setShowTour(true);
     }
@@ -37,9 +45,11 @@ export const useTourLogic = ({
     // (e.g. remove-demo-wire sets demoWireIdRef to null) leaving orphans on canvas.
     setComponents(prev => prev.filter(c => c.id !== 'demo-comp-tour' && !c.isDemo));
     setWires(prev => prev.filter(w => w.id !== 'demo-wire-tour' && !w.isDemo));
+    setProjectFiles?.(prev => prev.filter(f => f.id !== DEMO_LIBRARY_FILE_ID));
+    setOpenCodeTabs?.(prev => prev.filter(id => id !== DEMO_LIBRARY_FILE_ID));
     demoComponentIdRef.current = null;
     demoWireIdRef.current = null;
-  }, [setComponents, setWires]);
+  }, [setComponents, setWires, setProjectFiles, setOpenCodeTabs, DEMO_LIBRARY_FILE_ID]);
 
   // Auto-close both panels whenever the tour opens
   useEffect(() => {
@@ -48,6 +58,28 @@ export const useTourLogic = ({
       setIsPaletteHovered?.(false);
     }
   }, [showTour, setIsPanelOpen, setIsPaletteHovered]);
+
+  // The Libraries button in FileExplorerSidebar is only rendered when
+  // library.txt is the active file. Create a demo copy on demand so the tour
+  // step always has a real, visible target instead of a missing element.
+  const ensureDemoLibraryFile = useCallback(() => {
+    setProjectFiles?.(prev => (
+      prev.some(f => f.id === DEMO_LIBRARY_FILE_ID)
+        ? prev
+        : [...prev, {
+            id: DEMO_LIBRARY_FILE_ID,
+            path: DEMO_LIBRARY_FILE_ID,
+            name: 'library.txt',
+            kind: 'root',
+            content: '',
+            dirty: false,
+            isDemo: true,
+          }]
+    ));
+    setOpenCodeTabs?.(prev => (
+      prev.includes(DEMO_LIBRARY_FILE_ID) ? prev : [...prev, DEMO_LIBRARY_FILE_ID]
+    ));
+  }, [setProjectFiles, setOpenCodeTabs, DEMO_LIBRARY_FILE_ID]);
 
   const handleTourDemoAction = useCallback((action) => {
     if (action === 'add-component') {
@@ -152,14 +184,24 @@ export const useTourLogic = ({
       // Tab ID is 'block', not 'blockly'
       setCodeTab('block');
       setIsPanelOpen(true);
+    } else if (action === 'switch-code') {
+      // The IDE panel is collapsed while the tour starts; open it first so
+      // [data-tour-step="ide"] has a non-zero bounding box.
+      setCodeTab('code');
+      setIsPanelOpen(true);
     } else if (action === 'switch-library') {
       // Libraries live inside the Code tab (no separate 'library' tab)
       setCodeTab('code');
       setIsPanelOpen(true);
+      ensureDemoLibraryFile();
     } else if (action === 'open-library-txt') {
       setCodeTab?.('code');
       setIsPanelOpen?.(true);
-      if (openCodeFile) openCodeFile('project/demo-comp-tour/library.txt');
+      ensureDemoLibraryFile();
+      if (openCodeFile) openCodeFile(DEMO_LIBRARY_FILE_ID);
+    } else if (action === 'remove-demo-library-file') {
+      setProjectFiles?.(prev => prev.filter(f => f.id !== DEMO_LIBRARY_FILE_ID));
+      setOpenCodeTabs?.(prev => prev.filter(id => id !== DEMO_LIBRARY_FILE_ID));
     } else if (action === 'open-demo-ino') {
       setCodeTab?.('code');
       setIsPanelOpen?.(true);
@@ -195,8 +237,18 @@ export const useTourLogic = ({
       setIsPanelOpen?.(false);
     } else if (action === 'close-palette') {
       setIsPaletteHovered?.(false);
+    } else if (action === 'open-palette') {
+      // Board steps need the palette expanded so their items have a real,
+      // visible bounding box (no synthetic coordinates).
+      setIsPaletteHovered?.(true);
+    } else if (action === 'open-tool-menu') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: 'tool' }));
+    } else if (action === 'open-help-menu') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: 'help' }));
+    } else if (action === 'close-menus') {
+      window.dispatchEvent(new CustomEvent('openhw:set-active-menu', { detail: null }));
     }
-  }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode, setIsPaletteHovered, openCodeFile]);
+  }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode, setIsPaletteHovered, openCodeFile, ensureDemoLibraryFile, DEMO_LIBRARY_FILE_ID]);
 
   return {
     showTour,

@@ -302,9 +302,9 @@ export default function ComponentsPage() {
           </span>
         </div>
         <div style={S.grid}>
-          {ownedComponents.map(comp => (
+          {ownedComponents.map((comp, i) => (
             <ComponentCard
-              key={comp.id}
+              key={`${comp.id}#${i}`}
               comp={comp}
               status="owned"
               isStarting={isOwned(comp.wokwiType) && STARTING_COMPONENTS.some(s => s === comp.wokwiType || s === `wokwi-${comp.id}` || s === `openhw-${comp.id}`)}
@@ -326,9 +326,9 @@ export default function ComponentsPage() {
             </span>
           </div>
           <div style={S.grid}>
-            {nextComponents.map(comp => (
+            {nextComponents.map((comp, i) => (
               <ComponentCard
-                key={comp.id}
+                key={`${comp.id}#${i}`}
                 comp={comp}
                 status="next"
                 unlocker={nextProject}
@@ -351,11 +351,11 @@ export default function ComponentsPage() {
             </span>
           </div>
           <div style={S.grid}>
-            {lockedComponents.map(comp => {
+            {lockedComponents.map((comp, i) => {
               const unlocker = getUnlocker(comp.wokwiType)
               return (
                 <ComponentCard
-                  key={comp.id}
+                  key={`${comp.id}#${i}`}
                   comp={comp}
                   status="locked"
                   unlocker={unlocker}

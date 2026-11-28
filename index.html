@@ -7,11 +7,13 @@
     <link rel="icon" href="/title-logo.png" />
     <script>
       (function () {
+        // `document.documentElement.dataset.theme` is the single source of
+        // truth. localStorage is only the persistence layer that seeds it.
         let savedTheme = localStorage.getItem("theme");
-        if (savedTheme !== "dark") {
+        if (savedTheme !== "dark" && savedTheme !== "light") {
           savedTheme = "light";
         }
-        document.documentElement.setAttribute("data-theme", savedTheme);
+        document.documentElement.dataset.theme = savedTheme;
       })();
     </script>
     <style>

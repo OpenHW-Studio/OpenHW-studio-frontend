@@ -1,7 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
-import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 import { getComponentWarning } from '../utils/componentVisibilityConfig';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr }) => {
@@ -31,7 +30,7 @@ const ReactiveFallbackComponentUI = React.memo(({ comp, getComponentStateAttrs, 
 
   return (
     <div
-      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: 'var(--bg3)', border: '1px solid var(--border2)' }}
       ref={el => {
         if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
           neopixelRefs.current[comp.id] = el;
@@ -45,6 +44,281 @@ const ReactiveFallbackComponentUI = React.memo(({ comp, getComponentStateAttrs, 
 
 ReactiveFallbackComponentUI.displayName = 'ReactiveFallbackComponentUI';
 
+// Preview wire while drawing. Subscribes DIRECTLY to the mousePos store in
+// SimulatorPage (ref + listener set, no React state), so ~60Hz cursor moves
+// during wire-pulling re-render ONLY this <path> — never the canvas tree,
+// never the 15k-line page component.
+const WirePreviewPath = React.memo(({ wireStart, multiRoutePath, subscribeMousePos, getMousePosSnapshot, mousePosRef }) => {
+  useSyncExternalStore(subscribeMousePos, getMousePosSnapshot);
+  if (!wireStart) return null;
+  const mousePos = mousePosRef.current;
+  return (
+    <path
+      d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+      stroke="var(--orange)"
+      strokeWidth={2}
+      strokeDasharray="6 4"
+      fill="none"
+      strokeLinecap="round"
+      opacity={0.8}
+    />
+  );
+});
+
+WirePreviewPath.displayName = 'WirePreviewPath';
+
+// Hoisted out of the render body: the same function reference is reused
+// across renders, and all per-render values arrive through `ctx`.
+function renderSceneComponent(comp, ctx) {
+  const { PIN_DEFS, COMPONENT_REGISTRY, errorCompIds, selected, serialBoardFilter, onCompContextMenu, onCompMouseDown, onCompClick, getComponentStateAttrs, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr, neopixelRefs, isRunning, wires, isComponentDragging, components, hoveredPin, wireStart, snappingHoles, getPinCategory, hasCategoryIntersection, onPinClick } = ctx;
+  const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || [];
+  const hasError = errorCompIds.has(comp.id);
+  const isSelected = selected === comp.id;
+  const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id;
+
+  return (
+    <div
+      key={comp.id}
+      id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
+      style={{
+        position: 'absolute',
+        left: comp.x, top: comp.y,
+        zIndex: comp.type === 'openhw-image'
+          ? (isSelected ? 1 : 0)
+          : (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
+          ? (isSelected ? 4 : 2)
+          : (isSelected ? 10 : 5),
+        opacity: comp.isGhost ? 0.4 : 1,
+        filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
+        pointerEvents: comp.isGhost ? 'none' : 'auto',
+      }}
+      onContextMenu={e => onCompContextMenu(e, comp.id)}
+    >
+      <CanvasComponent
+        comp={comp}
+        isSelected={isSelected}
+        hasError={hasError}
+        onMouseDown={e => onCompMouseDown(e, comp.id)}
+        onClick={e => onCompClick(e, comp.id)}
+        getComponentStateAttrs={getComponentStateAttrs}
+        COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+        PIN_DEFS={PIN_DEFS}
+        getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+        subscribeLiveOopState={subscribeLiveOopState}
+      />
+
+      <div style={{
+        position: 'absolute',
+        left: 0, top: 0,
+        width: comp.w, height: comp.h,
+        userSelect: 'none',
+        pointerEvents: 'none',
+        transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+        transformOrigin: 'center center',
+      }}>
+        {isSerialBoardSelected && (() => {
+          const getBounds = () => {
+            const reg = COMPONENT_REGISTRY[comp.type];
+            if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+            if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+            return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+          };
+          const b = getBounds();
+          return (
+            <>
+              <div style={{
+                position: 'absolute',
+                left: b.x - 10, top: b.y - 10,
+                width: b.w + 20, height: b.h + 20,
+                borderRadius: 10,
+                border: '2px dashed var(--accent)',
+                boxShadow: '0 0 18px var(--glow)',
+                pointerEvents: 'none', zIndex: 9,
+              }} />
+              <div style={{
+                position: 'absolute',
+                left: b.x - 10,
+                top: b.y - 26,
+                background: 'var(--card2)',
+                color: 'var(--text)',
+                border: '1px solid var(--accent)',
+                borderRadius: 6,
+                fontSize: 9,
+                padding: '1px 6px',
+                letterSpacing: '0.04em',
+                fontFamily: 'JetBrains Mono, monospace',
+                pointerEvents: 'none',
+                zIndex: 11,
+              }}>
+                SERIAL TARGET
+              </div>
+            </>
+          );
+        })()}
+
+        <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
+          {COMPONENT_REGISTRY[comp.type] ? (
+            <ReactiveComponentUI
+              comp={comp}
+              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+              getComponentStateAttrs={getComponentStateAttrs}
+              isRunning={isRunning}
+              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+              subscribeLiveOopState={subscribeLiveOopState}
+              updateComponentAttr={updateComponentAttr}
+            />
+          ) : (
+            <ReactiveFallbackComponentUI
+              comp={comp}
+              getComponentStateAttrs={getComponentStateAttrs}
+              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+              subscribeLiveOopState={subscribeLiveOopState}
+              neopixelRefs={neopixelRefs}
+            />
+          )}
+        </div>
+
+        {/* Canvas Warning Badge — rendered at bottom-right corner of component */}
+        {(() => {
+          const warning = getComponentWarning(comp.type);
+          if (!warning) return null;
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                right: 4,
+                bottom: 4,
+                zIndex: 25,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--card)',
+                border: '1px solid rgba(245, 158, 11, 0.6)',
+                borderRadius: 6,
+                padding: '3px 4px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                pointerEvents: 'auto',
+                cursor: 'help',
+              }}
+              title={`⚠️ ${warning}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.3)" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+          );
+        })()}
+
+        {pins.map(pin => {
+          const pinStrRef = `${comp.id}:${pin.id}`;
+          const isHovered = hoveredPin === pinStrRef;
+          const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+          const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
+          const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+
+          // Optimization: Skip rendering empty overlay pin-dots during dragging to keep DOM count tiny.
+          if (isComponentDragging && !connectedWire && !isSnapping) {
+            return null;
+          }
+
+          const hoverCompId = hoveredPin?.split(':')[0];
+          const hoverPinId = hoveredPin?.split(':')[1];
+          const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+          const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+          const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+          const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+          const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+          // Only highlight related pins for truly shared-purpose rails (GND, power).
+          // Do NOT glow for broad GPIO categories (DIGITAL, ANALOG, PWM, etc.)
+          // as it falsely implies the pins are interconnected.
+          const SHARED_PURPOSE_CATS = ['GND', 'POWER', 'VIN'];
+          const hoverHasShared = hoverCat && hoverCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+          const currentHasShared = currentCat && currentCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+          const isRelated = hoverHasShared && currentHasShared && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+          const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
+          const isSocket = connectedWire?.isSocket;
+
+          const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
+          const isBreadboard = comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard');
+          const isFloating = !isBreadboard && isCompSeated && !isSocket;
+
+          const pinColor = isSnapping ? '#2ecc71' : ((isSocket || connectedWire) ? 'none' : (isHighlight ? '#f1c40f' : 'var(--border2)'));
+          const pinBorder = isSnapping ? 'var(--text)' : ((isSocket || connectedWire) ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? 'var(--text)' : 'var(--text3)')));
+
+          return (
+            <div
+              key={pin.id}
+              id={`pin-dot-${comp.id}-${pin.id}`}
+              title={`${pin.description || pin.id} — click to wire`}
+              style={{
+                position: 'absolute',
+                left: pin.x, top: pin.y,
+                width: 8, height: 8,
+                background: pinColor === 'none' ? 'none' : pinColor,
+                border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
+                borderRadius: '2px',
+                cursor: 'crosshair',
+                zIndex: isHovered || isSuggested || isSnapping ? 30 : 20,
+                transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.8)' : ''}`,
+                transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                pointerEvents: 'all',
+                boxShadow: isHovered ? '0 0 12px var(--text3)' : (isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none')),
+              }}
+              onMouseEnter={() => setHoveredPin(pinStrRef)}
+              onMouseLeave={() => setHoveredPin(null)}
+              onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+            >
+              {isHovered && (() => {
+                  let label = pin.description || pin.id;
+                  // Show voltage-specific labels for breadboard power rails
+                  if (comp.type.includes('breadboard')) {
+                    label = label.replace(/^top_vcc/, 'top_3.3v').replace(/^bottom_vcc/, 'bottom_5v');
+                  }
+                  return (
+                    <div style={{
+                      position: 'absolute', bottom: 18, left: '50%',
+                      transform: 'translateX(-50%)',
+                      background: 'var(--card)', color: 'var(--text)',
+                      padding: '4px 8px', borderRadius: 4,
+                      fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                      pointerEvents: 'none', border: '1px solid var(--border2)',
+                      boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                    }}>
+                      {label}
+                    </div>
+                  );
+                })()}
+            </div>
+          );
+        })}
+      </div>
+
+      {comp.type !== 'openhw-text' && comp.type !== 'openhw-image' && (
+        <div style={{
+          position: 'absolute',
+          top: (comp.rotation === 90 || comp.rotation === 270)
+            ? comp.h / 2 + comp.w / 2 + 4
+            : comp.h + 4,
+          left: comp.w / 2,
+          transform: 'translateX(-50%)',
+          fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+          whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+          pointerEvents: 'none',
+          zIndex: 5,
+        }}>
+          {comp.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CanvasSceneLayerBase({
   innerCanvasRef,
   canvasOffset,
@@ -57,7 +331,6 @@ function CanvasSceneLayerBase({
   getPinPos,
   getPinExitPoint,
   wirepointsEnabled,
-  theme,
   setSelected,
   canvasRef,
   setWireClickPos,
@@ -68,8 +341,10 @@ function CanvasSceneLayerBase({
   autofixPlan,
   getPinPosWithGhosts,
   wireStart,
-  mousePos,
   multiRoutePath,
+  subscribeMousePos,
+  getMousePosSnapshot,
+  mousePosRef,
   svgRef,
   isRunning,
   isComponentDragging,
@@ -213,7 +488,6 @@ function CanvasSceneLayerBase({
               isSelected={selected === w.id}
               offset={offset}
               wirepointsEnabled={wirepointsEnabled}
-              theme={theme}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
               isDragging={isComponentDragging}
               onSelect={(e) => {
@@ -253,7 +527,6 @@ function CanvasSceneLayerBase({
               wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
               p1={p1} p2={p2} e1={e1} e2={e2}
               isGhost={true}
-              theme={theme}
             />
           );
         })}
@@ -274,7 +547,6 @@ function CanvasSceneLayerBase({
               wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
               p1={p1} p2={p2} e1={e1} e2={e2}
               isGhost={true}
-              theme={theme}
             />
           );
         })}
@@ -309,7 +581,6 @@ function CanvasSceneLayerBase({
               isSelected={selected === w.id}
               offset={offset}
               wirepointsEnabled={wirepointsEnabled}
-              theme={theme}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
               isDragging={isComponentDragging}
               onSelect={(e) => {
@@ -333,18 +604,15 @@ function CanvasSceneLayerBase({
           );
         })}
 
-        {/* Preview wire while drawing */}
-        {wireStart && (
-          <path
-            d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-            stroke="var(--orange)"
-            strokeWidth={2}
-            strokeDasharray="6 4"
-            fill="none"
-            strokeLinecap="round"
-            opacity={0.8}
-          />
-        )}
+        {/* Preview wire while drawing — self-subscribed to the mousePos
+            store, so cursor moves never touch the canvas tree. */}
+        <WirePreviewPath
+          wireStart={wireStart}
+          multiRoutePath={multiRoutePath}
+          subscribeMousePos={subscribeMousePos}
+          getMousePosSnapshot={getMousePosSnapshot}
+          mousePosRef={mousePosRef}
+        />
 
 
       </svg>
@@ -480,276 +748,41 @@ function CanvasSceneLayerBase({
 
       {/* Components (Layered: Breadboards on Bottom) */}
       {(() => {
-        const renderComponent = (comp) => {
-          const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || [];
-          const hasError = errorCompIds.has(comp.id);
-          const isSelected = selected === comp.id;
-          const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id;
-
-          return (
-            <div
-              key={comp.id}
-              id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
-              style={{
-                position: 'absolute',
-                left: comp.x, top: comp.y,
-                zIndex: comp.type === 'openhw-image'
-                  ? (isSelected ? 1 : 0)
-                  : (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
-                  ? (isSelected ? 4 : 2)
-                  : (isSelected ? 10 : 5),
-                opacity: comp.isGhost ? 0.4 : 1,
-                filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
-                pointerEvents: comp.isGhost ? 'none' : 'auto',
-              }}
-              onContextMenu={e => onCompContextMenu(e, comp.id)}
-            >
-              <CanvasComponent
-                comp={comp}
-                isSelected={isSelected}
-                hasError={hasError}
-                onMouseDown={e => onCompMouseDown(e, comp.id)}
-                onClick={e => onCompClick(e, comp.id)}
-                getComponentStateAttrs={getComponentStateAttrs}
-                COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                PIN_DEFS={PIN_DEFS}
-                getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-                subscribeLiveOopState={subscribeLiveOopState}
-              />
-
-              <div style={{
-                position: 'absolute',
-                left: 0, top: 0,
-                width: comp.w, height: comp.h,
-                userSelect: 'none',
-                pointerEvents: 'none',
-                transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                transformOrigin: 'center center',
-              }}>
-                {isSerialBoardSelected && (() => {
-                  const getBounds = () => {
-                    const reg = COMPONENT_REGISTRY[comp.type];
-                    if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                    return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                  };
-                  const b = getBounds();
-                  return (
-                    <>
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 10, top: b.y - 10,
-                        width: b.w + 20, height: b.h + 20,
-                        borderRadius: 10,
-                        border: '2px dashed #38bdf8',
-                        boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                        pointerEvents: 'none', zIndex: 9,
-                      }} />
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 10,
-                        top: b.y - 26,
-                        background: '#0c4a6e',
-                        color: '#e0f2fe',
-                        border: '1px solid #38bdf8',
-                        borderRadius: 6,
-                        fontSize: 9,
-                        padding: '1px 6px',
-                        letterSpacing: '0.04em',
-                        fontFamily: 'JetBrains Mono, monospace',
-                        pointerEvents: 'none',
-                        zIndex: 11,
-                      }}>
-                        SERIAL TARGET
-                      </div>
-                    </>
-                  );
-                })()}
-
-                <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
-                  {COMPONENT_REGISTRY[comp.type] ? (
-                    <ReactiveComponentUI
-                      comp={comp}
-                      COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                      getComponentStateAttrs={getComponentStateAttrs}
-                      isRunning={isRunning}
-                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-                      subscribeLiveOopState={subscribeLiveOopState}
-                      updateComponentAttr={updateComponentAttr}
-                    />
-                  ) : (
-                    <ReactiveFallbackComponentUI
-                      comp={comp}
-                      getComponentStateAttrs={getComponentStateAttrs}
-                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-                      subscribeLiveOopState={subscribeLiveOopState}
-                      neopixelRefs={neopixelRefs}
-                    />
-                  )}
-                </div>
-
-                {/* Canvas Warning Badge — rendered at bottom-right corner of component */}
-                {(() => {
-                  const warning = getComponentWarning(comp.type);
-                  if (!warning) return null;
-                  return (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        right: 4,
-                        bottom: 4,
-                        zIndex: 25,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(13, 21, 37, 0.85)',
-                        border: '1px solid rgba(245, 158, 11, 0.6)',
-                        borderRadius: 6,
-                        padding: '3px 4px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-                        pointerEvents: 'auto',
-                        cursor: 'help',
-                      }}
-                      title={`⚠️ ${warning}`}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="rgba(245, 158, 11, 0.3)" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
-                    </div>
-                  );
-                })()}
-
-                {pins.map(pin => {
-                  const pinStrRef = `${comp.id}:${pin.id}`;
-                  const isHovered = hoveredPin === pinStrRef;
-                  const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-                  const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
-                  const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-
-                  // Optimization: Skip rendering empty overlay pin-dots during dragging to keep DOM count tiny.
-                  if (isComponentDragging && !connectedWire && !isSnapping) {
-                    return null;
-                  }
-
-                  const hoverCompId = hoveredPin?.split(':')[0];
-                  const hoverPinId = hoveredPin?.split(':')[1];
-                  const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                  const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                  const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                  const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                  const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                  // Only highlight related pins for truly shared-purpose rails (GND, power).
-                  // Do NOT glow for broad GPIO categories (DIGITAL, ANALOG, PWM, etc.)
-                  // as it falsely implies the pins are interconnected.
-                  const SHARED_PURPOSE_CATS = ['GND', 'POWER', 'VIN'];
-                  const hoverHasShared = hoverCat && hoverCat.some(c => SHARED_PURPOSE_CATS.includes(c));
-                  const currentHasShared = currentCat && currentCat.some(c => SHARED_PURPOSE_CATS.includes(c));
-                  const isRelated = hoverHasShared && currentHasShared && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                  const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
-                  const isSocket = connectedWire?.isSocket;
-
-                  const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                  const isBreadboard = comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard');
-                  const isFloating = !isBreadboard && isCompSeated && !isSocket;
-
-                  const pinColor = isSnapping ? '#2ecc71' : ((isSocket || connectedWire) ? 'none' : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
-                  const pinBorder = isSnapping ? '#fff' : ((isSocket || connectedWire) ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
-
-                  return (
-                    <div
-                      key={pin.id}
-                      id={`pin-dot-${comp.id}-${pin.id}`}
-                      title={`${pin.description || pin.id} — click to wire`}
-                      style={{
-                        position: 'absolute',
-                        left: pin.x, top: pin.y,
-                        width: 8, height: 8,
-                        background: pinColor === 'none' ? 'none' : pinColor,
-                        border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                        borderRadius: '2px',
-                        cursor: 'crosshair',
-                        zIndex: isHovered || isSuggested || isSnapping ? 30 : 20,
-                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.8)' : ''}`,
-                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                        pointerEvents: 'all',
-                        boxShadow: isHovered ? '0 0 12px rgba(255,255,255,0.8)' : (isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none')),
-                      }}
-                      onMouseEnter={() => setHoveredPin(pinStrRef)}
-                      onMouseLeave={() => setHoveredPin(null)}
-                      onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                    >
-                      {isHovered && (() => {
-                          let label = pin.description || pin.id;
-                          // Show voltage-specific labels for breadboard power rails
-                          if (comp.type.includes('breadboard')) {
-                            label = label.replace(/^top_vcc/, 'top_3.3v').replace(/^bottom_vcc/, 'bottom_5v');
-                          }
-                          return (
-                            <div style={{
-                              position: 'absolute', bottom: 18, left: '50%',
-                              transform: 'translateX(-50%)',
-                              background: '#111', color: '#fff',
-                              padding: '4px 8px', borderRadius: 4,
-                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                              pointerEvents: 'none', border: '1px solid #444',
-                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                            }}>
-                              {label}
-                            </div>
-                          );
-                        })()}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {comp.type !== 'openhw-text' && comp.type !== 'openhw-image' && (
-                <div style={{
-                  position: 'absolute',
-                  top: (comp.rotation === 90 || comp.rotation === 270)
-                    ? comp.h / 2 + comp.w / 2 + 4
-                    : comp.h + 4,
-                  left: comp.w / 2,
-                  transform: 'translateX(-50%)',
-                  fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                  whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                  pointerEvents: 'none',
-                  zIndex: 5,
-                }}>
-                  {comp.label}
-                </div>
-              )}
-            </div>
-          );
-        };
+        const sceneCtx = { PIN_DEFS, COMPONENT_REGISTRY, errorCompIds, selected, serialBoardFilter, onCompContextMenu, onCompMouseDown, onCompClick, getComponentStateAttrs, getLiveOopStateSnapshot, subscribeLiveOopState, updateComponentAttr, neopixelRefs, isRunning, wires, isComponentDragging, components, hoveredPin, wireStart, snappingHoles, getPinCategory, hasCategoryIntersection, onPinClick };
 
         const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard') || c.type.startsWith('openhw-breadboard'));
         const others = components.filter(c => !c.type.startsWith('wokwi-breadboard') && !c.type.startsWith('openhw-breadboard'));
 
         return (
           <>
-            {breadboards.map(renderComponent)}
-            {others.map(renderComponent)}
-            {autofixPlan?.addedComponents?.map(c => renderComponent({ ...c, isGhost: true }))}
+            {breadboards.map((c) => renderSceneComponent(c, sceneCtx))}
+            {others.map((c) => renderSceneComponent(c, sceneCtx))}
+            {autofixPlan?.addedComponents?.map((c) => renderSceneComponent({ ...c, isGhost: true }, sceneCtx))}
           </>
         );
       })()}
       
-      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
-      <NetworkComponentOverlay 
-        components={components} 
-        isRunning={isRunning} 
-        updateComponentAttr={updateComponentAttr} 
-      />
+      {/* Network overlay removed with the Network Worker (pending WiFi/IP reimplementation). */}
     </div>
     </>
   );
 }
 
-export const CanvasSceneLayer = React.memo(CanvasSceneLayerBase);
+// The canvas must not re-render on a theme toggle (all theming is CSS vars)
+// nor when the page recreates callback identities on an unrelated render.
+// State that a callback closes over is mirrored in the non-function props
+// (components, wires, selected, ...), so skipping function identity is safe.
+const canvasSceneLayerPropsEqual = (prev, next) => {
+  const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (key === 'theme') continue;
+    const a = prev[key];
+    const b = next[key];
+    if (Object.is(a, b)) continue;
+    if (typeof a === 'function' && typeof b === 'function') continue;
+    return false;
+  }
+  return true;
+};
+
+export const CanvasSceneLayer = React.memo(CanvasSceneLayerBase, canvasSceneLayerPropsEqual);

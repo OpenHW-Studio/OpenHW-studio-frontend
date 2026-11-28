@@ -1,7 +1,7 @@
-import JSZip from 'jszip';
 import { normalizeProjectFiles } from '../../utils/projectCompilerUtils';
 import { normalizeImportedCircuitData, normalizeOpenCodeTabs, parseWokwiDiagramJson } from './projectUtils';
 import * as hardwareUtils from './utils/hardwareUtils';
+import { getJSZip } from './utils/exportUtils';
 
 /**
  * wokwiImportUtils.js
@@ -10,7 +10,9 @@ import * as hardwareUtils from './utils/hardwareUtils';
 
 export async function importWokwiProjectZip(file, currentComponents = [], currentWires = []) {
   if (!file) return null;
-  
+
+  // Perf (bundle-split): jszip loads on demand — Wokwi import is user-gated.
+  const JSZip = await getJSZip();
   const zip = await JSZip.loadAsync(file);
   const diagramFile = zip.file('diagram.json');
   if (!diagramFile) {

@@ -17,13 +17,13 @@ import React, { useState, useEffect } from "react";
  */
 export default function ThemeToggleSlider({ size = "md" }) {
   const [theme, setTheme] = useState(
-    () => document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light"
+    () => document.documentElement.dataset.theme || "light"
   );
 
   // Keep in sync when toggled from elsewhere (e.g. page-level toggles)
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute("data-theme") || localStorage.getItem("theme") || "light");
+      setTheme(document.documentElement.dataset.theme || "light");
     });
     observer.observe(document.documentElement, {
       attributes: true,
@@ -33,8 +33,9 @@ export default function ThemeToggleSlider({ size = "md" }) {
   }, []);
 
   const toggle = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
+    const current = document.documentElement.dataset.theme || "light";
+    const next = current === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
     localStorage.setItem("theme", next);
     setTheme(next);
   };

@@ -159,3 +159,30 @@ export const megaSpiConfig = {
     ...spiConfig,
     spiInterrupt: 0x30, // Vector 25
 };
+
+// ── ATmega2560 external-interrupt wiring (datasheet §15 + Arduino AVR core
+// WInterrupts.c 2560 branch: int0→INT4, int1→INT5, int2→INT0, int3→INT1).
+// avr8js ships 328P-only INT0/INT1-on-PD2/3. The Mega branch constructs its
+// D/E ports with these native configs instead, so the stock avr8js edge→
+// flag→vector machinery (generic over portConfig.externalInterrupts) serves
+// the real 2560 paths with zero custom code:
+//   PD0..PD3 → INT0..INT3 (Arduino pins 21,20,19,18; EICRA; vectors 0x02-08)
+//   PE4..PE5 → INT4..INT5 (Arduino pins 2,3; EICRB; vectors 0x0A/0x0C)
+// Register addresses match avr8js conventions (EICRA 0x69, EICRB 0x6A,
+// EIMSK 0x3D, EIFR 0x3C); `interrupt` is the byte vector address (same
+// convention as avr8js INT0/INT1/PCINTn).
+const megaINT0 = { EICR: 0x69, EIMSK: 0x3d, EIFR: 0x3c, index: 0, iscOffset: 0, interrupt: 0x02 };
+const megaINT1 = { EICR: 0x69, EIMSK: 0x3d, EIFR: 0x3c, index: 1, iscOffset: 2, interrupt: 0x04 };
+const megaINT2 = { EICR: 0x69, EIMSK: 0x3d, EIFR: 0x3c, index: 2, iscOffset: 4, interrupt: 0x06 };
+const megaINT3 = { EICR: 0x69, EIMSK: 0x3d, EIFR: 0x3c, index: 3, iscOffset: 6, interrupt: 0x08 };
+const megaINT4 = { EICR: 0x6a, EIMSK: 0x3d, EIFR: 0x3c, index: 4, iscOffset: 0, interrupt: 0x0a };
+const megaINT5 = { EICR: 0x6a, EIMSK: 0x3d, EIFR: 0x3c, index: 5, iscOffset: 2, interrupt: 0x0c };
+
+export const megaPortDConfig = {
+    ...portDConfig,
+    externalInterrupts: [megaINT0, megaINT1, megaINT2, megaINT3, null, null, null, null],
+};
+export const megaPortEConfig = {
+    ...portEConfig,
+    externalInterrupts: [null, null, null, null, megaINT4, megaINT5, null, null],
+};
