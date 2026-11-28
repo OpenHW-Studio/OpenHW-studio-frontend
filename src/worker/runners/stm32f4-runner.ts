@@ -2095,18 +2095,16 @@ export class Stm32f4Runner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // 200K/ms (was 75K/ms until 2026-11-28): profiling with the owner
-        // engine showed 566.9M guest instructions executed in 7.58 s inside
-        // stepBudget = 74.8 MIPS, i.e. exactly the old 75K/ms cap, with 80%
-        // of wall already in the engine and the governor never engaged.
-        // Raising the budget to 200K/ms + a 4M per-tick cap lets a 168 MHz
-        // guest approach 1x real time (1 guest-ms = 168K instructions);
-        // the wall governor still caps sustained guest time at speed x wall.
-        // Measured: 8.0M -> 9.6-9.9M fused-loop iters/s (~1.2x), with all
-        // timing-sensitive cells green (clock, spi, pace, periph-x 16).
-        // Going beyond real time (speed=2) gave no extra throughput: the
-        // engine, not the governor, is the limit at this budget.
-        return Math.floor(deltaMs * 200000 * this.speed);
+        // 300K/ms (75K -> 200K -> 300K on 2026-11-28): profiling with the
+        // owner engine showed 566.9M guest instructions in 7.58 s inside
+        // stepBudget = 74.8 MIPS, i.e. exactly the original 75K/ms cap,
+        // with 80% of wall in the engine and the governor never engaged.
+        // The 200K/ms step plus the accepted fused/TB guest loop shape
+        // reached 1.0-1.2x; 300K/ms + a 6M cap adds headroom on a shared
+        // box where bursts otherwise dipped the measured ratio below 0.95.
+        // 1 guest-ms = 168K instructions; the wall governor still caps
+        // sustained guest time at speed x wall.
+        return Math.floor(deltaMs * 300000 * this.speed);
     }
 
     protected override tickIntervalMs(): number {
@@ -2118,9 +2116,9 @@ export class Stm32f4Runner extends ArmRunnerBase {
     }
 
     protected maxBudgetPerTick(): number {
-        // 4M (was 1.2M): with the 200K/ms rate above, the cap bounds a
-        // stalled tab while letting each tick cover ~24 guest-ms. The
-        // governor still holds sustained guest time to speed x wall.
-        return 4_000_000;
+        // 6M (1.2M -> 4M -> 6M): bounds a stalled tab while letting each
+        // tick cover ~36 guest-ms at the rate above. The governor still
+        // holds sustained guest time to speed x wall.
+        return 6_000_000;
     }
 }

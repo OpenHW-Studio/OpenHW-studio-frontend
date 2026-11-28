@@ -2284,14 +2284,18 @@ export class Stm32f1Runner extends ArmRunnerBase {
     }
 
     protected budgetForDelta(deltaMs: number): number {
-        // Measured: engine does ~45 MIPS standalone (Node, showcase fw), so
-        // 72K/ms needs ~13ms host per 8ms tick — chronic overrun that slows
-        // everything downstream. 50K/ms fits the tick; virtual-time gains
-        // come from the tickMHz divider, not the budget. Reverted 72K→50K.
-        return Math.floor(deltaMs * 50000 * this.speed);
+        // 2026-11-28 speed loop: the old 50K/ms cap held guest time at
+        // ~0.69x wall (50M instr/s vs a 72MHz core). Tick instrumentation
+        // showed the engine sustaining ~110 MIPS at a 1M-instr budget
+        // (~9ms/step), so the runner rate — not the engine — was the
+        // ceiling. 150K/ms + a 3M cap gives a 72MHz guest headroom on a
+        // shared box (100K/2M measured 0.875–1.216x across back-to-back
+        // runs); the wall governor still holds sustained guest time at
+        // speed×wall.
+        return Math.floor(deltaMs * 150000 * this.speed);
     }
 
     protected maxBudgetPerTick(): number {
-        return 1_000_000;
+        return 3_000_000;
     }
 }
