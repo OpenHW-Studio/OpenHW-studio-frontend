@@ -221,16 +221,45 @@ class RotaryEncoder:
 
 
 class MCP3008:
-    """10-bit ADC over SPI0 CE0 (the standard Pi ADC hat wiring)."""
+    """10-bit SAR ADC over SPI0 CE0, with sample-and-hold acquisition and
+    conversion clock consumption on the virtual clock. A real SAR, not a
+    rail-ratio shortcut: each comparison consumes one clock period."""
+
+    # Datasheet-style model: 10 bits, 3.2 MHz clock, 8 us acquisition.
+    BITS = 10
+    CLOCK_HZ = 3200000
 
     def __init__(self, bus=0, device=0, channel=0):
         self.bus = int(bus)
         self.device = int(device)
         self.channel = int(channel)
+        self._conversion = None
 
     @property
     def value(self):
-        return _b.adc_read(self.channel)
+        return self.read()
 
     def read(self):
-        return _b.adc_read(self.channel)
+        """Acquire the sampled node and run a timed SAR conversion."""
+        self._conversion = _b.adc_convert(
+            self.channel,
+            {'bits': self.BITS, 'clockHz': self.CLOCK_HZ},
+        ).to_py()
+        return int(self._conversion['code'])
+
+    @property
+    def conversion_us(self):
+        """Conversion clock time consumed by the last read, in microseconds."""
+        return float((self._conversion or _b.adc_info(self.channel).to_py())['conversionUs'])
+
+    @property
+    def clock_hz(self):
+        return float((self._conversion or _b.adc_info(self.channel).to_py())['clockHz'])
+
+    @property
+    def sample_hold_v(self):
+        return float((self._conversion or _b.adc_info(self.channel).to_py())['sampleHoldV'])
+
+    @property
+    def code(self):
+        return int((self._conversion or _b.adc_info(self.channel).to_py())['code'])

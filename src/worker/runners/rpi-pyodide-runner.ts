@@ -223,7 +223,7 @@ class RpiPyodideEngine implements ArmEngineHooks {
     this.spiLog.length = 0;
     this.uartLog = '';
     this.lastAdc = {}; this.lastOneWire = {}; this.lastDht = '';
-    this.lastNeoPixel = ''; this.lastPwm = ''; this.lastUart = '';
+    this.lastNeoPixel = ''; this.lastPwm = ''; this.lastUart = ''; this.cameraCacheValue = '';
     this.pollFn = null;
     const raw = String(firmware || '');
     this.script = this.owner.pyScript
@@ -232,6 +232,11 @@ class RpiPyodideEngine implements ArmEngineHooks {
       this.emit('RPI_PYERROR: no Python sketch supplied');
       return;
     }
+    // Prime host-supplied sensor values BEFORE the sketch runs: boot-time
+    // reads must see the wired components, not engine defaults.
+    try { this.owner.pumpOneWire(this); } catch { /* ignore */ }
+    try { this.owner.pumpDht(this); } catch { /* ignore */ }
+    try { this.owner.pumpCamera(this); } catch { /* ignore */ }
     try {
       await this.pyodide.runPythonAsync(this.script);
       // A sketch may define rpi_poll(): the runner calls it on each tick so
@@ -307,6 +312,7 @@ class RpiPyodideEngine implements ArmEngineHooks {
     try { this.owner.pumpDht(this); } catch { /* ditto */ }
     try { this.owner.pumpNeoPixel(this); } catch { /* ditto */ }
     try { this.owner.pumpServo(this); } catch { /* ditto */ }
+    try { this.owner.pumpCamera(this); } catch { /* ditto */ }
     // Guest poll hook sees the translated state on this same tick.
     if (this.pollFn) {
       try { this.pollFn(); } catch { /* a sketch hook never breaks the tick */ }
@@ -326,6 +332,9 @@ class RpiPyodideEngine implements ArmEngineHooks {
   set pwmCache(v: string) { this.lastPwm = v; }
   get uartCache(): string { return this.lastUart; }
   set uartCache(v: string) { this.lastUart = v; }
+  get cameraCache(): string { return this.cameraCacheValue; }
+  set cameraCache(v: string) { this.cameraCacheValue = v; }
+  private cameraCacheValue = '';
   clearUartLog(): void { this.uartLog = ''; }
 
   resetEngine(): void {
@@ -335,6 +344,7 @@ class RpiPyodideEngine implements ArmEngineHooks {
     this.spiLog.length = 0;
     this.txQueue.length = 0;
     this.uartLog = '';
+    this.cameraCacheValue = '';
     this.pollFn = null;
   }
 
@@ -449,7 +459,9 @@ export class RpiPyodideRunner extends ArmRunnerBase {
         Math.round((Math.min(volts, ref) / ref) * 1023)));
       if (engine.adcCache[ch] !== raw) {
         engine.adcCache[ch] = raw;
-        try { bridge.adc_set(ch, raw); } catch { /* ignore invalid channel */ }
+        // Feed the analogue node, NOT the latched code: the guest's SAR
+        // performs acquisition + conversion and produces the code itself.
+        try { bridge.adc_source(ch, volts); } catch { /* ignore invalid channel */ }
       }
       meta.channels[String(ch)] = { volts: Number(volts.toFixed(4)), raw };
     }
@@ -567,6 +579,24 @@ export class RpiPyodideRunner extends ArmRunnerBase {
         }
         try { inst.onI2CStop?.(); } catch { /* ditto */ }
       } catch { /* one bad device never breaks the bus */ }
+    }
+  }
+
+  /** Host camera frame → Pyodide camera model. `picamera2.capture_array()`
+   * then returns these bytes instead of an internal test pattern. */
+  protected pumpCamera(engine: RpiPyodideEngine): void {
+    for (const inst of this.instances.values()) {
+      const cam = inst as any;
+      if (String(cam.type || '') !== 'openhw-camera-module') continue;
+      const frame = typeof cam.getFrame === 'function' ? cam.getFrame() : [];
+      if (!Array.isArray(frame) || !frame.length) continue;
+      const key = frame.slice(0, 24).join(',') + `:${frame.length}`;
+      if (engine.cameraCache === key) continue;
+      engine.cameraCache = key;
+      try {
+        bridge.camera_set_frame(frame,
+          Number(cam.state?.width) || 64, Number(cam.state?.height) || 48);
+      } catch { /* camera frame never breaks a tick */ }
     }
   }
 

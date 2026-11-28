@@ -19,6 +19,16 @@ def clock_ms():
     return int(_b.clock_ms())
 
 
+def clock_us():
+    """Floating-point virtual microseconds (sub-ms protocol timing)."""
+    return float(_b.clock_us())
+
+
+def sleep_us(us):
+    """Advance virtual time by an exact microsecond count."""
+    return _b.sleep_us(int(us))
+
+
 def clock_set(ms):
     _b.clock_set(int(ms))
     return clock_ms()

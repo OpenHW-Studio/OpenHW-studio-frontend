@@ -46,15 +46,37 @@ export const bridge = {
 
   adc_set(channel, value) { return peripherals.adcSet(channel, value); },
   adc_read(channel) { return peripherals.adcRead(channel); },
+  adc_config(channel, config) { return peripherals.adcConfigSet(channel, config); },
+  adc_source(channel, volts) { return peripherals.adcSource(channel, volts); },
+  adc_convert(channel, config) { return peripherals.adcConvert(channel, config || {}); },
+  adc_info(channel) { return peripherals.adcInfoOf(channel); },
 
   uart_write(text) { return peripherals.uartWrite(text); },
   uart_inject(text) { return peripherals.uartInject(text); },
   uart_read(size) { return peripherals.uartRead(size); },
   uart_read_line() { return peripherals.uartReadLine(); },
+  uart_config(config) { return peripherals.uartConfigSet(config || {}); },
+  uart_stats() { return peripherals.uartStats(); },
+  uart_inject_frame(byte, stopBit) { return peripherals.uartInjectFrame(byte, stopBit); },
 
   clock_ms() { return peripherals.clockNow(); },
+  clock_us() { return peripherals.clockUs(); },
   clock_set(ms) { return peripherals.clockSet(ms); },
   sleep(ms) { return peripherals.sleep(ms); },
+  sleep_us(us) { return peripherals.sleepUs(us); },
+
+  // Timed 1-Wire / DHT waveform driver: the guest drives GPIO edges, the
+  // peripheral schedules the sensor reply at exact virtual microseconds.
+  ow_schedule(pin, level, atUs) { return peripherals.scheduleEdge(pin, level, atUs); },
+  dht_schedule(pin, level, atUs) { return peripherals.scheduleEdge(pin, level, atUs); },
+  protocol_edges(pin, after) { return peripherals.gpioEdges(pin, 'both', after || 0); },
+  dht_start(pin) { return peripherals.dhtStart(pin); },
+  dht_reply(pin) { return peripherals.dhtReply(pin); },
+  dht_timing(pin) { return peripherals.dhtTiming(pin); },
+  ow_reset(pin) { return peripherals.owReset(pin); },
+  ow_write_slot(pin, bit) { return peripherals.owWriteSlot(pin, bit); },
+  ow_read_slot(pin) { return peripherals.owReadSlot(pin); },
+  ow_load_scratchpad(pin, tempC) { return peripherals.owLoadScratchpad(pin, tempC); },
 
   cpu_temp() { return peripherals.cpuTemp(); },
   cpu_temp_set(celsius) { return peripherals.cpuTempSet(celsius); },
@@ -83,6 +105,7 @@ export const bridge = {
 
   camera_configure(width, height) { return peripherals.cameraConfigure(width, height); },
   camera_capture() { return peripherals.cameraCapture(); },
+  camera_set_frame(frame, width, height) { return peripherals.cameraSetFrame(frame, width, height); },
 
   analog_reset() { return peripherals.analogReset(); },
   analog_set_timestep(us) { return peripherals.analogSetTimestep(us); },

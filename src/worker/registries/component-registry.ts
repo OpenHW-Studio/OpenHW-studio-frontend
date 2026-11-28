@@ -196,6 +196,7 @@ import { MICROBIT_EDGE_PINS } from '../board-profiles';
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
+import { CameraModuleLogic } from '@openhw/emulator/src/components/openhw-camera-module/index';
 import { Mcp2518fdLogic } from '../components/mcp2518fd';
 
 // Provide fallback protocols since base protocols are now integrated directly into BaseComponent
@@ -387,6 +388,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
     'openhw-simulation-monitor': SimulationMonitorLogic,
+    'openhw-camera-module': CameraModuleLogic,
     'wokwi-ds18b20': DS18B20Logic,
     'openhw-ds18b20': DS18B20Logic,
     'wokwi-ir-receiver': IRReceiverLogic,
@@ -520,6 +522,7 @@ export const COMPONENT_PINS: Record<string, Array<{ id: string; type?: string }>
     'openhw-sd-card': [{ id: 'CD', type: 'digital' }, { id: 'MISO', type: 'digital' }, { id: 'GND', type: 'power' }, { id: 'SCK', type: 'digital' }, { id: 'VCC', type: 'power' }, { id: 'MOSI', type: 'digital' }, { id: 'CS', type: 'digital' }],
     'openhw-servo': [{ id: 'GND', type: 'power' }, { id: 'V+', type: 'power' }, { id: 'PWM', type: 'digital' }],
     'openhw-simulation-monitor': [{ id: 'VCC', type: 'power' }, { id: 'GND', type: 'power' }, { id: 'TX', type: 'digital' }, { id: 'RX', type: 'digital' }],
+    'openhw-camera-module': [],
     'openhw-slide-potentiometer': [{ id: 'GND', type: 'power' }, { id: 'SIG', type: 'analog' }, { id: 'VCC', type: 'power' }],
     'openhw-slide-switch': [{ id: '1', type: 'passive' }, { id: '2', type: 'passive' }, { id: '3', type: 'passive' }],
     'openhw-soil-moisture-sensor': [{ id: 'GND', type: 'power' }, { id: 'VCC', type: 'power' }, { id: 'SIG', type: 'digital' }],

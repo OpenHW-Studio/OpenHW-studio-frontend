@@ -685,12 +685,12 @@ provides peripheral APIs and deterministic device behaviour only — see
 | I2C | `openhw-ssd1306-oled` + engine EEPROM 0x50 | `smbus.write_i2c_block_data` / `read_i2c_block_data` | FULL — host VRAM 1024 bytes lit (rx=1082); guest EEPROM roundtrip | `rpi-boards` |
 | SPI | `openhw-max7219` | `spidev.xfer` | FULL — host matrix `[0xFF × 8]` | `rpi-boards` |
 | PWM | `openhw-servo` | `GPIO.PWM(19, 50).start(7.5)` | FULL — 1500 µs pulse → host angle ≈ 92.7°; per-board pin policy also asserted | `rpi-boards` + `rpi-protocols` |
-| ADC | `openhw-potentiometer` (pin 1 = 3V3, 2 = GND, SIG → `pi:5`) | `gpiozero.MCP3008(channel=5).read()` | FULL — host value 50→80 % changed guest read by +205 counts (0.66 V / 3.3 V × 1023) | `rpi-protocols` |
-| UART | `openhw-usb-device` (host serial sink) + `SERIAL_INPUT` | `rpi_sim.uart.UART.write/read` | FULL — guest `HI-PI` → host `rxCount=5`, `lastEcho=HI-PI`; host `AB\n` → guest read prints exact `AB` | `rpi-protocols` |
-| 1-Wire | `openhw-ds18b20` | `w1_gpio.read_temp` / `rpi_sim.onewire` | FULL — host 22.5→37.5 °C, guest readback 37.5 °C (full ROM/scratchpad sequence) | `rpi-protocols` |
-| DHT22 | `openhw-dht22` | `Adafruit_DHT.read(22, 27)` | FULL — host 23.5→31.5 °C / 50→66 % RH, guest decoded the waveform to the same values | `rpi-protocols` |
+| ADC | `openhw-potentiometer` (pin 1 = 3V3, 2 = GND, SIG → `pi:5`) | `gpiozero.MCP3008.read()` / `rpi_sim.analog.adc_convert()` | FULL — host value 50→80 % changed SAR code 0→205; MNA sample/hold settled to 0.66 V; guest clock advanced 11 us (BCM) / 7 us (RP1) = acquisition + (bits+1) SAR periods | `rpi-protocols` |
+| UART | `openhw-usb-device` (host serial sink) + `SERIAL_INPUT` | `rpi_sim.uart.UART.write/read/readline` | FULL — 9600 8N1 (1041.6667 us/bit), guest `HI-PI` → host `rxCount=5`/`lastEcho=HI-PI` in 5208 us; host `AB\n` → exact guest read; 20 bytes into 16-byte RX FIFO → `OV:16:4:0` | `rpi-protocols` |
+| 1-Wire | `openhw-ds18b20` | timed `w1_gpio.read_temp_timed` | FULL — guest drives reset/write/read GPIO edges, host supplies presence + scratchpad bits; 480 us reset, 240 us presence, 15 us read sampling; decoded 22.5→37.5 °C | `rpi-protocols` |
+| DHT22 | `openhw-dht22` | `Adafruit_DHT.read_timed(22, 27)` | FULL — guest drives 18 ms start pulse, host supplies 80 us response + 26/70 us data bits at exact virtual times; guest decodes 50→66 % RH / 23.5→31.5 °C from measured edges | `rpi-protocols` |
 | NeoPixel | `openhw-neopixel-matrix` | `Adafruit_NeoPixel.fill/show` | FULL — host framebuffer `[0xFF0000 × 4]` | `rpi-protocols` |
-| Camera | — (no wired host camera component) | `picamera2.capture_array()` | NONE — `test.skip` with `camera-no-host-component`; the shim only produces an in-memory test pattern | `rpi-protocols` |
+| Camera | `openhw-camera-module` (host frame input) | `picamera2.capture_array()` / `capture_file()` | FULL — host 2×2 RGB frame `[FF0000,00FF00,0000FF,FFFF00]` → guest 12 bytes / checksum 1275, host `framePixels=4`, `checksum=1275`, `captures>=1`; no internal test pattern when a host frame is wired | `rpi-protocols` |
 
 **Per-board ADC/electrical difference:** `RPI_ELEC` from guest
 `_bridge.snapshot().electrical` reports `2:1800` (ViH 2.0 V, 1.8 kΩ pull) on
@@ -700,14 +700,17 @@ publishes these facts as `rpiAdc` metadata on a full-state analogue endpoint
 telemetry.
 
 **Capability claims in `boards-registry.ts`:** `digital-gpio`, `analog-adc`,
-`uart`, `onewire`, `i2c-target`, `spi-target`, `pwm`. DHT22 and NeoPixel are
-proved by cells but the conformance vocabulary has no `dht`/`neopixel` need
-code (`dht-neopixel-no-cap-code` limit); WiFi/LAN, camera, real OS threads and
-hardware IRQs are **not** claimed.
+`uart`, `onewire`, `i2c-target`, `spi-target`, `pwm`. DHT22, NeoPixel and
+camera are proved by cells but have no capability-vocabulary need code
+(`dht-neopixel-no-cap-code` limit); WiFi/LAN, real OS threads and hardware IRQs
+are **not** claimed. All four previously open limits are closed with cells:
+SAR timing, framed UART/FIFO timing, bit-level 1-Wire/DHT waveforms and a host
+camera frame source. `timed-protocol-model` records that these are deterministic
+virtual-time models, not measured silicon timing.
 
 Evidence: `tests/e2e/rpi-boards.spec.js` (4 passed: catalog/registry +
 GPIO/I2C/SPI/PWM-difference per board) and `tests/e2e/rpi-protocols.spec.js`
-(3 passed + 3 camera skips: ADC/UART/1-Wire/DHT/NeoPixel/Servo per board).
+(3 passed, 0 skips: timed ADC/UART/1-Wire/DHT + host camera per board).
 Both specs run serially (`--workers=1`), `TMPDIR=$PWD/.tmp-vitest`. The cells
 assert host telemetry (LED VRAM, matrix, pot value, USB echo, sensor state,
 pixel frame, servo angle) and guest-side readbacks — never a guest "OK" print

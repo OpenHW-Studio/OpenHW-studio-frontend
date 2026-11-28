@@ -164,11 +164,19 @@ engine byte or upstream claim.
   10-bit ADC profile; Pi 5 (RP1) uses ViH 2.1 V, 50 kΩ pulls and a 12-bit
   profile. These are model parameters, not measured silicon; they are exposed
   to guest `electrical` state and host `rpiAdc` telemetry.
-* **Still simplified:** the ADC conversion is a rail-ratio quantisation (no
-  SAR timing/impedance); the UART bridge is a byte buffer (no baud/parity/FIFO
-  timing); 1-Wire and DHT use the upstream deterministic command/waveform
-  models; the servo gets an exact pulse width from guest duty but no real
-  pulse-generation hardware. `picamera2` remains an in-memory test pattern —
-  with no wired host camera component, the camera cell is `test.skip` with
-  the `camera-no-host-component` registry limit. No Linux, ARM CPU, boot or
-  device-driver execution is claimed.
+* **Timed drivers (closing the four limits):** ADC now does MNA sample/hold
+  acquisition + N-bit SAR with per-bit clock consumption (11 us BCM / 7 us
+  RP1 for a 10-bit MCP3008 read); UART is a 9600 8N1 frame with 16-byte FIFOs,
+  1041.6667 us bit time, overrun and framing flags; 1-Wire and DHT22 are
+  bit-level edge state machines (480/240/15 us and 18 ms/80 us/26-70 us)
+  whose replies are supplied by the wired host components at exact virtual
+  times; `picamera2` pulls its frame from the `openhw-camera-module` host
+  component instead of an internal test pattern. Every one has a green cell
+  in `tests/e2e/rpi-protocols.spec.js` (no skips).
+* **Still simplified:** all timings are deterministic virtual-time model
+  parameters, not measured silicon or real-time waveforms. The SAR uses
+  nearest-code quantisation without noise/impedance models; UART has no real
+  clock recovery; 1-Wire/DHT decode scheduled edges rather than analog
+  thresholds; the servo gets an exact pulse width from guest duty but no real
+  pulse-generation hardware; camera frames are deterministic host-supplied
+  byte arrays. No Linux, ARM CPU, boot or device-driver execution is claimed.

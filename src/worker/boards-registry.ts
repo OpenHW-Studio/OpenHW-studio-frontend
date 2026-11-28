@@ -96,8 +96,8 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi3-pwm-pin-policy', detail: 'BCM2837 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1200 MHz, CPU temp baseline 45 C.' },
-      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
-      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
   {
@@ -112,8 +112,8 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi4-pwm-pin-policy', detail: 'BCM2711 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1500 MHz, CPU temp baseline 50 C.' },
-      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
-      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
   {
@@ -128,8 +128,8 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU (BCM2712/RP1), boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi5-rp1-pwm-policy', detail: 'RP1 accepts PWM on any valid header GPIO (no 12/13/18/19 restriction). Model clock 2400 MHz, PWM clock 200 MHz, CPU temp baseline 55 C.' },
-      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
-      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
+      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
   {

@@ -4646,6 +4646,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
           return { ok: false, error: String(err?.message || err) };
         }
       },
+      // Component interaction outside the pre-armed `events` list: lets a
+      // cell wait for a boot needle before changing a host component.
+      interact(compId, event) {
+        try {
+          const ref = workerRef.current;
+          if (!ref) return { ok: false, error: "no worker" };
+          ref.postMessage({ type: "INTERACT", compId: String(compId), event });
+          return { ok: true, compId: String(compId) };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      },
       snapshot() {
         let telemetry = [];
         try {

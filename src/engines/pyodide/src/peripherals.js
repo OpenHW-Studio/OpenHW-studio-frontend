@@ -17,6 +17,9 @@ export const BOARDS = {
     gpio: GPIO_PINS.slice(), pwmPins: LEGACY_PWM_PINS.slice(),
     i2cBuses: [0, 1], spiBuses: [0, 1], optionalSpiBuses: [],
     cpuClockMHz: 1200, pwmClockHz: 540000000, spiMaxHz: 32000000,
+    // External MCP3008-style SAR: 10-bit, 3.2 MHz conversion clock, 8 us
+    // sample-and-hold acquisition. Model parameters, not measured silicon.
+    adcClockHz: 3200000, adcBits: 10, adcAcquisitionUs: 8,
     cpuTempC: 45, pullUpOhms: 1800,
     vddVolts: 3.3, viL: 0.8, viH: 2.0, maxInputVolts: 3.3,
     driveStrengthmA: [2, 4, 8], slewMs: 3, debounceMs: 5, netOctet: 11,
@@ -28,6 +31,7 @@ export const BOARDS = {
     gpio: GPIO_PINS.slice(), pwmPins: LEGACY_PWM_PINS.slice(),
     i2cBuses: [0, 1], spiBuses: [0, 1], optionalSpiBuses: [2],
     cpuClockMHz: 1500, pwmClockHz: 540000000, spiMaxHz: 125000000,
+    adcClockHz: 3200000, adcBits: 10, adcAcquisitionUs: 8,
     cpuTempC: 50, pullUpOhms: 1800,
     vddVolts: 3.3, viL: 0.8, viH: 2.0, maxInputVolts: 3.3,
     driveStrengthmA: [2, 4, 8], slewMs: 3, debounceMs: 5, netOctet: 24,
@@ -41,6 +45,8 @@ export const BOARDS = {
     gpio: GPIO_PINS.slice(), pwmPins: GPIO_PINS.slice(),
     i2cBuses: [0, 1], spiBuses: [0, 1], optionalSpiBuses: [],
     cpuClockMHz: 2400, pwmClockHz: 200000000, spiMaxHz: 200000000,
+    // RP1 on-board SAR: 12-bit, 1 MHz clock, 4 us acquisition.
+    adcClockHz: 1000000, adcBits: 12, adcAcquisitionUs: 4,
     cpuTempC: 55, pullUpOhms: 50000,
     vddVolts: 3.3, viL: 0.7, viH: 2.1, maxInputVolts: 3.3,
     driveStrengthmA: [2, 4, 8, 12], slewMs: 1, debounceMs: 2, netOctet: 42,
@@ -70,14 +76,36 @@ export class Peripherals {
         capacitancePF: this.profile.pinCapacitancePF });
     }
     this.edges = [];
+    this.edgeSeq = 0;
     this.i2c = new Map();
     for (const bus of this.profile.i2cBuses) this.i2c.set(bus, new Map());
     this.spi = new Map();
     for (const bus of this.profile.spiBuses) this.spi.set(bus, new Map());
     this.pwm = new Map();
     this.adc = Array(8).fill(0);
+    // SAR state: per-channel source voltage, configuration and last
+    // conversion result/timing. `adc[]` remains the latched output code.
+    this.adcSources = Array(8).fill(0);
+    this.adcConfig = Array.from({ length: 8 }, () => ({
+      clockHz: this.profile.adcClockHz, bits: this.profile.adcBits,
+      acquisitionUs: this.profile.adcAcquisitionUs, sampleHoldPf: 20,
+    }));
+    this.adcInfo = Array.from({ length: 8 }, () => ({
+      code: 0, conversionUs: 0, clockHz: this.profile.adcClockHz,
+      sampleHoldV: 0, bits: this.profile.adcBits, acquisitionUs: this.profile.adcAcquisitionUs,
+      conversions: 0,
+    }));
+    this.scheduled = [];
+    this.protocolLog = [];
+    this.dhtTransaction = null;
     this.uartTx = '';
     this.uartRx = '';
+    // Framed UART: holding register + 16-byte FIFOs, 9600 8N1 by default.
+    this.uart = {
+      baud: 9600, dataBits: 8, parity: 'N', stopBits: 1, fifoDepth: 16,
+      bitTimeUs: 10 * 1e6 / 9600, txFifo: [], rxFifo: [],
+      txBytes: 0, rxBytes: 0, txOverrun: 0, rxOverrun: 0, framingErrors: 0,
+    };
     this.errors = [];
     this.leds = {};
     for (const [name, color] of Object.entries(this.profile.onboardLed)) {
@@ -89,7 +117,7 @@ export class Peripherals {
     this.lcds = {};
     this.cpuTempOverride = null;
     this.camera = { sensor: this.profile.cameraSensor, width: 64, height: 48,
-      captures: 0, lastChecksum: 0 };
+      captures: 0, lastChecksum: 0, hostFrame: null };
     this.analog = new AnalogSolver();
     this.analog.add('V', 'VDD_RAIL', 'VDD', 'GND', this.profile.vddVolts);
     this.analogPinNodes = new Map();
@@ -216,8 +244,10 @@ export class Peripherals {
     p.level = !!level;
     if (before === p.level) return;
     const edge = p.level ? 'rising' : 'falling';
+    this.edgeSeq = (this.edgeSeq || 0) + 1;
     this.edges.push({
-      pin: p.pin, level: p.level, edge, source, t: this.clockMs,
+      seq: this.edgeSeq, pin: p.pin, level: p.level, edge, source, t: this.clockMs,
+      tUs: this.clockMs * 1000,
       volts: p.volts, slewMs: this.profile.slewMs, debounceMs: this.profile.debounceMs,
     });
     if (this.edges.length > 4096) this.edges.shift();
@@ -321,6 +351,9 @@ export class Peripherals {
     for (const value of [rawH, rawT]) {
       for (let i = 15; i >= 0; i--) bits.push((value >> i) & 1);
     }
+    // 8-bit checksum completes the 40-bit DHT22 frame.
+    let checksum = (rawH + (rawH >> 8) + rawT + (rawT >> 8)) & 0xff;
+    for (let i = 7; i >= 0; i--) bits.push((checksum >> i) & 1);
     bits.push((((rawH >> 8) + (rawH & 0xff) + (rawT >> 8) + (rawT & 0xff)) >> 0) & 1);
     return JSON.stringify({ startUs: 1000, responseUs: 80, bitUs: 50, bits });
   }
@@ -482,7 +515,7 @@ export class Peripherals {
 
   gpioEdges(pin, edge = 'both', afterIndex = 0) {
     const p = Number(pin);
-    return this.edges.slice(afterIndex).filter((e) => e.pin === p && (edge === 'both' || edge === e.edge));
+    return this.edges.filter((e) => e.seq > afterIndex && e.pin === p && (edge === 'both' || edge === e.edge));
   }
 
   gpioEventCount(pin, edge = 'both') { return this.gpioEdges(pin, edge).length; }
@@ -700,7 +733,7 @@ export class Peripherals {
     return true;
   }
 
-  // ---- ADC (MCP3008 attached to SPI0 CE0) ----
+  // ---- ADC: sample-and-hold + successive approximation ----
   adcSet(channel, value) {
     const c = Number(channel);
     if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
@@ -708,46 +741,345 @@ export class Peripherals {
     return this.adc[c];
   }
 
-  adcRead(channel) {
+  adcRead(channel) { // latched code from the last conversion (or adcSet)
     const c = Number(channel);
     if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
     return this.adc[c];
   }
 
-  // ---- UART ----
+  adcConfigSet(channel, config = {}) {
+    const c = Number(channel);
+    if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
+    const cfg = this.adcConfig[c];
+    if (config.clockHz !== undefined) cfg.clockHz = Math.max(1000, Number(config.clockHz) || cfg.clockHz);
+    if (config.bits !== undefined) cfg.bits = Math.max(4, Math.min(16, Math.floor(Number(config.bits) || cfg.bits)));
+    if (config.acquisitionUs !== undefined) cfg.acquisitionUs = Math.max(0, Number(config.acquisitionUs));
+    if (config.sampleHoldPf !== undefined) cfg.sampleHoldPf = Math.max(1, Number(config.sampleHoldPf));
+    return { ...cfg };
+  }
+
+  /** Drive the sampled node. A source voltage + S/H capacitor are solved
+   * through the existing MNA core, so a host component voltage change settles
+   * through the analogue network before the SAR conversion starts. */
+  adcSource(channel, volts) {
+    const c = Number(channel);
+    if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
+    const cfg = this.adcConfig[c];
+    const key = `SADC${c}`;
+    if (!this.analog.hasNode(key)) {
+      this.analog.node(key);
+      this.analog.add('V', `VSADC${c}`, key, 'GND', 0);
+      this.analog.add('C', `CSADC${c}`, key, 'GND', cfg.sampleHoldPf * 1e-12);
+    } else {
+      const cap = this.analog.get(`CSADC${c}`);
+      if (cap && cap.value !== cfg.sampleHoldPf * 1e-12) this.analog.set(`CSADC${c}`, cfg.sampleHoldPf * 1e-12);
+    }
+    const v = Math.max(0, Math.min(this.profile.vddVolts, Number(volts) || 0));
+    this.adcSources[c] = v;
+    this.analog.set(`VSADC${c}`, v);
+    return v;
+  }
+
+  /** Acquisition (S/H settle through the solver) + N-bit SAR conversion.
+   * Every comparison consumes one clock period on the virtual clock. */
+  adcConvert(channel, override = {}) {
+    const c = Number(channel);
+    if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
+    const cfg = { ...this.adcConfig[c], ...(override || {}) };
+    const bits = Math.max(4, Math.min(16, Math.floor(Number(cfg.bits) || 10)));
+    const clockHz = Math.max(1000, Number(cfg.clockHz) || 3200000);
+    const acquisitionUs = Math.max(0, Number(cfg.acquisitionUs) || 0);
+    const key = `SADC${c}`;
+    if (this.analog.hasNode(key)) {
+      const steps = Math.max(1, Math.ceil(acquisitionUs / Math.max(1, this.analog.dtUs)));
+      for (let i = 0; i < steps; i++) this.analog.solve(acquisitionUs / steps, this.profile.vddVolts);
+    }
+    const sampleHoldV = Math.max(0, Math.min(this.profile.vddVolts,
+      this.analog.hasNode(key) ? this.analog.voltage(key) : this.adcSources[c]));
+    const clockPeriodUs = 1e6 / clockHz;
+    const levels = (1 << bits) - 1;
+    let code = 0;
+    for (let bit = bits - 1; bit >= 0; bit--) {
+      const trial = code | (1 << bit);
+      // Quantise to the nearest code: compare against the midpoint of the
+      // current SAR bucket, not its lower edge.
+      const threshold = ((trial - 0.5) / levels) * this.profile.vddVolts;
+      if (sampleHoldV >= threshold) code = trial;
+    }
+    const conversionUs = (bits + 1) * clockPeriodUs; // sample + N comparisons
+    this.clockSet(this.clockMs + (acquisitionUs + conversionUs) / 1000);
+    this.adc[c] = code;
+    this.adcInfo[c] = {
+      code, conversionUs: Number(conversionUs.toFixed(4)), clockHz,
+      sampleHoldV: Number(sampleHoldV.toFixed(6)), bits,
+      acquisitionUs, conversions: (this.adcInfo[c].conversions || 0) + 1,
+    };
+    return { ...this.adcInfo[c] };
+  }
+
+  adcInfoOf(channel) {
+    const c = Number(channel);
+    if (c < 0 || c > 7) throw new Error(`invalid ADC channel ${channel}`);
+    return { ...this.adcInfo[c] };
+  }
+
+  // ---- UART: 8N1 frame with TX/RX FIFOs and bit-time consumption ----
+  uartConfigSet(config = {}) {
+    const u = this.uart;
+    if (config.baud !== undefined) u.baud = Math.max(300, Math.min(2000000, Number(config.baud) || u.baud));
+    if (config.dataBits !== undefined) u.dataBits = Math.max(5, Math.min(9, Math.floor(Number(config.dataBits) || u.dataBits)));
+    if (config.parity !== undefined) u.parity = String(config.parity).toUpperCase().slice(0, 1);
+    if (config.stopBits !== undefined) u.stopBits = Math.max(1, Math.min(2, Math.floor(Number(config.stopBits) || u.stopBits)));
+    if (config.fifoDepth !== undefined) u.fifoDepth = Math.max(1, Math.floor(Number(config.fifoDepth) || u.fifoDepth));
+    u.bitTimeUs = (u.dataBits + 1 + (u.parity === 'N' ? 0 : 1) + u.stopBits) * 1e6 / u.baud;
+    return this.uartStats();
+  }
+
+  uartStats() {
+    const u = this.uart;
+    return {
+      baud: u.baud, dataBits: u.dataBits, parity: u.parity, stopBits: u.stopBits,
+      fifoDepth: u.fifoDepth, bitTimeUs: Number(u.bitTimeUs.toFixed(4)),
+      txBytes: u.txBytes, rxBytes: u.rxBytes,
+      txOverrun: u.txOverrun, rxOverrun: u.rxOverrun, framingErrors: u.framingErrors,
+      txFifo: u.txFifo.length, rxFifo: u.rxFifo.length,
+    };
+  }
+
   uartWrite(text) {
     if (!this.config.uart) throw new Error('UART is disabled (enable_uart=0)');
-    this.uartTx += String(text); return true;
+    const u = this.uart;
+    const s = String(text ?? '');
+    for (let i = 0; i < s.length; i++) {
+      if (u.txFifo.length >= u.fifoDepth) { u.txOverrun++; continue; }
+      u.txFifo.push(s.charCodeAt(i) & 0xff);
+      u.txBytes++;
+      // One complete 8N1 frame leaves the holding register on the virtual clock.
+      this.clockSet(this.clockMs + u.bitTimeUs / 1000);
+    }
+    this.uartTx += s;
+    return true;
   }
-  uartInject(text) { this.uartRx += String(text); return true; }
+
+  uartInject(text) {
+    const u = this.uart;
+    const s = String(text ?? '');
+    for (let i = 0; i < s.length; i++) {
+      if (u.rxFifo.length >= u.fifoDepth) { u.rxOverrun++; continue; }
+      u.rxFifo.push({ byte: s.charCodeAt(i) & 0xff, atUs: this.clockMs * 1000 });
+      u.rxBytes++;
+    }
+    this.uartRx += s;
+    return true;
+  }
+
+  /** Inject a raw frame to exercise the framing-error flag. */
+  uartInjectFrame(byte, stopBit = 1) {
+    const u = this.uart;
+    if (Number(stopBit) !== u.stopBits) u.framingErrors++;
+    return this.uartInject(String.fromCharCode(Number(byte) & 0xff));
+  }
+
+  _uartConsume(count) {
+    const u = this.uart;
+    const n = Math.min(count, u.rxFifo.length);
+    for (let i = 0; i < n; i++) {
+      // The receiver clocks each bit in on the virtual clock.
+      this.clockSet(this.clockMs + u.bitTimeUs / 1000);
+      u.rxFifo.shift();
+    }
+    if (n > 0) this.uartRx = this.uartRx.slice(n);
+    return n;
+  }
+
   // pyserial-style: read(n) consumes exactly n chars; n <= 0 drains all.
   uartRead(size = 1) {
     const n = Number(size);
-    const count = Number.isFinite(n) && n > 0 ? Math.floor(n) : this.uartRx.length;
-    const out = this.uartRx.slice(0, count);
-    this.uartRx = this.uartRx.slice(count);
+    const count = Number.isFinite(n) && n > 0 ? Math.floor(n) : this.uart.rxFifo.length;
+    const out = this.uartRx.slice(0, this._uartConsume(count));
     return out;
   }
   uartReadLine() {
     const i = this.uartRx.indexOf('\n');
     if (i < 0) return '';
-    const line = this.uartRx.slice(0, i); this.uartRx = this.uartRx.slice(i + 1); return line;
+    const line = this.uartRx.slice(0, i);
+    this._uartConsume(i + 1);
+    return line;
+  }
+
+  // ---- Timed 1-Wire / DHT22 bit-level waveform drivers ----
+  // The guest drives real GPIO edges through gpio_write(); the peripheral
+  // schedules the sensor reply edges at exact virtual microseconds. The
+  // Python shims decode the resulting edge log rather than reading a canned
+  // register. All widths below are model parameters (datasheet-shaped), not
+  // measured silicon timing.
+
+  dhtStart(pin) {
+    const p = Number(pin);
+    this._pin(p);
+    this.dhtTransaction = {
+      pin: p, startUs: this.clockMs * 1000, from: this.edgeSeq,
+      replyUs: 0, pulsesUs: [],
+    };
+    return { tUs: this.dhtTransaction.startUs, from: this.dhtTransaction.from };
+  }
+
+  /** Schedule the DHT response (80 us low + 80 us high) and 40 data bits
+   * (50 us low, 26 us = 0 / 70 us = 1 high) from the host sensor model's
+   * values, which the runner translator has already supplied. */
+  dhtReply(pin) {
+    const p = Number(pin);
+    const tx = this.dhtTransaction || { pin: p, startUs: this.clockMs * 1000, from: 0 };
+    const sensor = this.dht.get(p) || { tempC: this.environment.tempC, humidity: this.environment.humidity };
+    const rawH = Math.max(0, Math.min(65535, Math.round(Number(sensor.humidity) * 10)));
+    const rawT = Math.max(0, Math.min(65535, Math.round(Number(sensor.tempC) * 10)));
+    const bits = [];
+    for (const value of [rawH, rawT]) {
+      for (let i = 15; i >= 0; i--) bits.push((value >> i) & 1);
+    }
+    // 8-bit checksum completes the 40-bit DHT22 frame.
+    let checksum = (rawH + (rawH >> 8) + rawT + (rawT >> 8)) & 0xff;
+    for (let i = 7; i >= 0; i--) bits.push((checksum >> i) & 1);
+    // Sensor replies 20 us after the guest releases the start pulse.
+    const t0 = tx.startUs + 18000;
+    // Response: falling 20 us after release, rising 80 us later.
+    this.scheduleEdge(p, false, t0 + 20, 'device');
+    this.scheduleEdge(p, true, t0 + 100, 'device');
+    let at = t0 + 180;
+    tx.pulsesUs = [];
+    for (const bit of bits) {
+      this.scheduleEdge(p, false, at, 'device');
+      const highUs = bit ? 70 : 26;
+      this.scheduleEdge(p, true, at + 50, 'device');
+      tx.pulsesUs.push(highUs);
+      at += 50 + highUs;
+    }
+    this.scheduleEdge(p, false, at, 'device'); // close the last bit
+    tx.replyUs = t0;
+    return { bits: bits.length, humidity: rawH / 10, temperature: rawT / 10 };
+  }
+
+  dhtTiming(pin) {
+    const tx = this.dhtTransaction;
+    if (!tx || tx.pin !== Number(pin)) return null;
+    return {
+      startUs: tx.startUs, from: tx.from,
+      startPulseUs: 18000, responseLowUs: 80,
+      bitHighsUs: tx.pulsesUs.slice(),
+    };
+  }
+
+  /** Reset + presence pulse. Returns measured slot widths from the model. */
+  owReset(pin) {
+    const p = Number(pin);
+    this._pin(p);
+    const t0 = this.clockMs * 1000;
+    this.onewireReset(p);
+    // Guest holds the line low for 480 us; device presence at 240..480 us.
+    this.scheduleEdge(p, false, t0, 'guest');
+    this.scheduleEdge(p, true, t0 + 480, 'guest');
+    this.scheduleEdge(p, false, t0 + 240, 'device');
+    this.scheduleEdge(p, true, t0 + 480, 'device');
+    this.clockSet((t0 + 480) / 1000);
+    return { resetLowUs: 480, presenceUs: 240, from: this.edges.length - 4 };
+  }
+
+  /** Write slot: 2 us low = 1, 60 us low = 0, then recovery. */
+  owWriteSlot(pin, bit) {
+    const p = Number(pin);
+    const t0 = this.clockMs * 1000;
+    const lowUs = Number(bit) ? 2 : 60;
+    this.scheduleEdge(p, false, t0, 'guest');
+    this.scheduleEdge(p, true, t0 + lowUs, 'guest');
+    this.onewireWriteByte(p, Number(bit) ? 1 : 0);
+    this.clockSet((t0 + lowUs + 2) / 1000);
+    return lowUs;
+  }
+
+  /** Read slot: guest samples 15 us after the falling edge; the host sensor
+   * supplies the bit at that exact virtual time from its scratchpad image. */
+  owReadSlot(pin) {
+    const p = Number(pin);
+    const t0 = this.clockMs * 1000;
+    this.scheduleEdge(p, false, t0, 'guest');
+    const sensor = this.onewire.get(p);
+    const temp = sensor ? Number(sensor.tempC) : this.environment.tempC;
+    const raw = Math.round(temp * 16) & 0xffff;
+    // Bit-level reply queue loaded by owLoadScratchpad from the host sensor.
+    const state = this.onewireState.get(p);
+    const bits = (state && state.bits) || [];
+    const bit = bits.length ? bits.shift() : 0;
+    this.scheduleEdge(p, bit ? true : false, t0 + 15, 'device');
+    this.scheduleEdge(p, true, t0 + 60, 'guest');
+    this.clockSet((t0 + 15) / 1000);
+    // Decode the level that the scheduled device edge actually emitted.
+    let level = 0;
+    for (let i = this.edges.length - 1; i >= 0; i--) {
+      if (this.edges[i].pin === p) { level = this.edges[i].level ? 1 : 0; break; }
+    }
+    this.clockSet((t0 + 60 + 2) / 1000);
+    return { bit: level, sampleUs: 15, slotUs: 60, raw };
+  }
+
+  /** Load the DS18B20 scratchpad bytes for a host-supplied temperature. */
+  owLoadScratchpad(pin, tempC) {
+    const p = Number(pin);
+    this.onewireSet(p, tempC);
+    const raw = Math.round(Number(tempC) * 16) & 0xffff;
+    const bytes = [raw & 0xff, (raw >> 8) & 0xff, 0x4b, 0x46, 0x7f, 0xff, 0x10, 0x00];
+    let crc = 0;
+    for (const b of bytes) {
+      let x = b;
+      for (let i = 0; i < 8; i++) {
+        const mix = (crc ^ x) & 1;
+        crc >>= 1;
+        if (mix) crc ^= 0x8c;
+        x >>= 1;
+      }
+    }
+    bytes.push(crc);
+    const bits = [];
+    for (const byte of bytes) {
+      for (let i = 7; i >= 0; i--) bits.push((byte >> i) & 1);
+    }
+    const st = this.onewireState.get(p) || { queue: [] };
+    st.queue = bytes.slice();
+    st.bits = bits;
+    this.onewireState.set(p, st);
+    this.protocolLog.push({ pin: p, atUs: this.clockMs * 1000, scratchpad: bytes });
+    return bytes;
   }
 
   // ---- Time ----
-  sleep(ms) {
-    const delta = Math.max(0, Number(ms) || 0);
-    this.clockMs += delta;
-    this.analogStep(delta);
+  sleep(ms) { return this.clockSet(this.clockMs + Math.max(0, Number(ms) || 0)); }
+  sleepUs(us) { return this.clockSet(this.clockMs + Math.max(0, Number(us) || 0) / 1000); }
+  clockNow() { return this.clockMs; }
+  clockUs() { return this.clockMs * 1000; }
+
+  /** Advance virtual time, firing scheduled protocol edges at their exact
+   * microsecond stamps (same discipline as the Python virtual-time timers). */
+  clockSet(ms) {
+    const targetUs = Math.max(0, Number(ms) || 0) * 1000;
+    let guard = 0;
+    while (guard++ < 100000) {
+      const due = this.scheduled.filter((e) => e.tUs <= targetUs + 1e-9);
+      if (!due.length) break;
+      due.sort((a, b) => a.tUs - b.tUs || a.seq - b.seq);
+      const next = due[0];
+      this.clockMs = next.tUs / 1000;
+      this.scheduled.splice(this.scheduled.indexOf(next), 1);
+      this._emit(this._pin(next.pin), next.level, next.source || 'device');
+    }
+    this.clockMs = targetUs / 1000;
+    if (targetUs > 0 && targetUs <= 1000) this.analogStep(Math.min(1, targetUs / 1000));
     this.settleElectrical();
     return this.clockMs;
   }
-  clockNow() { return this.clockMs; }
-  clockSet(ms) {
-    const n = Math.max(0, Number(ms) || 0);
-    this.clockMs = n;
-    this.settleElectrical();
-    return this.clockMs;
+
+  /** Schedule a device-driven GPIO edge at an exact virtual microsecond. */
+  scheduleEdge(pin, level, atUs, source = 'device') {
+    this.scheduled.push({ pin: Number(pin), level: !!level, tUs: Number(atUs), source, seq: this.scheduled.length });
+    return this.scheduled.length;
   }
 
   // ---- Board-level hardware ----
@@ -861,21 +1193,39 @@ export class Peripherals {
     this.camera.height = Math.max(1, Math.min(4096, Math.floor(Number(height) || 48)));
     return { width: this.camera.width, height: this.camera.height };
   }
+  /** A wired host camera component supplies the frame; there is no internal
+   * test pattern when a host frame is present. */
+  cameraSetFrame(frame, width, height) {
+    const bytes = Array.from(frame || []).map((v) => Number(v) & 0xff);
+    if (Number(width) > 0) this.camera.width = Math.floor(Number(width));
+    if (Number(height) > 0) this.camera.height = Math.floor(Number(height));
+    this.camera.hostFrame = bytes.length ? bytes : null;
+    return { bytes: bytes.length, width: this.camera.width, height: this.camera.height };
+  }
+
   cameraCapture() {
     const { width, height } = this.camera;
-    const frame = new Array(width * height * 3);
-    let checksum = 0;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * 3;
-        frame[i] = (x * 4) & 0xff;
-        frame[i + 1] = (y * 4) & 0xff;
-        frame[i + 2] = ((x + y) * 2) & 0xff;
-        checksum = (checksum + frame[i] + frame[i + 1] + frame[i + 2]) & 0xffff;
+    let frame;
+    if (this.camera.hostFrame && this.camera.hostFrame.length >= width * height * 3) {
+      frame = this.camera.hostFrame.slice(0, width * height * 3);
+    } else {
+      // Only used when NO host camera component is wired (legacy standalone
+      // mode). The studio cell always wires a host frame source.
+      frame = new Array(width * height * 3);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 3;
+          frame[i] = (x * 4) & 0xff;
+          frame[i + 1] = (y * 4) & 0xff;
+          frame[i + 2] = ((x + y) * 2) & 0xff;
+        }
       }
     }
+    let checksum = 0;
+    for (const byte of frame) checksum = (checksum + byte) & 0xffff;
     this.camera.captures += 1;
     this.camera.lastChecksum = checksum;
+    this.camera.lastFrameBytes = frame.slice();
     return frame;
   }
 

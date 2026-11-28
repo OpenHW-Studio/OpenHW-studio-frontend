@@ -243,6 +243,28 @@ def adc_read(channel):
     return int(_js(_b.adc_solved, int(channel)))
 
 
+def adc_convert(channel, bits=None, clock_hz=None, acquisition_us=None):
+    """Timed sample-and-hold + N-bit SAR conversion on a channel's node.
+
+    Returns a real Python dict with `code`, `conversion_us`, `clock_hz`,
+    `sample_hold_v`, `bits`, `acquisition_us`. Virtual time advances by the
+    acquisition time plus one clock period per SAR comparison.
+    """
+    config = {}
+    if bits is not None:
+        config['bits'] = int(bits)
+    if clock_hz is not None:
+        config['clockHz'] = int(clock_hz)
+    if acquisition_us is not None:
+        config['acquisitionUs'] = float(acquisition_us)
+    result = _js(_b.adc_convert, int(channel), config)
+    return dict(result.to_py())
+
+
+def adc_convert_info(channel):
+    return dict(_js(_b.adc_info, int(channel)).to_py())
+
+
 def ads1115_read(channel):
     return int(_js(_b.adc_solved16, int(channel)))
 

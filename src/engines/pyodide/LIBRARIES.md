@@ -14,6 +14,23 @@ boards. Statuses:
 Every row below is imported and exercised by `npm test` (`LIBRARIES` sketch),
 which asserts all 56 names and per-board behaviour.
 
+**OpenHW timed-driver additions (2026-11-28):** the board-backed entries below
+now expose these APIs in the main simulator (`tests/e2e/rpi-protocols.spec.js`):
+
+* `gpiozero.MCP3008` — `read()` performs MNA sample/hold acquisition + N-bit
+  SAR conversion; `conversion_us`, `clock_hz`, `sample_hold_v`, `code`
+  properties. `rpi_sim.analog.adc_convert()` returns the same facts as a dict.
+* `rpi_sim.uart.UART` / `serial.Serial` — `configure(...)` and `stats` expose
+  8N1 framing, 1041.6667 us bit time at 9600 baud, 16-byte FIFOs, `overrun`
+  and `framing_error`. RX/TX consume virtual clock per bit.
+* `w1_gpio.read_temp_timed()` and `Adafruit_DHT.read_timed()` decode real
+  GPIO edge waveforms (reset/presence/read slots; 18 ms start / 80 us
+  response / 26-70 us data bits) and return measured pulse widths plus values.
+* `picamera2.Picamera2.capture_array()/capture_file()` consume the frame from
+  the wired `openhw-camera-module` host component (not an internal pattern).
+
+These are deterministic virtual-time models, not measured silicon timing.
+
 ## Core GPIO / buses
 
 | # | Module | Status | What is exercised |

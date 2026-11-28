@@ -22,9 +22,35 @@ class UART:
     def readline(self):
         return _b.uart_read_line()
 
+    def configure(self, baudrate=None, parity='N', data_bits=8,
+                  stop_bits=1, fifo_depth=16):
+        """Set the framed UART line mode and return live statistics."""
+        config = {'parity': parity, 'dataBits': data_bits,
+                  'stopBits': stop_bits, 'fifoDepth': fifo_depth}
+        if baudrate is not None:
+            config['baud'] = int(baudrate)
+        return dict(_b.uart_config(config).to_py())
+
+    @property
+    def stats(self):
+        """Framed UART counters: baud, bitTimeUs, FIFO depths, overruns."""
+        return dict(_b.uart_stats().to_py())
+
+    @property
+    def overrun(self):
+        return int(self.stats['rxOverrun']) + int(self.stats['txOverrun'])
+
+    @property
+    def framing_error(self):
+        return int(self.stats['framingErrors'])
+
+    @property
+    def clock_us(self):
+        return _bridge.clock_us()
+
     @property
     def in_waiting(self):
-        return len(_bridge.snapshot()["uartRx"])
+        return int(self.stats['rxFifo'])
 
     @property
     def tx(self):
