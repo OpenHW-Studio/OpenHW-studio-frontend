@@ -7,10 +7,11 @@ import { test, expect } from '@playwright/test';
 // and log wall time to that needle plus a guest/wall ratio computed from the
 // guest's own millis() samples (not from runner-internal counters).
 //
-// Host-component truth here is the app's serial monitor: it is the receiving
-// component for the guest TX bytes and its text is what a user sees. GPIO /
-// I2C / SPI host cells are NOT weakened — they are skipped below with the
-// exact engine fact that blocks them (esp32sim bridge refuses classic ESP32).
+// Host-component truth is the component model telemetry (LED glow, OLED
+// vramFill, MAX7219 matrix, pot sample), not a weakened serial-only assertion.
+// The rebuilt bridge WASM exposes GPIO/I2C/SPI/ADC/PWM/I2S on classic ESP32;
+// one-wire/RMT, camera, WiFi and BLE are explicitly skipped below with the
+// exact missing capability.
 
 const CODE = [
   'volatile unsigned long abTotal = 0;',
@@ -101,9 +102,29 @@ async function bootAndMeasure(page, board) {
   return { wallToNeedleMs, ratio, serial: verdict.serial };
 }
 
+async function runComponent(page, cfg) {
+  const setup = await page.evaluate((c) => window.OpenHWE2E.setupCircuit(c), cfg);
+  expect(setup.ok).toBe(true);
+  const verdict = await page.evaluate((c) => window.OpenHWE2E.run({
+    forMs: c.runMs, selectTelemetry: c.select, serialNeedle: c.needle, telemetryMode: 'detail',
+  }), cfg);
+  console.log('SC_COMP verdict:', cfg.needle, JSON.stringify(verdict?.reasons || []), 'lines:', verdict?.serialLines);
+  expect(verdict.ok).toBe(true);
+  expect(verdict.pass).toBe(true);
+  expect(verdict.serial || '').toContain(cfg.needle);
+  await page.evaluate(() => window.OpenHWE2E.stop());
+  await page.waitForTimeout(800);
+  return verdict;
+}
+
 test.describe('ESP32 A/B — esp32sim classic vs esp32-emu', () => {
   test.setTimeout(240000);
   test.beforeEach(async ({ page }) => {
+    page.on('pageerror', (e) => console.log('SC_PAGEERROR:', String(e.message || e).slice(0, 500)));
+    page.on('console', (m) => {
+      const t = m.text();
+      if (/Esp32Sc|esp32sim|Error|error|abort|Aborted|reload|hmr/i.test(t)) console.log('SC_CONSOLE:', t.slice(0, 400));
+    });
     await page.route('**/api/**', async (route) => {
       const url = route.request().url();
       if (url.includes('/compile')) return route.continue();
@@ -154,19 +175,104 @@ test.describe('ESP32 A/B — esp32sim classic vs esp32-emu', () => {
     });
   }
 
-  // Honest gap cells. Do NOT weaken them into a serial-only assertion.
-  test.skip('openhw-esp32sc lights a GPIO-wired LED', async () => {
-    // BLOCKER (verified against the staged WASM, md5 5daf387d...):
-    // esp32sim_new_bridge("esp32", ...) returns 0 with
-    // "[emu] the host bridge supports only S3, C3 and C6 boards".
-    // Without the bridge there is no esp32sim_bridge_gpio_take / gpio_get
-    // export on a classic machine, so runner.sampleGpioOut() must return
-    // null and an LED net cannot observe a firmware-driven HIGH.
+  test('openhw-esp32sc lights a GPIO-wired LED (host model truth)', async ({ page }) => {
+    const t0 = Date.now();
+    const verdict = await runComponent(page, {
+      components: [
+        { id: 'board1', type: 'openhw-esp32sc', attrs: {}, x: 100, y: 100 },
+        { id: 'led1', type: 'openhw-led', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [{ from: 'board1:GPIO16', to: 'led1:A' }, { from: 'board1:GND', to: 'led1:K' }],
+      code: 'void setup(){Serial.begin(115200);pinMode(16,OUTPUT);digitalWrite(16,HIGH);Serial.println("SC_LED_ON");}\nvoid loop(){Serial.print("SC_LED_TICK ");Serial.println(millis());delay(300);}',
+      needle: 'SC_LED_ON', select: ['led1'], runMs: 90000,
+    });
+    const led = (verdict.telemetry || []).find((t) => t.id === 'led1');
+    expect(led).toBeTruthy();
+    const custom = led.details?.custom || led.details?.metrics?.custom || {};
+    console.log('SC_LED model:', JSON.stringify(custom).slice(0, 200), 'wallMs:', Date.now() - t0);
+    expect(Boolean(custom.glow) || parseFloat(String(custom.current || '0')) > 0 || Number(custom.brightness ?? 0) > 0).toBe(true);
+    expect(verdict.serial || '').toContain('SC_LED_ON');
+    test.info().annotations.push({ type: 'component-speed', description: `gpio-led wallMs=${Date.now() - t0}` });
   });
 
-  test.skip('openhw-esp32sc answers an I2C EEPROM / SPI MAX7219', async () => {
-    // Same blocker: esp32sim_bridge_i2c_set/take and _spi_set/take are
-    // installed only by esp32sim_new_bridge, which refuses classic ESP32.
-    // No host device can be attached, so these component cells are skipped.
+  test('openhw-esp32sc drives SPI MAX7219 (host model truth)', async ({ page }) => {
+    const t0 = Date.now();
+    const verdict = await runComponent(page, {
+      components: [
+        { id: 'board1', type: 'openhw-esp32sc', attrs: {}, x: 100, y: 100 },
+        { id: 'mx1', type: 'openhw-max7219', attrs: {}, x: 420, y: 290 },
+      ],
+      wires: [
+        { from: 'board1:23', to: 'mx1:DIN' }, { from: 'board1:18', to: 'mx1:CLK' },
+        { from: 'board1:5', to: 'mx1:CS' }, { from: 'board1:3V3', to: 'mx1:VCC' },
+        { from: 'board1:GND', to: 'mx1:GND' },
+      ],
+      code: [
+        '#include <SPI.h>',
+        'void wr(uint8_t r,uint8_t d){digitalWrite(5,LOW);SPI.transfer(r);SPI.transfer(d);digitalWrite(5,HIGH);}',
+        'void setup(){Serial.begin(115200);Serial.println("SC_SPI_READY");',
+        'SPI.begin();pinMode(5,OUTPUT);wr(0x0C,0x01);wr(0x0A,0x08);wr(0x0B,0x07);wr(0x01,0x7E);wr(0x02,0x30);',
+        'Serial.println("SC_SPI_DRAWN");}',
+        'void loop(){Serial.print("SC_BUS_TICK ");Serial.println(millis());delay(500);}',
+      ].join('\n'),
+      needle: 'SC_SPI_DRAWN', select: ['mx1'], runMs: 120000,
+    });
+    const mx = (verdict.telemetry || []).find((t) => t.id === 'mx1');
+    expect(mx).toBeTruthy();
+    const mc = mx.details?.custom || mx.details?.metrics?.custom || {};
+    console.log('SC_SPI max:', JSON.stringify(mc).slice(0, 220));
+    expect(mc.shutdown).toBe(false);
+    expect(mc.matrix?.[0]).toBe(0x7e);
+    expect(mc.matrix?.[1]).toBe(0x30);
+    test.info().annotations.push({ type: 'component-speed', description: `spi wallMs=${Date.now() - t0}` });
+  });
+
+  test.skip('openhw-esp32sc answers an I2C sensor / EEPROM (host model truth)', async () => {
+    // BLOCKED in the runner, not in the engine. The direct-WASM classic ABI
+    // proof (wasm/openhw-esp32-components-evidence.json) shows guest writes
+    // 0x10 and reply DE AD BE EF at 0x42 on esp32sim. In this page runner a
+    // wired MPU6050 at 0x68 stayed at i2cTxBytes=0 / lastRegister=null: the
+    // guest's I2C writes never reached the host bridge capture, so no model
+    // read bytes could be staged. Not weakened into a serial-only assertion.
+  });
+
+  test('openhw-esp32sc reads a host potentiometer through ADC1', async ({ page }) => {
+    const t0 = Date.now();
+    const verdict = await runComponent(page, {
+      components: [
+        { id: 'board1', type: 'openhw-esp32sc', attrs: {}, x: 100, y: 100 },
+        { id: 'pot1', type: 'openhw-potentiometer', attrs: {}, x: 450, y: 120 },
+      ],
+      wires: [
+        { from: 'board1:GPIO34', to: 'pot1:SIG' },
+        { from: 'board1:3V3', to: 'pot1:1' },
+        { from: 'board1:GND', to: 'pot1:2' },
+      ],
+      code: 'void setup(){Serial.begin(115200);analogReadResolution(12);Serial.println("SC_ADC_READY");}\nvoid loop(){Serial.print("SC_ADC_VAL:");Serial.println(analogRead(34));delay(300);}',
+      needle: 'SC_ADC_READY', select: ['pot1'], runMs: 90000,
+    });
+    const vals = [...(verdict.serial || '').matchAll(/SC_ADC_VAL:(\d+)/g)].map((m) => Number(m[1]));
+    console.log('SC_ADC values:', JSON.stringify(vals.slice(0, 8)), 'wallMs:', Date.now() - t0);
+    expect(vals.length).toBeGreaterThan(0);
+    expect(vals.slice(2).some((v) => Math.abs(v - 2048) < 500)).toBe(true);
+    test.info().annotations.push({ type: 'component-speed', description: `adc wallMs=${Date.now() - t0}` });
+  });
+
+  // Honest gaps: each has a concrete missing model/export on this runner.
+  test.skip('openhw-esp32sc reads DS18B20 one-wire', async () => {
+    // The esp32sim host bridge has no one-wire transaction export; DS18B20
+    // needs bit-level presence/data replies from the host model. Not weakened.
+  });
+  test.skip('openhw-esp32sc reads DHT22', async () => {
+    // DHT22 uses RMT timing; esp32sim exposes no RMT RX host reply bridge.
+  });
+  test.skip('openhw-esp32sc drives NeoPixel', async () => {
+    // NeoPixel is an RMT symbol stream; no RMT host capture export is exposed.
+  });
+  test.skip('openhw-esp32sc captures a camera frame', async () => {
+    // No camera/SCCB/DVP host bridge is wired into this runner.
+  });
+  test.skip('openhw-esp32sc joins WiFi / advertises BLE', async () => {
+    // Radio transports are not wired into the esp32sc runner component models.
   });
 });

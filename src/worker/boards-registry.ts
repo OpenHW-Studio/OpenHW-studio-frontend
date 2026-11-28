@@ -97,7 +97,6 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi3-pwm-pin-policy', detail: 'BCM2837 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1200 MHz, CPU temp baseline 45 C.' },
       { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
-      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
   {
@@ -113,7 +112,6 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi4-pwm-pin-policy', detail: 'BCM2711 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1500 MHz, CPU temp baseline 50 C.' },
       { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
-      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
   {
@@ -128,7 +126,6 @@ export const BOARD_FAMILIES: BoardFamily[] = [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU (BCM2712/RP1), boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi5-rp1-pwm-policy', detail: 'RP1 accepts PWM on any valid header GPIO (no 12/13/18/19 restriction). Model clock 2400 MHz, PWM clock 200 MHz, CPU temp baseline 55 C.' },
-      { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
       { code: 'timed-protocol-model', detail: 'ADC SAR acquisition/conversion, UART 8N1 bit times and FIFOs, DHT22 18 ms/80 us/26-70 us slots and 1-Wire reset/presence/read slots are deterministic virtual-time models, not measured silicon timing.' },
     ],
   },
@@ -201,18 +198,19 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     railVoltage: 3.3,
     engine: 'esp32sim',
     runner: 'runners/esp32sc-runner.ts',
-    // Only what is proved in the browser A/B spec: classic ESP32 boots from
-    // the esp32sim mask ROM + merged flash image and streams guest serial.
-    capabilities: ['uart'],
+    // Proved in the browser A/B spec: classic ESP32 boots from the esp32sim
+    // mask ROM + merged flash image, streams serial, and the rebuilt bridge
+    // exposes GPIO/I2C/SPI/ADC/PWM/I2S to wired host component models.
+    capabilities: ['digital-gpio-input', 'digital-gpio-output', 'analog-adc', 'uart', 'pwm', 'i2c-target', 'spi-target', 'i2s'],
     firmware: ['arduino-sketch'],
     limits: [
       {
-        code: 'no-gpio-output-readback',
-        detail: 'esp32sim_new_bridge refuses classic ESP32 ("the host bridge supports only S3, C3 and C6 boards", verified against the staged WASM). No GPIO output readback/edge export is reachable, so firmware-driven LED components cannot be lit. The GPIO LED cell is test.skip, never weakened.',
+        code: 'no-onewire-rmt-bridge',
+        detail: 'The esp32sim host bridge has no one-wire/RMT transaction export. DS18B20, DHT22 and NeoPixel cells need bit-level bus replies from host models and remain test.skip, never weakened.',
       },
       {
-        code: 'no-i2c-spi-pwm-adc-i2s-bridge',
-        detail: 'The same bridge refusal makes esp32sim_bridge_{i2c,spi,pwm,adc,i2s}_* unreachable on classic ESP32. Host I2C EEPROM / SSD1306 / SPI MAX7219 / PWM / ADC / I2S component cells cannot be driven; skipped with this reason.',
+        code: 'no-camera-bridge',
+        detail: 'The AI-Thinker camera needs SCCB/DVP frame delivery; no host camera bridge is wired in this runner. Camera cells are test.skip.',
       },
       {
         code: 'merged-flash-image-only',

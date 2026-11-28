@@ -559,13 +559,13 @@ browser. Component: `openhw-studio-emulator/src/components/ESP32SC/` (type
 `esp32sim`; `openhw-esp32` still → `runners/esp32-runner.ts` → `esp32-emu`
 (proved by the catalog resolution cell in the A/B spec).
 
-**Engine bytes:** `esp32sim-bridge.wasm` md5 `5daf387d3277f4a361a249cf263dc84d`
+**Engine bytes:** `esp32sim-bridge.wasm` md5 `13228d2a1a67073efd20fbc5fc1f000d` (sha256 `895173d62567d99bcec475198fc8dba49702e7959b8f851fbe3524040b6f9b5b`)
 (15 bridge exports; byte-identical in `src/engines/esp32sim/`,
 `public/vendor/board-engines/esp32sim/` and `public/wasm/`). Mask ROM:
 `public/firmware/esp32sc_rev300_rom.elf`, sha256
 `920b70635440517866aab2230964a570d2cf2b676658d93c52fbac108c1cca31`
 (Espressif esp-rom-elfs 20241011, Apache-2.0). Boot path (direct WASM ABI, no
-worker glue): `esp32sim_new_bridge` is refused for classic boards, so
+worker glue): `esp32sim_new_bridge` accepts classic boards, so
 `esp32sim_new('esp32', 4, 0)` → `esp32sim_load(kind 0, ROM ELF)` →
 `esp32sim_load(kind 5, merged flash)` → `esp32sim_boot` → bounded 1 M-cycle
 `esp32sim_run` slices from the runner's 8 ms tick.
