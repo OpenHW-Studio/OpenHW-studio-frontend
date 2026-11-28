@@ -75,8 +75,14 @@ Three gaps listed below are now **closed** (cells green):
 - **NVMC NVS** — not modelled.
 - **PPI / GPIOTE** — not modelled.
 - **RNG / TEMP** — not modelled.
-- **MicroPython for micro:bit** — no MicroPython image in the pipeline (all
-  micro:bit guests are fixed `.bin` firmware today).
+- **MicroPython for micro:bit** — CLOSED 2026-11-28 (cell
+  `tests/e2e/microbit-micropython.spec.js`). `main.py` (PYSCRIPT sentinel)
+  boots the owner MicroPython v1.18 HEX image via the MBR→app reset recipe,
+  with QSPI flash and the TWIM1 LSM303/KL27 parts models, then types a
+  chunked `exec()` script into the live REPL over paced UARTE0 RX. Proven
+  host reaction: `pin0.write_digital(1)` lights a wired LED and
+  `display.show(Image.HAPPY)` scans the 5×5 matrix. Still unproven: MP-driven
+  I2C/SPI/ADC, imported user modules/filesystem, other MicroPython builds.
 - **EASYDMA / memcpy cell** — the DMA path is exercised (UART RX mirror,
   PWM SEQ readback), but there is no dedicated EASYDMA/memcpy proof cell
   yet.

@@ -26,6 +26,21 @@
  */
 import { ArmRunnerBase, importEngine } from './arm-runner-base.ts';
 import { createI2CBridge, collectI2CSlaveAddresses } from '../bus-bridge.ts';
+// Owner's TWIM1 parts model (LSM303 + KL27) — host-side device models, not
+// engine bytes. MicroPython's CODAL boot probes these before the REPL comes
+// up; with no answers the guest spins forever (measured, 2026-11-28).
+import { LSM303 } from '../../engines/microbit/lsm303.ts';
+
+/** MicroPython v1.18 micro:bit v2.1.2 image (owner bench build). Intel HEX,
+ * parsed at boot: 512 KiB flash + UICR words. The runner does not execute a
+ * `.uf2`; this is the real nRF52833 firmware image. */
+const MICROPYTHON_HEX_URL = '/firmware/microbit/micropython-microbit-v2.1.2.hex';
+/** MBR → application handoff (owner run_mpy_repl.mjs recipe). */
+const MP_APP_SP = 0x20020000;
+const MP_APP_PC = 0x20000001;
+const MP_RESET_PC = 0x29c51;
+/** One CPU slice per tick, same as the owner bench pump. */
+const MP_STEP_SLICE = 20000;
 
 /** Edge label → [port, pin] (nRF52833 P0/P1). From the engine pins.js. */
 const MB_EDGE: Record<string, [number, number]> = {
@@ -66,6 +81,67 @@ function b64ToU8(s: string): Uint8Array {
     return out;
 }
 
+/** Intel HEX → 512 KiB flash image + UICR words (owner parseHex recipe).
+ * The MP image is not flat: its vectors live at 0x0 but the reset handler
+ * lives at 0x1C000, and two UICR words at 0x10001014/18 pin the boot
+ * regions. Dropping either half means the CPU never reaches the REPL. */
+function parseMicroPythonHex(text: string): { img: Uint8Array; uicr: Array<[number, number]> } {
+    const img = new Uint8Array(512 * 1024).fill(0xff);
+    const bytes = new Map<number, number>();
+    let base = 0;
+    for (const line of String(text).split(/\r?\n/)) {
+        if (!line.startsWith(':')) continue;
+        const n = parseInt(line.slice(1, 3), 16);
+        const addr = parseInt(line.slice(3, 7), 16);
+        const type = parseInt(line.slice(7, 9), 16);
+        if (type === 4) { base = parseInt(line.slice(9, 13), 16) << 16; continue; }
+        if (type === 2) { base = parseInt(line.slice(9, 13), 16) << 4; continue; }
+        if (type !== 0) continue;
+        for (let i = 0; i < n; i++) {
+            const a = base + addr + i;
+            const b = parseInt(line.slice(9 + i * 2, 11 + i * 2), 16);
+            if (a >= 0x10001000 && a < 0x10002000) bytes.set(a, b);
+            else if (a < img.length) img[a] = b;
+        }
+    }
+    // Fold UICR bytes into aligned 32-bit words (periph_write is word-only).
+    const words = new Map<number, number>();
+    for (const [a, b] of bytes) {
+        const w = a & ~3;
+        const shift = 8 * (a & 3);
+        words.set(w, ((words.get(w) ?? 0xffffffff) & ~(0xff << shift)) | ((b & 0xff) << shift));
+    }
+    return { img, uicr: [...words.entries()] };
+}
+
+/** Split a Python script into exec()-ready chunks (same shape as the Pico
+ * MicroPython runner): cut only between zero-indent lines so try/while
+ * blocks are never split, and keep every REPL line under the input buffer. */
+function chunkExecLines(script: string, maxChars: number): string[] {
+    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    const lines = String(script || '').split('\n');
+    const paras: string[][] = [];
+    let cur: string[] = [];
+    const push = () => { if (cur.length) paras.push(cur); cur = []; };
+    for (const ln of lines) {
+        if (ln.trim() === '') { push(); continue; }
+        cur.push(ln);
+    }
+    push();
+    const out: string[] = [];
+    for (const para of paras) {
+        let buf: string[] = [];
+        const flush = () => { if (buf.length) { out.push(esc(buf.join('\n'))); buf = []; } };
+        for (const ln of para) {
+            buf.push(ln);
+            const hasIndent = buf.some((l) => /^\s/.test(l));
+            if (!hasIndent && buf.join('\n').length >= maxChars) flush();
+        }
+        flush();
+    }
+    return out.filter((s) => s.length > 0);
+}
+
 export class MicrobitRunner extends ArmRunnerBase {
     protected engine: any = null;
     private mod: any = null;
@@ -74,6 +150,11 @@ export class MicrobitRunner extends ArmRunnerBase {
     private fixedFirmwareUrl = '';
     private lastGpioOut: Record<string, boolean> = {};
     private lastMatrixLit = -1;
+    /** Union of the 5x5 scan (the engine reports one row at a time, so an
+     * instantaneous sample undercounts a displayed image — headless owner
+     * bench accumulates a sticky mask for the same reason). */
+    private matrixSticky = 0;
+    private lastMatrixUnion = -1;
     private i2cBridge: any = null;
     /** Component attrs by component id. Board attrs drive the host-side
      * injection points (tempC, adcMv, nfcField) — without this map every
@@ -85,6 +166,18 @@ export class MicrobitRunner extends ArmRunnerBase {
     /** Last PWM readback (duty in basis points, freq in Hz). */
     private lastPwmDutyBp = 0;
     private lastPwmFreqHz = 0;
+    /** MicroPython path: user `main.py` (PYSCRIPT sentinel from the worker),
+     * the TWIM1 board parts model the CODAL boot probes, and REPL state. */
+    private pyScript = '';
+    private isMicroPython = false;
+    private mpLsm: any = null;
+    private mpFlash: Uint8Array | null = null;
+    private mpReady = false;
+    private mpInjectStarted = false;
+    private mpUartTail = '';
+    private mpDiagTick = 0;
+    private mpFed = 0;
+    private mpRxFail = 0;
 
     constructor(
         hexData: string,
@@ -95,6 +188,7 @@ export class MicrobitRunner extends ArmRunnerBase {
     ) {
         super(hexData, componentsDef, wiresDef, onStateUpdate, options);
         this.fixedFirmwareUrl = String((options as any)?.fixedFirmware || '').trim();
+        this.pyScript = String((options as any)?.pyScript || '');
         try { this.snapshotCompAttrs(componentsDef); } catch { /* ignore */ }
         // Component attrs (board attrs drive tempC / adcMv / nfcField).
         try {
@@ -164,6 +258,24 @@ export class MicrobitRunner extends ArmRunnerBase {
                         try { wasm.i2c_register_slave('TWIM0', a); } catch { /* ignore */ }
                     }
                 } catch { /* taps never break boot */ }
+                // MicroPython-only taps (BEFORE init, like all controller
+                // snapshots): external QSPI flash (the image boots from it)
+                // and the TWIM1 board parts (LSM303 + KL27 UIPM/USB-FLASH)
+                // that CODAL probes during boot. Without these the guest
+                // spins in its sensor/power loops and never prints a REPL
+                // prompt — measured headless with this exact engine pair.
+                self.isMicroPython = !!self.pyScript.trim()
+                    && !String(firmware || '').startsWith('FIXEDBIN:');
+                if (self.isMicroPython) {
+                    try { wasm.qspi_register_flash?.('QSPI', new Uint8Array(65536).fill(0xff)); } catch { /* ignore */ }
+                    try {
+                        self.mpLsm = new LSM303(wasm, 'TWIM1');
+                        self.mpLsm.register();
+                        // Deterministic pose (no float regex in guest output).
+                        self.mpLsm.setAccel({ x: 0, y: 0, z: 1000 });
+                        self.mpLsm.setMag({ x: 200, y: 0, z: 400 });
+                    } catch (e) { console.warn('[MicrobitRunner] TWIM1 parts unavailable:', e); }
+                }
                 try { wasm.init(); } catch (e) {
                     console.warn('[MicrobitRunner] init failed:', e);
                     return;
@@ -181,37 +293,63 @@ export class MicrobitRunner extends ArmRunnerBase {
                     };
                     self.i2cBridge = createI2CBridge(bridgeCtx);
                 } catch { /* bridge never breaks boot */ }
-                // Firmware: fixed image (no backend core for nRF52833).
-                // URL arrives via the board `firmware` attr (options) or
-                // the FIXEDBIN: sentinel (compile bypass payload).
-                let bytes: Uint8Array | null = null;
-                let fwUrl = self.fixedFirmwareUrl;
-                if (!fwUrl && String(firmware || '').startsWith('FIXEDBIN:')) {
-                    fwUrl = String(firmware).slice('FIXEDBIN:'.length).trim();
-                }
-                if (fwUrl) {
+                if (self.isMicroPython) {
+                    // Real MicroPython firmware: parse the owner's Intel HEX
+                    // and hand the MBR its vectors, then fire the documented
+                    // MBR→app reset (0x1C000). The user script is NOT baked
+                    // into the image — it is typed into the live REPL once
+                    // the banner/prompt appears (see startPythonInject).
                     try {
-                        const res = await fetch(fwUrl);
-                        if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
-                        else console.warn('[MicrobitRunner] fixed firmware HTTP', res.status);
-                    } catch (e) { console.warn('[MicrobitRunner] fixed firmware failed:', e); }
-                } else if (firmware && firmware.trim()) {
-                    try { bytes = b64ToU8(firmware.trim()); } catch { bytes = null; }
-                }
-                if (!bytes || bytes.length < 8) {
-                    console.warn('[MicrobitRunner] no firmware — idle.');
-                    return;
-                }
-                // Vector table: [SP, Reset+1] (raw .bin at base 0x0).
-                const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-                const sp = dv.getUint32(0, true) >>> 0;
-                const pc = (dv.getUint32(4, true) >>> 0) & ~1;
-                try {
-                    self.cpu = new wasm.WasmCpu(sp, pc, 512 * 1024, 128 * 1024);
-                    self.cpu.load_firmware(bytes, 0x0);
-                } catch (e) {
-                    console.warn('[MicrobitRunner] cpu/firmware failed:', e);
-                    return;
+                        const res = await fetch(MICROPYTHON_HEX_URL);
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const { img, uicr } = parseMicroPythonHex(await res.text());
+                        self.mpFlash = img;
+                        self.cpu = new wasm.WasmCpu(MP_APP_SP, MP_APP_PC, 512 * 1024, 128 * 1024);
+                        self.cpu.load_firmware(img, 0);
+                        self.cpu.set_deliver_irqs?.(true);
+                        for (const [addr, val] of uicr) wasm.periph_write(addr, 4, val >>> 0);
+                        const w32 = (v: number) => [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff];
+                        self.cpu.mem_write(0x20000000, w32(0x1000));
+                        self.cpu.mem_write(0x20000004, w32(0x1c000));
+                        self.cpu.reset_cpu(MP_APP_SP, MP_RESET_PC);
+                    } catch (e) {
+                        console.warn('[MicrobitRunner] MicroPython image failed:', e);
+                        self.isMicroPython = false;
+                        return;
+                    }
+                } else {
+                    // Firmware: fixed image (no backend core for nRF52833).
+                    // URL arrives via the board `firmware` attr (options) or
+                    // the FIXEDBIN: sentinel (compile bypass payload).
+                    let bytes: Uint8Array | null = null;
+                    let fwUrl = self.fixedFirmwareUrl;
+                    if (!fwUrl && String(firmware || '').startsWith('FIXEDBIN:')) {
+                        fwUrl = String(firmware).slice('FIXEDBIN:'.length).trim();
+                    }
+                    if (fwUrl) {
+                        try {
+                            const res = await fetch(fwUrl);
+                            if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+                            else console.warn('[MicrobitRunner] fixed firmware HTTP', res.status);
+                        } catch (e) { console.warn('[MicrobitRunner] fixed firmware failed:', e); }
+                    } else if (firmware && firmware.trim()) {
+                        try { bytes = b64ToU8(firmware.trim()); } catch { bytes = null; }
+                    }
+                    if (!bytes || bytes.length < 8) {
+                        console.warn('[MicrobitRunner] no firmware — idle.');
+                        return;
+                    }
+                    // Vector table: [SP, Reset+1] (raw .bin at base 0x0).
+                    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                    const sp = dv.getUint32(0, true) >>> 0;
+                    const pc = (dv.getUint32(4, true) >>> 0) & ~1;
+                    try {
+                        self.cpu = new wasm.WasmCpu(sp, pc, 512 * 1024, 128 * 1024);
+                        self.cpu.load_firmware(bytes, 0x0);
+                    } catch (e) {
+                        console.warn('[MicrobitRunner] cpu/firmware failed:', e);
+                        return;
+                    }
                 }
                 self.mcu = {
                     gpio: {
@@ -247,10 +385,31 @@ export class MicrobitRunner extends ArmRunnerBase {
             },
             stepBudget(budget: number): number {
                 if (!self.cpu || !self.mod) return 0;
-                const n = Math.max(1, Math.floor(budget));
+                // MicroPython's CODAL boot is ~18M instructions (~900 slices
+                // of 20K). Fixed-bin cells keep their original wall-paced
+                // budget; only the MP path uses the owner bench slice.
+                const n = self.isMicroPython
+                    ? Math.max(MP_STEP_SLICE, Math.floor(budget))
+                    : Math.max(1, Math.floor(budget));
                 let stepped = 0;
                 try { stepped = Number(self.cpu.step(n)) || 0; } catch { stepped = 0; }
                 try { self.mod.tick_peripherals(); } catch { /* ignore */ }
+                if (self.isMicroPython) {
+                    // Owner bench pump: AIRCR reboot, WFI sleep fast-forward
+                    // and the TWIM1 parts poll all run AFTER tick_peripherals.
+                    try {
+                        if (self.mod.is_watchdog_reset_requested?.()) {
+                            self.cpu.reset_cpu(MP_APP_SP, MP_RESET_PC);
+                        }
+                    } catch { /* ignore */ }
+                    try {
+                        if (self.cpu.sleeping?.()) {
+                            self.mod.tick_n?.(n);
+                            if (self.mod.has_pending_interrupt?.()) self.cpu.wake?.();
+                        }
+                    } catch { /* ignore */ }
+                    try { self.mpLsm?.poll?.(self.cpu); } catch { /* never breaks tick */ }
+                }
                 try { self.driveRails(); } catch { /* never breaks tick */ }
                 try { self.pumpDma(); } catch { /* never breaks tick */ }
                 try { self.pumpUartRx(); } catch { /* never breaks tick */ }
@@ -272,6 +431,16 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try {
                     const s = String(self.mod?.get_uart_output?.() || '');
                     if (!s) return [];
+                    if (self.isMicroPython) {
+                        // The REPL prompt is the only safe moment to type:
+                        // bytes sent before it are swallowed by the boot
+                        // console (same lesson as the Pico MP runner).
+                        self.mpUartTail = (self.mpUartTail + s).slice(-24);
+                        if (self.mpUartTail.includes('>>>')) self.mpReady = true;
+                        if (self.mpReady && !self.mpInjectStarted && self.pyScript.trim()) {
+                            self.startPythonInject();
+                        }
+                    }
                     const out: number[] = [];
                     for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
                     return out;
@@ -296,13 +465,21 @@ export class MicrobitRunner extends ArmRunnerBase {
                 try {
                     self.rxQueue.push(Number(value) & 0xff);
                     // Keep the queue bounded: a firmware that never reads
-                    // RXD would otherwise grow it forever.
-                    if (self.rxQueue.length > 256) self.rxQueue.splice(0, self.rxQueue.length - 256);
+                    // RXD would otherwise grow it forever. MicroPython's
+                    // chunked main.py injection needs more than 256 bytes.
+                    const cap = self.isMicroPython ? 4096 : 256;
+                    if (self.rxQueue.length > cap) self.rxQueue.splice(0, self.rxQueue.length - cap);
                 } catch { /* ignore */ }
             },
             close(): void {
                 try { (self as any).btnGen = (((self as any).btnGen || 0) + 1); } catch { /* ignore */ }
                 try { self.rxQueue.length = 0; } catch { /* ignore */ }
+                try {
+                    self.mpReady = false;
+                    self.mpInjectStarted = false;
+                    self.mpUartTail = '';
+                    self.mpLsm = null;
+                } catch { /* ignore */ }
                 try { self.cpu = null; } catch { /* ignore */ }
                 try { self.mcu = null; } catch { /* ignore */ }
             },
@@ -380,6 +557,16 @@ export class MicrobitRunner extends ArmRunnerBase {
         try {
             const e = (wasm as any).nvmc_take_erase?.();
             if (e && e.length > 0) {
+                // MicroPython's filesystem setup erases flash; the engine's
+                // erase tap is async and does NOT touch guest RAM, so the
+                // host must supply the erased bytes (owner bench recipe).
+                if (self.isMicroPython && self.mpFlash) {
+                    try {
+                        const addr = Number(e[0]) >>> 0;
+                        if (addr === 0xffffffff) cpu.mem_write(0, new Uint8Array(512 * 1024).fill(0xff));
+                        else cpu.mem_write(addr, new Uint8Array(4096).fill(0xff));
+                    } catch { /* ignore */ }
+                }
                 try { (wasm as any).nvmc_complete_erase?.(); } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
@@ -477,6 +664,20 @@ export class MicrobitRunner extends ArmRunnerBase {
         const wasm = this.mod;
         const cpu = this.cpu;
         if (!wasm || !cpu) return;
+        if (this.isMicroPython && (this.mpDiagTick++ & 63) === 0) {
+            try {
+                (this.instances.get(this.boardId) as any)?.setState?.({
+                    mpDiag: {
+                        ready: this.mpReady, started: this.mpInjectStarted,
+                        queued: this.rxQueue.length,
+                        fed: this.mpFed, rxFail: this.mpRxFail,
+                        rxdrdy: Number(wasm.periph_read(MB_UART0_EVENTS_RXD, 4)) >>> 0,
+                        uarteEnable: Number(wasm.periph_read(MB_UART0_BASE + 0x500, 4)) >>> 0,
+                        errsrc: Number(wasm.periph_read(MB_UART0_BASE + 0x480, 4)) >>> 0,
+                    },
+                });
+            } catch { /* diag never breaks the drip */ }
+        }
         if (!this.rxQueue.length) return;
         try {
             // EVENTS_RXDRDY is latched per byte; 0 = the slot is free.
@@ -493,7 +694,11 @@ export class MicrobitRunner extends ArmRunnerBase {
                     cpu.mem_write(ptr + amt, new Uint8Array([byte & 0xff]));
                 }
             } catch { /* polled RX needs no DMA mirror */ }
-            wasm.uart_rx_byte(MB_UART0_BASE, byte & 0xff);
+            const ok = wasm.uart_rx_byte(MB_UART0_BASE, byte & 0xff);
+            if (this.isMicroPython) {
+                if (ok) this.mpFed++;
+                else this.mpRxFail++;
+            }
         } catch { /* the drip never breaks the tick */ }
     }
 
@@ -693,6 +898,24 @@ export class MicrobitRunner extends ArmRunnerBase {
         }
     }
 
+    /** Type the user's main.py into the live MicroPython REPL. Chunked
+     * exec() lines share __main__ globals (imports/pins persist), and the
+     * first Ctrl-C aborts any stray partial line. Bytes ride the existing
+     * paced UARTE0 RX drip, so no byte outruns the single-byte RXD slot. */
+    private startPythonInject(): void {
+        try {
+            this.mpInjectStarted = true;
+            const chunks = chunkExecLines(this.pyScript.replace(/\r\n/g, '\n'), 120);
+            const payload = `\x03${chunks.map((c) => `exec('${c}')\r`).join('')}`;
+            for (let i = 0; i < payload.length; i++) {
+                // injectUartByte lives on the engine object (the runner
+                // class has no such method) — same path as the host serial
+                // console / inter-board UART bytes.
+                this.engine?.injectUartByte?.(payload.charCodeAt(i) & 0xff);
+            }
+        } catch (e) { console.warn('[MicrobitRunner] script inject failed:', e); }
+    }
+
     /** GPIO: publish edge-pin outputs; matrix rows/cols feed board
      * telemetry (matrixLit) for the blinky cell. */
     private pollGpio(): void {
@@ -712,11 +935,22 @@ export class MicrobitRunner extends ArmRunnerBase {
             let lit = 0;
             try {
                 const m = wasm.matrix_state();
-                if (m && m.length) for (const b of m) if (b) lit++;
+                if (m && m.length) {
+                    for (let j = 0; j < m.length && j < 25; j++) {
+                        if (m[j]) { lit++; this.matrixSticky |= (1 << j); }
+                    }
+                }
             } catch { /* ignore */ }
-            if (lit !== this.lastMatrixLit) {
+            let union = 0;
+            for (let v = this.matrixSticky; v; v &= v - 1) union++;
+            if (lit !== this.lastMatrixLit || union !== this.lastMatrixUnion) {
                 this.lastMatrixLit = lit;
-                try { (this.instances.get(this.boardId) as any)?.setState?.({ matrixLit: lit }); } catch { /* ignore */ }
+                this.lastMatrixUnion = union;
+                try {
+                    (this.instances.get(this.boardId) as any)?.setState?.({
+                        matrixLit: lit, matrixLitUnion: union,
+                    });
+                } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
     }
