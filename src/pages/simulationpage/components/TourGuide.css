@@ -317,8 +317,9 @@
   align-items: center;
   justify-content: center;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
-  /* Offset so the cursor's hot-spot tip aligns with the target centre */
-  transform: translate(-8px, -4px);
+  /* The 48px icon is centred on the computed (left, top) point so the
+     pointer visibly sits on the target it is pointing at. */
+  transform: translate(-24px, -24px);
   /* Smooth cursor glide between positions */
   transition:
     left 0.6s cubic-bezier(0.23, 1, 0.32, 1),

@@ -723,6 +723,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const [serialViewMode, setSerialViewMode] = useState("monitor"); // 'monitor' | 'plotter'
   const [isPaletteHovered, setIsPaletteHovered] = useState(false);
+  // Bumped by Help → Start Tour so TourGuide always remounts at step 0,
+  // even if the tour was already open (or lingering in state) when clicked.
+  const [tourRunId, setTourRunId] = useState(0);
 
   const {
     showTour,
@@ -739,6 +742,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     openCodeFile,
     setSerialViewMode,
     setIsPaletteHovered,
+    setProjectFiles,
+    setOpenCodeTabs,
   });
 
   useEffect(() => {
@@ -5157,6 +5162,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
             setUseBlocklyCode={setUseBlocklyCode}
             onStartTour={() => {
               localStorage.removeItem("openhw-tour-completed");
+              localStorage.removeItem("openhw_tour_completed");
+              setTourRunId((n) => n + 1);
               setShowTour(true);
             }}
             onReportFrontendBug={() => setFrontendBugModalOpen(true)}
@@ -5314,6 +5321,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
+            data-tour-id="tour-canvas"
             className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)]"
             style={{
               cursor: showInspector
@@ -6444,6 +6452,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
               {showTour && (
                 <TourGuide
+                  key={tourRunId}
                   onFinish={handleFinishTour}
                   onStepChange={setTourActiveStep}
                   onDemoAction={handleTourDemoAction}

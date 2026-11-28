@@ -141,6 +141,7 @@ const MenuButton = ({
     onMouseLeave={() => setActiveMenu(null)}
   >
     <button
+      data-tour-id={`menu-${menuKey}`}
       onMouseDown={(e) => {
         e.stopPropagation();
         setActiveMenu(activeMenu === menuKey ? null : menuKey);

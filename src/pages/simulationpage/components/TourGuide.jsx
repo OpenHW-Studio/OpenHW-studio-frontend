@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './TourGuide.css';
 
 const STEPS = [
@@ -12,7 +12,7 @@ const STEPS = [
   },
   {
     id: 'quick-add',
-    target: '[data-tour-step="quick-add"]',
+    target: '[data-tour-id="tour-canvas"]',
     fallbackTarget: 'main',
     title: 'Quick Add Portal',
     content: 'Double-click anywhere on the canvas to instantly find and add components. It\'s the fastest way to build your circuit.',
@@ -23,14 +23,14 @@ const STEPS = [
     // Use 'window' as selector to listen globally (for custom app-dispatched events).
     letMeTryTrigger: {
       event: 'dblclick',
-      selector: '[data-tour-step="quick-add"]',
+      selector: '[data-tour-id="tour-canvas"]',
       fallbackSelector: 'main',
     },
     letMeTryHint: 'Double-click anywhere on the canvas to continue →',
   },
   {
     id: 'drag-demo',
-    target: '[data-tour-step="drag-demo"]',
+    target: '[data-tour-id="tour-canvas"]',
     fallbackTarget: 'main',
     title: 'Component Movement',
     content: 'Simply drag any component to reposition it. Components snap to the grid for professional, clean layouts.',
@@ -44,7 +44,7 @@ const STEPS = [
   },
   {
     id: 'wiring',
-    target: '[data-tour-step="wiring"]',
+    target: '[data-tour-id="tour-canvas"]',
     fallbackTarget: 'main',
     title: 'Intelligent Wiring',
     content: 'Connect pins by clicking and dragging. The simulator automatically calculates the best path for your wires.',
@@ -57,7 +57,7 @@ const STEPS = [
   },
   {
     id: 'autowiring',
-    target: '[data-tour-step="autowiring"]',
+    target: '[data-tour-id="tour-canvas"]',
     fallbackTarget: 'main',
     title: 'Intelligent Autowiring',
     content: 'Select a component, right click, then choose Wire To. This automatically adds required components like resistors and routes the wires perfectly.',
@@ -68,9 +68,8 @@ const STEPS = [
   },
   {
     id: 'components-palette',
-    // Add data-tour-step="components-palette" to your component list sidebar
-    target: '[data-tour-step="components-palette"]',
-    fallbackTarget: 'aside.border-r',
+    // The palette already carries a stable data-tour-id in PalettePanel
+    target: '[data-tour-id="palette-panel"]',
     title: 'Components Palette',
     content: 'Browse hundreds of components — boards, sensors, displays, and more. Drag any component straight onto the canvas.',
     position: 'right',
@@ -78,9 +77,8 @@ const STEPS = [
   },
   {
     id: 'projects',
-    // Add data-tour-step="projects" to your File menu button/element
-    target: '[data-tour-step="projects"]',
-    fallbackTarget: '[data-tour-id="menu-file"], .menu-file, nav [class*="file"]',
+    // TopToolbox MenuButton exposes data-tour-id="menu-file" on the File menu
+    target: '[data-tour-id="menu-file"]',
     title: 'Save Your Work',
     content: 'Use the File menu to save your project, open existing ones, import files, or make a local backup copy.',
     position: 'bottom',
@@ -89,16 +87,15 @@ const STEPS = [
   {
     id: 'ide',
     target: '[data-tour-step="ide"]',
-    fallbackTarget: 'aside.border-l',
     title: 'Integrated IDE',
     content: 'A professional-grade editor for your firmware. Supports multi-file projects and real-time syntax checking.',
     position: 'left',
+    action: 'switch-code', // the panel is collapsed on tour start; open it before measuring
     spotlightPadding: 8,
   },
   {
     id: 'blockly',
     target: '[data-tour-step="blockly"]',
-    fallbackTarget: 'aside.border-l',
     title: 'Visual Block Coding',
     content: 'Prefer visual logic? Switch to Blockly to build your firmware with drag-and-drop blocks.',
     position: 'left',
@@ -114,7 +111,6 @@ const STEPS = [
   {
     id: 'library',
     target: '[data-tour-step="library"]',
-    fallbackTarget: '[data-tour-id="btn-libraries"], button[class*="librari" i], [class*="library-btn"]',
     title: 'Library Manager',
     content: 'Click Libraries in code section to browse and install thousands of community-built libraries for sensors, displays, and communication protocols.',
     position: 'top',
@@ -125,7 +121,6 @@ const STEPS = [
   {
     id: 'serial',
     target: '[data-tour-step="serial"]',
-    fallbackTarget: 'aside.border-l',
     title: 'Serial Monitor',
     content: 'Interact with your simulated hardware in real-time. Send commands and view debug output instantly.',
     position: 'left',
@@ -141,7 +136,6 @@ const STEPS = [
   {
     id: 'plotter',
     target: '[data-tour-step="plotter"]',
-    fallbackTarget: 'aside.border-l',
     title: 'Real-time Plotter',
     content: 'Visualize high-frequency sensor data with our built-in oscilloscope and telemetry plotter.',
     position: 'left',
@@ -157,8 +151,7 @@ const STEPS = [
   },
   {
     id: 'console',
-    target: '#tour-console-btn, [data-tour-step="console"]',
-    fallbackTarget: '[data-simulation-console="true"]',
+    target: '#tour-console-btn',
     title: 'System Console',
     content: 'Check for compilation logs, system warnings, and hardware connection status here.',
     position: 'top',
@@ -178,14 +171,86 @@ const FOCUSABLE_SELECTORS =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper: resolve a step's target element, preferring the standardized
-// data-tour-step attribute then falling back to legacy selectors.
+// Target resolution
+//
+// A selector is only useful if the element it matches is actually on screen.
+// Several panels in the simulator keep off-screen DOM nodes mounted (the
+// palette is translated -302px, the right panel and projects sidebar collapse
+// to zero width), so document.querySelector alone happily returns a hidden
+// element and the spotlight lands in the wrong place.
 // ─────────────────────────────────────────────────────────────────────────────
+function isUsableElement(el) {
+  if (!el || el.getClientRects().length === 0) return false;
+  const style = getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const r = el.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return false;
+  return r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
+}
+
+function queryVisible(selector) {
+  if (!selector) return null;
+  try {
+    for (const el of document.querySelectorAll(selector)) {
+      if (isUsableElement(el)) return el;
+    }
+  } catch {
+    // A malformed legacy selector must never break the tour.
+  }
+  return null;
+}
+
 function resolveTargetEl(step) {
-  if (!step.target) return null;
+  if (!step?.target) return null;
+  for (const selector of step.target.split(',')) {
+    const el = queryVisible(selector.trim());
+    if (el) return el;
+  }
+  for (const selector of (step.fallbackTarget || '').split(',')) {
+    const el = queryVisible(selector.trim());
+    if (el) return el;
+  }
+  return null;
+}
+
+const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+
+// Where the ghost pointer should be for each step. The first visible match
+// wins; the canvas is always the last resort so the pointer never ends up
+// parked on an off-screen palette item (a previous bug).
+const GHOST_SELECTORS = {
+  'quick-add': '[data-tour-id="tour-canvas"], main',
+  'drag-demo': '[id*="comp-master-demo-comp-tour"], [data-tour-id="tour-canvas"], main',
+  wiring: (phase) => {
+    if (phase <= 2) return '[id*="pin-dot-demo-comp-tour-13"], [data-tour-id="tour-canvas"], main';
+    if (phase <= 4) return '[id*="pin-dot-demo-led-tour-A"], [data-tour-id="tour-canvas"], main';
+    if (phase <= 6) return '[id*="pin-dot-demo-comp-tour-gnd_3"], [data-tour-id="tour-canvas"], main';
+    return '[id*="pin-dot-demo-led-tour-K"], [data-tour-id="tour-canvas"], main';
+  },
+  autowiring: '[id*="comp-master-demo-led-tour"], [data-tour-id="tour-canvas"], main',
+  'components-palette': '[data-tour-id="palette-panel"]',
+  projects: '[data-tour-id="menu-file"]',
+  ide: '[data-tour-step="ide"]',
+  blockly: '[data-tour-step="blockly"], [data-tour-id="tab-block"]',
+  library: '[data-tour-step="library"], [data-tour-file="library.txt"]',
+  serial: '[data-tour-id="tab-serial"], [data-tour-step="serial"]',
+  plotter: '[data-tour-id="plotter-view-btn"], [data-tour-step="plotter"]',
+  console: '#tour-console-btn',
+};
+
+function ghostSelectorFor(step, phase) {
+  const configured = GHOST_SELECTORS[step.id];
+  return typeof configured === 'function' ? configured(phase) : configured;
+}
+
+function sameRect(a, b) {
+  if (!a || !b) return a === b;
   return (
-    document.querySelector(step.target) ??
-    (step.fallbackTarget ? document.querySelector(step.fallbackTarget) : null)
+    Math.abs(a.top - b.top) < 0.5 &&
+    Math.abs(a.left - b.left) < 0.5 &&
+    Math.abs(a.width - b.width) < 0.5 &&
+    Math.abs(a.height - b.height) < 0.5 &&
+    a.padding === b.padding
   );
 }
 
@@ -195,8 +260,10 @@ function resolveTargetEl(step) {
 const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [spotlightRect, setSpotlightRect] = useState(null);
-  // Start hidden; the localStorage check below decides whether to show
-  const [isVisible, setIsVisible] = useState(false);
+  // Visibility is owned by the parent (showTour); this component is mounted
+  // only while a tour is actually running. A remount (new key from the Help
+  // menu) always starts a fresh tour at step 0.
+  const [isVisible, setIsVisible] = useState(true);
   const [demoPhase, setDemoPhase] = useState(0);
   const [ghostMousePos, setGhostMousePos] = useState({
     x: window.innerWidth / 2,
@@ -208,69 +275,85 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
   const [mode, setMode] = useState('show-me');
 
   const tooltipRef = useRef(null);
-  const observerRef = useRef(null); // ResizeObserver instance
 
-  // ── Persistence: skip tour if already completed ──────────────────────────
+  // ── Continuous geometry tracking ─────────────────────────────────────────
+  // Measuring once per step (or on resize alone) goes stale the moment a
+  // panel slides in, the canvas is transformed, the DOM re-renders or the
+  // user scrolls. One rAF loop re-resolves and re-measures the live element
+  // every frame; React state is only updated when the rect actually moves.
   useEffect(() => {
-    const completed = localStorage.getItem('openhw-tour-completed');
-    if (!completed) setIsVisible(true);
-  }, []);
+    if (!isVisible) return undefined;
+    let frame = 0;
+    const tick = () => {
+      const step = STEPS[currentStep];
+      const targetEl = resolveTargetEl(step);
+      const rect = targetEl?.getBoundingClientRect();
+      const nextRect = targetEl && rect && rect.width >= 2 && rect.height >= 2
+        ? {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+            padding: step.spotlightPadding ?? 4,
+          }
+        : null;
+      setSpotlightRect(prev => (sameRect(prev, nextRect) ? prev : nextRect));
 
-  // ── Spotlight calculator ─────────────────────────────────────────────────
-  const updateSpotlight = useCallback(() => {
-    const step = STEPS[currentStep];
-    if (!step.target) {
-      setSpotlightRect(null);
-      return;
-    }
-    const el = resolveTargetEl(step);
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setSpotlightRect({
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        // Carry padding so the spotlight renderer can use it directly
-        padding: step.spotlightPadding ?? 4,
-      });
-    } else {
-      setSpotlightRect(null);
-    }
-  }, [currentStep]);
+      if (mode === 'show-me') {
+        const ghostEl = queryVisible(ghostSelectorFor(step, demoPhase));
+        const ghostRect = ghostEl?.getBoundingClientRect();
+        let pos = ghostRect && ghostRect.width >= 2 && ghostRect.height >= 2
+          ? { x: ghostRect.left + ghostRect.width / 2, y: ghostRect.top + ghostRect.height / 2 }
+          : nextRect
+            ? { x: nextRect.left + nextRect.width / 2, y: nextRect.top + nextRect.height / 2 }
+            : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
-  // ── ResizeObserver: re-calc spotlight when the target element changes ────
-  // This catches sidebar resizes, canvas zoom, and any layout reflows that
-  // window 'resize' alone would miss.
-  useEffect(() => {
-    // Tear down the previous observer before attaching a new one
-    observerRef.current?.disconnect();
-    observerRef.current = null;
+        // Keep the fake context-menu offsets, but never let the pointer drift
+        // outside its step target or the viewport.
+        if (step.id === 'autowiring') {
+          if (demoPhase === 3) { pos.x += 115; pos.y += 168; }
+          else if (demoPhase >= 4) { pos.x += 255; pos.y += 168; }
+        }
+        if (targetEl && nextRect) {
+          const margin = 24;
+          pos = {
+            x: nextRect.width <= margin * 2
+              ? nextRect.left + nextRect.width / 2
+              : clamp(pos.x, nextRect.left + margin, nextRect.left + nextRect.width - margin),
+            y: nextRect.height <= margin * 2
+              ? nextRect.top + nextRect.height / 2
+              : clamp(pos.y, nextRect.top + margin, nextRect.top + nextRect.height - margin),
+          };
+        }
+        pos = {
+          x: clamp(pos.x, 20, window.innerWidth - 20),
+          y: clamp(pos.y, 20, window.innerHeight - 20),
+        };
+        setGhostMousePos(prev => (
+          Math.abs(prev.x - pos.x) < 0.5 && Math.abs(prev.y - pos.y) < 0.5 ? prev : pos
+        ));
 
-    const step = STEPS[currentStep];
-    const el = resolveTargetEl(step);
-    if (el) {
-      observerRef.current = new ResizeObserver(updateSpotlight);
-      observerRef.current.observe(el);
-    }
-
-    // Keep the window listener for viewport-level changes (e.g. device rotation)
-    window.addEventListener('resize', updateSpotlight);
-    return () => {
-      window.removeEventListener('resize', updateSpotlight);
-      observerRef.current?.disconnect();
+        if (step.id === 'wiring') {
+          const start = (demoPhase === 2 || demoPhase === 6) ? pos : null;
+          setGhostWireStart(prev => (
+            prev === start || (prev && start && Math.abs(prev.x - start.x) < 0.5 && Math.abs(prev.y - start.y) < 0.5)
+              ? prev
+              : start
+          ));
+        }
+      }
+      frame = requestAnimationFrame(tick);
     };
-  }, [currentStep, updateSpotlight]);
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isVisible, currentStep, demoPhase, mode]);
 
-  // ── Step change: notify parent, reset phase, recalculate spotlight ───────
+  // ── Step change: notify parent and reset the demo phase ──────────────────
   useEffect(() => {
     if (!isVisible) return;
     onStepChange?.(STEPS[currentStep].id);
     setDemoPhase(0);
-    // Brief delay lets layout settle after any parent-triggered panel switches
-    const t = setTimeout(updateSpotlight, 500);
-    return () => clearTimeout(t);
-  }, [currentStep, isVisible, updateSpotlight, onStepChange]);
+  }, [currentStep, isVisible, onStepChange]);
 
   // ── Focus management: move focus into tooltip on each step ───────────────
   useEffect(() => {
@@ -345,62 +428,6 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     return () => window.removeEventListener('keydown', onTab);
   }, [isVisible, currentStep]);
 
-  // ── Ghost cursor tracking (show-me mode only) ────────────────────────────
-  useLayoutEffect(() => {
-    if (!isVisible || mode !== 'show-me') return;
-    const step = STEPS[currentStep];
-
-    // Resolve target using the same standardized data-tour-step approach
-    let selector = null;
-    if (step.id === 'quick-add') selector = '[data-tour-step="quick-add"]';
-    if (step.id === 'drag-demo') {
-      selector =
-        demoPhase <= 1
-          ? '[data-tour-type="wokwi-arduino-uno"], [data-tour-type="openhw-arduino-uno"]'
-          : '[id*="comp-master-demo-comp-tour"]';
-    }
-    if (step.id === 'wiring') {
-      if (demoPhase <= 2) selector = '[id*="pin-dot-demo-comp-tour-13"]';
-      else if (demoPhase <= 4) selector = '[id*="pin-dot-demo-led-tour-A"]';
-      else if (demoPhase <= 6) selector = '[id*="pin-dot-demo-comp-tour-gnd_3"]';
-      else selector = '[id*="pin-dot-demo-led-tour-K"]';
-    }
-    if (step.id === 'autowiring') {
-      selector = '[id*="comp-master-demo-led-tour"]';
-    }
-    if (step.id === 'library') {
-      if (demoPhase <= 1) selector = '[data-tour-file="library.txt"]';
-      else selector = '[data-tour-step="library"]';
-    }
-    if (step.action?.includes('switch-blockly')) selector = '[data-tour-id="tab-block"]';
-    if (step.action?.includes('switch-serial'))  selector = '[data-tour-id="tab-serial"]';
-    if (step.action?.includes('switch-library') && step.id !== 'library') selector = '[data-tour-step="library"], [data-tour-id="btn-libraries"], button[class*="librari" i]';
-    // Plotter is a view-mode button inside the Serial tab, not its own tab
-    if (step.action?.includes('switch-plotter')) selector = '[data-tour-id="plotter-view-btn"]';
-    
-    if (selector) {
-      const el = document.querySelector(selector);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        let newPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        if (step.id === 'autowiring') {
-          if (demoPhase === 3) {
-            newPos.x += 115;
-            newPos.y += 168; // Move to "Wire To"
-          } else if (demoPhase >= 4) {
-            newPos.x += 255;
-            newPos.y += 168; // Move to "uno" submenu option
-          }
-        }
-        setGhostMousePos(newPos);
-        if (step.id === 'wiring') {
-          if (demoPhase === 2 || demoPhase === 6) setGhostWireStart(newPos);
-          else if (demoPhase === 0 || demoPhase === 1 || demoPhase === 5) setGhostWireStart(null);
-        }
-      }
-    }
-  }, [currentStep, demoPhase, isVisible, mode]);
-
   // ── Demo actions (show-me mode only) ────────────────────────────────────
   useEffect(() => {
     if (!isVisible || !onDemoAction || mode !== 'show-me') return;
@@ -435,6 +462,9 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       if (demoPhase === 0) {
         onDemoAction('close-library-panel');
         onDemoAction('open-demo-ino');
+        // The Libraries button only renders while library.txt is active.
+        // Make it available as soon as the step opens (not 1.8s later).
+        onDemoAction('open-library-txt');
       }
       if (demoPhase === 1) onDemoAction('open-library-txt');
       if (demoPhase === 3) onDemoAction('open-library-panel');
@@ -478,6 +508,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       onDemoAction?.('remove-component');
       onDemoAction?.('hide-quick-add');
       onDemoAction?.('remove-demo-wire');
+      onDemoAction?.('remove-demo-library-file');
     };
   }, [currentStep, onDemoAction, mode]);
 
@@ -490,6 +521,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       onDemoAction?.('remove-component');
       onDemoAction?.('hide-quick-add');
       onDemoAction?.('remove-demo-wire');
+      onDemoAction?.('remove-demo-library-file');
     };
   }, [onDemoAction]);
 
@@ -729,6 +761,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       {spotlightRect && (
         <div
           className="tour-spotlight"
+          data-tour-step-id={step.id}
+          data-tour-target={step.target ?? ''}
           style={{
             top: spotlightRect.top - pad,
             left: spotlightRect.left - pad,
@@ -742,6 +776,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       <div
         ref={tooltipRef}
         className="tour-tooltip"
+        data-tour-step-id={step.id}
+        data-tour-target={step.target ?? ''}
         style={getTooltipStyle()}
         role="dialog"
         aria-modal="true"
