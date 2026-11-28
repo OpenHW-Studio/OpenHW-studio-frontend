@@ -81,6 +81,22 @@ function ensureDir(fs: any, dir: string): void {
 
 interface I2cTransaction { bus: number; addr: number; read: boolean; bytes: number[]; count: number }
 interface SpiTransaction { bus: number; dev: number; bytes: number[] }
+interface WiredEndpoint { inst: any; pinId: string; boardPin: string }
+
+/**
+ * ADC channel for a wired board pin. MCP3008-style ADC hats are addressed by
+ * channel 0..7; for a direct GPIO wire the BCM number maps modulo 8 into the
+ * same 8-channel space (so `pi:5` is channel 5). Explicit `ADCn`/`An` labels
+ * win when present.
+ */
+function adcChannelOf(pinId: string): number | null {
+  const s = String(pinId || '').trim();
+  const explicit = /^(?:ADC|A|CH)(\d+)$/i.exec(s);
+  const m = explicit || /^(\d+)$/.exec(s);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 0 ? n % 8 : null;
+}
 
 class RpiPyodideEngine implements ArmEngineHooks {
   private pyodide: any = null;
@@ -93,6 +109,18 @@ class RpiPyodideEngine implements ArmEngineHooks {
   private peripherals = getPeripherals();
   private stdoutReady = false;
   private wrapped = false;
+  /** Guest UART TX since the last host delivery (drained into a wired
+   * host serial sink such as the USB-device terminal). */
+  private uartLog = '';
+  /** Python poll hook defined by a sketch; called on every runner tick so a
+   * sketch can observe mid-run host changes (UART RX, sensors, …). */
+  private pollFn: any = null;
+  private lastAdc: Record<number, number> = {};
+  private lastOneWire: Record<number, number> = {};
+  private lastDht = '';
+  private lastNeoPixel = '';
+  private lastPwm = '';
+  private lastUart = '';
 
   constructor(private readonly owner: RpiPyodideRunner) {
     this.installBridgeTaps();
@@ -130,6 +158,13 @@ class RpiPyodideEngine implements ArmEngineHooks {
         this.spiLog.push({ bus: Number(bus), dev: Number(dev),
           bytes: Array.from(bytes || []).map(Number) });
       } catch { /* ditto */ }
+      return out;
+    };
+    // Guest UART writes are host-visible bytes (the physical TX line).
+    const uartWrite = b.uart_write;
+    b.uart_write = (text: any) => {
+      const out = uartWrite.call(b, text);
+      try { this.uartLog += String(text ?? ''); } catch { /* ignore */ }
       return out;
     };
   }
@@ -181,8 +216,15 @@ class RpiPyodideEngine implements ArmEngineHooks {
     this.board = boardKeyOf(boardType);
     await this.ensurePyodide();
     try { bridge.reset(this.board); } catch { /* reset never blocks boot */ }
+    // Rebind after reset (the engine resets in place today, but a future
+    // instance swap must not leave translators reading stale devices).
+    this.peripherals = getPeripherals();
     this.i2cLog.length = 0;
     this.spiLog.length = 0;
+    this.uartLog = '';
+    this.lastAdc = {}; this.lastOneWire = {}; this.lastDht = '';
+    this.lastNeoPixel = ''; this.lastPwm = ''; this.lastUart = '';
+    this.pollFn = null;
     const raw = String(firmware || '');
     this.script = this.owner.pyScript
       || (raw.startsWith('PYSCRIPT:') ? raw.slice('PYSCRIPT:'.length) : raw);
@@ -192,6 +234,14 @@ class RpiPyodideEngine implements ArmEngineHooks {
     }
     try {
       await this.pyodide.runPythonAsync(this.script);
+      // A sketch may define rpi_poll(): the runner calls it on each tick so
+      // it can observe host changes that happen AFTER boot (serial RX,
+      // sensor value changes via INTERACT, …) with real read()/readline().
+      try {
+        const fn = this.pyodide.globals.get('rpi_poll');
+        if (fn && typeof fn === 'function') this.pollFn = fn;
+        else if (fn && typeof fn.destroy === 'function') fn.destroy();
+      } catch { /* no poll hook defined — fine */ }
     } catch (e: any) {
       // Keep the failure in the serial channel: e2e prints it verbatim and
       // fails the cell instead of silently timing out.
@@ -238,7 +288,8 @@ class RpiPyodideEngine implements ArmEngineHooks {
     return Number.isFinite(value) ? (value / 1023) * 3.3 : NaN;
   }
 
-  /** Publish guest bus transactions into wired host component models. */
+  /** Publish guest bus transactions into wired host component models and
+   * translate host component state back into the guest peripheral models. */
   tickEnd(): void {
     if (this.i2cLog.length) {
       const log = this.i2cLog.splice(0, this.i2cLog.length);
@@ -248,13 +299,43 @@ class RpiPyodideEngine implements ArmEngineHooks {
       const log = this.spiLog.splice(0, this.spiLog.length);
       for (const tx of log) this.owner.deliverSpi(tx);
     }
+    // Host → guest translators. Each is idempotent: a repeated identical
+    // value is a no-op, so component updates never churn.
+    try { this.owner.pumpAdc(this); } catch { /* translator never breaks a tick */ }
+    try { this.owner.pumpUart(this); } catch { /* ditto */ }
+    try { this.owner.pumpOneWire(this); } catch { /* ditto */ }
+    try { this.owner.pumpDht(this); } catch { /* ditto */ }
+    try { this.owner.pumpNeoPixel(this); } catch { /* ditto */ }
+    try { this.owner.pumpServo(this); } catch { /* ditto */ }
+    // Guest poll hook sees the translated state on this same tick.
+    if (this.pollFn) {
+      try { this.pollFn(); } catch { /* a sketch hook never breaks the tick */ }
+    }
   }
+
+  /** Exposed for the runner's translators (read-only view of live devices). */
+  get devices(): any { return this.peripherals; }
+  get boardKey(): BoardKey { return this.board; }
+  get adcCache(): Record<number, number> { return this.lastAdc; }
+  get oneWireCache(): Record<number, number> { return this.lastOneWire; }
+  get dhtCache(): string { return this.lastDht; }
+  set dhtCache(v: string) { this.lastDht = v; }
+  get neoPixelCache(): string { return this.lastNeoPixel; }
+  set neoPixelCache(v: string) { this.lastNeoPixel = v; }
+  get pwmCache(): string { return this.lastPwm; }
+  set pwmCache(v: string) { this.lastPwm = v; }
+  get uartCache(): string { return this.lastUart; }
+  set uartCache(v: string) { this.lastUart = v; }
+  clearUartLog(): void { this.uartLog = ''; }
 
   resetEngine(): void {
     try { bridge.reset(this.board); } catch { /* ignore */ }
+    this.peripherals = getPeripherals();
     this.i2cLog.length = 0;
     this.spiLog.length = 0;
     this.txQueue.length = 0;
+    this.uartLog = '';
+    this.pollFn = null;
   }
 
   close(): void { /* no persistent handles beyond the Pyodide instance */ }
@@ -268,8 +349,9 @@ export class RpiPyodideRunner extends ArmRunnerBase {
   protected engine = new RpiPyodideEngine(this);
   private pyScript: string;
   private boardType: string;
-  private i2cEndpoints: Array<{ inst: any; pinId: string }> | null = null;
-  private spiEndpoints: Array<{ inst: any; pinId: string }> | null = null;
+  private i2cEndpoints: WiredEndpoint[] | null = null;
+  private spiEndpoints: WiredEndpoint[] | null = null;
+  private wiredCache = new Map<string, WiredEndpoint[]>();
 
   constructor(
     hexData: string,
@@ -290,23 +372,180 @@ export class RpiPyodideRunner extends ArmRunnerBase {
     return Math.floor(Math.max(0, deltaMs) * 1000 * Math.max(0.05, Number(this.speed) || 1));
   }
 
-  private endpoints(kind: 'i2c' | 'spi'): Array<{ inst: any; pinId: string }> {
-    const cache = kind === 'i2c' ? this.i2cEndpoints : this.spiEndpoints;
-    if (cache) return cache;
-    const out = new Map<string, { inst: any; pinId: string }>();
-    const wanted = kind === 'i2c' ? 'onI2CStart' : 'onSPIByte';
+  /** All host instances wired to this board that satisfy `wanted`, deduped
+   * by instance id and annotated with the board pin that reaches them. */
+  private wiredEndpoints(key: string, wanted: string): WiredEndpoint[] {
+    const cached = this.wiredCache.get(key);
+    if (cached) return cached;
+    const out = new Map<string, WiredEndpoint>();
     try {
-      for (const pin of this.boardPinMap()) {
-        for (const ep of this.getProtocolEndpointsForPin(pin)) {
+      for (const boardPin of this.boardPinMap()) {
+        for (const ep of this.getProtocolEndpointsForPin(boardPin)) {
           if (typeof (ep.inst as any)?.[wanted] !== 'function') continue;
-          if (!out.has(String(ep.inst.id))) out.set(String(ep.inst.id), ep);
+          const id = String(ep.inst.id);
+          if (!out.has(id)) out.set(id, {
+            inst: ep.inst, pinId: String(ep.pinId), boardPin: String(boardPin),
+          });
         }
       }
     } catch { /* discovery never breaks a tick */ }
     const list = Array.from(out.values());
+    this.wiredCache.set(key, list);
+    return list;
+  }
+
+  private endpoints(kind: 'i2c' | 'spi'): WiredEndpoint[] {
+    const cache = kind === 'i2c' ? this.i2cEndpoints : this.spiEndpoints;
+    if (cache) return cache;
+    const list = kind === 'i2c'
+      ? this.wiredEndpoints('i2c', 'onI2CStart')
+      : this.wiredEndpoints('spi', 'onSPIByte');
     if (kind === 'i2c') this.i2cEndpoints = list;
     else this.spiEndpoints = list;
     return list;
+  }
+
+  /** Host component analogue output → guest MCP3008 channel. The host
+   * model (potentiometer wiper / LDR / NTC divider) is the source of truth;
+   * the guest reads the same converted 10-bit value. Per-board electrical
+   * facts (ref/threshold/pull-up) are published into the board's state so
+   * Pi 3/4 and Pi 5 differences remain observable. */
+  protected pumpAdc(engine: RpiPyodideEngine): void {
+    const meta: Record<string, any> = {
+      board: engine.boardKey,
+      refVolts: Number(engine.devices.profile?.vddVolts) || 3.3,
+      bits: engine.boardKey === 'pi5' ? 12 : 10,
+      viH: Number(engine.devices.profile?.viH),
+      pullUpOhms: Number(engine.devices.profile?.pullUpOhms),
+      channels: {},
+    };
+    const analogEndpoints = this.wiredEndpoints('analog', 'getPinVoltage');
+    // Publish per-board conversion facts once, on the first source that
+    // reports full state (potentiometer's getSyncState only reports value).
+    const metaTarget = analogEndpoints.find((ep) => !String(ep.inst.type || '').includes('potentiometer'))
+      || analogEndpoints[0];
+    if (metaTarget) {
+      try {
+        metaTarget.inst.state = { ...(metaTarget.inst.state || {}), rpiAdc: meta };
+        metaTarget.inst.stateChanged = true;
+      } catch { /* metadata never breaks a component */ }
+    }
+    for (const ep of analogEndpoints) {
+      const ch = adcChannelOf(ep.boardPin);
+      if (ch === null) continue;
+      // Only analogue-producing component pins are sources: rails and
+      // digital-only parts are excluded by the pin-name list.
+      const candidates = ['SIG', 'A0', 'p2', '2', 'HORZ', 'VERT'];
+      let volts = NaN;
+      for (const pin of candidates) {
+        try {
+          const v = Number(ep.inst.getPinVoltage(pin));
+          if (Number.isFinite(v) && v > 0) { volts = v; break; }
+        } catch { /* try next pin */ }
+      }
+      if (!Number.isFinite(volts)) continue;
+      const ref = Number(meta.refVolts) || 3.3;
+      const raw = Math.max(0, Math.min(1023,
+        Math.round((Math.min(volts, ref) / ref) * 1023)));
+      if (engine.adcCache[ch] !== raw) {
+        engine.adcCache[ch] = raw;
+        try { bridge.adc_set(ch, raw); } catch { /* ignore invalid channel */ }
+      }
+      meta.channels[String(ch)] = { volts: Number(volts.toFixed(4)), raw };
+    }
+    try {
+      const boardInst = this.instances.get(this.boardId) as any;
+      if (boardInst) {
+        boardInst.state = { ...(boardInst.state || {}), rpiAdc: meta };
+        boardInst.stateChanged = true;
+      }
+    } catch { /* metadata never breaks a tick */ }
+  }
+
+  /** Guest UART TX → host serial sink. `onUsbState` is the existing host
+   * terminal contract (`enumState`, `rxCount`, `lastEcho`). */
+  protected pumpUart(engine: RpiPyodideEngine): void {
+    const pending = engine.uartLog;
+    if (!pending || pending === engine.uartCache) return;
+    for (const inst of this.instances.values()) {
+      const sink = inst as any;
+      if (typeof sink.onUsbState !== 'function') continue;
+      try { sink.onUsbState('enumerated', pending.length, pending.slice(-64)); }
+      catch { /* one sink never breaks the bus */ }
+    }
+    engine.uartCache = pending;
+  }
+
+  /** Host DS18B20 temperature → JS 1-Wire model, read by the guest through
+   * `w1_gpio.read_temp()` / `rpi_sim.onewire.read_temp()`. */
+  protected pumpOneWire(engine: RpiPyodideEngine): void {
+    for (const ep of this.wiredEndpoints('onewire', 'getROMAddress')) {
+      const pin = pinNumber(ep.boardPin);
+      if (pin === null) continue;
+      const temp = Number((ep.inst as any).state?.temperature);
+      if (!Number.isFinite(temp)) continue;
+      if (engine.oneWireCache[pin] === temp) continue;
+      engine.oneWireCache[pin] = temp;
+      try { bridge.onewire_set(pin, temp); } catch { /* ignore */ }
+    }
+  }
+
+  /** Host DHT22 reading → JS DHT model behind `Adafruit_DHT.read*()`. */
+  protected pumpDht(engine: RpiPyodideEngine): void {
+    for (const ep of this.wiredEndpoints('dht', 'isTransactionActive')) {
+      if (!String((ep.inst as any).type || '').includes('dht22')) continue;
+      const pin = pinNumber(ep.boardPin);
+      if (pin === null) continue;
+      const temp = Number((ep.inst as any).state?.temperature);
+      const hum = Number((ep.inst as any).state?.humidity);
+      if (!Number.isFinite(temp) || !Number.isFinite(hum)) continue;
+      const key = `${pin}:${temp}:${hum}`;
+      if (engine.dhtCache === key) continue;
+      engine.dhtCache = key;
+      try { bridge.dht_set(pin, temp, hum); } catch { /* ignore */ }
+    }
+  }
+
+  /** Guest NeoPixel pixels → host WS2812 framebuffer (`onNeoPixelFrame`). */
+  protected pumpNeoPixel(engine: RpiPyodideEngine): void {
+    const panels = this.wiredEndpoints('neopixel', 'onNeoPixelFrame');
+    if (!panels.length) return;
+    let packed = '';
+    try {
+      for (const strip of engine.devices.neopixels.values()) {
+        for (const px of strip.pixels || []) {
+          packed += `${Number(px[0]) & 0xff},${Number(px[1]) & 0xff},${Number(px[2]) & 0xff};`;
+        }
+      }
+    } catch { return; }
+    if (!packed || packed === engine.neoPixelCache) return;
+    engine.neoPixelCache = packed;
+    const pixels = packed.split(';').filter(Boolean).map((s) => {
+      const [r, g, b] = s.split(',').map(Number);
+      return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+    });
+    for (const ep of panels) {
+      try { ep.inst.onNeoPixelFrame(pixels); } catch { /* one panel never breaks a tick */ }
+    }
+  }
+
+  /** Guest PWM channel → host RC servo pulse (`onPWMSignal`). Pulse width
+   * is derived from the guest's own frequency + duty, never guessed. */
+  protected pumpServo(engine: RpiPyodideEngine): void {
+    const servos = this.wiredEndpoints('servo', 'onPWMSignal');
+    if (!servos.length) return;
+    for (const [pin, ch] of engine.devices.pwm.entries()) {
+      const key = `${pin}:${ch.frequencyHz}:${ch.dutyPercent}`;
+      if (engine.pwmCache === key) continue;
+      engine.pwmCache = key;
+      const freq = Math.max(1, Number(ch.frequencyHz) || 50);
+      const duty = Math.max(0, Math.min(100, Number(ch.dutyPercent) || 0));
+      const pulseUs = (duty / 100) * (1_000_000 / freq);
+      for (const ep of servos) {
+        try { ep.inst.onPWMSignal(ep.pinId, freq, duty, pulseUs); }
+        catch { /* one servo never breaks the tick */ }
+      }
+    }
   }
 
   /** Replay one guest I2C transaction into every acking host device. The

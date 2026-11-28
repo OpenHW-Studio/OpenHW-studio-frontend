@@ -137,3 +137,38 @@ driven from Python through the bridge, with virtual time.
 
 Proof: `npm test` -> `ALL BOARDS / ALL PERIPHERALS / 56 LIBRARIES / FIDELITY /
 NETWORK / ELECTRICAL / CONCURRENCY / CAMERA / DTREE / ASYNC / ANALOG PASS`.
+
+---
+
+## OpenHW integration appendix (2026-11-28) — not upstream text
+
+Everything above is the owner's upstream documentation. This appendix records
+what the main OpenHW Studio runner adds on top of it; it does not change any
+engine byte or upstream claim.
+
+* **Already modelled upstream, now bridged to host components:** GPIO output,
+  I2C EEPROM/SSD1306, SPI register file, PWM duty, ADC register, UART buffer,
+  1-Wire scratchpad and DHT waveform. The runner taps the same bridge methods
+  and pumps the same JS models — no new physics is claimed.
+* **New host↔guest translators** (`rpi-pyodide-runner.ts`): potentiometer
+  wiper → MCP3008 channel (10-bit conversion from the host rail voltage),
+  host USB-terminal sink ← guest UART TX, `SERIAL_INPUT` → guest UART RX,
+  DS18B20 temperature → 1-Wire model, DHT22 register values → waveform model,
+  guest NeoPixel pixels → WS2812 framebuffer, guest PWM frequency/duty →
+  servo pulse width. A sketch may define `rpi_poll()`; the runner calls it
+  each tick so post-boot host changes are observed with real guest read APIs.
+* **Claimed capabilities:** `digital-gpio`, `analog-adc`, `uart`, `onewire`,
+  `i2c-target`, `spi-target`, `pwm` — each proved by a host telemetry
+  assertion in `tests/e2e/rpi-{boards,protocols}.spec.js`.
+* **Per-board facts:** Pi 3 B+ / Pi 4 B use ViH 2.0 V, 1.8 kΩ pulls and a
+  10-bit ADC profile; Pi 5 (RP1) uses ViH 2.1 V, 50 kΩ pulls and a 12-bit
+  profile. These are model parameters, not measured silicon; they are exposed
+  to guest `electrical` state and host `rpiAdc` telemetry.
+* **Still simplified:** the ADC conversion is a rail-ratio quantisation (no
+  SAR timing/impedance); the UART bridge is a byte buffer (no baud/parity/FIFO
+  timing); 1-Wire and DHT use the upstream deterministic command/waveform
+  models; the servo gets an exact pulse width from guest duty but no real
+  pulse-generation hardware. `picamera2` remains an in-memory test pattern —
+  with no wired host camera component, the camera cell is `test.skip` with
+  the `camera-no-host-component` registry limit. No Linux, ARM CPU, boot or
+  device-driver execution is claimed.

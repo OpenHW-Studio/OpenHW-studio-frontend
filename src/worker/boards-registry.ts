@@ -86,15 +86,18 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     railVoltage: 3.3,
     engine: 'pyodide',
     runner: 'runners/rpi-pyodide-runner.ts',
-    // Proved by tests/e2e/rpi-boards.spec.js: GPIO output readback, I2C
-    // EEPROM block write/read, SPI/PWM peripheral reactions and the
-    // board_info() clock/temperature/PWM-policy differences.
-    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    // Proved by tests/e2e/rpi-boards.spec.js: GPIO LED, I2C EEPROM/SSD1306,
+    // SPI MAX7219, PWM duty/servo, ADC potentiometer roundtrip, UART both
+    // directions, 1-Wire DS18B20, DHT22 and NeoPixel host reactions, plus
+    // the board_info() clock/temperature/PWM-policy differences.
+    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi3-pwm-pin-policy', detail: 'BCM2837 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1200 MHz, CPU temp baseline 45 C.' },
+      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
+      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
     ],
   },
   {
@@ -103,12 +106,14 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     railVoltage: 3.3,
     engine: 'pyodide',
     runner: 'runners/rpi-pyodide-runner.ts',
-    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU, boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi4-pwm-pin-policy', detail: 'BCM2711 PWM is limited to GPIO 12/13/18/19; pwmCreate() on any other GPIO raises. Model clock 1500 MHz, CPU temp baseline 50 C.' },
+      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
+      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
     ],
   },
   {
@@ -117,12 +122,14 @@ export const BOARD_FAMILIES: BoardFamily[] = [
     railVoltage: 3.3,
     engine: 'pyodide',
     runner: 'runners/rpi-pyodide-runner.ts',
-    capabilities: ['digital-gpio', 'i2c-target', 'spi-target', 'pwm'],
+    capabilities: ['digital-gpio', 'analog-adc', 'uart', 'onewire', 'i2c-target', 'spi-target', 'pwm'],
     firmware: ['python-script'],
     limits: [
       { code: 'no-linux-arm-emulation', detail: 'Pyodide runs CPython shims over deterministic JS peripheral models. No Linux kernel, ARM CPU (BCM2712/RP1), boot firmware, real device tree or C drivers. Peripheral-level API/fidelity only.' },
       { code: 'virtual-time-only', detail: 'time.sleep/monotonic/time advance an in-process virtual millisecond clock instantly; no wall-clock-real-time scheduling, OS threads or hardware interrupts.' },
       { code: 'pi5-rp1-pwm-policy', detail: 'RP1 accepts PWM on any valid header GPIO (no 12/13/18/19 restriction). Model clock 2400 MHz, PWM clock 200 MHz, CPU temp baseline 55 C.' },
+      { code: 'camera-no-host-component', detail: 'picamera2 shim returns a deterministic in-memory test pattern; there is no wired host camera component/model in the studio to react to a capture, so no camera cell is claimed (test.skip with this reason).' },
+      { code: 'dht-neopixel-no-cap-code', detail: 'DHT22 and NeoPixel cells are green, but the conformance vocabulary has no dht/neopixel need code; their proof lives in rpi-boards.spec.js telemetry, not in the capability matrix.' },
     ],
   },
   {

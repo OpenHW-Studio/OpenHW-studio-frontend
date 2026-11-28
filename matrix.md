@@ -7,9 +7,10 @@ or telemetry it asserts) or a **file:line** in the engine source. A cell with
 no source is not a claim, it is a guess.
 
 - **Last updated: 2026-11-28** — Raspberry Pi 3 B+ / 4 B / 5 board family
-  added (Pyodide peripheral model): catalog + runner resolution, Python GPIO
-  LED, I2C EEPROM/SSD1306 and SPI MAX7219 cells green in the browser, per-board
-  clock/temp/PWM differences proved; see the new section below.
+  (Pyodide peripheral model): catalog + runner resolution; GPIO/I2C/SPI/PWM
+  cells plus ADC, UART (both directions), 1-Wire, DHT22, NeoPixel and servo
+  cells green in the browser on all three boards; per-board clock/temp/PWM
+  and ADC electrical differences proved; see the new section below.
 - **Prior 2026-11-06** — component lane: Pico/Pico 2 I2C sensor reads
   (MPU6050, BMP180, DS1307, ADXL345, FT6206 touch) and the HP4067 mux are now
   green on both boards (engine jsmirror read maps + additive SDD attach).
@@ -676,22 +677,41 @@ provides peripheral APIs and deterministic device behaviour only — see
 `src/engines/pyodide/FIDELITY.md` and the `no-linux-arm-emulation` /
 `virtual-time-only` limits in the registry.
 
-| Board | GPIO out (LED cell) | I2C (EEPROM + SSD1306 host cells) | SPI (MAX7219 host cell) | Board difference proved | Capabilities claimed | Limits |
-|---|---|---|---|---|---|---|
-| `openhw-pi3` | FULL — `pi1:17 → led1:A/K`, `led.details.state.illuminated=true`, A=3.3 V (`rpi-boards`) | FULL — EEPROM `0x50` block write/read roundtrip in guest (`RPI_EEPROM_OK`) + SSD1306 `0x3C` vram 1024 bytes lit, rx=1082 | FULL — `spidev.xfer` → matrix `[0xFF × 8]` | `board_info()` BCM2837 / 45 C / 1200 MHz / PWM 540 MHz; `GPIO.PWM(17)` rejected (legacy pins only) | `digital-gpio`, `i2c-target`, `spi-target`, `pwm` | no Linux/ARM; virtual time; legacy PWM pin policy |
-| `openhw-pi4` | FULL — same circuit, LED lit | FULL — same cell, OLED vram 1024 lit | FULL — same cell, matrix `[0xFF × 8]` | BCM2711 / 50 C / 1500 MHz / PWM 540 MHz; `GPIO.PWM(17)` rejected | same as pi3 | same as pi3 |
-| `openhw-pi5` | FULL — same circuit, LED lit | FULL — same cell, OLED vram 1024 lit | FULL — same cell, matrix `[0xFF × 8]` | BCM2712 + RP1 / 55 C / 2400 MHz / PWM 200 MHz; `GPIO.PWM(17)` **accepted** (RP1 PWM on any header GPIO) | same as pi3 | no Linux/ARM; virtual time; RP1 PWM policy |
+### Protocol cells (2026-11-28, expanded)
 
-Evidence: `tests/e2e/rpi-boards.spec.js` — one catalog/registry cell (all
-three types present with the Pyodide runner; `openhw-esp32` →
-`runners/esp32-runner.ts` and `openhw-esp32sc` →
-`runners/esp32sc-runner.ts` unchanged) plus one **unskipped** cell per board.
-Each board cell asserts the guest's EEPROM roundtrip, the host LED telemetry,
-the host SSD1306 framebuffer and the host MAX7219 matrix — observations made
-outside the Python guest. Last clean run: **4 passed** (2.0 min, `--workers=1`).
-Only the capabilities proven by these cells are claimed; ADC/UART models
-are documented upstream but have no cell here; WiFi/LAN, camera, real OS threads and
-hardware IRQs are **not** claimed on these boards.
+| Protocol | Host component | Guest API | Verdict (all three boards) | Cell |
+|---|---|---|---|---|
+| GPIO out | `openhw-led` | `RPi.GPIO.output` | FULL — LED `illuminated=true`, A=3.3 V | `rpi-boards` |
+| I2C | `openhw-ssd1306-oled` + engine EEPROM 0x50 | `smbus.write_i2c_block_data` / `read_i2c_block_data` | FULL — host VRAM 1024 bytes lit (rx=1082); guest EEPROM roundtrip | `rpi-boards` |
+| SPI | `openhw-max7219` | `spidev.xfer` | FULL — host matrix `[0xFF × 8]` | `rpi-boards` |
+| PWM | `openhw-servo` | `GPIO.PWM(19, 50).start(7.5)` | FULL — 1500 µs pulse → host angle ≈ 92.7°; per-board pin policy also asserted | `rpi-boards` + `rpi-protocols` |
+| ADC | `openhw-potentiometer` (pin 1 = 3V3, 2 = GND, SIG → `pi:5`) | `gpiozero.MCP3008(channel=5).read()` | FULL — host value 50→80 % changed guest read by +205 counts (0.66 V / 3.3 V × 1023) | `rpi-protocols` |
+| UART | `openhw-usb-device` (host serial sink) + `SERIAL_INPUT` | `rpi_sim.uart.UART.write/read` | FULL — guest `HI-PI` → host `rxCount=5`, `lastEcho=HI-PI`; host `AB\n` → guest read prints exact `AB` | `rpi-protocols` |
+| 1-Wire | `openhw-ds18b20` | `w1_gpio.read_temp` / `rpi_sim.onewire` | FULL — host 22.5→37.5 °C, guest readback 37.5 °C (full ROM/scratchpad sequence) | `rpi-protocols` |
+| DHT22 | `openhw-dht22` | `Adafruit_DHT.read(22, 27)` | FULL — host 23.5→31.5 °C / 50→66 % RH, guest decoded the waveform to the same values | `rpi-protocols` |
+| NeoPixel | `openhw-neopixel-matrix` | `Adafruit_NeoPixel.fill/show` | FULL — host framebuffer `[0xFF0000 × 4]` | `rpi-protocols` |
+| Camera | — (no wired host camera component) | `picamera2.capture_array()` | NONE — `test.skip` with `camera-no-host-component`; the shim only produces an in-memory test pattern | `rpi-protocols` |
+
+**Per-board ADC/electrical difference:** `RPI_ELEC` from guest
+`_bridge.snapshot().electrical` reports `2:1800` (ViH 2.0 V, 1.8 kΩ pull) on
+Pi 3/4 and `2.1:50000` (ViH 2.1 V, 50 kΩ pull, RP1) on Pi 5. The runner also
+publishes these facts as `rpiAdc` metadata on a full-state analogue endpoint
+(`bits` 10 vs 12, `channels["5"].raw`) so the translation is visible in host
+telemetry.
+
+**Capability claims in `boards-registry.ts`:** `digital-gpio`, `analog-adc`,
+`uart`, `onewire`, `i2c-target`, `spi-target`, `pwm`. DHT22 and NeoPixel are
+proved by cells but the conformance vocabulary has no `dht`/`neopixel` need
+code (`dht-neopixel-no-cap-code` limit); WiFi/LAN, camera, real OS threads and
+hardware IRQs are **not** claimed.
+
+Evidence: `tests/e2e/rpi-boards.spec.js` (4 passed: catalog/registry +
+GPIO/I2C/SPI/PWM-difference per board) and `tests/e2e/rpi-protocols.spec.js`
+(3 passed + 3 camera skips: ADC/UART/1-Wire/DHT/NeoPixel/Servo per board).
+Both specs run serially (`--workers=1`), `TMPDIR=$PWD/.tmp-vitest`. The cells
+assert host telemetry (LED VRAM, matrix, pot value, USB echo, sensor state,
+pixel frame, servo angle) and guest-side readbacks — never a guest "OK" print
+alone. Existing ESP32 runners are untouched.
 
 ## micro:bit v2 / Retro (survey-verified 2026-10-09; re-swept 2026-10-20)
 
